@@ -288,6 +288,15 @@ wheels = [
 ]
 
 [[package]]
+name = "colour"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/d4/5911a7618acddc3f594ddf144ecd8a03c29074a540f4494670ad8f153efe/colour-0.1.5.tar.gz", hash = "sha256:af20120fefd2afede8b001fbef2ea9da70ad7d49fafdb6489025dae8745c3aee", size = 24776, upload-time = "2017-11-19T23:20:08.015Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/74/46/e81907704ab203206769dee1385dc77e1407576ff8f50a0681d0a6b541be/colour-0.1.5-py2.py3-none-any.whl", hash = "sha256:33f6db9d564fadc16e59921a56999b79571160ce09916303d35346dddc17978c", size = 23772, upload-time = "2017-11-19T23:20:04.56Z" },
+]
+
+[[package]]
 name = "comm"
 version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
@@ -617,6 +626,7 @@ dependencies = [
     { name = "cudf-cu12" },
     { name = "cuml-cu12" },
     { name = "dask-ml" },
+    { name = "earthengine-api" },
     { name = "fiona" },
     { name = "forestatrisk" },
     { name = "gdal", extra = ["numpy"] },
@@ -644,17 +654,18 @@ requires-dist = [
     { name = "cudf-cu12", specifier = ">=25.8.0" },
     { name = "cuml-cu12", specifier = ">=25.8.0" },
     { name = "dask-ml", specifier = ">=2025.1.0" },
+    { name = "earthengine-api", git = "https://github.com/openforis/earthengine-api.git?subdirectory=python&rev=v1.1.5rc0" },
     { name = "fiona", specifier = ">=1.10.1" },
     { name = "forestatrisk", specifier = ">=1.3.2" },
     { name = "gdal", extras = ["numpy"], specifier = "==3.8.4" },
     { name = "geedim", specifier = ">=2.0.0" },
-    { name = "geemap", specifier = ">=0.36.2" },
+    { name = "geemap", specifier = "==0.36.0" },
     { name = "geopandas", specifier = ">=1.1.1" },
     { name = "numpy", specifier = "==2.2" },
     { name = "odc-geo", specifier = ">=0.4.10" },
     { name = "pycrs", specifier = ">=1.0.2" },
-    { name = "rasterio", specifier = ">=1.4.3" },
-    { name = "rioxarray", specifier = ">=0.19.0" },
+    { name = "rasterio", specifier = "<1.3.11" },
+    { name = "rioxarray", specifier = ">=0.18.2" },
     { name = "riskmapjnr", specifier = ">=1.3.2" },
     { name = "setuptools", specifier = ">=80.9.0" },
     { name = "wheel", specifier = ">=0.45.1" },
@@ -714,8 +725,8 @@ wheels = [
 
 [[package]]
 name = "earthengine-api"
-version = "1.6.11"
-source = { registry = "https://pypi.org/simple" }
+version = "1.1.5rc0"
+source = { git = "https://github.com/openforis/earthengine-api.git?subdirectory=python&rev=v1.1.5rc0#89b62662f9396a6a1397845bb551ed5c55be6272" }
 dependencies = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -723,10 +734,6 @@ dependencies = [
     { name = "google-cloud-storage" },
     { name = "httplib2" },
     { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2f/80/bd0a8a99c043dc50530150ebf389b7924fc9b056ef136cd557dce1126045/earthengine_api-1.6.11.tar.gz", hash = "sha256:383d4d0b2cdc32c06ae8def0ca7f8e27b235bfea99b83786097585fa9fa983d4", size = 418399, upload-time = "2025-10-06T21:27:58.629Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/a3/3cddb7c0e6ebc3204f788f6fe0f55b3e72081b3f08deead6430146e14041/earthengine_api-1.6.11-py3-none-any.whl", hash = "sha256:9267ed0bd2dcefa4937fdc7008b0a376699fb8254bb8999ddf6ab01dab22f63c", size = 464234, upload-time = "2025-10-06T21:27:56.668Z" },
 ]
 
 [[package]]
@@ -931,11 +938,12 @@ wheels = [
 
 [[package]]
 name = "geemap"
-version = "0.36.4"
+version = "0.36.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anywidget" },
     { name = "bqplot" },
+    { name = "colour" },
     { name = "earthengine-api" },
     { name = "eerepr" },
     { name = "folium" },
@@ -943,6 +951,7 @@ dependencies = [
     { name = "ipyevents" },
     { name = "ipyfilechooser" },
     { name = "ipyleaflet" },
+    { name = "ipytree" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
@@ -952,9 +961,9 @@ dependencies = [
     { name = "python-box" },
     { name = "scooby" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/63/89/d844de40c9ff90a17c2ff942469b2a10faf2842a68f28ae54df0a3ddc808/geemap-0.36.4.tar.gz", hash = "sha256:3208f5a4a81f8fb4d7b70b994f544e89ec857e77904f4abcdb03df927301763b", size = 581406, upload-time = "2025-10-02T17:18:15.958Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/45/6c7a293e0c88324c14bcc57a03620a2ee405c6eb3cab7d0e33da4d1a0d3a/geemap-0.36.0.tar.gz", hash = "sha256:cb5da3bc6414d4b75dc97a333e46cadc2492de992741abcb09d5b875e6f65823", size = 581520, upload-time = "2025-07-24T15:24:03.027Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/12/ba1bc19c61821c762084a44c7a796e86e8bc8901232d9bbd367198c18702/geemap-0.36.4-py3-none-any.whl", hash = "sha256:71d63d36b19aaab40c0b58199bbe6901f52427c4f6dfa820a8c9573fadb8672e", size = 631413, upload-time = "2025-10-02T17:18:13.056Z" },
+    { url = "https://files.pythonhosted.org/packages/42/7b/c093a09e7d47c22434614af8486b1efe7463a6b05eed9d14228c625dd091/geemap-0.36.0-py3-none-any.whl", hash = "sha256:668fb463b190ff48db4c22b2af323f43dab462ac7c4ed4f455405f9dbd964b99", size = 631255, upload-time = "2025-07-24T15:24:00.83Z" },
 ]
 
 [[package]]
@@ -1247,6 +1256,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ef/4c/5dd1d8af08107f88c7f741ead7a40854b8ac24ddf9ae850afbcf698aa552/ipython_pygments_lexers-1.1.1.tar.gz", hash = "sha256:09c0138009e56b6854f9535736f4171d855c8c08a563a0dcd8022f78355c7e81", size = 8393, upload-time = "2025-01-17T11:24:34.505Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d9/33/1f075bf72b0b747cb3288d011319aaf64083cf2efef8354174e3ed4540e2/ipython_pygments_lexers-1.1.1-py3-none-any.whl", hash = "sha256:a9462224a505ade19a605f71f8fa63c2048833ce50abc86768a0d81d876dc81c", size = 8074, upload-time = "2025-01-17T11:24:33.271Z" },
+]
+
+[[package]]
+name = "ipytree"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ipywidgets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/52/e9/74ab8e327bb884b415124fc5ac2416916499278fef7a628620715ec326ce/ipytree-0.2.2.tar.gz", hash = "sha256:d53d739bbaaa45415733cd06e0dc420a2af3d173438617db472a517bc7a61e56", size = 636289, upload-time = "2022-08-23T15:11:48.429Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/03/35cf1742598d784e96153175233318a2332f71863e55ad1007c9264c1a7a/ipytree-0.2.2-py2.py3-none-any.whl", hash = "sha256:744dc1a02c3ec26df8a5ecd87d085a67dc8232a1def6048834403ddcf3b64143", size = 1285067, upload-time = "2022-08-23T15:11:44.214Z" },
 ]
 
 [[package]]
@@ -2483,7 +2504,7 @@ wheels = [
 
 [[package]]
 name = "rasterio"
-version = "1.4.3"
+version = "1.3.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "affine" },
@@ -2493,14 +2514,15 @@ dependencies = [
     { name = "click-plugins" },
     { name = "cligj" },
     { name = "numpy" },
-    { name = "pyparsing" },
+    { name = "setuptools" },
+    { name = "snuggs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/19/ab4326e419b543da623ce4191f68e3f36a4d9adc64f3df5c78f044d8d9ca/rasterio-1.4.3.tar.gz", hash = "sha256:201f05dbc7c4739dacb2c78a1cf4e09c0b7265b0a4d16ccbd1753ce4f2af350a", size = 442990, upload-time = "2024-12-02T14:49:25.571Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/05/f7c3ee93f270fbd77f7a2d58f2333a21fdf3ef9526a8f0b2a4d5d3d83184/rasterio-1.3.10.tar.gz", hash = "sha256:ce182c735b4f9e8735d90600607ecab15ef895eb8aa660bf665751529477e326", size = 412856, upload-time = "2024-04-12T18:20:35.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/fd/ba3850e4cbccc47d03037f2c96889f7f221a674a7be6665c7da7cd483a07/rasterio-1.4.3-cp311-cp311-macosx_10_15_x86_64.whl", hash = "sha256:9c30114d95ebba4ff49f078b3c193d29ff56d832588649400a3fa78f1dda1c96", size = 21540767, upload-time = "2024-12-02T14:48:38.794Z" },
-    { url = "https://files.pythonhosted.org/packages/b3/59/ca86697161206233eea6353237b0c0f02f6f70434144db162f964a7e1b19/rasterio-1.4.3-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:812c854e7177064aeb58def2d59752887ad6b3d39ff3f858ed9df3f2ddc95613", size = 18762975, upload-time = "2024-12-02T14:48:41.895Z" },
-    { url = "https://files.pythonhosted.org/packages/aa/fa/723fa6a48a419b044146cd92fa6a66ead8532d96c352fbc2f2a1546cb5b6/rasterio-1.4.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:54eef32d20a0dfbba59a8bb9828e562c3e9e97e2355b8dfe4a5274117976059f", size = 22204391, upload-time = "2024-12-02T14:48:44.447Z" },
-    { url = "https://files.pythonhosted.org/packages/7e/1f/56462740694de764fde264051224fcbf800dad43cac92a66753153128866/rasterio-1.4.3-cp311-cp311-win_amd64.whl", hash = "sha256:4009f7ce4e0883d8e5b400970daa3f1ca309caac8916d955722ee4486654d452", size = 25452478, upload-time = "2024-12-02T14:48:46.893Z" },
+    { url = "https://files.pythonhosted.org/packages/16/da/b865cb4c588495e09c62a02c77b1c965ef478e329070233ceb0d6c45a4f9/rasterio-1.3.10-cp311-cp311-macosx_10_15_x86_64.whl", hash = "sha256:97d867cada29f16cb83f1743217f775f8b982676fcdda77671d25abb26698159", size = 20648942, upload-time = "2024-04-12T18:14:26.107Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/f7/e4ac8f3dfd11e4c718e9281a7e41417462100bc0bc575059a8eeab1e8bf0/rasterio-1.3.10-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:505b3e659eb3b137192c25233bf7954bc4997b1a474bae9e129fbd5ac2619404", size = 18182984, upload-time = "2024-04-12T18:14:31.694Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/0d/6dd65a77c4d2e0809d18edb7461f53a7597b19b886afff023ef5d4df8512/rasterio-1.3.10-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:30f27e309a14a70c821d10a0ea18b110968dc2e2186b06a900aebd92094f4e00", size = 21497348, upload-time = "2024-04-12T18:14:38.38Z" },
+    { url = "https://files.pythonhosted.org/packages/03/d9/40d44154946a55e8fe63b21d44120dae02f4f62500338d09ee0d29d59025/rasterio-1.3.10-cp311-cp311-win_amd64.whl", hash = "sha256:cbb2eea127328302f9e3158a000363a7d9eea22537378dee4f824a7fa2d78c05", size = 24338892, upload-time = "2024-04-12T18:14:45.645Z" },
 ]
 
 [[package]]
@@ -2545,7 +2567,7 @@ wheels = [
 
 [[package]]
 name = "rioxarray"
-version = "0.19.0"
+version = "0.18.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2554,9 +2576,9 @@ dependencies = [
     { name = "rasterio" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/8e/fe4e87460f8c62d8d5c683e09f19fbde5d9cfcfd0342d02df1f452999b5d/rioxarray-0.19.0.tar.gz", hash = "sha256:7819a0036fd874c8c8e280447cbbe43d8dc72fc4a14ac7852a665b1bdb7d4b04", size = 54600, upload-time = "2025-04-21T17:46:54.183Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/29/6a97e32d53190ce892e4d849615d3fc4b5eaa802b7ae9fe5ed39998f0b8c/rioxarray-0.18.2.tar.gz", hash = "sha256:9237b9f3c26957823dc76f3c972c0f16c2ab178c930e81a4629716b425818ab6", size = 54485, upload-time = "2025-01-17T17:14:05.286Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/2f/63d2cacc0e525f8e3398bcf32bd3620385f22cd1600834ec49d7f3597a7b/rioxarray-0.19.0-py3-none-any.whl", hash = "sha256:494ee4fff1781072d55ee5276f5d07b63d93b05093cb33b926a12186ba5bb8ef", size = 62151, upload-time = "2025-04-21T17:46:52.801Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/b0/2c74f302512fbd24d68fbba0ec6b650b33ef83e398daeb0a2bb1a4cd641c/rioxarray-0.18.2-py3-none-any.whl", hash = "sha256:f351c15fc682081ac2cd2c8db367ef0a7ed5acdea29b9e43a6d7bc2ebc5ec6e5", size = 61943, upload-time = "2025-01-17T17:14:03.966Z" },
 ]
 
 [[package]]
@@ -2685,6 +2707,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "snuggs"
+version = "1.4.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/19/0d11ab370735dde61076a0e41644e5593821776e69e3b0344626cfa0e56a/snuggs-1.4.7.tar.gz", hash = "sha256:501cf113fe3892e14e2fee76da5cd0606b7e149c411c271898e6259ebde2617b", size = 8196, upload-time = "2019-09-18T18:54:51.598Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/0e/d27d6e806d6c0d1a2cfdc5d1f088e42339a0a54a09c3343f7f81ec8947ea/snuggs-1.4.7-py3-none-any.whl", hash = "sha256:988dde5d4db88e9d71c99457404773dabcc7a1c45971bfbe81900999942d9f07", size = 5370, upload-time = "2019-09-18T18:54:49.829Z" },
 ]
 
 [[package]]
