@@ -46,6 +46,12 @@ def list_files_by_extension(
             and file.suffix.lower() in [ext.lower() for ext in normalized_extensions]
         ]
 
+        matching_files = [
+            file
+            for file in matching_files
+            if ".ipynb_checkpoints" not in Path(file).parts
+        ]
+
         return matching_files
 
     except Exception as e:

@@ -107,3 +107,5 @@ def download_ee_image(
         img.gd.toGeoTIFF(
             file=filename, overwrite=overwrite, nodata=nodata_value, **kwargs
         )
+
+    print(f"File {filename}, downloaded")
