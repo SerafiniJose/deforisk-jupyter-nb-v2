@@ -1,24 +1,26 @@
-In sepal
+In sepal terminal:
 
 
-```bash
+.. code-block:: bash
 
-git clone https://github.com/SerafiniJose/deforisk-jupyter-nb-v2.git
+    # Clone repo
+    git clone https://github.com/SerafiniJose/deforisk-jupyter-nb-v2.git
 
-cd deforisk-jupyter-nb-v2
+    cd deforisk-jupyter-nb-v2
 
-pip install uv
+    pip install uv
 
-uv run main.py
+    uv run main.py
 
-uv pip install gdal[numpy]==3.8.4 --no-build-isolation --no-cache-dir --force-reinstall
+    uv pip install gdal[numpy]==3.8.4 --no-build-isolation --no-cache-dir --force-reinstall
 
-source .venv/bin/activate
+    source .venv/bin/activate
 
-python -m ipykernel install --user --name deforisk-deg --display-name "deforisk-deg"
+    python -m ipykernel install --user --name deforisk-deg --display-name "deforisk-deg"
 
 
-```
+
+
 
 
 
