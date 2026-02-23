@@ -458,7 +458,7 @@ class LocalRasterVar(Variable):
             distance_to_edge_gdal_no_mask(
                 input_file=str(base_path),
                 dist_file=str(output_path),
-                values=1,  # Distance to feature pixels
+                values=0,  # Distance to feature pixels
                 nodata=0,
                 max_distance_value=4294967295,
                 input_nodata=True,
@@ -470,7 +470,7 @@ class LocalRasterVar(Variable):
             distance_to_edge_gdal_no_mask(
                 input_file=str(base_path),
                 dist_file=str(output_path),
-                values=0,  # Distance to background pixels (non-feature)
+                values=1,  # Distance to background pixels (non-feature)
                 nodata=0,
                 max_distance_value=4294967295,
                 input_nodata=True,
