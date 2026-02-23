@@ -371,7 +371,7 @@ class LocalRasterVar(Variable):
             return self._create_post_var(
                 self.path,
                 suffix="edge",
-                raster_type=RasterType.categorical,
+                raster_type=RasterType.continuous,
             )
         elif post_process == PostProcessing.dist:
             return self._create_post_var(
@@ -407,7 +407,10 @@ class LocalRasterVar(Variable):
         return post_vars
 
     def _create_post_var(
-        self, base_path: Path, suffix: str, raster_type: RasterType
+        self,
+        base_path: Path,
+        suffix: str,
+        raster_type: Optional[RasterType] = None,
     ) -> "LocalRasterVar":
         """
         Create a new LocalRasterVar for post-processing output and execute the processing.
@@ -418,14 +421,25 @@ class LocalRasterVar(Variable):
             The base raster path to use as input.
         suffix : str
             Suffix to add to the variable name and file (e.g., 'edge', 'dist').
-        raster_type : RasterType
-            The type of raster (continuous or categorical).
+        raster_type : RasterType, optional
+            Desired output raster type. If not provided, it will be derived from
+            the post-processing step (edge → continuous, dist → continuous).
 
         Returns
         -------
         LocalRasterVar
             A new LocalRasterVar instance.
         """
+        # Make the output raster type explicit based on the post-processing step
+        # to avoid inheriting the parent's type incorrectly.
+        if suffix == "edge":
+            # Edge outputs are treated as continuous (e.g., gradients / edge strength)
+            output_raster_type = RasterType.continuous
+        elif suffix == "dist":
+            output_raster_type = RasterType.continuous
+        else:
+            output_raster_type = raster_type or self.raster_type
+
         # Create a new variable name by appending the suffix
         new_var_name = f"{self.name}_{suffix}"
 
@@ -440,41 +454,23 @@ class LocalRasterVar(Variable):
 
         # Perform the actual post-processing
         if suffix == "edge":
-            # Edge detection: creates a binary raster with edges marked
-            # Uses scipy's binary_erosion to detect edges
-            import rasterio
-            import numpy as np
-            from scipy.ndimage import binary_erosion
-
-            # Read the input raster
-            with rasterio.open(base_path) as src:
-                data = src.read(1)
-                profile = src.profile.copy()
-
-                # Create binary mask (features are non-zero)
-                binary_mask = data > 0
-
-                # Erode the mask
-                eroded = binary_erosion(binary_mask, structure=np.ones((3, 3)))
-
-                # Edge is the difference between original and eroded
-                edges = binary_mask.astype(np.uint8) - eroded.astype(np.uint8)
-
-                # Update profile for output
-                profile.update(
-                    dtype=rasterio.uint8, compress="deflate", predictor=2, bigtiff="yes"
-                )
-
-                # Write the edge raster
-                with rasterio.open(output_path, "w", **profile) as dst:
-                    dst.write(edges, 1)
-
-        elif suffix == "dist":
-            # Distance calculation: calculates distance from features
+            # Distance from the nearest feature (value==1) – i.e., outward distance to patch
             distance_to_edge_gdal_no_mask(
                 input_file=str(base_path),
                 dist_file=str(output_path),
-                values=0,  # Calculate distance from 0 values (non-feature pixels)
+                values=1,  # Distance to feature pixels
+                nodata=0,
+                max_distance_value=4294967295,
+                input_nodata=True,
+                verbose=False,
+            )
+
+        elif suffix == "dist":
+            # Distance calculation: distance from background (value==0) into the feature
+            distance_to_edge_gdal_no_mask(
+                input_file=str(base_path),
+                dist_file=str(output_path),
+                values=0,  # Distance to background pixels (non-feature)
                 nodata=0,
                 max_distance_value=4294967295,
                 input_nodata=True,
@@ -488,7 +484,7 @@ class LocalRasterVar(Variable):
         # Create and return the new LocalRasterVar with a new name
         post_var = LocalRasterVar.model_construct(
             name=new_var_name,  # NEW variable name with suffix
-            raster_type=raster_type,
+            raster_type=output_raster_type,
             path=output_path,
             project=self.project,
             default_crs=self.default_crs,
