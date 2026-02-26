@@ -77,7 +77,8 @@ class GEEVar(Variable):
 
         # Process images
 
-        output_path = output_folder / f"{self.name}"
+        filename = f"{self.name}_{self.year}" if self.year is not None else self.name
+        output_path = output_folder / filename
 
         output_path = output_path.with_suffix(extensions[self.data_type])
         local_paths.append(output_path)
