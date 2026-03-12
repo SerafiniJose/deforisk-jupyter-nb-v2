@@ -7,7 +7,7 @@ Works exclusively with LocalRasterVar instances.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 import numpy as np
 import pandas as pd
 import rasterio
@@ -444,6 +444,7 @@ class Dataset(BaseModel):
     def to_dataframe(
         self,
         sampling: Optional[Sampling] = None,
+        output_csv: Optional[Union[str, Path]] = None,
         **kwargs,
     ) -> pd.DataFrame:
         """Create DataFrame with sampled data.
@@ -456,6 +457,9 @@ class Dataset(BaseModel):
             - strategy: str = 'random' ('random', 'stratified', or 'systematic')
             - n_samples: int = 10000 (number of samples, None for all pixels)
             - seed: int = None (random seed for reproducibility)
+        output_csv : str or Path, optional
+            If provided, saves the resulting DataFrame to this CSV path.
+            Parent directories are created automatically.
 
         **kwargs
             Sampling parameters for on-the-fly Sampling creation (strategy, n_samples, seed).
@@ -464,7 +468,7 @@ class Dataset(BaseModel):
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns: [target, feature1, feature2, ..., cell_id]
+            DataFrame with columns: [target, feature1, feature2, ..., cell_id, trial]
 
         Examples
         --------
@@ -474,9 +478,11 @@ class Dataset(BaseModel):
         # Create Sampling on-the-fly with kwargs
         df = dataset.to_dataframe(strategy='stratified', n_samples=5000, seed=42)
 
-        # Use pre-configured Sampling object
+        # Use pre-configured Sampling object and save to CSV
         sampling = Sampling(strategy='systematic', n_samples=8000, seed=123)
-        df = dataset.to_dataframe(sampling=sampling)
+        df = dataset.to_dataframe(
+            sampling=sampling, output_csv="data/samples/calibration.csv"
+        )
         """
         if not self.validate():
             raise ValueError("Dataset validation failed")
@@ -513,7 +519,7 @@ class Dataset(BaseModel):
         # Sample pixels using Sampling object
         target_values = (
             data_dict[self.target.name][valid_indices]
-            if sampling.strategy == "stratified"
+            if sampling.strategy in ("stratified", "legacy")
             else None
         )
         sample_indices = sampling.sample_indices(valid_indices, target_values)
@@ -523,7 +529,7 @@ class Dataset(BaseModel):
 
         # Add target with standardized name
         target_arr = data_dict[self.target.name]
-        df_data["target"] = target_arr[sample_indices]
+        df_data[self.target.name] = target_arr[sample_indices]
 
         # Add features with their original names
         for var in self.features:
@@ -534,10 +540,16 @@ class Dataset(BaseModel):
         with rasterio.open(self.target.path) as src:
             ncols = src.width
         df_data["cell_id"] = sample_indices[0] * ncols + sample_indices[1]
-
+        df_data["trial"] = 1
         df = pd.DataFrame(df_data)
         print(f"✓ DataFrame created: {df.shape[0]:,} rows × {df.shape[1]} columns")
         print(f"  Target column: 'target' (from '{self.target.name}')")
+
+        if output_csv is not None:
+            output_csv = Path(output_csv)
+            output_csv.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_csv, index=False)
+            print(f"  Samples saved to: {output_csv}")
 
         return df
 

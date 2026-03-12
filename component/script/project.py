@@ -46,6 +46,7 @@ class Project(BaseModel):
         default_factory=dict
     )
     base_raster: Optional["LocalRasterVar"] = None
+    models: Dict[str, Any] = Field(default_factory=dict)
 
     @staticmethod
     def _ensure_model_schemas() -> None:
@@ -287,6 +288,53 @@ class Project(BaseModel):
         unique_names = sorted(set(var.name for var in variables.values()))
         return unique_names
 
+    # ------------------------------------------------------------------
+    # Model registry
+    # ------------------------------------------------------------------
+
+    def add_model(
+        self,
+        model: Any,
+        key: Optional[str] = None,
+        auto_save: bool = True,
+    ) -> None:
+        """Add a trained ML model to the project's model registry.
+
+        Parameters
+        ----------
+        model : BaseRiskModel
+            Trained model instance (GLMModel, RFModel, ICARModel, …).
+        key : str, optional
+            Storage key. Defaults to "{model_type}_{name}" or "{model_type}".
+        auto_save : bool
+            If True, saves the project JSON after registering.
+        """
+        model.project = self
+        model.project_name = self.project_name
+        storage_key = key or (
+            f"{model.model_type}_{model.name}"
+            if model.name
+            else model.model_type
+        )
+        self.models[storage_key] = model
+        print(f"  Model registered as project.models['{storage_key}']")
+        if auto_save:
+            self.save()
+
+    def get_model(self, key: str) -> Optional[Any]:
+        """Return the model stored under *key*, or None if not found.
+
+        Parameters
+        ----------
+        key : str
+            Storage key used when the model was registered.
+        """
+        return self.models.get(key)
+
+    def list_models(self) -> List[str]:
+        """Return sorted list of registered model keys."""
+        return sorted(self.models.keys())
+
     def save(self, filename: Optional[str] = None) -> Path:
         """
         Save the project to a JSON file in the project folder.
@@ -334,6 +382,12 @@ class Project(BaseModel):
         # Serialize base_raster if it exists
         if self.base_raster is not None:
             data["base_raster"] = self.base_raster.model_dump(mode="json")
+
+        # Serialize registered ML models
+        if self.models:
+            data["models"] = {}
+            for key, model in self.models.items():
+                data["models"][key] = model.model_dump(mode="json")
 
         # Write to file
         save_path.write_text(
@@ -434,6 +488,30 @@ class Project(BaseModel):
             project.base_raster = LocalRasterVar(**base_data)
             # Set project reference
             project.base_raster.project = project
+
+        # Reconstruct registered ML models
+        if "models" in data and data["models"]:
+            from component.script.mlmodels import GLMModel, ICARModel, RFModel
+
+            _MODEL_REGISTRY = {
+                "glm": GLMModel,
+                "rf": RFModel,
+                "icar": ICARModel,
+            }
+            for key, model_data in data["models"].items():
+                model_type = model_data.get("model_type", "")
+                model_cls = _MODEL_REGISTRY.get(model_type)
+                if model_cls is None:
+                    print(f"  Warning: unknown model_type '{model_type}' for key '{key}' — skipped")
+                    continue
+                # Convert Path strings back to Path objects
+                for path_field in ("model_path", "samples_path", "rho_path"):
+                    if path_field in model_data and model_data[path_field]:
+                        model_data[path_field] = Path(model_data[path_field])
+                model = model_cls(**model_data)
+                model.project = project
+                project.models[key] = model
+            print(f"Loaded {len(project.models)} model(s)")
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
