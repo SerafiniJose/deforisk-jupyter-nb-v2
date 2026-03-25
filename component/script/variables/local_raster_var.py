@@ -216,7 +216,8 @@ class LocalRasterVar(Variable):
         filename_suffix = (
             "_".join([*history, "reprojected"]) if history else "reprojected"
         )
-        output_path = output_folder / f"{self.name}_{filename_suffix}.tif"
+        year_suffix = f"_{self.year}" if self.year else ""
+        output_path = output_folder / f"{self.name}_{filename_suffix}{year_suffix}.tif"
 
         # Determine resolution
         _resolution = resolution or self.default_resolution or 30
@@ -310,7 +311,8 @@ class LocalRasterVar(Variable):
         filename_suffix = (
             "_".join([*history, output_suffix]) if history else output_suffix
         )
-        output_path = output_folder / f"{self.name}_{filename_suffix}.tif"
+        year_suffix = f"_{self.year}" if self.year else ""
+        output_path = output_folder / f"{self.name}_{filename_suffix}{year_suffix}.tif"
 
         # Auto-select resampling method based on raster_type if not specified
         if resampling is None:
@@ -450,7 +452,8 @@ class LocalRasterVar(Variable):
         # Handle legacy variables without processing_history
         history = getattr(self, "processing_history", [])
         filename_suffix = "_".join([*history, suffix]) if history else suffix
-        output_path = output_folder / f"{self.name}_{filename_suffix}.tif"
+        year_suffix = f"_{self.year}" if self.year else ""
+        output_path = output_folder / f"{self.name}_{filename_suffix}{year_suffix}.tif"
 
         # Perform the actual post-processing
         if suffix == "edge":

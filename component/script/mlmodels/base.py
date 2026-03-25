@@ -189,7 +189,7 @@ class BaseRiskModel(BaseModel):
             return None
         folders = self.project.folders
         key_map = {
-            "glm": "glm_model_folder",
+            "glm": "glm_model",
             "rf": "rf_model",
             "icar": "icar_model",
         }

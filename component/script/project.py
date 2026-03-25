@@ -47,6 +47,7 @@ class Project(BaseModel):
     )
     base_raster: Optional["LocalRasterVar"] = None
     models: Dict[str, Any] = Field(default_factory=dict)
+    datasets: Dict[str, Any] = Field(default_factory=dict)
 
     @staticmethod
     def _ensure_model_schemas() -> None:
@@ -335,6 +336,35 @@ class Project(BaseModel):
         """Return sorted list of registered model keys."""
         return sorted(self.models.keys())
 
+    def add_dataset(self, dataset: Any, key: Optional[str] = None, auto_save: bool = True) -> None:
+        """Add a dataset to the project's dataset registry.
+
+        Parameters
+        ----------
+        dataset : Dataset
+            Configured dataset instance.
+        key : str, optional
+            Storage key. Defaults to dataset.name.
+        auto_save : bool
+            If True, saves the project JSON after registering.
+        """
+        storage_key = key or dataset.name
+        if not storage_key:
+            raise ValueError("Dataset must have a name or provide a key parameter.")
+        dataset.project = self
+        self.datasets[storage_key] = dataset
+        print(f"  Dataset registered as project.datasets['{storage_key}']")
+        if auto_save:
+            self.save()
+
+    def get_dataset(self, key: str) -> Optional[Any]:
+        """Return the dataset stored under *key*, or None if not found."""
+        return self.datasets.get(key)
+
+    def list_datasets(self) -> List[str]:
+        """Return sorted list of registered dataset keys."""
+        return sorted(self.datasets.keys())
+
     def save(self, filename: Optional[str] = None) -> Path:
         """
         Save the project to a JSON file in the project folder.
@@ -388,6 +418,17 @@ class Project(BaseModel):
             data["models"] = {}
             for key, model in self.models.items():
                 data["models"][key] = model.model_dump(mode="json")
+
+        # Serialize registered datasets
+        if self.datasets:
+            data["datasets"] = {}
+            for key, dataset in self.datasets.items():
+                data["datasets"][key] = {
+                    "name": dataset.name,
+                    "year": dataset.year,
+                    "target_name": dataset.target.name if dataset.target else None,
+                    "feature_names": [f.name for f in dataset.features],
+                }
 
         # Write to file
         save_path.write_text(
@@ -512,6 +553,20 @@ class Project(BaseModel):
                 model.project = project
                 project.models[key] = model
             print(f"Loaded {len(project.models)} model(s)")
+
+        # Reconstruct registered datasets
+        if "datasets" in data and data["datasets"]:
+            from component.script.dataset import Dataset
+            for key, ds_data in data["datasets"].items():
+                ds = Dataset(project=project, name=ds_data.get("name"), year=ds_data.get("year"))
+                target_name = ds_data.get("target_name")
+                feature_names = ds_data.get("feature_names", [])
+                if target_name:
+                    ds.set_target(target_name, year=ds_data.get("year"))
+                if feature_names:
+                    ds.set_features(feature_names)
+                project.datasets[key] = ds
+            print(f"Loaded {len(project.datasets)} dataset(s)")
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
@@ -1067,7 +1122,6 @@ class Project(BaseModel):
 
         folders = {
             "data_raw_folder": project_folder / "data_raw",
-            "glm_model_folder": project_folder / "glm_model",
             "processed_data_folder": project_folder / "data",
             "sampling_folder": project_folder / "far_samples",
             "rmj_mw": project_folder / "rmj_mw",

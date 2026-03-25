@@ -441,6 +441,10 @@ class Dataset(BaseModel):
 
         print(f"\n✅ Displayed {n_vars} variable(s) in {nrows}×{ncols} grid")
 
+    def register(self, project: Any, key: Optional[str] = None, auto_save: bool = True) -> None:
+        """Register this dataset with a project. Mirrors model.register()."""
+        project.add_dataset(self, key=key, auto_save=auto_save)
+
     def to_dataframe(
         self,
         sampling: Optional[Sampling] = None,

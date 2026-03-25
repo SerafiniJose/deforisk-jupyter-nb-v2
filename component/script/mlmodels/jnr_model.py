@@ -15,9 +15,11 @@ Workflow
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from component.script.mlmodels.base import BaseRiskModel
+
+_JNR_TARGET = "deforestation"
 
 
 class JNRBenchmarkModel(BaseRiskModel):
@@ -44,6 +46,15 @@ class JNRBenchmarkModel(BaseRiskModel):
     model_type: str = "jnr"
     blk_rows: int = 128
     defor_threshold: float = 99.5
+
+    @field_validator("target_name")
+    @classmethod
+    def _validate_target(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v != _JNR_TARGET:
+            raise ValueError(
+                f"JNRBenchmarkModel only supports target '{_JNR_TARGET}', got '{v}'."
+            )
+        return v
 
     # State persisted after fit()
     dist_thresh: Optional[float] = None
@@ -101,6 +112,13 @@ class JNRBenchmarkModel(BaseRiskModel):
         """
         import numpy as np
         import riskmapjnr as rmj
+
+        if self.dataset is not None and getattr(self.dataset, "target", None) is not None:
+            if self.dataset.target.name != _JNR_TARGET:
+                raise ValueError(
+                    f"JNRBenchmarkModel only supports target '{_JNR_TARGET}', "
+                    f"got '{self.dataset.target.name}'."
+                )
 
         fcc_file = Path(fcc_file)
         forest_edge_file = Path(forest_edge_file)
