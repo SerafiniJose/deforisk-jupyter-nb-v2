@@ -209,8 +209,9 @@ def DatasetTile(project):
             solara.Button(
                 "Validate",
                 icon_name="mdi-check-circle-outline",
-                on_click=on_validate,
+                color="primary",
                 outlined=True,
+                on_click=on_validate,
             )
             solara.Button(
                 "Register",
@@ -222,8 +223,7 @@ def DatasetTile(project):
                 solara.Button(
                     "Cancel",
                     on_click=reset_form,
-                    outlined=True,
-                    small=True,
+                    text=True,
                 )
 
         if form_error:

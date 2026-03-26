@@ -85,15 +85,15 @@ def ProjectPanel():
             solara.Button(
                 "Load",
                 icon_name="mdi-folder-open-outline",
+                color="primary",
                 outlined=True,
-                small=True,
                 on_click=open_load,
             )
             solara.Button(
                 "Save",
                 icon_name="mdi-content-save-outline",
+                color="primary",
                 outlined=True,
-                small=True,
                 on_click=do_save,
             )
     with rv.Dialog(
@@ -120,14 +120,12 @@ def ProjectPanel():
                 solara.Button(
                     "Cancel",
                     on_click=lambda: set_load_dialog_open(False),
-                    outlined=True,
-                    small=True,
+                    text=True,
                 )
                 solara.Button(
                     "Load",
                     on_click=do_load,
                     color="primary",
-                    small=True,
                     disabled=not selected_project,
                 )
 

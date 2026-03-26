@@ -77,14 +77,16 @@ def SourceVariableList(
                             icon_name="mdi-pencil-outline",
                             on_click=lambda *_, k=key: on_edit(k),
                             icon=True,
-                            x_small=True,
+                            text=True,
+                            small=True,
                         )
                     solara.Button(
                         "",
                         icon_name="mdi-delete-outline",
                         on_click=lambda *_, k=key: on_remove(k),
                         icon=True,
-                        x_small=True,
+                        text=True,
+                        small=True,
                     )
 
 
@@ -111,6 +113,7 @@ def DerivedVariableList(project):
                 icon_name="mdi-chevron-up" if not collapsed else "mdi-chevron-down",
                 on_click=lambda: set_collapsed(not collapsed),
                 icon=True,
+                text=True,
                 small=True,
             )
 

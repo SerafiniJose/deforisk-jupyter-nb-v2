@@ -204,12 +204,12 @@ def VariablesTile(project, processing, process_error):
                 icon_name="mdi-plus",
                 color="primary",
                 on_click=lambda: modal_open.set(True),
-                outlined=True,
             )
             solara.Button(
                 "Process All",
                 icon_name="mdi-cog-play-outline",
-                color="secondary",
+                color="primary",
+                outlined=True,
                 on_click=lambda: process_all(),
                 disabled=not can_process,
             )

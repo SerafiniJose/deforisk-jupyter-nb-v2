@@ -61,7 +61,8 @@ def DatasetList(
                             icon_name="mdi-pencil-outline",
                             on_click=lambda *_, k=key: on_edit(k),
                             icon=True,
-                            x_small=True,
+                            text=True,
+                            small=True,
                         )
                     if on_remove is not None:
                         solara.Button(
@@ -69,5 +70,6 @@ def DatasetList(
                             icon_name="mdi-delete-outline",
                             on_click=lambda *_, k=key: on_remove(k),
                             icon=True,
-                            x_small=True,
+                            text=True,
+                            small=True,
                         )
