@@ -270,43 +270,47 @@ def Page():
         if os.getenv("SOLARA_TEST", "false").lower() != "true":
             return
         p = app_state.project.value
-        if p is None or p.raw_variables:
+        aoi_result = app_state.aoi_result.value
+        if p is None or p.raw_variables or aoi_result is None:
             return
-        from pathlib import Path
-        from spatialrisk.variables.local_raster_var import LocalRasterVar
+        from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_geometry
+        from spatialrisk.variables.gee_var import GEEVar
         from spatialrisk.variables.models import DataType, RasterType
 
-        LocalRasterVar.model_rebuild()
+        GEEVar.model_rebuild()
+        aoi_ee = get_aoi_ee_geometry(aoi_result.gdf)
 
-        single_vars = [
-            ("altitude", RasterType.continuous),
-            ("slope", RasterType.continuous),
-            ("protected_area", RasterType.categorical),
-            ("roads", RasterType.categorical),
-            ("rivers", RasterType.categorical),
-        ]
-        for name, rtype in single_vars:
-            p.raw_variables[name] = LocalRasterVar(
+        # Non-temporal variables
+        for name in ["altitude", "slope", "protected_area", "roads", "rivers", "subj"]:
+            cat = PREDEFINED_CATALOGUE[name]
+            image = cat["get_image"](aoi_ee)
+            p.raw_variables[name] = GEEVar(
                 name=name,
-                path=Path(f"/tmp/{name}.tif"),
-                raster_type=rtype,
                 data_type=DataType.raster,
+                raster_type=RasterType(cat["raster_type"]),
+                gee_images=[image],
+                aoi=aoi_ee,
                 project=p,
             )
 
-        for year in [2015, 2020, 2024]:
-            key = f"forest_gfc_{year}"
-            p.raw_variables[key] = LocalRasterVar(
-                name="forest_gfc",
-                path=Path(f"/tmp/forest_gfc_{year}.tif"),
-                raster_type=RasterType.categorical,
-                data_type=DataType.raster,
-                year=year,
-                project=p,
-            )
+        # Temporal variables
+        for name, years in [("forest_gfc", [2015, 2020, 2024]), ("towns", [2015, 2020])]:
+            cat = PREDEFINED_CATALOGUE[name]
+            for year in years:
+                key = f"{name}_{year}"
+                image = cat["get_image"](aoi_ee, year)
+                p.raw_variables[key] = GEEVar(
+                    name=name,
+                    data_type=DataType.raster,
+                    raster_type=RasterType(cat["raster_type"]),
+                    gee_images=[image],
+                    aoi=aoi_ee,
+                    project=p,
+                    year=year,
+                )
 
         p.base_raster = p.raw_variables["altitude"]
-        logger.debug("SOLARA_TEST: seeded %d variables", len(p.raw_variables))
+        logger.debug("SOLARA_TEST: seeded %d predefined variables", len(p.raw_variables))
         app_state.project.set(p.model_copy())
 
     solara.use_effect(_seed_test_variables, [app_state.project.value])
