@@ -81,7 +81,7 @@ def _build_variable(entry: dict, project):
 
 def _build_predefined(entry: dict, project):
     """Build a GEEVar from a predefined catalogue entry."""
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_geometry
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_feature
     from gui.store.state_manager import app_state
 
     key = entry["predefined_key"]
@@ -91,7 +91,7 @@ def _build_predefined(entry: dict, project):
     if aoi_result is None:
         raise ValueError("No AOI selected — complete the AOI step first.")
 
-    aoi_ee = get_aoi_ee_geometry(aoi_result.gdf)
+    aoi_ee = get_aoi_ee_feature(aoi_result.gdf)
     year = entry.get("year")
     image = cat["get_image"](aoi_ee, year)
 

@@ -273,12 +273,12 @@ def Page():
         aoi_result = app_state.aoi_result.value
         if p is None or p.raw_variables or aoi_result is None:
             return
-        from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_geometry
+        from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_feature
         from spatialrisk.variables.gee_var import GEEVar
         from spatialrisk.variables.models import DataType, RasterType
 
         GEEVar.model_rebuild()
-        aoi_ee = get_aoi_ee_geometry(aoi_result.gdf)
+        aoi_ee = get_aoi_ee_feature(aoi_result.gdf)
 
         # Non-temporal variables
         for name in ["altitude", "slope", "protected_area", "roads", "rivers", "subj"]:

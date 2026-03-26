@@ -7,12 +7,13 @@ plus metadata (raster_type, temporal flag) for populating the Add Variable modal
 import ee
 
 
-def get_aoi_ee_geometry(gdf):
-    """Convert a GeoDataFrame AOI to an ee.Geometry for GEE operations."""
+def get_aoi_ee_feature(gdf):
+    """Convert a GeoDataFrame AOI to an ee.Feature for GEE operations."""
     import json
 
     geojson = json.loads(gdf.dissolve().to_json())
-    return ee.Geometry(geojson["features"][0]["geometry"])
+    geometry = ee.Geometry(geojson["features"][0]["geometry"])
+    return ee.Feature(geometry)
 
 
 # ---------------------------------------------------------------------------
