@@ -58,14 +58,17 @@ def VariablesTile(project, processing, process_error):
     def on_add(entry: dict):
         p = project.value
         if p is None:
+            process_error.set("No active project — complete the AOI step first.")
             return
-        var = _build_variable(entry, p)
-        key = f"{var.name}_{var.year}" if var.year else var.name
-        p.raw_variables[key] = var
-        if entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
-            p.base_raster = var
-        # Trigger reactive update
-        project.set(p)
+        try:
+            var = _build_variable(entry, p)
+            key = f"{var.name}_{var.year}" if var.year else var.name
+            p.raw_variables[key] = var
+            if entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
+                p.base_raster = var
+            project.set(p)
+        except Exception as exc:
+            process_error.set(f"Could not add variable: {exc}")
 
     def on_remove(key: str):
         p = project.value

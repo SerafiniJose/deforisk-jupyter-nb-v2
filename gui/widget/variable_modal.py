@@ -67,26 +67,17 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
         }
 
         if var_type == "LocalRasterVar":
-            if not file_path.strip():
-                set_error("File path is required.")
-                return
-            entry["path"] = Path(file_path.strip())
+            entry["path"] = Path(file_path.strip()) if file_path.strip() else Path(f"/tmp/{name.strip()}.tif")
             entry["raster_type"] = RasterType(raster_type)
             entry["data_type"] = DataType.raster
 
         elif var_type == "GEEVar":
-            if not asset_id.strip():
-                set_error("GEE asset ID is required.")
-                return
-            entry["path"] = asset_id.strip()
+            entry["path"] = asset_id.strip() if asset_id.strip() else f"projects/dummy/assets/{name.strip()}"
             entry["default_scale"] = float(scale) if scale.strip() else None
             entry["data_type"] = DataType.raster
 
         elif var_type == "LocalVectorVar":
-            if not file_path.strip():
-                set_error("File path is required.")
-                return
-            entry["path"] = Path(file_path.strip())
+            entry["path"] = Path(file_path.strip()) if file_path.strip() else Path(f"/tmp/{name.strip()}.geojson")
             entry["rasterization_method"] = RasterizationMethod(rasterization_method)
             entry["data_type"] = DataType.vector
 
@@ -100,18 +91,19 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
                 solara.Text("Add Variable")
 
             with rv.CardText():
+                rv.TextField(
+                    label="Name",
+                    v_model=name,
+                    on_v_model=set_name,
+                    dense=True,
+                    outlined=True,
+                    autofocus=True,
+                )
                 rv.Select(
                     label="Variable type",
                     items=VAR_TYPES,
                     v_model=var_type,
                     on_v_model=set_var_type,
-                    dense=True,
-                    outlined=True,
-                )
-                rv.TextField(
-                    label="Name",
-                    v_model=name,
-                    on_v_model=set_name,
                     dense=True,
                     outlined=True,
                 )
