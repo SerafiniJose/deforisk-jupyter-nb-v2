@@ -78,7 +78,7 @@ def VariablesTile(project, processing, process_error):
             if entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
                 p.base_raster = var
                 logger.debug("Set '%s' as base raster", key)
-            project.set(p)
+            project.set(p.model_copy())  # new reference so Solara fires re-render
             logger.debug("project.set() called, project.value.raw_variables: %s", list(project.value.raw_variables.keys()))
         except Exception as exc:
             logger.exception("on_add failed")
@@ -91,7 +91,7 @@ def VariablesTile(project, processing, process_error):
         removed = p.raw_variables.pop(key, None)
         if removed and p.base_raster and p.base_raster.name == removed.name:
             p.base_raster = None
-        project.set(p)
+        project.set(p.model_copy())  # new reference so Solara fires re-render
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
     async def process_all():
