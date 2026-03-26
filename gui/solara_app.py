@@ -310,7 +310,36 @@ def Page():
                 )
 
         p.base_raster = p.raw_variables["altitude"]
-        logger.debug("SOLARA_TEST: seeded %d predefined variables", len(p.raw_variables))
+
+        # Seed dummy processed variables so the Dataset tab is usable
+        from pathlib import Path
+        from spatialrisk.variables.local_raster_var import LocalRasterVar
+        LocalRasterVar.model_rebuild()
+
+        for name in ["altitude", "slope", "protected_area", "roads", "rivers", "subj"]:
+            cat = PREDEFINED_CATALOGUE[name]
+            p.processed_variables[name] = LocalRasterVar(
+                name=name,
+                path=Path(f"/tmp/processed/{name}.tif"),
+                raster_type=RasterType(cat["raster_type"]),
+                data_type=DataType.raster,
+                project=p,
+            )
+        for name, years in [("forest_gfc", [2015, 2020, 2024]), ("towns", [2015, 2020])]:
+            cat = PREDEFINED_CATALOGUE[name]
+            for yr in years:
+                key = f"{name}_{yr}"
+                p.processed_variables[key] = LocalRasterVar(
+                    name=name,
+                    path=Path(f"/tmp/processed/{key}.tif"),
+                    raster_type=RasterType(cat["raster_type"]),
+                    data_type=DataType.raster,
+                    year=yr,
+                    project=p,
+                )
+
+        logger.debug("SOLARA_TEST: seeded %d raw + %d processed variables",
+                      len(p.raw_variables), len(p.processed_variables))
         app_state.project.set(p.model_copy())
 
     solara.use_effect(_seed_test_variables, [app_state.project.value])
