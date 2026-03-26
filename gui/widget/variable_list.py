@@ -37,7 +37,6 @@ def SourceVariableList(project, on_remove: Callable[[str], None]):
             data_type_label = var.data_type if isinstance(var.data_type, str) else var.data_type.value
 
             with solara.Row(
-                key=key,
                 style="align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px solid rgba(0,0,0,0.08);",
             ):
                 solara.Text(var.name, style="font-weight: 500; min-width: 80px;")
@@ -99,7 +98,6 @@ def DerivedVariableList(project):
                         "unknown",
                     )
                     with solara.Row(
-                        key=key,
                         style="align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px solid rgba(0,0,0,0.06);",
                     ):
                         solara.Text(var.name, style="font-size: 0.9rem; min-width: 80px;")
