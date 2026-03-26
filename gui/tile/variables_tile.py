@@ -1,8 +1,11 @@
 """Step 2 — Variables tile."""
 
 import asyncio
+import logging
 
 import solara
+
+logger = logging.getLogger("spatial_risk")
 
 from gui.widget.variable_list import DerivedVariableList, SourceVariableList
 from gui.widget.variable_modal import VariableModal
@@ -61,18 +64,24 @@ def VariablesTile(project, processing, process_error):
     modal_open = solara.use_reactive(False)
 
     def on_add(entry: dict):
+        logger.debug("on_add called: %s", entry)
         p = project.value
         if p is None:
+            logger.warning("on_add: project is None")
             process_error.set("No active project — complete the AOI step first.")
             return
         try:
             var = _build_variable(entry, p)
             key = f"{var.name}_{var.year}" if var.year else var.name
             p.raw_variables[key] = var
+            logger.debug("Added var '%s', raw_variables now: %s", key, list(p.raw_variables.keys()))
             if entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
                 p.base_raster = var
+                logger.debug("Set '%s' as base raster", key)
             project.set(p)
+            logger.debug("project.set() called, project.value.raw_variables: %s", list(project.value.raw_variables.keys()))
         except Exception as exc:
+            logger.exception("on_add failed")
             process_error.set(f"Could not add variable: {exc}")
 
     def on_remove(key: str):
