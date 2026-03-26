@@ -9,7 +9,10 @@ class AppState:
         self.current_step = solara.reactive(0)  # 0=AOI, 1=Variables, 2=Dataset
 
         # Project (spatialrisk.project.Project | None)
-        self.project = solara.reactive(None)
+        # Use identity equality: Project is a mutable pydantic model — field-value
+        # comparison (pydantic __eq__) would suppress re-renders after in-place
+        # mutations. Any new reference must fire, so we compare by identity only.
+        self.project = solara.reactive(None, equals=lambda a, b: a is b)
 
         # AOI (pysepal AoiResult | None)
         self.aoi_result = solara.reactive(None)
