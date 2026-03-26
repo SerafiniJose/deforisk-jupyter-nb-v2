@@ -27,6 +27,7 @@ from gui.scripts.project_io import list_projects, load_project, save_project
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
+from gui.widget.notification_area import NotificationArea
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
@@ -95,11 +96,6 @@ def ProjectPanel():
                 small=True,
                 on_click=do_save,
             )
-        if app_state.status_message.value:
-            solara.Success(app_state.status_message.value)
-        if app_state.error_message.value:
-            solara.Error(app_state.error_message.value)
-
     with rv.Dialog(
         v_model=load_dialog_open, on_v_model=set_load_dialog_open, max_width="400px", eager=True
     ):
@@ -196,6 +192,15 @@ def WorkflowTabs(map_, gee_interface):
                 solara.Info(
                     "Model configuration is not yet implemented. This step will allow you to define target and feature variables for model training."
                 )
+
+    NotificationArea(
+        active_tab=active_tab,
+        aoi_result=app_state.aoi_result.value,
+        project=app_state.project.value,
+        process_error=app_state.process_error.value,
+        status_message=app_state.status_message.value,
+        error_message=app_state.error_message.value,
+    )
 
 
 @solara.component

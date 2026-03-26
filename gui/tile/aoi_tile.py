@@ -25,6 +25,3 @@ def AoiTile(map_, gee_interface, aoi_result, loading):
             map_=map_,
             gee=True,
         )
-
-        if aoi_result.value is not None:
-            solara.Success(f"AOI selected: **{aoi_result.value.name}**")

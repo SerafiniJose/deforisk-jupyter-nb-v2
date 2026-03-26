@@ -167,9 +167,6 @@ def VariablesTile(project, processing, process_error):
         solara.Markdown("### Step 2 — Variables")
         solara.Text("Add input variables for the risk model. Designate one raster as the base for reprojection.")
 
-        if not has_base and has_vars:
-            solara.Warning("Set one variable as the base raster before processing.")
-
         # Action bar
         with solara.Row(style="gap: 8px; align-items: center;"):
             solara.Button(
@@ -188,9 +185,6 @@ def VariablesTile(project, processing, process_error):
             )
             if processing.value:
                 solara.ProgressLinear(True)
-
-        if process_error.value:
-            solara.Error(process_error.value)
 
         # Source variable list
         solara.Markdown("**SOURCE VARIABLES**" + (f" ({len(p.raw_variables)})" if p else " (0)"))
