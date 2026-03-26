@@ -178,5 +178,5 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
                     rv.Alert(type_="error", dense=True, children=[error])
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                rv.Btn(children=["Cancel"], text=True, on_click=lambda *_: on_cancel())
-                rv.Btn(children=["Add"], color="primary", on_click=lambda *_: on_submit())
+                solara.Button("Cancel", on_click=on_cancel, outlined=True, small=True)
+                solara.Button("Add", on_click=on_submit, color="primary", small=True)

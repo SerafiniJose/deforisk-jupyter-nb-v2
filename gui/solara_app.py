@@ -121,16 +121,18 @@ def ProjectPanel():
                 if load_error:
                     solara.Error(load_error)
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                rv.Btn(
-                    children=["Cancel"],
-                    text=True,
-                    on_click=lambda *_: set_load_dialog_open(False),
+                solara.Button(
+                    "Cancel",
+                    on_click=lambda: set_load_dialog_open(False),
+                    outlined=True,
+                    small=True,
                 )
-                rv.Btn(
-                    children=["Load"],
+                solara.Button(
+                    "Load",
+                    on_click=do_load,
                     color="primary",
+                    small=True,
                     disabled=not selected_project,
-                    on_click=lambda *_: do_load(),
                 )
 
 
