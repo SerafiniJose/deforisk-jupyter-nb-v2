@@ -245,28 +245,29 @@ def _render_predefined_fields(
     )
 
     if cat:
-        # Year — editable only for temporal variables
+        # Year — selectable list for temporal variables
         if cat["temporal"]:
-            rv.TextField(
+            available_years = cat.get("years", [])
+            rv.Select(
                 label="Year",
-                v_model=year,
-                on_v_model=set_year,
+                items=available_years,
+                v_model=int(year) if year and str(year).strip() else None,
+                on_v_model=lambda v: set_year(str(v) if v else ""),
                 dense=True,
                 outlined=True,
-                type="number",
             )
 
         # Read-only info fields
         rv.TextField(
-            label="Raster type",
-            v_model=cat["raster_type"],
+            label="Variable type",
+            v_model=cat.get("var_type", "GEEVar"),
             dense=True,
             outlined=True,
             disabled=True,
         )
         rv.TextField(
-            label="Data type",
-            v_model="raster",
+            label="Raster type",
+            v_model=cat["raster_type"],
             dense=True,
             outlined=True,
             disabled=True,
