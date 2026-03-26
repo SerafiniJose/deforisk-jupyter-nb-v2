@@ -1,7 +1,7 @@
-"""Add Variable modal for the Variables step."""
+"""Add / Edit Variable modal for the Variables step."""
 
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import reacton.ipyvuetify as rv
 import solara
@@ -17,8 +17,14 @@ VAR_TYPES = ["LocalRasterVar", "GEEVar", "LocalVectorVar"]
 
 
 @solara.component
-def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
-    """Modal dialog for adding a new variable to the project."""
+def VariableModal(
+    open_: solara.Reactive[bool],
+    on_add: Callable,
+    on_save: Optional[Callable[[str, dict], None]] = None,
+    editing_key: Optional[str] = None,
+    initial_entry: Optional[dict] = None,
+):
+    """Modal dialog for adding or editing a variable."""
     var_type, set_var_type = solara.use_state(VAR_TYPES[0])
     name, set_name = solara.use_state("")
     year, set_year = solara.use_state("")
@@ -33,6 +39,8 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
     is_base, set_is_base = solara.use_state(False)
     error, set_error = solara.use_state(None)
 
+    is_edit = editing_key is not None
+
     def reset():
         set_var_type(VAR_TYPES[0])
         set_name("")
@@ -45,6 +53,25 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
         set_post_processing([])
         set_is_base(False)
         set_error(None)
+
+    def prefill_from_initial():
+        if not open_.value or initial_entry is None:
+            return
+        set_var_type(initial_entry.get("type", VAR_TYPES[0]))
+        set_name(initial_entry.get("name", ""))
+        set_year(str(initial_entry.get("year") or ""))
+        set_file_path(initial_entry.get("path", ""))
+        set_asset_id(initial_entry.get("asset_id", ""))
+        set_scale(initial_entry.get("scale", ""))
+        set_raster_type(initial_entry.get("raster_type", RasterType.continuous.value))
+        set_rasterization_method(
+            initial_entry.get("rasterization_method", RasterizationMethod.binary.value)
+        )
+        set_post_processing(initial_entry.get("post_processing", []))
+        set_is_base(initial_entry.get("is_base", False))
+        set_error(None)
+
+    solara.use_effect(prefill_from_initial, [open_.value])
 
     def on_cancel():
         reset()
@@ -83,12 +110,18 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
 
         reset()
         open_.set(False)
-        on_add(entry)
+        if is_edit and on_save is not None:
+            on_save(editing_key, entry)
+        else:
+            on_add(entry)
+
+    title = "Edit Variable" if is_edit else "Add Variable"
+    submit_label = "Save" if is_edit else "Add"
 
     with rv.Dialog(v_model=open_.value, on_v_model=open_.set, max_width="560px", eager=True):
         with rv.Card():
             with rv.CardTitle():
-                solara.Text("Add Variable")
+                solara.Text(title)
 
             with rv.CardText():
                 rv.TextField(
@@ -179,4 +212,4 @@ def VariableModal(open_: solara.Reactive[bool], on_add: Callable):
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button("Cancel", on_click=on_cancel, outlined=True, small=True)
-                solara.Button("Add", on_click=on_submit, color="primary", small=True)
+                solara.Button(submit_label, on_click=on_submit, color="primary", small=True)

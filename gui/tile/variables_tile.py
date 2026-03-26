@@ -19,6 +19,30 @@ GEEVar.model_rebuild()
 LocalVectorVar.model_rebuild()
 
 
+def _variable_to_entry(key: str, var, project) -> dict:
+    """Reconstruct a modal entry dict from an existing variable object."""
+    vtype = type(var).__name__
+    is_base = project.base_raster is not None and project.base_raster.name == var.name
+    pp = [p.value if hasattr(p, "value") else str(p) for p in (var.post_processing or [])]
+    entry = {
+        "type": vtype,
+        "name": var.name,
+        "year": str(var.year) if var.year else "",
+        "is_base": is_base,
+        "post_processing": pp,
+    }
+    if vtype == "LocalRasterVar":
+        entry["path"] = str(var.path)
+        entry["raster_type"] = var.raster_type.value if hasattr(var.raster_type, "value") else str(var.raster_type)
+    elif vtype == "GEEVar":
+        entry["asset_id"] = str(var.path)
+        entry["scale"] = str(var.default_scale) if getattr(var, "default_scale", None) else ""
+    elif vtype == "LocalVectorVar":
+        entry["path"] = str(var.path)
+        entry["rasterization_method"] = var.rasterization_method.value if hasattr(var.rasterization_method, "value") else str(var.rasterization_method)
+    return entry
+
+
 def _build_variable(entry: dict, project):
     """Instantiate the correct variable class from a modal entry dict."""
     common = dict(
@@ -62,6 +86,7 @@ def VariablesTile(project, processing, process_error):
         process_error: Reactive str | None — error from last Process All.
     """
     modal_open = solara.use_reactive(False)
+    editing_key, set_editing_key = solara.use_state(None)
 
     def on_add(entry: dict):
         logger.debug("on_add called: %s", entry)
@@ -83,6 +108,29 @@ def VariablesTile(project, processing, process_error):
         except Exception as exc:
             logger.exception("on_add failed")
             process_error.set(f"Could not add variable: {exc}")
+
+    def on_edit_open(key: str):
+        set_editing_key(key)
+        modal_open.set(True)
+
+    def on_save(old_key: str, new_entry: dict):
+        p = project.value
+        if p is None:
+            return
+        try:
+            old_var = p.raw_variables.pop(old_key, None)
+            if old_var and p.base_raster and p.base_raster.name == old_var.name:
+                p.base_raster = None
+            var = _build_variable(new_entry, p)
+            new_key = f"{var.name}_{var.year}" if var.year else var.name
+            p.raw_variables[new_key] = var
+            if new_entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
+                p.base_raster = var
+            set_editing_key(None)
+            project.set(p.model_copy())
+        except Exception as exc:
+            logger.exception("on_save failed")
+            process_error.set(f"Could not save variable: {exc}")
 
     def on_remove(key: str):
         p = project.value
@@ -146,10 +194,22 @@ def VariablesTile(project, processing, process_error):
 
         # Source variable list
         solara.Markdown("**SOURCE VARIABLES**" + (f" ({len(p.raw_variables)})" if p else " (0)"))
-        SourceVariableList(project=project, on_remove=on_remove)
+        SourceVariableList(project=project, on_remove=on_remove, on_edit=on_edit_open)
 
         # Derived variable list
         if p and p.processed_variables:
             DerivedVariableList(project=project)
 
-    VariableModal(open_=modal_open, on_add=on_add)
+    p = project.value
+    editing_entry = (
+        _variable_to_entry(editing_key, p.raw_variables[editing_key], p)
+        if editing_key and p and editing_key in p.raw_variables
+        else None
+    )
+    VariableModal(
+        open_=modal_open,
+        on_add=on_add,
+        on_save=on_save,
+        editing_key=editing_key,
+        initial_entry=editing_entry,
+    )

@@ -1,7 +1,7 @@
 """Source and Derived variable list widgets."""
 
 import logging
-from typing import Callable
+from typing import Callable, Optional
 
 import reacton.ipyvuetify as rv
 import solara
@@ -10,7 +10,7 @@ logger = logging.getLogger("spatial_risk")
 
 
 @solara.component
-def SourceVariableList(project, on_remove: Callable[[str], None]):
+def SourceVariableList(project, on_remove: Callable[[str], None], on_edit: Optional[Callable[[str], None]] = None):
     """List of source (raw) variables with status chips and remove button.
 
     Args:
@@ -51,14 +51,22 @@ def SourceVariableList(project, on_remove: Callable[[str], None]):
                 )
                 if derived:
                     rv.Chip(children=[f"→ {len(derived)} derived"], x_small=True, outlined=True)
-                solara.Button(
-                    "",
-                    icon_name="mdi-delete-outline",
-                    on_click=lambda *_, k=key: on_remove(k),
-                    icon=True,
-                    small=True,
-                    style="margin-left: auto;",
-                )
+                with solara.Row(style="margin-left: auto; gap: 0;"):
+                    if on_edit is not None:
+                        solara.Button(
+                            "",
+                            icon_name="mdi-pencil-outline",
+                            on_click=lambda *_, k=key: on_edit(k),
+                            icon=True,
+                            small=True,
+                        )
+                    solara.Button(
+                        "",
+                        icon_name="mdi-delete-outline",
+                        on_click=lambda *_, k=key: on_remove(k),
+                        icon=True,
+                        small=True,
+                    )
 
 
 @solara.component
