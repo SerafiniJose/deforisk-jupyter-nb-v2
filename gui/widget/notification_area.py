@@ -36,18 +36,4 @@ def NotificationArea(active_tab, aoi_result, project, process_error, status_mess
         return
 
     msg, ntype = notif
-    with rv.Html(
-        tag="div",
-        style_=(
-            "position:sticky;bottom:0;left:0;right:0;"
-            "padding:8px 12px 12px;"
-            "z-index:10;"
-            "pointer-events:none;"
-        ),
-    ):
-        rv.Alert(
-            type_=ntype,
-            dense=True,
-            children=[msg],
-            style_="pointer-events:auto;margin:0;box-shadow:0 -2px 12px rgba(0,0,0,0.15);",
-        )
+    rv.Alert(type_=ntype, dense=True, children=[msg])
