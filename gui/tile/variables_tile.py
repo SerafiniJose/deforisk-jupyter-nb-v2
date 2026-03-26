@@ -6,9 +6,14 @@ import solara
 
 from gui.widget.variable_list import DerivedVariableList, SourceVariableList
 from gui.widget.variable_modal import VariableModal
+from spatialrisk.project import Project
 from spatialrisk.variables.gee_var import GEEVar
 from spatialrisk.variables.local_raster_var import LocalRasterVar
 from spatialrisk.variables.local_vector_var import LocalVectorVar
+
+LocalRasterVar.model_rebuild()
+GEEVar.model_rebuild()
+LocalVectorVar.model_rebuild()
 
 
 def _build_variable(entry: dict, project):
