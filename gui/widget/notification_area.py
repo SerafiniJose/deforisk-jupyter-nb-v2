@@ -20,6 +20,13 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
         if project and project.raw_variables and not project.base_raster:
             return ("Set one variable as the base raster before processing.", "warning")
 
+    elif tab == 2:  # Dataset
+        if project and not project.processed_variables:
+            return ("Process variables in Step 2 before creating datasets.", "warning")
+        if project and project.datasets:
+            count = len(project.datasets)
+            return (f"{count} dataset(s) registered.", "success")
+
     # Global status (project load/save) visible on any step
     if status_message:
         return (status_message, "success")
