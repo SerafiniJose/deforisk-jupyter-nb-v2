@@ -254,6 +254,52 @@ def Page():
 
     solara.use_effect(_seed_test_aoi, [])
 
+    def _seed_test_variables():
+        import os
+        if os.getenv("SOLARA_TEST", "false").lower() != "true":
+            return
+        p = app_state.project.value
+        if p is None or p.raw_variables:
+            return
+        from pathlib import Path
+        from spatialrisk.variables.local_raster_var import LocalRasterVar
+        from spatialrisk.variables.models import DataType, RasterType
+
+        LocalRasterVar.model_rebuild()
+
+        single_vars = [
+            ("altitude", RasterType.continuous),
+            ("slope", RasterType.continuous),
+            ("protected_area", RasterType.categorical),
+            ("roads", RasterType.categorical),
+            ("rivers", RasterType.categorical),
+        ]
+        for name, rtype in single_vars:
+            p.raw_variables[name] = LocalRasterVar(
+                name=name,
+                path=Path(f"/tmp/{name}.tif"),
+                raster_type=rtype,
+                data_type=DataType.raster,
+                project=p,
+            )
+
+        for year in [2015, 2020, 2024]:
+            key = f"forest_gfc_{year}"
+            p.raw_variables[key] = LocalRasterVar(
+                name="forest_gfc",
+                path=Path(f"/tmp/forest_gfc_{year}.tif"),
+                raster_type=RasterType.categorical,
+                data_type=DataType.raster,
+                year=year,
+                project=p,
+            )
+
+        p.base_raster = p.raw_variables["altitude"]
+        logger.debug("SOLARA_TEST: seeded %d variables", len(p.raw_variables))
+        app_state.project.set(p.model_copy())
+
+    solara.use_effect(_seed_test_variables, [app_state.project.value])
+
     # Left drawer: only the Project step (opens as a dialog for load/save)
     steps_data = [
         {

@@ -58,7 +58,7 @@ def SourceVariableList(
             with rv.Html(tag="div", style_=_GRID + _ROW_EXTRA):
                 # Name
                 with rv.Html(tag="div", style_=_CELL_FLEX):
-                    solara.Text(var.name, style="font-weight:500;")
+                    solara.Text(var.name)
                     if is_base:
                         rv.Chip(children=["base"], x_small=True, color="info")
                 # Type
@@ -77,14 +77,14 @@ def SourceVariableList(
                             icon_name="mdi-pencil-outline",
                             on_click=lambda *_, k=key: on_edit(k),
                             icon=True,
-                            small=True,
+                            x_small=True,
                         )
                     solara.Button(
                         "",
                         icon_name="mdi-delete-outline",
                         on_click=lambda *_, k=key: on_remove(k),
                         icon=True,
-                        small=True,
+                        x_small=True,
                     )
 
 
