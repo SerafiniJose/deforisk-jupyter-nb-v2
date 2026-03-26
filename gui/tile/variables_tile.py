@@ -45,6 +45,9 @@ def _variable_to_entry(key: str, var, project) -> dict:
 
 def _build_variable(entry: dict, project):
     """Instantiate the correct variable class from a modal entry dict."""
+    if entry.get("source") == "predefined":
+        return _build_predefined(entry, project)
+
     common = dict(
         name=entry["name"],
         year=entry.get("year"),
@@ -74,6 +77,33 @@ def _build_variable(entry: dict, project):
             **common,
         )
     raise ValueError(f"Unknown variable type: {vtype}")
+
+
+def _build_predefined(entry: dict, project):
+    """Build a GEEVar from a predefined catalogue entry."""
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_geometry
+    from gui.store.state_manager import app_state
+
+    key = entry["predefined_key"]
+    cat = PREDEFINED_CATALOGUE[key]
+
+    aoi_result = app_state.aoi_result.value
+    if aoi_result is None:
+        raise ValueError("No AOI selected — complete the AOI step first.")
+
+    aoi_ee = get_aoi_ee_geometry(aoi_result.gdf)
+    year = entry.get("year")
+    image = cat["get_image"](aoi_ee, year)
+
+    return GEEVar(
+        name=entry["name"],
+        data_type=entry["data_type"],
+        raster_type=entry.get("raster_type"),
+        gee_images=[image],
+        aoi=aoi_ee,
+        project=project,
+        year=year,
+    )
 
 
 @solara.component
