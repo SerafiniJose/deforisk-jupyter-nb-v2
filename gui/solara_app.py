@@ -215,8 +215,14 @@ def Page():
     setup_theme_colors()
 
     gee_interface = get_current_gee_interface()
-    theme_toggle = ThemeToggle()
-    theme_toggle.observe(lambda e: setattr(theme, "dark", e["new"]), "dark")
+    theme_toggle = solara.use_memo(lambda: ThemeToggle(), [])
+
+    def _observe_theme():
+        handler = lambda e: setattr(theme, "dark", e["new"])
+        theme_toggle.observe(handler, "dark")
+        return lambda: theme_toggle.unobserve(handler, "dark")
+
+    solara.use_effect(_observe_theme, [])
 
     sepal_map = solara.use_memo(
         lambda: sm.SepalMap(
