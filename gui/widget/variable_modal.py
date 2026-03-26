@@ -217,8 +217,8 @@ def VariableModal(
                     rv.Alert(type_="error", dense=True, children=[error])
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                solara.Button("Cancel", on_click=on_cancel, text=True)
-                solara.Button(submit_label, on_click=on_submit, color="primary")
+                solara.Button("Cancel", on_click=on_cancel, text=True, small=True)
+                solara.Button(submit_label, on_click=on_submit, color="primary", small=True)
 
 
 # ---------------------------------------------------------------------------

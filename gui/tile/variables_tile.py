@@ -203,6 +203,7 @@ def VariablesTile(project, processing, process_error):
                 "Add Variable",
                 icon_name="mdi-plus",
                 color="primary",
+                small=True,
                 on_click=lambda: modal_open.set(True),
             )
             solara.Button(
@@ -210,6 +211,7 @@ def VariablesTile(project, processing, process_error):
                 icon_name="mdi-cog-play-outline",
                 color="primary",
                 outlined=True,
+                small=True,
                 on_click=lambda: process_all(),
                 disabled=not can_process,
             )

@@ -78,7 +78,7 @@ def SourceVariableList(
                             on_click=lambda *_, k=key: on_edit(k),
                             icon=True,
                             text=True,
-                            small=True,
+                            x_small=True,
                         )
                     solara.Button(
                         "",
@@ -86,7 +86,7 @@ def SourceVariableList(
                         on_click=lambda *_, k=key: on_remove(k),
                         icon=True,
                         text=True,
-                        small=True,
+                        x_small=True,
                     )
 
 
@@ -114,7 +114,7 @@ def DerivedVariableList(project):
                 on_click=lambda: set_collapsed(not collapsed),
                 icon=True,
                 text=True,
-                small=True,
+                x_small=True,
             )
 
         if not collapsed:

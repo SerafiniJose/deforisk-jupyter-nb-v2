@@ -211,12 +211,14 @@ def DatasetTile(project):
                 icon_name="mdi-check-circle-outline",
                 color="primary",
                 outlined=True,
+                small=True,
                 on_click=on_validate,
             )
             solara.Button(
                 "Register",
                 icon_name="mdi-database-plus-outline",
                 color="primary",
+                small=True,
                 on_click=on_register,
             )
             if editing_key:
@@ -224,6 +226,7 @@ def DatasetTile(project):
                     "Cancel",
                     on_click=reset_form,
                     text=True,
+                    small=True,
                 )
 
         if form_error:

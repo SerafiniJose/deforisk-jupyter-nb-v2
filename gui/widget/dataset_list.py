@@ -62,7 +62,7 @@ def DatasetList(
                             on_click=lambda *_, k=key: on_edit(k),
                             icon=True,
                             text=True,
-                            small=True,
+                            x_small=True,
                         )
                     if on_remove is not None:
                         solara.Button(
@@ -71,5 +71,5 @@ def DatasetList(
                             on_click=lambda *_, k=key: on_remove(k),
                             icon=True,
                             text=True,
-                            small=True,
+                            x_small=True,
                         )
