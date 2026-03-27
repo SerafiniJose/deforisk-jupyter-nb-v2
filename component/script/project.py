@@ -427,6 +427,7 @@ class Project(BaseModel):
                     "name": dataset.name,
                     "year": dataset.year,
                     "target_name": dataset.target.name if dataset.target else None,
+                    "target_year": dataset.target.year if dataset.target else None,
                     "feature_names": [f.name for f in dataset.features],
                 }
 
@@ -562,7 +563,7 @@ class Project(BaseModel):
                 target_name = ds_data.get("target_name")
                 feature_names = ds_data.get("feature_names", [])
                 if target_name:
-                    ds.set_target(target_name, year=ds_data.get("year"))
+                    ds.set_target(target_name, year=ds_data.get("target_year"))
                 if feature_names:
                     ds.set_features(feature_names)
                 project.datasets[key] = ds
