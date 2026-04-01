@@ -13,6 +13,7 @@ wheels/
 # Documentation builds
 docs/_build/
 docs/build/
+docs/superpowers/
 legacy/
 *.md
 .ipynb_checkpoints/
