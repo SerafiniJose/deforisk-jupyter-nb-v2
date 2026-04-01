@@ -1,9 +1,9 @@
 # Script package init file
 
-from component.script.project import Project
-from component.script.dataset import Dataset
-from component.script.sampling import Sampling, SamplingStrategy
-from component.script.mlmodels import BaseRiskModel, GLMModel, RFModel, ICARModel, MWModel, JNRBenchmarkModel
+from spatialrisk.project import Project
+from spatialrisk.dataset import Dataset
+from spatialrisk.sampling import Sampling, SamplingStrategy
+from spatialrisk.mlmodels import BaseRiskModel, GLMModel, RFModel, ICARModel, MWModel, JNRBenchmarkModel
 
 __all__ = [
     "Project",

@@ -5,15 +5,15 @@ from pydantic import Field
 import rioxarray
 import odc.geo.xr  # do not delete this
 
-from component.script.geo_utils import xr_reproject
-from component.script.processing import (
+from spatialrisk.geo_utils import xr_reproject
+from spatialrisk.processing import (
     display_raster,
     distance_to_edge_gdal_no_mask,
     reproject_raster_gdal_warp,
 )
-from component.script.utilities.file_helpers import copy_and_rename_file
-from component.script.variables.models import DataType, PostProcessing, RasterType
-from component.script.variables.variable import Variable
+from spatialrisk.utilities.file_helpers import copy_and_rename_file
+from spatialrisk.variables.models import DataType, PostProcessing, RasterType
+from spatialrisk.variables.variable import Variable
 
 
 class LocalRasterVar(Variable):
@@ -579,7 +579,7 @@ class LocalRasterVar(Variable):
 
 # Rebuild models after Project is imported to resolve forward references
 try:
-    from component.script.project import Project
+    from spatialrisk.project import Project
 
     # Rebuild Variable classes first
     Variable.model_rebuild()

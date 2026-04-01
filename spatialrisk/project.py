@@ -4,8 +4,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from box import Box
 from pydantic import BaseModel, Field, ConfigDict
-from component.script.variables import LocalVectorVar, LocalRasterVar
-from component.script.variables.models import DataType
+from spatialrisk.variables import LocalVectorVar, LocalRasterVar
+from spatialrisk.variables.models import DataType
 
 root_folder: Path = Path.cwd().parent
 downloads_folder = root_folder / "data"
@@ -52,12 +52,12 @@ class Project(BaseModel):
     @staticmethod
     def _ensure_model_schemas() -> None:
         """Ensure Pydantic forward references between Project and variable models are resolved."""
-        from component.script.variables import (
+        from spatialrisk.variables import (
             LocalVectorVar,
             LocalRasterVar,
             GEEVar,
         )
-        from component.script.variables.variable import Variable
+        from spatialrisk.variables.variable import Variable
 
         # Rebuild variable models first so they know about Project
         types_namespace = {"Project": Project}
@@ -460,7 +460,7 @@ class Project(BaseModel):
         # Ensure schemas are up-to-date before instantiating variables
         cls._ensure_model_schemas()
 
-        from component.script.variables import LocalVectorVar, LocalRasterVar
+        from spatialrisk.variables import LocalVectorVar, LocalRasterVar
 
         if filename is None:
             filename = f"{project_name}_project.json"
@@ -532,7 +532,7 @@ class Project(BaseModel):
 
         # Reconstruct registered ML models
         if "models" in data and data["models"]:
-            from component.script.mlmodels import GLMModel, ICARModel, RFModel
+            from spatialrisk.mlmodels import GLMModel, ICARModel, RFModel
 
             _MODEL_REGISTRY = {
                 "glm": GLMModel,
@@ -556,7 +556,7 @@ class Project(BaseModel):
 
         # Reconstruct registered datasets
         if "datasets" in data and data["datasets"]:
-            from component.script.dataset import Dataset
+            from spatialrisk.dataset import Dataset
             for key, ds_data in data["datasets"].items():
                 ds = Dataset(project=project, name=ds_data.get("name"), year=ds_data.get("year"))
                 target_name = ds_data.get("target_name")
@@ -618,7 +618,7 @@ class Project(BaseModel):
         >>> # Reproject to specific CRS
         >>> project.reproject_all(target_epsg="EPSG:32618", resolution=30)
         """
-        from component.script.variables import LocalRasterVar
+        from spatialrisk.variables import LocalRasterVar
 
         # Determine source collection
         if source == "raw":
@@ -704,7 +704,7 @@ class Project(BaseModel):
         >>> # Rasterize all raw vector variables
         >>> project.rasterize_all()
         """
-        from component.script.variables import LocalVectorVar
+        from spatialrisk.variables import LocalVectorVar
 
         # Check base raster is set
         if self.base_raster is None:
@@ -1154,7 +1154,7 @@ class Project(BaseModel):
 
 # Rebuild Project model after Variable classes are imported to resolve forward references
 try:
-    from component.script.variables import (
+    from spatialrisk.variables import (
         Variable,
         LocalVectorVar,
         LocalRasterVar,
