@@ -4,7 +4,7 @@ Implements the Jurisdictional and Nested REDD+ (JNR) benchmark approach:
 stratifies the landscape by distance-to-forest-edge bins × subjurisdictions
 and assigns historical deforestation rates as vulnerability scores.
 
-All processing functions live in ``component.script.rmj`` and work with
+All processing functions live in ``spatialrisk.rmj`` and work with
 generic binary (0/1) rasters.  This class is a thin orchestration layer
 that ties datasets and project metadata to those functions.
 
@@ -32,13 +32,13 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import Field
 
-from component.script.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.base import BaseRiskModel
 
 
 class JNRBenchmarkModel(BaseRiskModel):
     """JNR Benchmark deforestation risk model.
 
-    Thin orchestration layer over the functions in ``component.script.rmj``.
+    Thin orchestration layer over the functions in ``spatialrisk.rmj``.
     All raster processing logic lives there; this class manages datasets,
     Pydantic metadata, and project registration.
 
@@ -186,7 +186,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         -------
         self
         """
-        from component.script.rmj import dist_edge_threshold, compute_dist_bins
+        from spatialrisk.rmj import dist_edge_threshold, compute_dist_bins
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -313,7 +313,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         Path
             Path to the written vulnerability GeoTIFF.
         """
-        from component.script.rmj import vulnerability_map, defrate_per_class
+        from spatialrisk.rmj import vulnerability_map, defrate_per_class
 
         if not self.dist_bins:
             raise RuntimeError("Model has not been fitted. Call fit() first.")

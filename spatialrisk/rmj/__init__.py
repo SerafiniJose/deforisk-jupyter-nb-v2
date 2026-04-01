@@ -18,13 +18,13 @@ defrate_per_cat         Compute deforestation rates per moving-window risk
                         category from binary forest + deforestation rasters.
 """
 
-from component.script.rmj.dist_edge_threshold import dist_edge_threshold
-from component.script.rmj.compute_dist_bins import compute_dist_bins
-from component.script.rmj.vulnerability_map import vulnerability_map
-from component.script.rmj.defrate_per_class import defrate_per_class
-from component.script.rmj.local_defor_rate import local_defor_rate
-from component.script.rmj.set_defor_cat_zero import set_defor_cat_zero
-from component.script.rmj.defrate_per_cat import defrate_per_cat
+from spatialrisk.rmj.dist_edge_threshold import dist_edge_threshold
+from spatialrisk.rmj.compute_dist_bins import compute_dist_bins
+from spatialrisk.rmj.vulnerability_map import vulnerability_map
+from spatialrisk.rmj.defrate_per_class import defrate_per_class
+from spatialrisk.rmj.local_defor_rate import local_defor_rate
+from spatialrisk.rmj.set_defor_cat_zero import set_defor_cat_zero
+from spatialrisk.rmj.defrate_per_cat import defrate_per_cat
 
 __all__ = [
     "dist_edge_threshold",

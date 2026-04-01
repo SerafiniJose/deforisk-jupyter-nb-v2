@@ -1,10 +1,9 @@
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
-import geemap
-from component.script.gee.ee_raster_export import download_ee_image
-from component.script.variables.local_raster_var import LocalRasterVar
-from component.script.variables.models import (
+from spatialrisk.gee.ee_raster_export import download_ee_image
+from spatialrisk.variables.local_raster_var import LocalRasterVar
+from spatialrisk.variables.models import (
     DataType,
     PostProcessing,
     RasterType,
@@ -12,8 +11,8 @@ from component.script.variables.models import (
 )
 from pydantic import Field, model_validator
 
-from component.script.variables.variable import Variable
-from component.script.variables.local_vector_var import LocalVectorVar
+from spatialrisk.variables.variable import Variable
+from spatialrisk.variables.local_vector_var import LocalVectorVar
 
 
 class GEEVar(Variable):
@@ -86,6 +85,7 @@ class GEEVar(Variable):
         if overwrite or not output_path.exists():
 
             if self.data_type == DataType.vector:
+                import geemap
                 geemap.ee_export_vector(
                     self.gee_images[0],
                     output_path,
@@ -290,7 +290,7 @@ class GEEVar(Variable):
 
 # Rebuild GEEVar after Variable and Project are available
 try:
-    from component.script.project import Project
+    from spatialrisk.project import Project
 
     types_namespace = {"Project": Project}
     GEEVar.model_rebuild(_types_namespace=types_namespace)

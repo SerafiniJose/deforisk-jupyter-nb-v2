@@ -1,4 +1,4 @@
-"""Random Forest risk model using sklearn with Patsy formulas."""
+"""GLM risk model using sklearn LogisticRegression with Patsy formulas."""
 
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -6,36 +6,33 @@ from typing import Any, Optional, Union
 import numpy as np
 import pandas as pd
 
-from component.script.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.base import BaseRiskModel
 
 
-class RFModel(BaseRiskModel):
-    """Random Forest risk model with Patsy formula support.
+class GLMModel(BaseRiskModel):
+    """Logistic Regression risk model with Patsy formula support.
 
     Attributes
     ----------
-    n_trees : int
-        Number of decision trees (default: 100).
-    max_depth : int
-        Maximum tree depth (default: 15).
-    min_samples_leaf : int
-        Minimum samples per leaf node (default: 2).
+    solver : str
+        sklearn LogisticRegression solver (default: "lbfgs").
+    max_iter : int
+        Maximum number of solver iterations (default: 1000).
     random_seed : int, optional
         Random seed for reproducibility.
     """
 
-    model_type: str = "rf"
-    n_trees: int = 100
-    max_depth: int = 15
-    min_samples_leaf: int = 2
+    model_type: str = "glm"
+    solver: str = "lbfgs"
+    max_iter: int = 1000
     random_seed: Optional[int] = None
 
     def fit(
         self,
         formula: Optional[str] = None,
         folder: Optional[Union[str, Path]] = None,
-    ) -> "RFModel":
-        """Train a Random Forest classifier.
+    ) -> "GLMModel":
+        """Train a logistic regression model.
 
         Parameters
         ----------
@@ -50,7 +47,7 @@ class RFModel(BaseRiskModel):
         self
         """
         from patsy import dmatrices
-        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
         from sklearn.metrics import log_loss
 
         # Auto-save full training CSV if samples_path not already set
@@ -69,20 +66,14 @@ class RFModel(BaseRiskModel):
 
         df, formula = self._prepare_samples(formula, output_csv=_csv)
 
-        print(
-            f"\n🔧 Training Random Forest "
-            f"(n_trees={self.n_trees}, max_depth={self.max_depth})..."
-        )
+        print(f"\n🔧 Training GLM ({self.solver}, max_iter={self.max_iter})...")
 
-        df = df.dropna()
         y, x = dmatrices(self.formula, df, NA_action="drop")
-        self._x_design_info = x.design_info
+        # self._x_design_info = x.design_info
 
-        clf = RandomForestClassifier(
-            n_estimators=self.n_trees,
-            max_depth=self.max_depth,
-            min_samples_leaf=self.min_samples_leaf,
-            n_jobs=-1,
+        clf = LogisticRegression(
+            solver=self.solver,
+            max_iter=self.max_iter,
             random_state=self.random_seed,
         )
         y_arr = np.asarray(y)[:, 0]
@@ -98,7 +89,7 @@ class RFModel(BaseRiskModel):
         self._stamp_now()
         self.trained = True
         print(
-            f"✓ RF trained — {self.n_samples:,} samples, "
+            f"✓ GLM trained — {self.n_samples:,} samples, "
             f"deviance={self.deviance:.2f}, trained_at={self.trained_at}"
         )
 
@@ -112,10 +103,11 @@ class RFModel(BaseRiskModel):
         mask: Optional[Union[str, Path]] = None,
         mask_value: Union[int, float, list] = 0,
     ) -> Path:
-        """Generate a deforestation probability GeoTIFF.
+        """Generate a risk probability GeoTIFF.
 
-        Processes the feature rasters block-by-block. Outputs a UInt16
-        raster scaled to [1, 65535] with 0 as nodata, using ``far.misc.rescale``.
+        Processes the feature rasters block-by-block using forestatrisk's
+        block iterator. Outputs a UInt16 raster scaled to [1, 65535] with
+        0 as nodata, using ``far.misc.rescale``.
 
         Parameters
         ----------
@@ -134,6 +126,7 @@ class RFModel(BaseRiskModel):
         """
         import forestatrisk as far
         import rasterio
+        from osgeo import gdal
         from patsy.highlevel import build_design_matrices
 
         if self._ml_model is None:
@@ -159,16 +152,26 @@ class RFModel(BaseRiskModel):
 
         feature_paths = {var.name: var.path for var in active_dataset.features}
 
-        print(f"\n🗺  Predicting RF raster → {output_file}")
+        print(f"\n🗺  Predicting GLM raster → {output_file}")
 
         with rasterio.open(active_dataset.target.path) as ref:
             profile = ref.profile.copy()
-
         profile.update(dtype="uint16", count=1, nodata=0)
 
+        # Build GDAL VRT for block iteration over feature rasters
+        raster_list = list(feature_paths.values())
+        vrt_path = str(output_file.with_suffix(".vrt"))
+        gdal.BuildVRT(
+            vrt_path,
+            [str(p) for p in raster_list],
+            separate=True,
+        )
+
         _mask_values = (
-            mask_value if isinstance(mask_value, (list, tuple)) else [mask_value]
-        ) if mask is not None else None
+            (mask_value if isinstance(mask_value, (list, tuple)) else [mask_value])
+            if mask is not None
+            else None
+        )
 
         with rasterio.open(output_file, "w", **profile) as dst:
             blockinfo = far.misc.makeblock(str(active_dataset.target.path))
@@ -215,17 +218,16 @@ class RFModel(BaseRiskModel):
                 out_arr = np.zeros(n_rows * n_cols, dtype=np.uint16)
 
                 if not block_df.empty:
+                    # Apply design matrix transformation
                     (x_block,) = build_design_matrices(
                         [self._x_design_info], block_df, NA_action="drop"
                     )
                     proba = self._ml_model.predict_proba(np.asarray(x_block))[:, 1]
                     out_arr[valid_mask] = far.misc.rescale(proba).astype(np.uint16)
 
-                dst.write(
-                    out_arr.reshape(n_rows, n_cols),
-                    1,
-                    window=window,
-                )
+                dst.write(out_arr.reshape(n_rows, n_cols), 1, window=window)
 
-        print(f"✓ RF raster written: {output_file}")
+        # Clean up VRT
+        Path(vrt_path).unlink(missing_ok=True)
+        print(f"✓ GLM raster written: {output_file}")
         return output_file

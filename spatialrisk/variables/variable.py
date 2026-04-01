@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List, Union, Optional, Any, Dict
 from pydantic import BaseModel, ConfigDict, Field
 
-from component.script.variables.models import DataType
+from spatialrisk.variables.models import DataType
 import ee
 
 
@@ -117,7 +117,7 @@ class Variable(BaseModel):
 
 
 try:
-    from component.script.project import Project
+    from spatialrisk.project import Project
 
     # Build type namespace with Project for all variable classes
     types_namespace = {"Project": Project}

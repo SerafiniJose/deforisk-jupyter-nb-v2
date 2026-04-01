@@ -6,7 +6,7 @@ required — the model is a spatial heuristic based on neighbourhood event
 density.  Although the defaults use deforestation terminology, the model
 is generic and works with any binary target variable.
 
-All processing functions live in ``component.script.rmj`` and work with
+All processing functions live in ``spatialrisk.rmj`` and work with
 generic binary (0/1) rasters.  This class is a thin orchestration layer
 that ties datasets and project metadata to those functions.
 
@@ -36,13 +36,13 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import Field
 
-from component.script.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.base import BaseRiskModel
 
 
 class MWModel(BaseRiskModel):
     """Moving Window risk model.
 
-    Thin orchestration layer over the functions in ``component.script.rmj``.
+    Thin orchestration layer over the functions in ``spatialrisk.rmj``.
     All raster processing logic lives there; this class manages datasets,
     Pydantic metadata, and project registration.
 
@@ -188,7 +188,7 @@ class MWModel(BaseRiskModel):
         -------
         self
         """
-        from component.script.rmj import dist_edge_threshold, local_defor_rate
+        from spatialrisk.rmj import dist_edge_threshold, local_defor_rate
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -327,7 +327,7 @@ class MWModel(BaseRiskModel):
         dict
             ``{win_size_str: Path}`` for each probability raster produced.
         """
-        from component.script.rmj import set_defor_cat_zero, defrate_per_cat
+        from spatialrisk.rmj import set_defor_cat_zero, defrate_per_cat
 
         if not self.ldefrate_files:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
