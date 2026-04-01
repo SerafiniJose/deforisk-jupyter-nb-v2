@@ -1,5 +1,5 @@
 from pathlib import Path
-from component.script.utilities.file_filter import filter_files_by_keywords
+from spatialrisk.utilities.file_filter import filter_files_by_keywords
 
 project_name = "test"
 

@@ -13,7 +13,7 @@ from typing import Any, Optional, Union
 import numpy as np
 import pandas as pd
 
-from component.script.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.base import BaseRiskModel
 
 
 def compute_cell_indices(

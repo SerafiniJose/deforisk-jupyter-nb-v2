@@ -17,7 +17,7 @@ from typing import Any, List, Optional, Union
 
 from pydantic import Field, field_validator
 
-from component.script.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.base import BaseRiskModel
 
 _JNR_TARGET = "deforestation"
 

@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import Field
 
-from component.script.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.base import BaseRiskModel
 
 
 class MWModel(BaseRiskModel):

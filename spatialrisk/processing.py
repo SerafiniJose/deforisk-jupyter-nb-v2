@@ -5,11 +5,11 @@ import rasterio
 import rioxarray
 import xarray as xr
 
-from component.script.variables.models import RasterType
+from spatialrisk.variables.models import RasterType
 
 if TYPE_CHECKING:
-    from component.script.project import Project
-    from component.script.variables import LocalRasterVar
+    from spatialrisk.project import Project
+    from spatialrisk.variables import LocalRasterVar
 
 
 def reproject_raster_gdal_warp(
@@ -322,7 +322,7 @@ def generate_deforestation_raster(
     - output_path: Path to save the output raster file.
     """
     # Import here to avoid circular dependency
-    from component.script.variables import LocalRasterVar
+    from spatialrisk.variables import LocalRasterVar
 
     # Open the input rasters
     with (
@@ -398,7 +398,7 @@ def get_forest_loss_calculated(
         Three LocalRasterVar objects for the generated forest loss rasters
     """
     # Import here to avoid circular dependency
-    from component.script.variables import LocalRasterVar
+    from spatialrisk.variables import LocalRasterVar
     from pathlib import Path
 
     # Validate input - must have exactly 3 layers

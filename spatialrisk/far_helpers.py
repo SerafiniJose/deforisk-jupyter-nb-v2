@@ -91,7 +91,7 @@ from patsy import dmatrices
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from component.script.dataset import Dataset
+    from spatialrisk.dataset import Dataset
 
 
 def get_design_info(patsy_formula, samples_file):
