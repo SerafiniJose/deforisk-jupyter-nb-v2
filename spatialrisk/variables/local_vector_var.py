@@ -2,13 +2,12 @@ from pathlib import Path
 from typing import Optional
 
 import ee
-import geemap
 from pydantic import Field
-from component.script.processing import xr_rasterize
-from component.script.utilities.file_helpers import copy_and_rename_file
-from component.script.variables.models import DataType, RasterType, RasterizationMethod
-from component.script.variables.variable import Variable
-from component.script.variables.local_raster_var import LocalRasterVar
+from spatialrisk.processing import xr_rasterize
+from spatialrisk.utilities.file_helpers import copy_and_rename_file
+from spatialrisk.variables.models import DataType, RasterType, RasterizationMethod
+from spatialrisk.variables.variable import Variable
+from spatialrisk.variables.local_raster_var import LocalRasterVar
 
 
 class LocalVectorVar(Variable):
@@ -201,12 +200,15 @@ class LocalVectorVar(Variable):
         if not self.path.exists():
             raise FileNotFoundError(f"Local file not found: {self.path}")
 
-        return geemap.shp_to_ee(str(self.path))
+        import json
+        import geopandas as gpd
+        gdf = gpd.read_file(str(self.path))
+        return ee.FeatureCollection(json.loads(gdf.to_json()))
 
 
 # Rebuild models after Project is imported to resolve forward references
 try:
-    from component.script.project import Project
+    from spatialrisk.project import Project
 
     # Rebuild Variable classes first
     Variable.model_rebuild()

@@ -10,16 +10,16 @@ the modular variables package. The source of truth lives in:
 - gee_var.py
 """
 
-from component.script.variables.gee_var import GEEVar
-from component.script.variables.local_raster_var import LocalRasterVar
-from component.script.variables.local_vector_var import LocalVectorVar
-from component.script.variables.models import (
+from spatialrisk.variables.gee_var import GEEVar
+from spatialrisk.variables.local_raster_var import LocalRasterVar
+from spatialrisk.variables.local_vector_var import LocalVectorVar
+from spatialrisk.variables.models import (
     DataType,
     PostProcessing,
     RasterType,
     RasterizationMethod,
 )
-from component.script.variables.variable import Variable
+from spatialrisk.variables.variable import Variable
 
 __all__ = [
     "Variable",

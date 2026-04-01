@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from component.script.sampling import Sampling
+from spatialrisk.sampling import Sampling
 
 
 class BaseRiskModel(BaseModel):
@@ -132,7 +132,7 @@ class BaseRiskModel(BaseModel):
         resolved_formula : str
             The formula to use for training.
         """
-        from component.script.far_helpers import generate_patsy_formula
+        from spatialrisk.far_helpers import generate_patsy_formula
 
         if self.dataset is None:
             raise ValueError("dataset must be set before calling fit().")
