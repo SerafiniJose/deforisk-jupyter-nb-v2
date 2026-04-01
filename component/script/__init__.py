@@ -4,6 +4,7 @@ from component.script.project import Project
 from component.script.dataset import Dataset
 from component.script.sampling import Sampling, SamplingStrategy
 from component.script.mlmodels import BaseRiskModel, GLMModel, RFModel, ICARModel, MWModel, JNRBenchmarkModel
+from component.script import rmj
 
 __all__ = [
     "Project",
@@ -16,4 +17,5 @@ __all__ = [
     "ICARModel",
     "MWModel",
     "JNRBenchmarkModel",
+    "rmj",
 ]

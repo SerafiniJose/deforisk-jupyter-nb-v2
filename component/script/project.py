@@ -533,12 +533,14 @@ class Project(BaseModel):
 
         # Reconstruct registered ML models
         if "models" in data and data["models"]:
-            from component.script.mlmodels import GLMModel, ICARModel, RFModel
+            from component.script.mlmodels import GLMModel, ICARModel, JNRBenchmarkModel, MWModel, RFModel
 
             _MODEL_REGISTRY = {
                 "glm": GLMModel,
                 "rf": RFModel,
                 "icar": ICARModel,
+                "jnr": JNRBenchmarkModel,
+                "mw": MWModel,
             }
             for key, model_data in data["models"].items():
                 model_type = model_data.get("model_type", "")
@@ -565,7 +567,14 @@ class Project(BaseModel):
                 if target_name:
                     ds.set_target(target_name, year=ds_data.get("target_year"))
                 if feature_names:
-                    ds.set_features(feature_names)
+                    missing = [n for n in feature_names if not project.get_all_instances(n)]
+                    valid_names = [n for n in feature_names if project.get_all_instances(n)]
+                    if missing:
+                        print(
+                            f"  ⚠ Dataset '{key}': feature(s) not found in processed variables, skipped: {missing}"
+                        )
+                    if valid_names:
+                        ds.set_features(valid_names)
                 project.datasets[key] = ds
             print(f"Loaded {len(project.datasets)} dataset(s)")
 
