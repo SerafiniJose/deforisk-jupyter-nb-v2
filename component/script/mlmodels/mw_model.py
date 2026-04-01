@@ -1,15 +1,34 @@
-"""Moving Window (MW) unsupervised deforestation risk model using riskmapjnr.
+"""Moving Window (MW) unsupervised risk model using riskmapjnr.
 
-Computes local deforestation rates within spatial moving windows of specified
-sizes to produce a probability/risk raster. No machine-learning training is
-required — the model is a spatial heuristic based on neighbourhood event density.
+Computes local event rates within spatial moving windows of specified sizes
+to produce a probability/risk raster.  No machine-learning training is
+required — the model is a spatial heuristic based on neighbourhood event
+density.  Although the defaults use deforestation terminology, the model
+is generic and works with any binary target variable.
+
+All processing functions live in ``component.script.rmj`` and work with
+generic binary (0/1) rasters.  This class is a thin orchestration layer
+that ties datasets and project metadata to those functions.
 
 Workflow
 --------
-1. fit()  — computes dist_edge_threshold and local_defor_rate for a training
-            period (typically "calibration" or "historical").
-2. apply() — for any period, calls set_defor_cat_zero and defrate_per_cat
-             using the ldefrate rasters produced in fit().
+1. ``fit()``  — calls ``rmj.dist_edge_threshold`` and
+               ``rmj.local_defor_rate`` (one per window size) for a training
+               period (typically "calibration" or "historical").
+2. ``apply()`` — for any period, calls ``rmj.set_defor_cat_zero`` and
+                ``rmj.defrate_per_cat`` using the ldefrate rasters produced
+                in ``fit()``.
+
+Variable naming
+---------------
+Features are looked up by exact name in the Dataset.  Defaults are
+``forest_edge`` and ``forest``.  Override on the instance::
+
+    mw = MWModel(
+        name="calibration",
+        forest_edge_var="forest_gfc_edge",
+        forest_var="forest_gfc",
+    )
 """
 
 from pathlib import Path
@@ -21,11 +40,16 @@ from component.script.mlmodels.base import BaseRiskModel
 
 
 class MWModel(BaseRiskModel):
-    """Moving Window deforestation risk model.
+    """Moving Window risk model.
 
-    Wraps the ``riskmapjnr`` moving-window workflow:
-    ``dist_edge_threshold`` → ``local_defor_rate`` (fit), then
-    ``set_defor_cat_zero`` → ``defrate_per_cat`` (apply).
+    Thin orchestration layer over the functions in ``component.script.rmj``.
+    All raster processing logic lives there; this class manages datasets,
+    Pydantic metadata, and project registration.
+
+    Although field names use "forest" / "defor" conventions, the model is
+    generic — any binary (0/1) target raster and any distance raster can
+    be used by overriding ``forest_edge_var``, ``forest_var``,
+    ``forest_value``, and ``defor_value``.
 
     Attributes
     ----------
@@ -34,27 +58,51 @@ class MWModel(BaseRiskModel):
     blk_rows : int
         Number of raster rows per processing block (default: 256).
     defor_threshold : float
-        Distance percentile used to define the forest-edge threshold
-        (default: 99.5).
+        Distance percentile used to define the edge threshold
+        (default: 99.5).  Can be overridden per ``fit()`` call.
+    max_dist : int
+        Maximum distance (m) for the bin arange (default: 5000).
+        Can be overridden per ``fit()`` call.
     rescale_max_val : int
         Maximum value for ldefrate rescaling (default: 65535 to match
         the uint16 scale used by GLM/RF/iCAR models).
+    forest_value : int
+        Pixel value meaning "background" / "no event" in the binary
+        reference raster (default: 1).
+    defor_value : int
+        Pixel value meaning "event" in the binary target raster
+        (default: 1).
     dist_thresh : float, optional
-        Distance-to-edge threshold in metres. Populated by fit().
+        Distance-to-edge threshold in metres.  Populated by ``fit()``.
     ldefrate_files : dict
-        Mapping of ``{"win_size": path_to_ldefrate.tif}``. Populated by fit().
-        Keys are strings to ensure JSON serialisability.
+        Mapping of ``{"win_size": path_to_ldefrate.tif}``.  Populated by
+        ``fit()``.  Keys are strings to ensure JSON serialisability.
+    forest_edge_var : str
+        Dataset feature name for the distance-to-edge raster
+        (default: ``"forest_edge"``).
+    forest_var : str
+        Dataset feature name for the binary reference raster, used by
+        ``apply()`` (default: ``"forest"``).
     """
 
     model_type: str = "mw"
     win_size_list: List[int] = Field(default_factory=lambda: [5, 11, 21])
     blk_rows: int = 256
     defor_threshold: float = 99.5
+    max_dist: int = 5000
     rescale_max_val: int = 65535
+
+    # Binary raster pixel-value conventions
+    forest_value: int = 1
+    defor_value: int = 1
 
     # State persisted after fit() — no pickle, paths to raster files
     dist_thresh: Optional[float] = None
     ldefrate_files: Dict[str, Path] = Field(default_factory=dict)
+
+    # Configurable feature-variable name mappings
+    forest_edge_var: str = "forest_edge"
+    forest_var: str = "forest"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -69,51 +117,111 @@ class MWModel(BaseRiskModel):
             return Path(getattr(folders, "rmj_mw"))
         return None
 
+    def _get_feature(self, dataset: Any, var_name: str) -> Path:
+        """Return the path of a named feature from a dataset.
+
+        Parameters
+        ----------
+        dataset : Dataset
+        var_name : str
+            Exact name to look for in ``dataset.features``.
+
+        Returns
+        -------
+        Path
+
+        Raises
+        ------
+        ValueError
+            If the feature is not found, listing available names.
+        """
+        for var in dataset.features:
+            if var.name == var_name:
+                return var.path
+        available = [v.name for v in dataset.features]
+        raise ValueError(
+            f"MWModel requires feature '{var_name}' but it was not "
+            f"found in the dataset features.\n"
+            f"  Available: {available}\n"
+            f"  Set model.forest_edge_var / forest_var to match "
+            f"your variable names."
+        )
+
     # ------------------------------------------------------------------
     # Fit
     # ------------------------------------------------------------------
 
     def fit(
         self,
-        fcc_file: Union[str, Path],
-        forest_edge_file: Union[str, Path],
-        defor_values: Union[int, List[int]],
-        time_interval: int,
-        period: str,
+        dataset: Optional[Any] = None,
+        defor_threshold: Optional[float] = None,
+        time_interval: Optional[int] = None,
         folder: Optional[Union[str, Path]] = None,
     ) -> "MWModel":
-        """Compute local deforestation rates for a training period.
+        """Compute local event rates for a training period.
 
         Runs ``rmj.dist_edge_threshold`` to determine the distance-to-edge
         cutoff, then ``rmj.local_defor_rate`` for each window size.
 
         Parameters
         ----------
-        fcc_file : str or Path
-            Forest change raster (fcc123 convention: 0=non-forest, 1=deforested
-            in calibration period, 2=deforested in later period, 3=remained forest).
-        forest_edge_file : str or Path
-            Distance-to-forest-edge raster for the training period's initial year.
-        defor_values : int or list of int
-            Pixel values that encode deforestation (e.g., 1 or [1, 2]).
+        dataset : Dataset, optional
+            Dataset with:
+
+            * **target** — binary event raster (``self.defor_value`` where
+              the event occurred).
+            * **feature** named ``self.forest_edge_var`` — distance-to-edge
+              raster (metres).
+
+            The dataset's ``name`` is used as the period sub-folder.
+            Falls back to ``self.dataset`` if not provided.
+        defor_threshold : float, optional
+            Distance percentile for the forest-edge cutoff.  Overrides
+            ``self.defor_threshold`` and persists on the model.
         time_interval : int
-            Number of years covered by the period.
-        period : str
-            Period name used for output sub-folder, e.g. ``"calibration"``
-            or ``"historical"``.
+            Number of years covered by the period (required).
         folder : str or Path, optional
-            Root output folder. Defaults to the project ``rmj_mw`` folder,
+            Root output folder.  Defaults to the project ``rmj_mw`` folder,
             then the current working directory.
 
         Returns
         -------
         self
         """
-        import numpy as np
-        import riskmapjnr as rmj
+        from component.script.rmj import dist_edge_threshold, local_defor_rate
 
-        fcc_file = Path(fcc_file)
-        forest_edge_file = Path(forest_edge_file)
+        # Resolve dataset
+        active = dataset if dataset is not None else self.dataset
+        if active is None:
+            raise ValueError(
+                "No dataset available. Pass dataset= or set model.dataset "
+                "before calling fit()."
+            )
+        if active.target is None:
+            raise ValueError(
+                "Dataset has no target set. Call dataset.set_target() before fit()."
+            )
+
+        if time_interval is None:
+            raise ValueError(
+                "time_interval is required for fit(). "
+                "Provide the number of years in the period, e.g. time_interval=5."
+            )
+
+        period = active.name or self.name
+        if period is None:
+            raise ValueError(
+                "Cannot determine period name: neither dataset.name nor "
+                "model.name is set."
+            )
+
+        # Persist training parameter override
+        if defor_threshold is not None:
+            self.defor_threshold = defor_threshold
+
+        # Extract file paths from dataset
+        deforestation_file = active.target.path
+        forest_edge_file = self._get_feature(active, self.forest_edge_var)
 
         out_root = (
             Path(folder) if folder is not None else (self._default_folder() or Path.cwd())
@@ -124,20 +232,15 @@ class MWModel(BaseRiskModel):
         print(f"\n🔧 MW fit — period='{period}', windows={self.win_size_list}")
 
         # Step 1: Distance-to-edge threshold
-        tab_file = period_dir / "tab_dist.csv"
-        fig_file = period_dir / f"perc_dist_{period}.png"
-
-        result = rmj.dist_edge_threshold(
-            fcc_file=str(fcc_file),
-            defor_values=defor_values,
+        result = dist_edge_threshold(
+            deforestation_file=deforestation_file,
+            forest_edge_file=forest_edge_file,
+            defor_values=self.defor_value,
             defor_threshold=self.defor_threshold,
-            dist_file=str(forest_edge_file),
-            dist_bins=np.arange(0, 5000, step=30),
-            tab_file_dist=str(tab_file),
-            fig_file_dist=str(fig_file),
+            max_dist=self.max_dist,
             blk_rows=self.blk_rows,
-            dist_file_available=True,
-            check_fcc=False,
+            tab_file=period_dir / "tab_dist.csv",
+            fig_file=period_dir / f"perc_dist_{period}.png",
             verbose=False,
         )
         self.dist_thresh = float(result["dist_thresh"])
@@ -148,12 +251,12 @@ class MWModel(BaseRiskModel):
         for win_size in self.win_size_list:
             ldefrate_file = period_dir / f"ldefrate_mw_{win_size}.tif"
             print(f"  local_defor_rate — window {win_size}×{win_size} px...")
-            rmj.local_defor_rate(
-                fcc_file=str(fcc_file),
-                defor_values=defor_values,
-                ldefrate_file=str(ldefrate_file),
+            local_defor_rate(
+                deforestation_file=deforestation_file,
+                ldefrate_file=ldefrate_file,
                 win_size=win_size,
                 time_interval=time_interval,
+                defor_value=self.defor_value,
                 rescale_min_val=2,
                 rescale_max_val=self.rescale_max_val,
                 blk_rows=self.blk_rows,
@@ -162,6 +265,15 @@ class MWModel(BaseRiskModel):
             ldefrate_files[str(win_size)] = ldefrate_file
 
         self.ldefrate_files = ldefrate_files
+
+        # Populate serialisable metadata (mirrors JNRBenchmarkModel pattern)
+        self.target_name = active.target.name
+        self.feature_names = [v.name for v in active.features]
+        self.dataset_name = active.name
+        if active.year is not None:
+            self.year = active.year
+        self.dataset = active
+
         self._stamp_now()
         self.trained = True
         print(
@@ -176,60 +288,71 @@ class MWModel(BaseRiskModel):
 
     def apply(
         self,
-        period: str,
-        forest_edge_file: Union[str, Path],
-        fcc_file: Union[str, Path],
-        defor_values: Union[int, List[int]],
-        time_interval: int,
+        dataset: Optional[Any] = None,
+        time_interval: Optional[int] = None,
         output_folder: Optional[Union[str, Path]] = None,
+        output_file: Optional[Union[str, Path]] = None,
         mask: Optional[Union[str, Path]] = None,
         mask_value: Union[int, float, list] = 0,
-        dataset: Optional[Any] = None,
-        output_file: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Path]:
         """Generate probability maps for a given period.
 
         Uses the ``ldefrate`` rasters from ``fit()`` to run
         ``rmj.set_defor_cat_zero`` and ``rmj.defrate_per_cat``.
 
+        Dataset features required:
+
+        * **target** — binary event raster
+        * ``self.forest_edge_var`` — distance-to-edge (metres) at period start
+        * ``self.forest_var`` — binary reference raster at period start
+
         Parameters
         ----------
-        period : str
-            Target period name, e.g. ``"validation"`` or ``"forecast"``.
-        forest_edge_file : str or Path
-            Distance-to-forest-edge raster for this period's initial year.
-        fcc_file : str or Path
-            Forest change raster for deforestation-rate tabulation.
-        defor_values : int or list of int
-            Deforestation pixel values for this period.
+        dataset : Dataset, optional
+            Falls back to ``self.dataset`` if not provided.  The dataset's
+            ``name`` is used as the period name.
         time_interval : int
-            Number of years in the period.
+            Number of years in the period (required).
         output_folder : str or Path, optional
-            Root output folder. Defaults to project ``rmj_mw`` folder.
-        mask : str or Path, optional
-            Unused; kept for API consistency with supervised models.
-        mask_value : int, float, or list of int/float, optional
-            Unused; kept for API consistency. Defaults to 0.
-        dataset : optional
-            Unused; kept for API consistency with supervised models.
+            Root output folder.  Defaults to project ``rmj_mw`` folder.
         output_file : optional
-            Unused; output paths are derived from ``output_folder / period /
-            prob_mw_{win_size}_{period}.tif``.
+            Unused; kept for API consistency with supervised models.
+        mask : optional
+            Unused; kept for API consistency with supervised models.
+        mask_value : optional
+            Unused; kept for API consistency.
 
         Returns
         -------
         dict
             ``{win_size_str: Path}`` for each probability raster produced.
         """
-        import riskmapjnr as rmj
+        from component.script.rmj import set_defor_cat_zero, defrate_per_cat
 
         if not self.ldefrate_files:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
         if self.dist_thresh is None:
             raise RuntimeError("dist_thresh not set. Call fit() first.")
 
-        forest_edge_file = Path(forest_edge_file)
-        fcc_file = Path(fcc_file)
+        # Resolve dataset
+        active = dataset if dataset is not None else self.dataset
+        if active is None:
+            raise ValueError(
+                "No dataset available. Pass dataset= or set model.dataset "
+                "before calling apply()."
+            )
+        if time_interval is None:
+            raise ValueError(
+                "time_interval is required for apply(). "
+                "Provide the number of years in the period, e.g. time_interval=4."
+            )
+
+        period = active.name or self.name
+
+        # Extract file paths from dataset
+        deforestation_file = active.target.path
+        forest_edge_file = self._get_feature(active, self.forest_edge_var)
+        forest_file = self._get_feature(active, self.forest_var)
 
         out_root = (
             Path(output_folder)
@@ -253,23 +376,24 @@ class MWModel(BaseRiskModel):
             prob_file = period_dir / f"prob_mw_{win_size_str}_{period}.tif"
             defrate_tab = period_dir / f"defrate_cat_mw_{win_size_str}_{period}.csv"
 
-            rmj.set_defor_cat_zero(
-                ldefrate_file=str(ldefrate_file),
-                dist_file=str(forest_edge_file),
+            set_defor_cat_zero(
+                ldefrate_file=ldefrate_file,
+                forest_edge_file=forest_edge_file,
                 dist_thresh=self.dist_thresh,
-                ldefrate_with_zero_file=str(prob_file),
+                output_file=prob_file,
                 blk_rows=self.blk_rows,
                 verbose=False,
             )
 
-            rmj.defrate_per_cat(
-                fcc_file=str(fcc_file),
-                riskmap_file=str(prob_file),
+            defrate_per_cat(
+                forest_file=forest_file,
+                deforestation_file=deforestation_file,
+                riskmap_file=prob_file,
                 time_interval=time_interval,
-                period=period,
-                tab_file_defrate=str(defrate_tab),
+                tab_file_defrate=defrate_tab,
+                forest_value=self.forest_value,
+                defor_value=self.defor_value,
                 blk_rows=self.blk_rows,
-                verbose=False,
             )
 
             output_files[win_size_str] = prob_file
