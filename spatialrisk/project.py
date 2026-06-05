@@ -427,6 +427,7 @@ class Project(BaseModel):
                     "name": dataset.name,
                     "year": dataset.year,
                     "target_name": dataset.target.name if dataset.target else None,
+                    "target_year": dataset.target.year if dataset.target else None,
                     "feature_names": [f.name for f in dataset.features],
                 }
 
@@ -532,12 +533,14 @@ class Project(BaseModel):
 
         # Reconstruct registered ML models
         if "models" in data and data["models"]:
-            from spatialrisk.mlmodels import GLMModel, ICARModel, RFModel
+            from spatialrisk.mlmodels import GLMModel, ICARModel, JNRBenchmarkModel, MWModel, RFModel
 
             _MODEL_REGISTRY = {
                 "glm": GLMModel,
                 "rf": RFModel,
                 "icar": ICARModel,
+                "jnr": JNRBenchmarkModel,
+                "mw": MWModel,
             }
             for key, model_data in data["models"].items():
                 model_type = model_data.get("model_type", "")
@@ -572,7 +575,14 @@ class Project(BaseModel):
                         year=ds_data.get("year") if target_is_temporal else None,
                     )
                 if feature_names:
-                    ds.set_features(feature_names)
+                    missing = [n for n in feature_names if not project.get_all_instances(n)]
+                    valid_names = [n for n in feature_names if project.get_all_instances(n)]
+                    if missing:
+                        print(
+                            f"  ⚠ Dataset '{key}': feature(s) not found in processed variables, skipped: {missing}"
+                        )
+                    if valid_names:
+                        ds.set_features(valid_names)
                 project.datasets[key] = ds
             print(f"Loaded {len(project.datasets)} dataset(s)")
 
