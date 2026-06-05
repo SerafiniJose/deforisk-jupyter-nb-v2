@@ -54,7 +54,12 @@ def calculate_utm_rioxarray(
         raise FileNotFoundError(f"Raster file {input_tif_file_path!r} does not exist")
 
     try:
-        raster = rioxarray.open_rasterio(path, chunks="auto", cache=False, lock=False)
+        raster = rioxarray.open_rasterio(
+            path,
+            chunks={"band": 1, "x": "auto", "y": "auto"},
+            cache=False,
+            lock=False,
+        )
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(f"Failed to open raster {path!s}") from exc
 
@@ -253,7 +258,7 @@ def xr_reproject(
     # Read the raster
     raster_array = rioxarray.open_rasterio(
         raster_path,
-        chunks="auto",
+        chunks={"band": 1, "x": "auto", "y": "auto"},
         cache=False,
         lock=False,
     )

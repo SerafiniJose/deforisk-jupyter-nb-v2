@@ -216,8 +216,8 @@ class Sampling(BaseModel):
         """Legacy balanced sampling strategy (forestatrisk-style).
 
         Mirrors the original forestatrisk sampling approach: draws ``n_samples``
-        pixels from the deforested class (target == 0) and ``n_samples`` pixels
-        from the forest class (target == 1) independently, then concatenates
+        pixels from the deforested class (target == 1) and ``n_samples`` pixels
+        from the forest class (target == 0) independently, then concatenates
         them. The deforested samples come first in the output.
 
         When ``adapt=True`` and ``pixel_area_ha`` is provided, ``n_samples`` is
@@ -230,16 +230,17 @@ class Sampling(BaseModel):
             (row_indices, col_indices) for all valid pixels.
         target_values : np.ndarray
             Target variable values aligned with ``valid_indices``.
-            Expected values: 0 = deforested, 1 = forest.
+            Expected values: 1 = deforested (event of interest), 0 = forest.
 
         Returns
         -------
         Tuple[np.ndarray, np.ndarray]
             (row_indices, col_indices) with deforested samples first.
         """
-        # Split into deforested (0) and forest (1) index sets
-        defor_mask = target_values == 0
-        forest_mask = target_values == 1
+        # Split into deforested (1) and forest (0) index sets
+        # Convention: target raster is 1 = deforestation (event), 0 = forest.
+        defor_mask = target_values == 1
+        forest_mask = target_values == 0
 
         defor_rows = valid_indices[0][defor_mask]
         defor_cols = valid_indices[1][defor_mask]

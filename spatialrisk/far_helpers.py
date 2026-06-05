@@ -86,6 +86,8 @@ def extract_variables(formula: str, mode: str = "predictors") -> set:
     return raw_vars
 
 
+import warnings
+
 import pandas as pd
 from patsy import dmatrices
 from typing import TYPE_CHECKING
@@ -103,6 +105,61 @@ def get_design_info(patsy_formula, samples_file):
     y_design_info = y.design_info
     x_design_info = x.design_info
     return (y_design_info, x_design_info)
+
+
+def get_categorical_levels(var) -> "list | None":
+    """Return the full set of unique values in a categorical raster.
+
+    Reads the raster band block-by-block (memory-safe for large rasters such
+    as a sub-jurisdiction map) and accumulates the distinct pixel values,
+    dropping nodata and NaN. Integral values are returned as Python ``int``.
+
+    These levels are intended to be injected into a Patsy ``C(var, levels=...)``
+    term so that the design matrix declares its complete categorical domain up
+    front — preventing ``PatsyError`` when prediction encounters a value that
+    never appeared in the training sample.
+
+    Parameters
+    ----------
+    var : LocalRasterVar
+        Categorical variable exposing a ``.path`` attribute.
+
+    Returns
+    -------
+    list or None
+        Sorted list of unique levels, or ``None`` if the raster cannot be read
+        (so the caller can fall back to a bare ``C(var)`` term).
+    """
+    import numpy as np
+    import rasterio
+
+    try:
+        values: set = set()
+        with rasterio.open(var.path) as src:
+            nodata = src.nodata
+            for _, window in src.block_windows(1):
+                block = src.read(1, window=window)
+                block = block[~np.isnan(block)] if np.issubdtype(
+                    block.dtype, np.floating
+                ) else block.ravel()
+                uniques = np.unique(block)
+                if nodata is not None:
+                    uniques = uniques[uniques != nodata]
+                values.update(uniques.tolist())
+
+        def _coerce(v):
+            return int(v) if float(v).is_integer() else v
+
+        return sorted(_coerce(v) for v in values)
+    except Exception as exc:  # noqa: BLE001 — fall back to data-discovered levels
+        warnings.warn(
+            f"Could not read categorical levels for '{getattr(var, 'name', var)}' "
+            f"from {getattr(var, 'path', '?')}: {exc}. "
+            "Falling back to levels discovered from the training sample.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return None
 
 
 def generate_patsy_formula(dataset: "Dataset") -> str:
@@ -128,7 +185,14 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     >>> dataset.set_target('fcc', year=2020)
     >>> dataset.set_features(['altitude', 'pa', 'dist_edge'])
     >>> generate_patsy_formula(dataset)
-    "I(fcc) + trial ~ scale(altitude) + scale(dist_edge) + C(pa)"
+    "I(fcc) + trial ~ scale(altitude) + scale(dist_edge) + C(pa, levels=[0, 1])"
+
+    Notes
+    -----
+    Categorical terms declare their full level domain via ``levels=...``, read
+    from each categorical raster with :func:`get_categorical_levels`. This
+    prevents a ``PatsyError`` at prediction time when a pixel carries a value
+    that never appeared in the training sample.
     """
     # Validate dataset configuration
     if not dataset.target:
@@ -144,7 +208,7 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     print(f"  Features: {', '.join([f.name for f in dataset.features])}")
 
     continuous = []
-    categorical = []
+    categorical = []  # holds the LocalRasterVar so its raster path is reachable
 
     for var in dataset.features:
         # Check if variable has raster_type attribute (LocalRasterVar)
@@ -152,7 +216,7 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
             if var.raster_type == "continuous":
                 continuous.append(var.name)
             elif var.raster_type == "categorical":
-                categorical.append(var.name)
+                categorical.append(var)
             else:
                 # Default to continuous if raster_type is not set
                 continuous.append(var.name)
@@ -163,14 +227,20 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     parts = []
     if continuous:
         parts += [f"scale({x})" for x in continuous]
-    if categorical:
-        parts += [f"C({x})" for x in categorical]
+    for var in categorical:
+        # Declare the full categorical domain so prediction never hits an
+        # "unexpected level". Fall back to a bare C() if the raster is unreadable.
+        levels = get_categorical_levels(var)
+        if levels is not None:
+            parts.append(f"C({var.name}, levels={levels})")
+        else:
+            parts.append(f"C({var.name})")
 
     # Print classification results
     if continuous:
         print(f"  Continuous: {', '.join(continuous)}")
     if categorical:
-        print(f"  Categorical: {', '.join(categorical)}")
+        print(f"  Categorical: {', '.join(v.name for v in categorical)}")
 
     rhs = " + ".join(parts) if parts else "1"  # intercept-only model if empty
     formula = f"I({dependent_variable}) + trial ~ {rhs}"

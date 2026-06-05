@@ -1,7 +1,8 @@
+import warnings
 from pathlib import Path
 from typing import List, Optional
 import ee
-from pydantic import Field
+from pydantic import Field, field_validator
 import rioxarray
 import odc.geo.xr  # do not delete this
 
@@ -33,6 +34,18 @@ class LocalRasterVar(Variable):
     )  # Track processing steps
     default_crs: Optional[str] = None
     default_resolution: Optional[float] = None
+
+    @field_validator("path")
+    @classmethod
+    def _warn_if_path_missing(cls, v: Path) -> Path:
+        """Warn when constructing a raster variable pointing to a non-existent file."""
+        if not Path(v).exists():
+            warnings.warn(
+                f"LocalRasterVar path does not exist: {v}",
+                UserWarning,
+                stacklevel=2,
+            )
+        return v
 
     def show(self, ax=None, return_fig=False, max_size=1024):
         """
