@@ -565,7 +565,15 @@ class Project(BaseModel):
                 target_name = ds_data.get("target_name")
                 feature_names = ds_data.get("feature_names", [])
                 if target_name:
-                    ds.set_target(target_name, year=ds_data.get("target_year"))
+                    # The dataset's stored year applies to temporal features and is
+                    # already restored via the constructor above. Only pass it to
+                    # set_target when the target itself is temporal, since set_target
+                    # rejects a year argument for static targets.
+                    target_is_temporal = project.is_temporal(target_name)
+                    ds.set_target(
+                        target_name,
+                        year=ds_data.get("year") if target_is_temporal else None,
+                    )
                 if feature_names:
                     missing = [n for n in feature_names if not project.get_all_instances(n)]
                     valid_names = [n for n in feature_names if project.get_all_instances(n)]

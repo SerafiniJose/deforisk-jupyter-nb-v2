@@ -8,25 +8,38 @@ A comprehensive toolkit for deforestation/degradation risk modeling and spatial 
 Installation
 ------------
 
-In sepal terminal:
-
+This project uses `micromamba <https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html>`_
+(conda) for package management, because the geospatial stack (GDAL) and the RAPIDS GPU
+stack (``cudf``/``cuml``/``dask-cuda``) are best installed from conda channels.
 
 .. code-block:: bash
 
     # Clone repo
     git clone https://github.com/SerafiniJose/deforisk-jupyter-nb-v2.git
+    cd deforisk-jupyter-nb-v2/spatial-risk-module
 
-    cd deforisk-jupyter-nb-v2
+    # Install micromamba (to ~/.local/bin)
+    mkdir -p ~/.local/bin
+    curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C ~/.local --strip-components=1 bin/micromamba
+    ~/.local/bin/micromamba shell init -s bash -r ~/micromamba
+    exec bash
 
-    pip install uv
+    # Strict channel priority is required so RAPIDS resolves correctly
+    micromamba config set channel_priority strict
 
-    uv run main.py
+    # Create the environment from environment.yml
+    micromamba create -f environment.yml -y
 
-    uv pip install gdal[numpy]==3.8.4 --no-build-isolation --no-cache-dir --force-reinstall
+    # Install the fork-preserving / CIRAD pip packages with --no-deps
+    micromamba run -n spatial-risk pip install --no-deps \
+        "geemap==0.36.0" \
+        "forestatrisk>=1.3.2" "riskmapjnr>=1.3.2" "geefcc>=0.1.6" "pywdpa>=0.1.6"
 
-    source .venv/bin/activate
+    # Register the Jupyter kernel
+    micromamba run -n spatial-risk python -m ipykernel install --user \
+        --name spatial-risk --display-name "Python (spatial-risk)"
 
-    python -m ipykernel install --user --name deforisk-deg --display-name "deforisk-deg"
+In VS Code / Jupyter, select the **"Python (spatial-risk)"** kernel for the notebooks.
 
 
 

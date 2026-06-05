@@ -281,12 +281,14 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
     valid_mask = (input1 != nodata1) & (input2 != nodata2)
 
     # Create output based on conditions using xarray operations
+    # Convention: 1 = deforestation (event of interest), 0 = forest remaining,
+    # 255 = nodata. `input1`/`input2` are forest masks (1 = forest) at t1/t2.
     output = xr.where(
         valid_mask & (input1 == 1) & (input2 == 0),
-        0,  # condition 0: input1 == 1 and input2 == 0
+        1,  # forest(t1) -> non-forest(t2): DEFORESTED -> 1
         xr.where(
             valid_mask & (input1 == 1) & (input2 == 1),
-            1,  # condition 1: input1 == 1 and input2 == 1
+            0,  # forest(t1) -> forest(t2): remaining forest -> 0
             255,  # nodata for all other cases
         ),
     ).astype("uint8")

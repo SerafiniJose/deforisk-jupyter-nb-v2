@@ -37,14 +37,6 @@ where = ["."]
 include = ["component*"]  
 exclude = ["notebooks*", "notebooks_dask*", "data*", "docs*", "legacy*"]
 
-[[tool.uv.index]]
-name = "gdal-wheels"
-url = "https://gitlab.com/api/v4/projects/61637378/packages/pypi/simple"
-explicit = true
-
-[tool.uv.sources]
-earthengine-api = { git = "https://github.com/openforis/earthengine-api.git", subdirectory = "python", rev = "v1.1.5rc0" }
-
 [dependency-groups]
 dev = [
     "ipykernel>=6.30.1",

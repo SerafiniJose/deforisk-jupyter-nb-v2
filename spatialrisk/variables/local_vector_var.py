@@ -1,8 +1,9 @@
+import warnings
 from pathlib import Path
 from typing import Optional
 
 import ee
-from pydantic import Field
+from pydantic import Field, field_validator
 from spatialrisk.processing import xr_rasterize
 from spatialrisk.utilities.file_helpers import copy_and_rename_file
 from spatialrisk.variables.models import DataType, RasterType, RasterizationMethod
@@ -22,6 +23,18 @@ class LocalVectorVar(Variable):
     data_type: DataType = Field(default=DataType.vector, frozen=True)
     rasterization_method: Optional[RasterizationMethod] = None
     default_crs: Optional[str] = None
+
+    @field_validator("path")
+    @classmethod
+    def _warn_if_path_missing(cls, v: Path) -> Path:
+        """Warn when constructing a vector variable pointing to a non-existent file."""
+        if not Path(v).exists():
+            warnings.warn(
+                f"LocalVectorVar path does not exist: {v}",
+                UserWarning,
+                stacklevel=2,
+            )
+        return v
 
     def add_as_raw(self, auto_save: bool = True) -> "LocalVectorVar":
         """
