@@ -47,6 +47,9 @@ dependencies:
   - jupyterlab
   - notebook
 
+  # testing
+  - pytest>=8
+
   # geemap runtime deps (geemap itself is pip --no-deps to preserve the EE fork,
   # so its UI deps must be supplied here; earthengine-api intentionally omitted)
   - anywidget

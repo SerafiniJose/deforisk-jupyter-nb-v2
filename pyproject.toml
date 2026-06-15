@@ -40,7 +40,11 @@ exclude = ["notebooks*", "notebooks_dask*", "data*", "docs*", "legacy*"]
 [dependency-groups]
 dev = [
     "ipykernel>=6.30.1",
+    "pytest>=8",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 select = ["E", "F", "W", "I", "D", "RUF"]

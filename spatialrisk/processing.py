@@ -246,6 +246,37 @@ def distance_to_edge_gdal_no_mask(
     del src_ds, dst_ds
 
 
+def compute_forest_loss(forest_t1, forest_t2, nodata1, nodata2, where=np.where):
+    """Compute a deforestation raster from two forest masks (pure, backend-agnostic).
+
+    Encodes the canonical training-target convention used across the pipeline:
+
+    * ``1``   -> deforestation:   forest at ``t1`` (``== 1``) and non-forest at ``t2`` (``== 0``)
+    * ``0``   -> remaining forest: forest at both ``t1`` and ``t2`` (``== 1``)
+    * ``255`` -> nodata:          either input is nodata, or any other combination
+
+    Parameters
+    ----------
+    forest_t1, forest_t2 : array-like
+        Forest masks at two dates where ``1`` marks forest and ``0`` non-forest.
+        Works element-wise on numpy ``ndarray`` or (dask-backed) xarray ``DataArray``.
+    nodata1, nodata2 : scalar
+        Nodata sentinels for ``forest_t1`` / ``forest_t2``.
+    where : callable, optional
+        ``numpy.where`` (default) for in-memory arrays, or ``xarray.where`` to
+        preserve lazy/dask evaluation in the raster pipeline.
+
+    Returns
+    -------
+    array-like of uint8
+        The deforestation raster using the encoding above.
+    """
+    valid = (forest_t1 != nodata1) & (forest_t2 != nodata2)
+    deforested = valid & (forest_t1 == 1) & (forest_t2 == 0)
+    remaining = valid & (forest_t1 == 1) & (forest_t2 == 1)
+    return where(deforested, 1, where(remaining, 0, 255)).astype("uint8")
+
+
 def process_forest_loss_xarray(input1_path, input2_path, output_path):
     # Open the input rasters
     input1 = rioxarray.open_rasterio(
@@ -275,23 +306,12 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
             "The bounds of input1 must be equal to or larger than those of input2."
         )
 
-    # Create masks for valid data
+    # Compute the deforestation truth-table (1 = deforested, 0 = remaining
+    # forest, 255 = nodata). Passing where=xr.where keeps the computation
+    # lazy/dask-backed instead of materialising the arrays in memory.
     nodata1 = input1.rio.nodata
     nodata2 = input2.rio.nodata
-    valid_mask = (input1 != nodata1) & (input2 != nodata2)
-
-    # Create output based on conditions using xarray operations
-    # Convention: 1 = deforestation (event of interest), 0 = forest remaining,
-    # 255 = nodata. `input1`/`input2` are forest masks (1 = forest) at t1/t2.
-    output = xr.where(
-        valid_mask & (input1 == 1) & (input2 == 0),
-        1,  # forest(t1) -> non-forest(t2): DEFORESTED -> 1
-        xr.where(
-            valid_mask & (input1 == 1) & (input2 == 1),
-            0,  # forest(t1) -> forest(t2): remaining forest -> 0
-            255,  # nodata for all other cases
-        ),
-    ).astype("uint8")
+    output = compute_forest_loss(input1, input2, nodata1, nodata2, where=xr.where)
 
     # Set proper metadata
     output.rio.write_nodata(255, inplace=True)
