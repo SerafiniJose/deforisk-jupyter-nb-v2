@@ -5,7 +5,6 @@ spatial autocorrelation through a latent spatial random effect (rho).
 Training uses MCMC via forestatrisk.model_binomial_iCAR.
 """
 
-import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -226,21 +225,14 @@ class ICARModel(BaseRiskModel):
         )
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save pickle
+        # Persist the trained estimator via the shared ModelStore (sets model_path).
+        # The payload gains a design_sample=None key vs the old inline pickle;
+        # base.load_model reads it with .get(), so existing pickles still load.
+        self.save(folder=out_dir)
+
+        # Interpolate rho to full raster grid (a separate artifact, not in the pickle).
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = self.name or "model"
-        pickle_path = out_dir / f"icar_{base}_{ts}.pickle"
-        payload = {
-            "ml_model": self._ml_model,
-            "formula": self.formula,
-            "samples_path": self.samples_path,
-        }
-        with open(pickle_path, "wb") as fh:
-            pickle.dump(payload, fh)
-        self.model_path = pickle_path
-        print(f"  iCAR model saved to: {pickle_path}")
-
-        # Interpolate rho to full raster grid
         print("  Interpolating rho to raster grid...")
         rho_path = out_dir / f"rho_{base}_{ts}.tif"
         far.interpolate_rho(

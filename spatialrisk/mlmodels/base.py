@@ -7,7 +7,6 @@ Provides a generic Pydantic-based foundation for ML models that:
 - Serialize to/from JSON for project persistence
 """
 
-import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -272,52 +271,15 @@ class BaseRiskModel(BaseModel):
         Path
             Path to the written pickle file.
         """
-        if self._ml_model is None:
-            raise RuntimeError("Model has not been trained. Call fit() first.")
+        from spatialrisk.persistence import ModelStore
 
-        # Resolve output folder
-        if folder is not None:
-            out_dir = Path(folder)
-        else:
-            default = self._default_folder()
-            if default is None:
-                raise RuntimeError(
-                    "Cannot determine output folder: no project is attached. "
-                    "Set model.project first or pass folder= explicitly."
-                )
-            out_dir = default
-
-        out_dir.mkdir(parents=True, exist_ok=True)
-        filename = self._pickle_filename()
-        out_path = out_dir / filename
-
-        payload = {
-            "ml_model": self._ml_model,
-            "design_sample": self._design_sample,
-            "formula": self.formula,
-            "samples_path": self.samples_path,
-        }
-        with open(out_path, "wb") as fh:
-            pickle.dump(payload, fh)
-
-        self.model_path = out_path
-        print(f"  Model saved to: {out_path}")
-        return out_path
+        return ModelStore.save(self, folder)
 
     def load_model(self) -> None:
         """Load the ML object from self.model_path into memory."""
-        if self.model_path is None:
-            raise RuntimeError("model_path is not set. Train and save first.")
-        if not Path(self.model_path).exists():
-            raise FileNotFoundError(f"Pickle not found: {self.model_path}")
-        with open(self.model_path, "rb") as fh:
-            payload = pickle.load(fh)
-        self._ml_model = payload["ml_model"]
-        self._design_sample = payload.get("design_sample")
-        if payload.get("formula") is not None:
-            self.formula = payload["formula"]
-        if payload.get("samples_path") is not None:
-            self.samples_path = payload["samples_path"]
+        from spatialrisk.persistence import ModelStore
+
+        ModelStore.load(self)
 
     # ------------------------------------------------------------------
     # Project registration

@@ -1,15 +1,18 @@
-import json
 from typing import Dict, List, Optional, Union, Any
 from collections.abc import Iterable
 from pathlib import Path
 from box import Box
 from pydantic import BaseModel, Field, ConfigDict
-from spatialrisk.variables import LocalVectorVar, LocalRasterVar
+# Imported so Pydantic can resolve the "LocalVectorVar"/"LocalRasterVar" string
+# forward references in the field annotations below (ruff F401 is a false
+# positive -- the names are used by the annotation machinery, not directly).
+from spatialrisk.variables import LocalVectorVar, LocalRasterVar  # noqa: F401
 from spatialrisk.variables.models import DataType
 
 root_folder: Path = Path.cwd().parent
 downloads_folder = root_folder / "data"
-downloads_folder.mkdir(parents=True, exist_ok=True)
+# NOTE: the directory is created lazily by ProjectRepository.save /
+# initialize_folders -- importing this module must have no filesystem side effect.
 
 
 def _stringify_paths(obj: Any) -> Any:
@@ -379,67 +382,9 @@ class Project(BaseModel):
         Path
             Path to the saved JSON file
         """
-        # Ensure schemas are up-to-date before serializing any variables
-        self._ensure_model_schemas()
+        from spatialrisk.persistence import ProjectRepository
 
-        if filename is None:
-            filename = f"{self.project_name}_project.json"
-
-        project_folder = self.folders.project_folder
-        project_folder.mkdir(parents=True, exist_ok=True)
-
-        save_path = project_folder / filename
-
-        # Prepare data for serialization
-        data = {
-            "project_name": self.project_name,
-            "raw_variables": {},
-            "processed_variables": {},
-        }
-
-        # Only include years if explicitly set (for backward compatibility)
-        if self.years is not None:
-            data["years"] = self.years
-
-        # Serialize raw variables
-        for var_name, var in self.raw_variables.items():
-            data["raw_variables"][var_name] = var.model_dump(mode="json")
-
-        # Serialize processed variables
-        for var_name, var in self.processed_variables.items():
-            data["processed_variables"][var_name] = var.model_dump(mode="json")
-
-        # Serialize base_raster if it exists
-        if self.base_raster is not None:
-            data["base_raster"] = self.base_raster.model_dump(mode="json")
-
-        # Serialize registered ML models
-        if self.models:
-            data["models"] = {}
-            for key, model in self.models.items():
-                data["models"][key] = model.model_dump(mode="json")
-
-        # Serialize registered datasets
-        if self.datasets:
-            data["datasets"] = {}
-            for key, dataset in self.datasets.items():
-                data["datasets"][key] = {
-                    "name": dataset.name,
-                    "year": dataset.year,
-                    "target_name": dataset.target.name if dataset.target else None,
-                    "target_year": dataset.target.year if dataset.target else None,
-                    "feature_names": [f.name for f in dataset.features],
-                }
-
-        # Write to file
-        save_path.write_text(
-            json.dumps(data, indent=4, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
-
-        print(f"Project saved to: {save_path}")
-
-        return save_path
+        return ProjectRepository().save(self, filename)
 
     @classmethod
     def load(cls, project_name: str, filename: Optional[str] = None) -> "Project":
@@ -458,137 +403,9 @@ class Project(BaseModel):
         Project
             Loaded project instance with all variables
         """
-        # Ensure schemas are up-to-date before instantiating variables
-        cls._ensure_model_schemas()
+        from spatialrisk.persistence import ProjectRepository
 
-        from spatialrisk.variables import LocalVectorVar, LocalRasterVar
-
-        if filename is None:
-            filename = f"{project_name}_project.json"
-
-        project_folder = downloads_folder / project_name
-        load_path = project_folder / filename
-
-        if not load_path.exists():
-            raise FileNotFoundError(f"Project file not found: {load_path}")
-
-        # Load JSON data
-        data = json.loads(load_path.read_text(encoding="utf-8"))
-
-        # Create project instance without variables first
-        project = cls(project_name=data["project_name"], years=data.get("years"))
-
-        # Reconstruct raw variables
-        for var_name, var_data in data.get("raw_variables", {}).items():
-            # Convert Path strings back to Path objects
-            if "path" in var_data and var_data["path"]:
-                var_data["path"] = Path(var_data["path"])
-
-            # Determine which class to use based on data_type
-            if var_data.get("data_type") == "vector":
-                var = LocalVectorVar(**var_data)
-            elif var_data.get("data_type") == "raster":
-                var = LocalRasterVar(**var_data)
-            else:
-                raise ValueError(
-                    f"Unknown data_type for variable {var_name}: {var_data.get('data_type')}"
-                )
-
-            # Set project reference and add to raw_variables
-            var.project = project
-            project.raw_variables[var_name] = var
-
-        # Reconstruct processed variables
-        for var_name, var_data in data.get("processed_variables", {}).items():
-            # Convert Path strings back to Path objects
-            if "path" in var_data and var_data["path"]:
-                var_data["path"] = Path(var_data["path"])
-
-            # Determine which class to use based on data_type
-            if var_data.get("data_type") == "vector":
-                var = LocalVectorVar(**var_data)
-            elif var_data.get("data_type") == "raster":
-                var = LocalRasterVar(**var_data)
-            else:
-                raise ValueError(
-                    f"Unknown data_type for variable {var_name}: {var_data.get('data_type')}"
-                )
-
-            # Set project reference and add to processed_variables
-            var.project = project
-            project.processed_variables[var_name] = var
-
-        # Reconstruct base_raster if it exists
-        if "base_raster" in data and data["base_raster"]:
-            base_data = data["base_raster"]
-
-            # Convert Path strings back to Path objects
-            if "path" in base_data and base_data["path"]:
-                base_data["path"] = Path(base_data["path"])
-
-            # Create the base raster variable
-            project.base_raster = LocalRasterVar(**base_data)
-            # Set project reference
-            project.base_raster.project = project
-
-        # Reconstruct registered ML models
-        if "models" in data and data["models"]:
-            from spatialrisk.mlmodels import GLMModel, ICARModel, JNRBenchmarkModel, MWModel, RFModel
-
-            _MODEL_REGISTRY = {
-                "glm": GLMModel,
-                "rf": RFModel,
-                "icar": ICARModel,
-                "jnr": JNRBenchmarkModel,
-                "mw": MWModel,
-            }
-            for key, model_data in data["models"].items():
-                model_type = model_data.get("model_type", "")
-                model_cls = _MODEL_REGISTRY.get(model_type)
-                if model_cls is None:
-                    print(f"  Warning: unknown model_type '{model_type}' for key '{key}' — skipped")
-                    continue
-                # Convert Path strings back to Path objects
-                for path_field in ("model_path", "samples_path", "rho_path"):
-                    if path_field in model_data and model_data[path_field]:
-                        model_data[path_field] = Path(model_data[path_field])
-                model = model_cls(**model_data)
-                model.project = project
-                project.models[key] = model
-            print(f"Loaded {len(project.models)} model(s)")
-
-        # Reconstruct registered datasets
-        if "datasets" in data and data["datasets"]:
-            from spatialrisk.dataset import Dataset
-            for key, ds_data in data["datasets"].items():
-                ds = Dataset(project=project, name=ds_data.get("name"), year=ds_data.get("year"))
-                target_name = ds_data.get("target_name")
-                feature_names = ds_data.get("feature_names", [])
-                if target_name:
-                    # The dataset's stored year applies to temporal features and is
-                    # already restored via the constructor above. Only pass it to
-                    # set_target when the target itself is temporal, since set_target
-                    # rejects a year argument for static targets.
-                    target_is_temporal = project.is_temporal(target_name)
-                    ds.set_target(
-                        target_name,
-                        year=ds_data.get("year") if target_is_temporal else None,
-                    )
-                if feature_names:
-                    missing = [n for n in feature_names if not project.get_all_instances(n)]
-                    valid_names = [n for n in feature_names if project.get_all_instances(n)]
-                    if missing:
-                        print(
-                            f"  ⚠ Dataset '{key}': feature(s) not found in processed variables, skipped: {missing}"
-                        )
-                    if valid_names:
-                        ds.set_features(valid_names)
-                project.datasets[key] = ds
-            print(f"Loaded {len(project.datasets)} dataset(s)")
-
-        print(f"Project loaded from: {load_path}")
-        print(f"Loaded {len(project.processed_variables)} processed variables")
-        return project
+        return ProjectRepository().load(project_name, filename)
 
     def reproject_and_match_all(
         self,
