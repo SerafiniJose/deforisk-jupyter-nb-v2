@@ -28,22 +28,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-while IFS= read -r line; do
-  [[ $line =~ ^#.*$ || -z $line ]] && continue
+# Run from the script's own directory so relative paths resolve
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-  if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
-    name="${BASH_REMATCH[1]}"
-    value="${BASH_REMATCH[2]}"
+# Make the module root importable (so `import gui...` works)
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-    # Remove quotes if present
-    value="${value#\'}"
-    value="${value%\'}"
-    value="${value#\"}"
-    value="${value%\"}"
+if [[ -f .env ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line =~ ^#.*$ || -z $line ]] && continue
 
-    export "$name=$value"
-  fi
-done < .env
+    if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
+      name="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+
+      # Remove quotes if present
+      value="${value#\'}"
+      value="${value%\'}"
+      value="${value#\"}"
+      value="${value%\"}"
+
+      export "$name=$value"
+    fi
+  done < .env
+else
+  echo "Note: no .env file found in $SCRIPT_DIR, skipping env load."
+fi
 
 # solara run "$SOLARA_FILE" --port $PORT --no-open
 # solara run "$SOLARA_FILE" --port $PORT --no-open --log-level debug

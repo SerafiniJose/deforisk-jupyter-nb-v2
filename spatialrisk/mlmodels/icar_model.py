@@ -418,4 +418,5 @@ class ICARModel(BaseRiskModel):
                 )
 
         print(f"✓ iCAR raster written: {output_file}")
+        self._register_prediction(output_file, dataset=active_dataset)
         return output_file

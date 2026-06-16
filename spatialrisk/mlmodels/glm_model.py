@@ -230,4 +230,5 @@ class GLMModel(BaseRiskModel):
         # Clean up VRT
         Path(vrt_path).unlink(missing_ok=True)
         print(f"✓ GLM raster written: {output_file}")
+        self._register_prediction(output_file, dataset=active_dataset)
         return output_file

@@ -352,6 +352,62 @@ class BaseRiskModel(BaseModel):
         if auto_save:
             project.save()
 
+    def _model_key(self) -> str:
+        """Return this model's key in ``project.models``.
+
+        Prefers an identity reverse-lookup (honors custom keys passed to
+        ``register``/``add_model``); falls back to the default key formula.
+        """
+        if self.project is not None:
+            for key, model in self.project.models.items():
+                if model is self:
+                    return key
+        return f"{self.model_type}_{self.name}" if self.name else self.model_type
+
+    def _register_prediction(
+        self,
+        path: Union[str, Path],
+        dataset: Optional[Any] = None,
+        year: Optional[int] = None,
+        window: Optional[int] = None,
+        auto_save: bool = True,
+    ) -> Optional[Any]:
+        """Build and register a Prediction for an output raster.
+
+        No-ops (returns None) when the model has no project reference, so direct
+        ``apply()`` calls outside a project context keep working unchanged.
+
+        Parameters
+        ----------
+        path : str or Path
+            The written output raster.
+        dataset : Dataset, optional
+            Dataset used for this prediction. Falls back to ``self.dataset``.
+        year : int, optional
+            Period of the prediction. Falls back to ``self.year``.
+        window : int, optional
+            Moving-window size discriminator (MW only).
+        auto_save : bool
+            Passed through to project registration.
+        """
+        if self.project is None:
+            return None
+
+        from spatialrisk.predictions.prediction import Prediction, build_dataset_snapshot
+
+        ds = dataset if dataset is not None else self.dataset
+        prediction = Prediction(
+            path=Path(path),
+            model_key=self._model_key(),
+            dataset_name=(getattr(ds, "name", None) or self.dataset_name or "unknown"),
+            year=year if year is not None else self.year,
+            window=window,
+            model_snapshot=self.model_dump(mode="json"),
+            dataset_snapshot=build_dataset_snapshot(ds),
+        )
+        prediction.add_to_project(self.project, auto_save=auto_save)
+        return prediction
+
     # ------------------------------------------------------------------
     # Serialization override
     # ------------------------------------------------------------------

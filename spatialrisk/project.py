@@ -48,6 +48,7 @@ class Project(BaseModel):
     base_raster: Optional["LocalRasterVar"] = None
     models: Dict[str, Any] = Field(default_factory=dict)
     datasets: Dict[str, Any] = Field(default_factory=dict)
+    predictions: Dict[str, Any] = Field(default_factory=dict)
 
     @staticmethod
     def _ensure_model_schemas() -> None:
@@ -365,6 +366,71 @@ class Project(BaseModel):
         """Return sorted list of registered dataset keys."""
         return sorted(self.datasets.keys())
 
+    # ------------------------------------------------------------------
+    # Prediction registry
+    # ------------------------------------------------------------------
+
+    def add_prediction(
+        self,
+        prediction: Any,
+        key: Optional[str] = None,
+        auto_save: bool = True,
+    ) -> None:
+        """Add a Prediction to the project's prediction registry.
+
+        Parameters
+        ----------
+        prediction : Prediction
+            Prediction instance (one output raster).
+        key : str, optional
+            Storage key. Defaults to ``prediction.storage_key()``.
+        auto_save : bool
+            If True, saves the project JSON after registering.
+        """
+        prediction.project = self
+        storage_key = key or prediction.storage_key()
+        self.predictions[storage_key] = prediction
+        print(f"  Prediction registered as project.predictions['{storage_key}']")
+        if auto_save:
+            self.save()
+
+    def get_prediction(self, key: str) -> Optional[Any]:
+        """Return the prediction stored under *key*, or None if not found."""
+        return self.predictions.get(key)
+
+    def list_predictions(self) -> List[str]:
+        """Return registered prediction keys in insertion order."""
+        return list(self.predictions.keys())
+
+    def filter_predictions(
+        self,
+        model_key: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        **attrs: Any,
+    ) -> Dict[str, Any]:
+        """Return the subset of predictions matching the given criteria.
+
+        Parameters
+        ----------
+        model_key : str, optional
+            Keep only predictions from this model key.
+        dataset_name : str, optional
+            Keep only predictions from this dataset.
+        **attrs
+            Additional exact-match filters on any Prediction attribute
+            (e.g. ``year=2020``, ``window=5``, ``active=True``).
+        """
+        result: Dict[str, Any] = {}
+        for key, pred in self.predictions.items():
+            if model_key is not None and pred.model_key != model_key:
+                continue
+            if dataset_name is not None and pred.dataset_name != dataset_name:
+                continue
+            if any(getattr(pred, attr, None) != value for attr, value in attrs.items()):
+                continue
+            result[key] = pred
+        return result
+
     def save(self, filename: Optional[str] = None) -> Path:
         """
         Save the project to a JSON file in the project folder.
@@ -430,6 +496,12 @@ class Project(BaseModel):
                     "target_year": dataset.target.year if dataset.target else None,
                     "feature_names": [f.name for f in dataset.features],
                 }
+
+        # Serialize registered predictions
+        if self.predictions:
+            data["predictions"] = {}
+            for key, prediction in self.predictions.items():
+                data["predictions"][key] = prediction.model_dump(mode="json")
 
         # Write to file
         save_path.write_text(
@@ -585,6 +657,18 @@ class Project(BaseModel):
                         ds.set_features(valid_names)
                 project.datasets[key] = ds
             print(f"Loaded {len(project.datasets)} dataset(s)")
+
+        # Reconstruct registered predictions
+        if "predictions" in data and data["predictions"]:
+            from spatialrisk.predictions.prediction import Prediction
+
+            for key, pred_data in data["predictions"].items():
+                if pred_data.get("path"):
+                    pred_data["path"] = Path(pred_data["path"])
+                prediction = Prediction(**pred_data)
+                prediction.project = project
+                project.predictions[key] = prediction
+            print(f"Loaded {len(project.predictions)} prediction(s)")
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
