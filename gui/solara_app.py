@@ -27,6 +27,8 @@ from gui.scripts.project_io import list_projects, load_project, save_project
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
+from gui.tile.train_tile import TrainTile
+from gui.tile.inference_tile import InferenceTile
 from gui.widget.notification_area import NotificationArea
 
 logger = setup_logging(logger_name="spatial_risk")
@@ -180,20 +182,10 @@ def WorkflowTabs(map_, gee_interface):
             DatasetTile(project=app_state.project)
 
         with rv.TabItem():
-            # TODO: Put real stuff
-            with solara.Column(style="gap: 16px;"):
-                solara.Markdown("### Step 4 — Model")
-                solara.Info(
-                    "Model configuration is not yet implemented. This step will allow you to define target and feature variables for model training."
-                )
+            TrainTile(project=app_state.project)
 
         with rv.TabItem():
-            # TODO: Put real stuff
-            with solara.Column(style="gap: 16px;"):
-                solara.Markdown("### Step  — Model")
-                solara.Info(
-                    "Model configuration is not yet implemented. This step will allow you to define target and feature variables for model training."
-                )
+            InferenceTile(project=app_state.project)
 
     NotificationArea(
         active_tab=active_tab,
