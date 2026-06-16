@@ -6,6 +6,12 @@ from spatialrisk.sampling import Sampling, SamplingStrategy
 from spatialrisk.mlmodels import BaseRiskModel, GLMModel, RFModel, ICARModel, MWModel, JNRBenchmarkModel
 from spatialrisk.predictions import Prediction
 from spatialrisk import rmj
+from spatialrisk.evaluation import (
+    evaluate_prediction,
+    evaluate_predictions,
+    make_square,
+    validate_two_layer,
+)
 
 __all__ = [
     "Project",
@@ -20,4 +26,8 @@ __all__ = [
     "JNRBenchmarkModel",
     "Prediction",
     "rmj",
+    "evaluate_prediction",
+    "evaluate_predictions",
+    "make_square",
+    "validate_two_layer",
 ]
