@@ -27,6 +27,18 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
             count = len(project.datasets)
             return (f"{count} dataset(s) registered.", "success")
 
+    elif tab == 3:  # Train
+        if project is not None and not project.datasets:
+            return ("Register at least one dataset (Step 3) before training.", "warning")
+
+    elif tab == 4:  # Inference
+        if project is not None and not project.models:
+            return ("Train at least one model (Step 4) before inference.", "warning")
+
+    elif tab == 5:  # Evaluation
+        if project is not None and not project.predictions:
+            return ("Run inference (Step 5) to produce predictions before evaluation.", "warning")
+
     # Global status (project load/save) visible on any step
     if status_message:
         return (status_message, "success")

@@ -29,6 +29,7 @@ from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
 from gui.tile.train_tile import TrainTile
 from gui.tile.inference_tile import InferenceTile
+from gui.tile.evaluation_tile import EvaluationTile
 from gui.widget.notification_area import NotificationArea
 
 logger = setup_logging(logger_name="spatial_risk")
@@ -163,6 +164,9 @@ def WorkflowTabs(map_, gee_interface):
             children=["Inference"],
             # disabled=not variables_complete
         )
+        rv.Tab(
+            children=["Evaluation"],
+        )
 
     with rv.TabsItems(v_model=active_tab):
         with rv.TabItem():
@@ -186,6 +190,9 @@ def WorkflowTabs(map_, gee_interface):
 
         with rv.TabItem():
             InferenceTile(project=app_state.project)
+
+        with rv.TabItem():
+            EvaluationTile(project=app_state.project)
 
     NotificationArea(
         active_tab=active_tab,
