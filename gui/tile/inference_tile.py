@@ -18,26 +18,19 @@ inference_jobs = solara.reactive([])
 def _run_inference(job_id, model_key, dataset_key, project):
     """Run model inference in a background thread."""
     try:
-        model = project.models[model_key]
-        dataset = project.datasets[dataset_key]
+        from gui.scripts.inference_runner import run_inference
 
-        model.project = project
-        model.dataset = dataset
-        model.predict()
+        run_inference(project, model_key, dataset_key)
 
-        # Update job on success
         jobs = list(inference_jobs.value)
         for j in jobs:
             if j["id"] == job_id:
                 if j["status"] == "cancelled":
                     break
                 j["status"] = "completed"
-                j["output_path"] = str(
-                    getattr(model, "output_path", "see project folder")
-                )
+                j["output_path"] = "see project predictions"
                 break
         inference_jobs.set(jobs)
-
         logger.info("Inference completed: %s on %s", model_key, dataset_key)
 
     except Exception as exc:
