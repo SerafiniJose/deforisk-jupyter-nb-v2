@@ -1,4 +1,10 @@
-"""Compute the forest-edge distance threshold from a binary deforestation raster."""
+"""LEGACY — superseded by ``spatialrisk.rmj.deforrate.dist_edge_threshold``.
+
+Thin wrapper that feeds a binary raster to ``riskmapjnr`` as an ``fcc_file``.
+Kept for reference only; not used by any model. See the ``rmj.legacy`` docstring.
+
+Compute the forest-edge distance threshold from a binary deforestation raster.
+"""
 
 from pathlib import Path
 from typing import Optional, Union
