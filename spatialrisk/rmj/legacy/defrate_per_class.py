@@ -1,4 +1,10 @@
-"""Compute deforestation rates per vulnerability class from binary rasters.
+"""LEGACY — superseded by ``spatialrisk.rmj.deforrate.defrate_per_class``.
+
+Kept for reference only; not used by any model. The current version uses the
+period-robust ``(forest == 1) | (defor == 1)`` denominator. See the
+``rmj.legacy`` docstring.
+
+Compute deforestation rates per vulnerability class from binary rasters.
 
 Replaces ``riskmapjnr.benchmark.defrate_per_class`` with a generic
 implementation that accepts separate binary forest and deforestation rasters

@@ -4,16 +4,17 @@ Implements the Jurisdictional and Nested REDD+ (JNR) benchmark approach:
 stratifies the landscape by distance-to-forest-edge bins × subjurisdictions
 and assigns historical deforestation rates as vulnerability scores.
 
-All processing functions live in ``spatialrisk.rmj`` and work with
-generic binary (0/1) rasters.  This class is a thin orchestration layer
-that ties datasets and project metadata to those functions.
+All processing functions live in ``spatialrisk.rmj`` and work with two explicit
+binary (0/1) rasters — a deforestation layer and a forest-at-start layer. This
+class is a thin orchestration layer that ties datasets and project metadata to
+those functions.
 
 Workflow
 --------
-1. ``fit()``  — calls ``rmj.dist_edge_threshold`` and
+1. ``fit()``  — calls ``rmj.deforrate.dist_edge_threshold`` and
                ``rmj.compute_dist_bins`` for a training period.
 2. ``apply()`` — calls ``rmj.vulnerability_map`` and
-                ``rmj.defrate_per_class`` for any period.
+                ``rmj.deforrate.defrate_per_class`` for any period.
 
 Variable naming
 ---------------
@@ -186,7 +187,9 @@ class JNRBenchmarkModel(BaseRiskModel):
         -------
         self
         """
-        from spatialrisk.rmj import dist_edge_threshold, compute_dist_bins
+        import numpy as np
+
+        from spatialrisk.rmj import deforrate, compute_dist_bins
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -237,16 +240,17 @@ class JNRBenchmarkModel(BaseRiskModel):
         print(f"\n🔧 JNR fit — period='{period}'")
         print(deforestation_file, forest_edge_file)
 
-        # Step 1: Distance-to-edge threshold
-        result = dist_edge_threshold(
-            deforestation_file=deforestation_file,
-            forest_edge_file=forest_edge_file,
-            defor_values=defor_values,
+        # Step 1: Distance-to-edge threshold (native two-layer; deforrate treats
+        # ``defor == 1`` as the event — the ``defor_values`` argument is retained
+        # for API compatibility but is a no-op under the 1=event convention).
+        result = deforrate.dist_edge_threshold(
+            defor_file=deforestation_file,
+            dist_file=forest_edge_file,
+            dist_bins=np.arange(0, self.max_dist, step=30),
             defor_threshold=self.defor_threshold,
-            max_dist=self.max_dist,
             blk_rows=self.blk_rows,
-            tab_file=period_dir / "tab_dist.csv",
-            fig_file=period_dir / f"perc_dist_{period}.png",
+            tab_file_dist=period_dir / "tab_dist.csv",
+            fig_file_dist=period_dir / f"perc_dist_{period}.png",
             verbose=False,
         )
         self.dist_thresh = float(result["dist_thresh"])
@@ -313,7 +317,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         Path
             Path to the written vulnerability GeoTIFF.
         """
-        from spatialrisk.rmj import vulnerability_map, defrate_per_class
+        from spatialrisk.rmj import vulnerability_map, deforrate
 
         if not self.dist_bins:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
@@ -359,18 +363,16 @@ class JNRBenchmarkModel(BaseRiskModel):
             verbose=False,
         )
 
-        # Step 2: Deforestation rate per class
-        defrate_per_class(
+        # Step 2: Deforestation rate per class (native two-layer)
+        deforrate.defrate_per_class(
+            defor_file=deforestation_file,
             forest_file=forest_file,
-            deforestation_file=deforestation_file,
             vulnerability_file=output_file,
             time_interval=time_interval,
             tab_file_defrate=defrate_tab,
             deforate_model=(
                 Path(deforate_model) if deforate_model is not None else None
             ),
-            forest_value=self.forest_value,
-            defor_value=self.defor_value,
             blk_rows=self.blk_rows,
         )
 
@@ -378,6 +380,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         self.defrate_files[period] = defrate_tab
 
         print(f"✓ JNR apply complete — {output_file}")
+        self._register_prediction(output_file, dataset=active)
         return output_file
 
     # ------------------------------------------------------------------

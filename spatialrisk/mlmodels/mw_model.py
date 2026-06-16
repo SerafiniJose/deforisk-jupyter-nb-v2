@@ -6,18 +6,19 @@ required — the model is a spatial heuristic based on neighbourhood event
 density.  Although the defaults use deforestation terminology, the model
 is generic and works with any binary target variable.
 
-All processing functions live in ``spatialrisk.rmj`` and work with
-generic binary (0/1) rasters.  This class is a thin orchestration layer
-that ties datasets and project metadata to those functions.
+All processing functions live in ``spatialrisk.rmj`` and work with two explicit
+binary (0/1) rasters — a deforestation layer and a forest-at-start layer. This
+class is a thin orchestration layer that ties datasets and project metadata to
+those functions.
 
 Workflow
 --------
-1. ``fit()``  — calls ``rmj.dist_edge_threshold`` and
-               ``rmj.local_defor_rate`` (one per window size) for a training
-               period (typically "calibration" or "historical").
+1. ``fit()``  — calls ``rmj.deforrate.dist_edge_threshold`` and
+               ``rmj.deforrate.local_defor_rate`` (one per window size) for a
+               training period (typically "calibration" or "historical").
 2. ``apply()`` — for any period, calls ``rmj.set_defor_cat_zero`` and
-                ``rmj.defrate_per_cat`` using the ldefrate rasters produced
-                in ``fit()``.
+                ``rmj.deforrate.defrate_per_cat`` using the ldefrate rasters
+                produced in ``fit()``.
 
 Variable naming
 ---------------
@@ -188,7 +189,9 @@ class MWModel(BaseRiskModel):
         -------
         self
         """
-        from spatialrisk.rmj import dist_edge_threshold, local_defor_rate
+        import numpy as np
+
+        from spatialrisk.rmj import deforrate
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -219,9 +222,12 @@ class MWModel(BaseRiskModel):
         if defor_threshold is not None:
             self.defor_threshold = defor_threshold
 
-        # Extract file paths from dataset
+        # Extract file paths from dataset. The forest-at-start layer is now an
+        # explicit input to local_defor_rate (the moving-window denominator),
+        # so it is required at fit() time as well as apply() time.
         deforestation_file = active.target.path
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
+        forest_file = self._get_feature(active, self.forest_var)
 
         out_root = (
             Path(folder) if folder is not None else (self._default_folder() or Path.cwd())
@@ -231,16 +237,16 @@ class MWModel(BaseRiskModel):
 
         print(f"\n🔧 MW fit — period='{period}', windows={self.win_size_list}")
 
-        # Step 1: Distance-to-edge threshold
-        result = dist_edge_threshold(
-            deforestation_file=deforestation_file,
-            forest_edge_file=forest_edge_file,
-            defor_values=self.defor_value,
+        # Step 1: Distance-to-edge threshold (native two-layer; deforrate treats
+        # ``defor == 1`` as the event under the 1=event convention).
+        result = deforrate.dist_edge_threshold(
+            defor_file=deforestation_file,
+            dist_file=forest_edge_file,
+            dist_bins=np.arange(0, self.max_dist, step=30),
             defor_threshold=self.defor_threshold,
-            max_dist=self.max_dist,
             blk_rows=self.blk_rows,
-            tab_file=period_dir / "tab_dist.csv",
-            fig_file=period_dir / f"perc_dist_{period}.png",
+            tab_file_dist=period_dir / "tab_dist.csv",
+            fig_file_dist=period_dir / f"perc_dist_{period}.png",
             verbose=False,
         )
         self.dist_thresh = float(result["dist_thresh"])
@@ -251,12 +257,12 @@ class MWModel(BaseRiskModel):
         for win_size in self.win_size_list:
             ldefrate_file = period_dir / f"ldefrate_mw_{win_size}.tif"
             print(f"  local_defor_rate — window {win_size}×{win_size} px...")
-            local_defor_rate(
-                deforestation_file=deforestation_file,
+            deforrate.local_defor_rate(
+                defor_file=deforestation_file,
+                forest_file=forest_file,
                 ldefrate_file=ldefrate_file,
                 win_size=win_size,
                 time_interval=time_interval,
-                defor_value=self.defor_value,
                 rescale_min_val=2,
                 rescale_max_val=self.rescale_max_val,
                 blk_rows=self.blk_rows,
@@ -327,7 +333,7 @@ class MWModel(BaseRiskModel):
         dict
             ``{win_size_str: Path}`` for each probability raster produced.
         """
-        from spatialrisk.rmj import set_defor_cat_zero, defrate_per_cat
+        from spatialrisk.rmj import set_defor_cat_zero, deforrate
 
         if not self.ldefrate_files:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
@@ -385,18 +391,21 @@ class MWModel(BaseRiskModel):
                 verbose=False,
             )
 
-            defrate_per_cat(
+            deforrate.defrate_per_cat(
+                defor_file=deforestation_file,
                 forest_file=forest_file,
-                deforestation_file=deforestation_file,
                 riskmap_file=prob_file,
                 time_interval=time_interval,
                 tab_file_defrate=defrate_tab,
-                forest_value=self.forest_value,
-                defor_value=self.defor_value,
                 blk_rows=self.blk_rows,
             )
 
             output_files[win_size_str] = prob_file
+            self._register_prediction(
+                prob_file,
+                dataset=active,
+                window=int(win_size_str) if str(win_size_str).isdigit() else None,
+            )
             print(f"  window {win_size_str} → {prob_file.name}")
 
         print(f"✓ MW apply complete — {len(output_files)} probability maps written")

@@ -4,6 +4,7 @@ from spatialrisk.project import Project
 from spatialrisk.dataset import Dataset
 from spatialrisk.sampling import Sampling, SamplingStrategy
 from spatialrisk.mlmodels import BaseRiskModel, GLMModel, RFModel, ICARModel, MWModel, JNRBenchmarkModel
+from spatialrisk.predictions import Prediction
 from spatialrisk import rmj
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "ICARModel",
     "MWModel",
     "JNRBenchmarkModel",
+    "Prediction",
     "rmj",
 ]

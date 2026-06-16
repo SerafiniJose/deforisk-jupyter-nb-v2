@@ -1,4 +1,11 @@
-"""Compute deforestation rates per moving-window category from binary rasters.
+"""LEGACY — superseded by ``spatialrisk.rmj.deforrate.defrate_per_cat``.
+
+Kept for reference only; not used by any model. The current version uses the
+period-robust ``(forest == 1) | (defor == 1)`` denominator and restores the
+``rate_mod``/``rate_abs`` columns this version dropped. See the ``rmj.legacy``
+docstring.
+
+Compute deforestation rates per moving-window category from binary rasters.
 
 Replaces ``riskmapjnr.defrate_per_cat`` with a generic implementation that
 accepts separate binary forest and deforestation rasters instead of a
