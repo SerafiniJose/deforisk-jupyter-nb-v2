@@ -162,3 +162,25 @@ def test_evaluate_prediction_runs_defrate_then_validate(tmp_path, monkeypatch):
     assert pred.metrics == {
         "calibration_300": {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26}
     }
+
+
+def test_evaluate_predictions_filters_and_aggregates(tmp_path, monkeypatch):
+    project, pred, dataset = _fake_project_with_prediction(tmp_path)
+    # second prediction in a different period that we will filter out
+    pred2 = _types.SimpleNamespace(model_key="rf_rf_v1", window=None,
+                                   dataset_name="validation",
+                                   path=tmp_path / "risk2.tif", metrics={})
+    project.predictions["rf_rf_v1__validation_y2015"] = pred2
+
+    monkeypatch.setattr(ev, "evaluate_prediction",
+                        lambda proj, p, csizes=(300,), recompute_defrate=True: [
+                            {"prediction": p.model_key, "model": (label_from := ev.label_for(p)),
+                             "period": p.dataset_name, "csize_coarse_grid": 300,
+                             "csize_coarse_grid_ha": 8100.0, "ncell": 26,
+                             "MedAE": 1.0, "R2": 0.5, "RMSE": 2.0, "wRMSE": 3.0,
+                             "fig_path": "x.png"}])
+
+    df = ev.evaluate_predictions(project, dataset_filter=["calibration"])
+    assert list(df["period"].unique()) == ["calibration"]   # validation filtered out
+    assert set(["MedAE", "R2", "RMSE", "wRMSE"]).issubset(df.columns)
+    assert (_Path(tmp_path) / "evaluation" / "indices_all.csv").exists()

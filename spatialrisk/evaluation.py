@@ -231,3 +231,47 @@ def evaluate_prediction(project, pred, csizes=(300,), recompute_defrate=True):
                                              ("RMSE", "wRMSE", "MedAE", "R2", "ncell")}
         rows.append(idx)
     return rows
+
+
+def evaluate_predictions(project, dataset_filter=None, model_filter=None,
+                         windows=None, csizes=(300,), recompute_defrate=True,
+                         auto_save=True):
+    """Select predictions from the project, evaluate each, return aggregated indices.
+
+    Skips (with a printed warning) any prediction whose layers cannot be resolved,
+    rather than aborting the whole batch. Writes <project>/evaluation/indices_all.csv.
+    """
+    selected = {}
+    for key, pred in project.predictions.items():
+        if dataset_filter and pred.dataset_name not in dataset_filter:
+            continue
+        if model_filter and pred.model_key not in model_filter:
+            continue
+        if windows is not None and pred.window is not None and pred.window not in windows:
+            continue
+        selected[key] = pred
+
+    rows = []
+    for key, pred in selected.items():
+        try:
+            rows.extend(evaluate_prediction(project, pred, csizes=csizes,
+                                            recompute_defrate=recompute_defrate))
+        except Exception as exc:  # noqa: BLE001 - skip-and-warn is intentional
+            print(f"⚠ skipped {key}: {exc}")
+
+    cols = ["prediction", "model", "period", "csize_coarse_grid",
+            "csize_coarse_grid_ha", "ncell", "MedAE", "R2", "RMSE", "wRMSE"]
+    df = (pd.DataFrame(rows, columns=cols).sort_values(
+        ["csize_coarse_grid", "period", "model"]).reset_index(drop=True)
+        if rows else pd.DataFrame(columns=cols))
+
+    evaluation_folder = Path(project.folders.project_folder) / "evaluation"
+    evaluation_folder.mkdir(parents=True, exist_ok=True)
+    df.to_csv(evaluation_folder / "indices_all.csv", index=False)
+
+    if auto_save and rows:
+        try:
+            project.save()
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠ project.save() after evaluation failed: {exc}")
+    return df
