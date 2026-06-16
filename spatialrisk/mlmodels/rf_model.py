@@ -1,10 +1,9 @@
 """Random Forest risk model using sklearn with Patsy formulas."""
 
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
-import pandas as pd
 
 from spatialrisk.mlmodels.base import BaseRiskModel
 
@@ -105,127 +104,5 @@ class RFModel(BaseRiskModel):
         self.save(folder=folder)
         return self
 
-    def apply(
-        self,
-        output_file: Union[str, Path],
-        dataset: Optional[Any] = None,
-        mask: Optional[Union[str, Path]] = None,
-        mask_value: Union[int, float, list] = 0,
-    ) -> Path:
-        """Generate a deforestation probability GeoTIFF.
-
-        Processes the feature rasters block-by-block. Outputs a UInt16
-        raster scaled to [1, 65535] with 0 as nodata, using ``far.misc.rescale``.
-
-        Parameters
-        ----------
-        output_file : str or Path
-            Path for the output GeoTIFF.
-        dataset : Dataset, optional
-            Dataset with target and features configured. If omitted, uses
-            self.dataset. Must contain all features in self.feature_names.
-        mask : str or Path, optional
-            Path to a mask raster. Pixels matching ``mask_value`` (or the
-            raster's nodata) are set to nodata (0) in the output.
-            If omitted, prediction runs over the full raster stack.
-        mask_value : int, float, or list of int/float, optional
-            Value(s) in the mask raster that identify pixels to suppress.
-            Defaults to 0. Ignored when ``mask`` is None.
-        """
-        import forestatrisk as far
-        import rasterio
-        from patsy.highlevel import build_design_matrices
-
-        if self._ml_model is None:
-            self.load_model()
-
-        active_dataset = self._resolve_dataset(dataset)
-
-        if self._x_design_info is None:
-            if self.samples_path is not None and Path(self.samples_path).exists():
-                from patsy import dmatrices as _dmatrices
-
-                _df = pd.read_csv(self.samples_path).dropna()
-                _, x_ref = _dmatrices(self.formula, _df, NA_action="drop")
-                self._x_design_info = x_ref.design_info
-            else:
-                raise RuntimeError(
-                    "Cannot reconstruct design info: samples_path not set or "
-                    "file missing. Re-run fit() to regenerate samples."
-                )
-
-        output_file = Path(output_file)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        feature_paths = {var.name: var.path for var in active_dataset.features}
-
-        print(f"\n🗺  Predicting RF raster → {output_file}")
-
-        with rasterio.open(active_dataset.target.path) as ref:
-            profile = ref.profile.copy()
-
-        profile.update(dtype="uint16", count=1, nodata=0)
-
-        _mask_values = (
-            mask_value if isinstance(mask_value, (list, tuple)) else [mask_value]
-        ) if mask is not None else None
-
-        with rasterio.open(output_file, "w", **profile) as dst:
-            blockinfo = far.misc.makeblock(str(active_dataset.target.path))
-            nblock, nblock_x = blockinfo[0], blockinfo[1]
-            x_off, y_off, nx, ny = (
-                blockinfo[3],
-                blockinfo[4],
-                blockinfo[5],
-                blockinfo[6],
-            )
-
-            for b in range(nblock):
-                px = b % nblock_x
-                py = b // nblock_x
-                col_start, row_start = x_off[px], y_off[py]
-                n_cols, n_rows = nx[px], ny[py]
-                window = rasterio.windows.Window(col_start, row_start, n_cols, n_rows)
-
-                # Apply mask before prediction
-                mask_invalid = np.zeros(n_rows * n_cols, dtype=bool)
-                if mask is not None:
-                    with rasterio.open(mask) as mask_src:
-                        mask_block = mask_src.read(1, window=window)
-                        mask_nodata = mask_src.nodata
-                    mask_invalid = np.isin(mask_block.ravel(), _mask_values)
-                    if mask_nodata is not None:
-                        mask_invalid |= mask_block.ravel() == mask_nodata
-
-                # Read feature data for this block, replacing nodata with NaN
-                block_dict = {}
-                for name, path in feature_paths.items():
-                    with rasterio.open(path) as src:
-                        arr = src.read(1, window=window).astype(float)
-                        if src.nodata is not None:
-                            arr[arr == src.nodata] = np.nan
-                    block_dict[name] = arr.ravel()
-
-                block_df_full = pd.DataFrame(block_dict)
-                valid_mask = (
-                    ~block_df_full.isnull().any(axis=1).to_numpy() & ~mask_invalid
-                )
-                block_df = block_df_full[valid_mask]
-
-                out_arr = np.zeros(n_rows * n_cols, dtype=np.uint16)
-
-                if not block_df.empty:
-                    (x_block,) = build_design_matrices(
-                        [self._x_design_info], block_df, NA_action="drop"
-                    )
-                    proba = self._ml_model.predict_proba(np.asarray(x_block))[:, 1]
-                    out_arr[valid_mask] = far.misc.rescale(proba).astype(np.uint16)
-
-                dst.write(
-                    out_arr.reshape(n_rows, n_cols),
-                    1,
-                    window=window,
-                )
-
-        print(f"✓ RF raster written: {output_file}")
-        return output_file
+    # apply() is inherited from BaseRiskModel (default _predict_block uses
+    # self._ml_model.predict_proba); RF needs no override.

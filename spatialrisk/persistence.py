@@ -14,11 +14,23 @@ imported *inside* methods to keep module import order acyclic.
 import json
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-if TYPE_CHECKING:  # avoid import cycles at module load
-    from spatialrisk.mlmodels.base import BaseRiskModel
-    from spatialrisk.project import Project
+# spatialrisk.persistence is only ever imported lazily (by Project.save/load and
+# BaseRiskModel.save/load_model), so by the time this module is first imported the
+# entity modules below are already fully initialised -- there is no import cycle,
+# and these belong at module top rather than inside the methods.
+from spatialrisk.dataset import Dataset
+from spatialrisk.mlmodels import (
+    GLMModel,
+    ICARModel,
+    JNRBenchmarkModel,
+    MWModel,
+    RFModel,
+)
+from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.project import Project
+from spatialrisk.variables import LocalRasterVar, LocalVectorVar
 
 
 class ProjectRepository:
@@ -106,9 +118,6 @@ class ProjectRepository:
     # ------------------------------------------------------------------ load
     def load(self, project_name: str, filename: Optional[str] = None) -> "Project":
         """Load and reconstruct a project from JSON."""
-        from spatialrisk.project import Project
-        from spatialrisk.variables import LocalRasterVar, LocalVectorVar
-
         Project._ensure_model_schemas()
 
         if filename is None:
@@ -124,12 +133,12 @@ class ProjectRepository:
 
         # str -> Path is coerced by pydantic on construction, so no manual coercion.
         for var_name, var_data in data.get("raw_variables", {}).items():
-            var = self._build_variable(var_name, var_data, LocalRasterVar, LocalVectorVar)
+            var = self._build_variable(var_name, var_data)
             var.project = project
             project.raw_variables[var_name] = var
 
         for var_name, var_data in data.get("processed_variables", {}).items():
-            var = self._build_variable(var_name, var_data, LocalRasterVar, LocalVectorVar)
+            var = self._build_variable(var_name, var_data)
             var.project = project
             project.processed_variables[var_name] = var
 
@@ -161,7 +170,7 @@ class ProjectRepository:
 
     # --------------------------------------------------------------- helpers
     @staticmethod
-    def _build_variable(var_name, var_data, LocalRasterVar, LocalVectorVar):
+    def _build_variable(var_name, var_data):
         data_type = var_data.get("data_type")
         if data_type == "vector":
             return LocalVectorVar(**var_data)
@@ -171,14 +180,6 @@ class ProjectRepository:
 
     @staticmethod
     def _load_models(project: "Project", models_data: Dict[str, Any]) -> None:
-        from spatialrisk.mlmodels import (
-            GLMModel,
-            ICARModel,
-            JNRBenchmarkModel,
-            MWModel,
-            RFModel,
-        )
-
         registry = {
             "glm": GLMModel,
             "rf": RFModel,
@@ -201,8 +202,6 @@ class ProjectRepository:
 
     @staticmethod
     def _load_datasets(project: "Project", datasets_data: Dict[str, Any]) -> None:
-        from spatialrisk.dataset import Dataset
-
         for key, ds_data in datasets_data.items():
             ds = Dataset(
                 project=project,

@@ -11,6 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
+import pandas as pd
+import rasterio
+from patsy import dmatrices
+from patsy.highlevel import build_design_matrices
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from spatialrisk.sampling import Sampling
@@ -252,7 +257,121 @@ class BaseRiskModel(BaseModel):
         Path
             Path to the written GeoTIFF.
         """
-        raise NotImplementedError("Subclasses must implement apply()")
+        # forestatrisk is an optional heavy dependency -- keep it lazy so the
+        # package imports (and models construct/serialize) without it installed.
+        import forestatrisk as far
+
+        if self._ml_model is None:
+            self.load_model()
+
+        self._check_apply_preconditions()
+
+        active_dataset = self._resolve_dataset(dataset)
+
+        if self._x_design_info is None:
+            if self.samples_path is not None and Path(self.samples_path).exists():
+                _df = pd.read_csv(self.samples_path).dropna()
+                _, x_ref = dmatrices(self.formula, _df, NA_action="drop")
+                self._x_design_info = x_ref.design_info
+            else:
+                raise RuntimeError(
+                    "Cannot reconstruct design info: samples_path not set or "
+                    "file missing. Re-run fit() to regenerate samples."
+                )
+
+        output_file = Path(output_file)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        feature_paths = {var.name: var.path for var in active_dataset.features}
+        label = self.model_type.upper() or type(self).__name__
+        print(f"\n🗺  Predicting {label} raster → {output_file}")
+
+        with rasterio.open(active_dataset.target.path) as ref:
+            profile = ref.profile.copy()
+            target_transform = ref.transform
+        profile.update(dtype="uint16", count=1, nodata=0)
+
+        _mask_values = (
+            (mask_value if isinstance(mask_value, (list, tuple)) else [mask_value])
+            if mask is not None
+            else None
+        )
+
+        with rasterio.open(output_file, "w", **profile) as dst:
+            blockinfo = far.misc.makeblock(str(active_dataset.target.path))
+            nblock, nblock_x = blockinfo[0], blockinfo[1]
+            x_off, y_off, nx, ny = blockinfo[3], blockinfo[4], blockinfo[5], blockinfo[6]
+
+            for b in range(nblock):
+                px = b % nblock_x
+                py = b // nblock_x
+                col_start, row_start = x_off[px], y_off[py]
+                n_cols, n_rows = nx[px], ny[py]
+                window = rasterio.windows.Window(col_start, row_start, n_cols, n_rows)
+                block_bounds = rasterio.windows.bounds(window, target_transform)
+
+                # Mask block (read by geographic bounds so a differently-gridded
+                # mask is resampled onto the target grid before suppression).
+                mask_invalid = np.zeros(n_rows * n_cols, dtype=bool)
+                if mask is not None:
+                    with rasterio.open(mask) as mask_src:
+                        mask_win = rasterio.windows.from_bounds(
+                            *block_bounds, mask_src.transform
+                        )
+                        mask_block = mask_src.read(
+                            1,
+                            window=mask_win,
+                            out_shape=(n_rows, n_cols),
+                            resampling=rasterio.enums.Resampling.nearest,
+                        )
+                        mask_nodata = mask_src.nodata
+                    mask_invalid = np.isin(mask_block.ravel(), _mask_values)
+                    if mask_nodata is not None:
+                        mask_invalid |= mask_block.ravel() == mask_nodata
+
+                # Read feature data for this block, replacing nodata with NaN.
+                block_dict = {}
+                for name, path in feature_paths.items():
+                    with rasterio.open(path) as src:
+                        arr = src.read(1, window=window).astype(float)
+                        if src.nodata is not None:
+                            arr[arr == src.nodata] = np.nan
+                    block_dict[name] = arr.ravel()
+
+                block_df_full = pd.DataFrame(block_dict)
+                valid_mask = (
+                    ~block_df_full.isnull().any(axis=1).to_numpy() & ~mask_invalid
+                )
+                block_df = block_df_full[valid_mask]
+
+                out_arr = np.zeros(n_rows * n_cols, dtype=np.uint16)
+                if not block_df.empty:
+                    (x_block,) = build_design_matrices(
+                        [self._x_design_info], block_df, NA_action="drop"
+                    )
+                    x_arr = np.asarray(x_block)
+                    proba = self._predict_block(
+                        x_arr, valid_mask, window, block_bounds, n_rows, n_cols
+                    )
+                    out_arr[valid_mask] = far.misc.rescale(
+                        np.asarray(proba, dtype=float)
+                    ).astype(np.uint16)
+
+                dst.write(out_arr.reshape(n_rows, n_cols), 1, window=window)
+
+        print(f"✓ {label} raster written: {output_file}")
+        return output_file
+
+    def _predict_block(self, x_arr, valid_mask, window, block_bounds, n_rows, n_cols):
+        """Return P(event) for the valid rows of one block. Override per model.
+
+        Default: a supervised classifier exposing ``predict_proba`` (GLM, RF).
+        """
+        return self._ml_model.predict_proba(x_arr)[:, 1]
+
+    def _check_apply_preconditions(self) -> None:
+        """Hook for model-specific apply() preconditions (default: none)."""
+        return None
 
     # ------------------------------------------------------------------
     # Persistence
