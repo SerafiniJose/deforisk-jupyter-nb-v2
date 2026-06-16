@@ -1,11 +1,13 @@
 import types
 
 import numpy as np
+import pandas as pd
 import pytest
+
 rasterio = pytest.importorskip("rasterio")
 from rasterio.transform import from_origin
 
-from spatialrisk.evaluation import interval_from_target, label_for, make_square
+from spatialrisk.evaluation import interval_from_target, label_for, make_square, validate_two_layer
 
 
 def test_interval_from_target_parses_two_years():
@@ -54,3 +56,45 @@ def test_make_square_handles_remainder(tmp_path):
     nsquare, nsquare_x, nsquare_y, x, y, nx, ny = make_square(r, 100)
     assert nsquare_x == 3 and nx == [100, 100, 50]   # 250 = 100+100+50
     assert nsquare_y == 1 and ny == [100]
+
+
+def test_validate_two_layer_perfect_prediction(tmp_path):
+    # 700 px wide -> make_square gives 3 cells [300,300,100]; the smaller cell makes
+    # predicted/observed vary across cells so corrcoef (R2) is well-defined (=1.0).
+    nrow, ncol, pixel = 300, 700, 30.0
+    pix_area_ha = (pixel * pixel) / 10000.0          # 0.09 ha
+    forest = np.ones((nrow, ncol), dtype="int32")     # all forest
+
+    # 30% deforested per coarse cell (top 90 rows of each 300x300 block).
+    defor = np.zeros((nrow, ncol), dtype="int32")
+    defor[:90, :] = 1     # top 30% of rows deforested across all 700 cols
+
+    risk = np.ones((nrow, ncol), dtype="int32")       # all category 1
+
+    f = _write_raster(tmp_path / "forest.tif", forest, pixel)
+    d = _write_raster(tmp_path / "defor.tif", defor, pixel)
+    rk = _write_raster(tmp_path / "risk.tif", risk, pixel)
+
+    # Per-cell: ndefor = 90*300 px; nfor = 300*300 px; cat-1 count = nfor.
+    # predicted_ha = count * defor_dens * ti ; want == ndefor*pix_area_ha.
+    time_interval = 5
+    ndefor_px, nfor_px = 90 * 300, 300 * 300
+    defor_dens = (ndefor_px * pix_area_ha) / (nfor_px * time_interval)
+    tab = tmp_path / "defrate.csv"
+    pd.DataFrame({"cat": [1], "defor_dens": [defor_dens]}).to_csv(tab, index=False)
+
+    idx = validate_two_layer(
+        defor_file=d, forest_file=f, riskmap_file=rk, tab_file_defor=str(tab),
+        time_interval=time_interval, csize_coarse_grid=300,
+        indices_file_pred=tmp_path / "indices.csv",
+        tab_file_pred=tmp_path / "pred_obs.csv",
+        fig_file_pred=tmp_path / "pred_obs.png",
+        model_name="TEST", period="calibration",
+    )
+    assert idx["ncell"] == 3
+    assert idx["RMSE"] == 0.0
+    assert idx["wRMSE"] == 0.0
+    assert idx["MedAE"] == 0.0
+    assert idx["R2"] == 1.0
+    assert (tmp_path / "indices.csv").exists()
+    assert (tmp_path / "pred_obs.png").exists()
