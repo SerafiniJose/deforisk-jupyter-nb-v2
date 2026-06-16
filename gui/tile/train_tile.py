@@ -14,6 +14,7 @@ from spatialrisk.mlmodels import (
     MWModel,
     RFModel,
 )
+from spatialrisk.evaluation import interval_from_target
 from spatialrisk.sampling import Sampling
 
 from gui.widget.train_model_list import TrainModelList
@@ -45,6 +46,12 @@ MODEL_REGISTRY = {
                 "type": "float",
                 "default": 99.5,
             },
+            {"key": "forest_edge_var", "label": "Forest-edge variable",
+             "type": "text", "default": "forest_gfc_edge"},
+            {"key": "forest_var", "label": "Forest variable",
+             "type": "text", "default": "forest_gfc"},
+            {"key": "subj_var", "label": "Subjurisdiction variable",
+             "type": "text", "default": "subj"},
         ],
         "has_sampling": False,
     },
@@ -74,6 +81,10 @@ MODEL_REGISTRY = {
                 "type": "float",
                 "default": 99.5,
             },
+            {"key": "forest_edge_var", "label": "Forest-edge variable",
+             "type": "text", "default": "forest_gfc_edge"},
+            {"key": "forest_var", "label": "Forest variable",
+             "type": "text", "default": "forest_gfc"},
         ],
         "has_sampling": False,
     },
@@ -245,6 +256,18 @@ def _parse_param(value: str, ptype: str):
     return value
 
 
+def build_fit_kwargs(model_key, dataset, project):
+    """Family-specific fit() kwargs. ML models fit on the attached dataset (no args)."""
+    if model_key == "mw":
+        return {
+            "time_interval": interval_from_target(dataset.target.name),
+            "folder": project.folders.rmj_mw,
+        }
+    if model_key == "benchmark":
+        return {"folder": project.folders.rmj_bm}
+    return {}
+
+
 def _run_training(job_id, model_key, param_values, dataset, sampling_cfg, project):
     """Run model training in a background thread."""
     registry = MODEL_REGISTRY[model_key]
@@ -268,7 +291,7 @@ def _run_training(job_id, model_key, param_values, dataset, sampling_cfg, projec
         if sampling_cfg and registry["has_sampling"]:
             model.sampling = Sampling(**sampling_cfg)
 
-        model.fit()
+        model.fit(**build_fit_kwargs(model_key, dataset, project))
 
         # Update job on success
         jobs = list(train_jobs.value)
