@@ -26,3 +26,22 @@ def label_for(pred):
     """Short display label for a prediction (e.g. 'GLM', 'MW_w11')."""
     fam = FAMILY.get(pred.model_key.split("_")[0], pred.model_key)
     return f"{fam}_w{pred.window}" if pred.window is not None else fam
+
+
+def make_square(raster_file, square_size):
+    """Coarse-grid partition (replicates forestatrisk.make_square, no far dep)."""
+    ds = gdal.Open(str(raster_file))
+    ncol, nrow = ds.RasterXSize, ds.RasterYSize
+    del ds
+    nsquare_x = int(np.ceil(ncol / square_size))
+    nsquare_y = int(np.ceil(nrow / square_size))
+    nsquare = nsquare_x * nsquare_y
+    x = list(range(0, ncol, square_size))
+    y = list(range(0, nrow, square_size))
+    nx = [square_size] * nsquare_x
+    ny = [square_size] * nsquare_y
+    if ncol % square_size > 0:
+        nx[-1] = ncol % square_size
+    if nrow % square_size > 0:
+        ny[-1] = nrow % square_size
+    return nsquare, nsquare_x, nsquare_y, x, y, nx, ny
