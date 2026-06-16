@@ -155,3 +155,79 @@ def validate_two_layer(
     }
     pd.DataFrame([indices]).to_csv(indices_file_pred, index=False)
     return indices
+
+
+def _defrate_per_cat(**kwargs):
+    """Indirection over rmj.deforrate.defrate_per_cat (monkeypatchable seam)."""
+    from spatialrisk import rmj
+    return rmj.deforrate.defrate_per_cat(**kwargs)
+
+
+def resolve_layers(project, pred):
+    """Recover the two binary layers + time interval from the prediction's dataset."""
+    ds = project.get_dataset(pred.dataset_name)
+    if ds is None:
+        raise ValueError(
+            f"Dataset '{pred.dataset_name}' not found in project."
+        )
+    forest = next((f for f in ds.features if f.name == FOREST_VAR), None)
+    if forest is None:
+        raise ValueError(
+            f"Feature '{FOREST_VAR}' not in dataset '{ds.name}'. "
+            f"Available: {[f.name for f in ds.features]}"
+        )
+    return {
+        "defor_file": ds.target.path,
+        "forest_file": forest.path,
+        "riskmap_file": pred.path,
+        "time_interval": interval_from_target(ds.target.name),
+        "period": pred.dataset_name,
+    }
+
+
+def evaluate_prediction(project, pred, csizes=(300,), recompute_defrate=True):
+    """Defrate + validate one prediction across coarse-grid sizes.
+
+    Returns a list of index dicts, each annotated with prediction/model/period/fig_path.
+    Also writes results into ``pred.metrics``.
+    """
+    lay = resolve_layers(project, pred)
+    label, period, ti = label_for(pred), lay["period"], lay["time_interval"]
+    evaluation_folder = Path(project.folders.project_folder) / "evaluation"
+    period_dir = evaluation_folder / period
+    period_dir.mkdir(parents=True, exist_ok=True)
+
+    defrate_csv = period_dir / f"defrate_cat_{label}_{period}.csv"
+    if recompute_defrate or not defrate_csv.exists():
+        _defrate_per_cat(
+            defor_file=lay["defor_file"],
+            forest_file=lay["forest_file"],
+            riskmap_file=lay["riskmap_file"],
+            time_interval=ti,
+            tab_file_defrate=defrate_csv,
+            verbose=False,
+        )
+
+    rows = []
+    for csize in csizes:
+        fig_path = period_dir / f"pred_obs_{label}_{period}_{csize}.png"
+        idx = validate_two_layer(
+            defor_file=lay["defor_file"],
+            forest_file=lay["forest_file"],
+            riskmap_file=lay["riskmap_file"],
+            tab_file_defor=defrate_csv,
+            time_interval=ti,
+            csize_coarse_grid=csize,
+            indices_file_pred=period_dir / f"indices_{label}_{period}_{csize}.csv",
+            tab_file_pred=period_dir / f"pred_obs_{label}_{period}_{csize}.csv",
+            fig_file_pred=fig_path,
+            model_name=label,
+            period=period,
+        )
+        idx.update({"prediction": pred.storage_key() if hasattr(pred, "storage_key")
+                    else f"{pred.model_key}__{period}",
+                    "model": label, "period": period, "fig_path": str(fig_path)})
+        pred.metrics[f"{period}_{csize}"] = {k: idx[k] for k in
+                                             ("RMSE", "wRMSE", "MedAE", "R2", "ncell")}
+        rows.append(idx)
+    return rows

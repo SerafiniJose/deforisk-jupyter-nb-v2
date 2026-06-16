@@ -1,4 +1,6 @@
 import types
+import types as _types
+from pathlib import Path as _Path
 
 import numpy as np
 import pandas as pd
@@ -8,6 +10,7 @@ rasterio = pytest.importorskip("rasterio")
 from rasterio.transform import from_origin
 
 from spatialrisk.evaluation import interval_from_target, label_for, make_square, validate_two_layer
+import spatialrisk.evaluation as ev
 
 
 def test_interval_from_target_parses_two_years():
@@ -98,3 +101,64 @@ def test_validate_two_layer_perfect_prediction(tmp_path):
     assert idx["R2"] == 1.0
     assert (tmp_path / "indices.csv").exists()
     assert (tmp_path / "pred_obs.png").exists()
+
+
+def _fake_project_with_prediction(tmp_path):
+    target = _types.SimpleNamespace(name="forest_loss_2015_2020",
+                                    path=tmp_path / "defor.tif")
+    forest = _types.SimpleNamespace(name="forest_gfc", path=tmp_path / "forest.tif")
+    dataset = _types.SimpleNamespace(name="calibration", target=target,
+                                     features=[forest])
+    pred = _types.SimpleNamespace(model_key="glm_glm_v1", window=None,
+                                  dataset_name="calibration",
+                                  path=tmp_path / "risk.tif", metrics={})
+    project = _types.SimpleNamespace(
+        folders=_types.SimpleNamespace(project_folder=tmp_path),
+        get_dataset=lambda n: dataset if n == "calibration" else None,
+        predictions={"glm_glm_v1__calibration_y2015": pred},
+        save=lambda: None,
+    )
+    return project, pred, dataset
+
+
+def test_resolve_layers_recovers_from_dataset(tmp_path):
+    project, pred, dataset = _fake_project_with_prediction(tmp_path)
+    lay = ev.resolve_layers(project, pred)
+    assert lay["defor_file"] == dataset.target.path
+    assert lay["forest_file"] == dataset.features[0].path
+    assert lay["riskmap_file"] == pred.path
+    assert lay["time_interval"] == 5
+    assert lay["period"] == "calibration"
+
+
+def test_evaluate_prediction_runs_defrate_then_validate(tmp_path, monkeypatch):
+    project, pred, dataset = _fake_project_with_prediction(tmp_path)
+    calls = {}
+
+    def fake_defrate_per_cat(**kw):
+        calls["defrate"] = kw
+        _Path(kw["tab_file_defrate"]).write_text("cat,defor_dens\n1,0.01\n")
+
+    def fake_validate(**kw):
+        calls["validate"] = kw
+        return {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9,
+                "ncell": 26, "csize_coarse_grid": kw["csize_coarse_grid"],
+                "csize_coarse_grid_ha": 8100.0}
+
+    monkeypatch.setattr(ev, "_defrate_per_cat", fake_defrate_per_cat)
+    monkeypatch.setattr(ev, "validate_two_layer", fake_validate)
+
+    rows = ev.evaluate_prediction(project, pred, csizes=(300,))
+    assert len(rows) == 1
+    assert rows[0]["model"] == "GLM" and rows[0]["period"] == "calibration"
+    assert rows[0]["R2"] == 0.9
+    assert calls["defrate"]["time_interval"] == 5
+    assert calls["validate"]["csize_coarse_grid"] == 300
+    # prediction key: fake pred has no storage_key() -> fallback "{model_key}__{period}"
+    assert rows[0]["prediction"] == "glm_glm_v1__calibration"
+    # fig_path is added by evaluate_prediction (the fake validate does not return it)
+    assert rows[0]["fig_path"].endswith("pred_obs_GLM_calibration_300.png")
+    # pred.metrics receives the per-(period,csize) index subset
+    assert pred.metrics == {
+        "calibration_300": {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26}
+    }
