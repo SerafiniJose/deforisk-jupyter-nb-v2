@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import ee
@@ -109,3 +110,49 @@ def download_ee_image(
         )
 
     print(f"File {filename}, downloaded")
+
+
+# ------------------------------------------------------------------
+#  Download gee vector data (geemap-free)
+# ------------------------------------------------------------------
+def download_ee_vector(
+    feature_collection: Any,
+    filename: Union[str, Path],
+    selectors: Optional[list] = None,
+) -> Path:
+    """Download an ``ee.FeatureCollection`` to a local vector file without geemap.
+
+    Pulls the collection client-side via ``getInfo()`` and writes it with
+    geopandas/fiona (already declared deps). Intended for small admin-boundary
+    collections (e.g. FAO GAUL AOI); replaces the former
+    ``geemap.ee_export_vector`` call.
+
+    Parameters
+    ----------
+    feature_collection : ee.FeatureCollection
+        The collection to export.
+    filename : str or Path
+        Destination vector file (e.g. ``.shp``). Parent dirs are created.
+    selectors : list of str, optional
+        Property names to keep. When given, the collection is narrowed with
+        ``.select(selectors)`` before fetching.
+
+    Returns
+    -------
+    Path
+        The written file path.
+    """
+    import geopandas as gpd
+
+    fc = feature_collection
+    if selectors is not None:
+        fc = fc.select(selectors)
+
+    geojson = fc.getInfo()
+    features = geojson.get("features", [])
+    gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+
+    out = Path(filename)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    gdf.to_file(out)
+    return out
