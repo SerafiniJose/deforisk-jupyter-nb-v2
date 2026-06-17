@@ -548,3 +548,20 @@ def test_materialize_out_path_vector_uses_shp_and_year(tmp_path):
     out = session._materialize_out_path("aoi_2020")
     raw = str(session.folders().data_raw_folder)
     assert out == f"{raw}/aoi_2020.shp"
+
+
+def test_materialize_spec_resolves_gee_var_from_raw(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.from_document(_doc("ms"), store=store)
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="altitude", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(source="catalogue", catalogue_key="altitude",
+                               export_kind="raster"),
+    ), key="altitude")
+    spec = session.materialize_spec("altitude")
+    assert spec.var_key == "altitude"
+    assert spec.export_kind == "raster"
+    assert spec.out_path.endswith("/altitude.tif")
+    assert spec.recipe.catalogue_key == "altitude"

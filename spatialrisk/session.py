@@ -599,7 +599,7 @@ class ProjectSession:
         """
         from spatialrisk.document import GEESpec
 
-        var = self.get_variable(var_key)
+        var = self.get_variable(var_key, source="raw")
         if not isinstance(var, GEESpec):
             raise TypeError(
                 f"materialize_spec requires a GEESpec source variable, "
