@@ -87,3 +87,41 @@ def test_frozendict_validates_values_in_pydantic_field():
 
 # need BaseModel/ConfigDict in this test module
 from pydantic import BaseModel, ConfigDict
+from typing import Annotated, Union
+from pydantic import Field as PField, TypeAdapter
+from spatialrisk.document import CatalogueRecipe, AssetRecipe, GEERecipe
+
+
+def test_catalogue_recipe_defaults_and_construction():
+    r = CatalogueRecipe(
+        catalogue_key="forest_gfc",
+        params={"tree_cover_threshold": 10, "year": 2020},
+        export_kind="raster",
+    )
+    assert r.source == "catalogue"
+    assert r.unmask_value == 255 and r.nodata_value == 255
+    assert r.aoi is None and r.scale is None and r.vector_selectors is None
+    assert r.params["year"] == 2020
+
+
+def test_asset_recipe_construction():
+    r = AssetRecipe(asset_id="projects/x/assets/y", band="B1", export_kind="raster")
+    assert r.source == "asset"
+    assert r.band == "B1"
+
+
+def test_geerecipe_discriminator_dispatch():
+    ta = TypeAdapter(GEERecipe)
+    cat = ta.validate_python(
+        {"source": "catalogue", "catalogue_key": "altitude", "export_kind": "raster"}
+    )
+    assert isinstance(cat, CatalogueRecipe)
+    ass = ta.validate_python(
+        {"source": "asset", "asset_id": "users/a/b", "export_kind": "vector"}
+    )
+    assert isinstance(ass, AssetRecipe)
+
+
+def test_catalogue_recipe_rejects_non_json_param():
+    with pytest.raises(ValidationError):
+        CatalogueRecipe(catalogue_key="x", params={"bad": object()}, export_kind="raster")

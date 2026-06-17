@@ -5,7 +5,7 @@ import, no import-time model_rebuild, no forward references. Paths are str.
 """
 
 from collections.abc import Mapping
-from typing import Any, Literal, TypeVar, Union, get_args
+from typing import Annotated, Any, Literal, TypeVar, Union, get_args
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler
@@ -108,3 +108,38 @@ class VariableId(BaseModel):
 
 
 VarRef = VariableId
+
+
+class CatalogueRecipe(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: Literal["catalogue"] = "catalogue"
+    catalogue_key: str
+    params: dict[str, JsonValue] = Field(default_factory=dict)
+    aoi: GeoJSONGeometry | None = None
+    scale: float | None = None
+    crs: str | None = None
+    export_kind: Literal["raster", "vector"]
+    vector_selectors: tuple[str, ...] | None = None
+    unmask_value: int | None = 255
+    nodata_value: int | None = 255
+
+
+class AssetRecipe(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: Literal["asset"] = "asset"
+    asset_id: str
+    band: str | None = None
+    aoi: GeoJSONGeometry | None = None
+    scale: float | None = None
+    crs: str | None = None
+    export_kind: Literal["raster", "vector"]
+    vector_selectors: tuple[str, ...] | None = None
+    unmask_value: int | None = 255
+    nodata_value: int | None = 255
+
+
+GEERecipe = Annotated[
+    Union[CatalogueRecipe, AssetRecipe], Field(discriminator="source")
+]
