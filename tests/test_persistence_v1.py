@@ -609,3 +609,53 @@ def test_golden_real_v0_fixture_migrates_and_re_saves_v1(tmp_path):
     assert on_disk["schema_version"] == 1
     reloaded = store.load("delegated")
     assert reloaded == migrated
+
+
+def test_full_document_round_trip_all_registries(tmp_path):
+    from spatialrisk.document import (
+        DatasetSpec, GLMSpec, LocalRasterSpec, PredictionSpec,
+        ProjectDocument, VariableId,
+    )
+    from spatialrisk.persistence import LocalFSProjectStore
+    from spatialrisk.variables.models import RasterType
+
+    target = LocalRasterSpec(
+        kind="local_raster", name="fl", year=2020, path="/d/fl.tif",
+        raster_type=RasterType.categorical,
+    )
+    feat = LocalRasterSpec(
+        kind="local_raster", name="slope", path="/d/slope.tif",
+        raster_type=RasterType.continuous,
+    )
+    ds = DatasetSpec(
+        name="cal", year=2020,
+        target_ref=VariableId(source="processed", name="fl", year=2020),
+        feature_refs=(VariableId(source="processed", name="slope"),),
+    )
+    glm = GLMSpec(
+        name="cal", model_type="glm", project_name="full",
+        dataset_name="cal", target_name="fl", feature_names=("slope",),
+        year=2020, formula="y ~ slope", parameters={}, sampling=None,
+        samples_path=None, trained=True, trained_at=None, n_samples=None,
+        deviance=None, estimator_pickle="/d/glm.pickle",
+    )
+    pred = PredictionSpec(
+        path="/d/pred.tif", model_key="glm_cal", dataset_name="cal", year=2020,
+    )
+    doc = ProjectDocument(
+        project_name="full",
+        processed_variables={"fl_2020": target, "slope": feat},
+        base_raster_ref=VariableId(source="processed", name="fl", year=2020),
+        datasets={"cal": ds},
+        models={"glm_cal": glm},
+        predictions={"glm_cal_2020": pred},
+    )
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    store.save(doc)
+    reloaded = store.load("full")
+    assert reloaded == doc
+    assert reloaded.base_raster_ref.name == "fl"
+    assert reloaded.models["glm_cal"].estimator_pickle == "/d/glm.pickle"
+    assert reloaded.datasets["cal"].feature_refs[0].name == "slope"
+    assert reloaded.predictions["glm_cal_2020"].model_key == "glm_cal"
