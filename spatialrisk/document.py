@@ -288,3 +288,17 @@ class PredictionSpec(BaseModel):
     model_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
     dataset_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
     metrics: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class ProjectDocument(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: int = 1
+    project_name: str
+    aoi: GeoJSONGeometry | None = None
+    raw_variables: FrozenDict[str, VariableSpec] = Field(default_factory=FrozenDict)
+    processed_variables: FrozenDict[str, VariableSpec] = Field(default_factory=FrozenDict)
+    base_raster_ref: VariableId | None = None
+    datasets: FrozenDict[str, DatasetSpec] = Field(default_factory=FrozenDict)
+    models: FrozenDict[str, ModelSpec] = Field(default_factory=FrozenDict)
+    predictions: FrozenDict[str, PredictionSpec] = Field(default_factory=FrozenDict)

@@ -306,3 +306,36 @@ def test_prediction_spec_rejects_non_json_snapshot():
     with pytest.raises(ValidationError):
         PredictionSpec(path="/d/p.tif", model_key="m", dataset_name="d",
                        model_snapshot={"bad": object()})
+
+
+from spatialrisk.document import ProjectDocument
+
+
+def test_project_document_defaults():
+    doc = ProjectDocument(project_name="amazonia")
+    assert doc.schema_version == 1
+    assert doc.aoi is None and doc.base_raster_ref is None
+    assert isinstance(doc.raw_variables, FrozenDict)
+    assert len(doc.raw_variables) == 0
+    assert isinstance(doc.datasets, FrozenDict)
+    assert isinstance(doc.models, FrozenDict)
+    assert isinstance(doc.predictions, FrozenDict)
+
+
+def test_project_document_registries_are_frozen():
+    raster = LocalRasterSpec(name="altitude", path="/d/altitude.tif", raster_type=RasterType.continuous)
+    doc = ProjectDocument(project_name="p", raw_variables={"altitude": raster})
+    assert doc.raw_variables["altitude"] == raster
+    with pytest.raises(TypeError):
+        doc.raw_variables["x"] = raster
+    with pytest.raises(TypeError):
+        del doc.raw_variables["altitude"]
+    for reg in ("processed_variables", "datasets", "models", "predictions"):
+        with pytest.raises(TypeError):
+            getattr(doc, reg)["k"] = None
+
+
+def test_project_document_doc_field_is_frozen():
+    doc = ProjectDocument(project_name="p")
+    with pytest.raises(ValidationError):
+        doc.project_name = "other"
