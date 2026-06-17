@@ -288,9 +288,10 @@ def test_folder_resolver_preserves_it_name_suffix(tmp_path):
 
 
 def test_session_exposes_folders_callable(tmp_path):
-    session = ProjectSession.from_document(_doc("fp"))
-    session.folders = FolderResolver(project_name="fp", data_root=tmp_path)
-    box = session.folders.folders(it_name="r1")
+    # FolderResolver's iteration-suffix mechanic; ProjectSession.folders() delegates
+    # to it. session.folders() as a method is the single contract (see the
+    # geoprocessing/handle tests for the session-level call).
+    box = FolderResolver(project_name="fp", data_root=tmp_path).folders(it_name="r1")
     assert box.glm_model.name == "r1_far_glm"
 
 
