@@ -275,3 +275,34 @@ def test_modelspec_discriminator_dispatch_and_frozen():
     assert isinstance(s, JNRSpec)
     with pytest.raises(ValidationError):
         s.name = "x"   # frozen
+
+
+from spatialrisk.document import PredictionSpec
+
+
+def test_prediction_spec_defaults_and_roundtrip():
+    p = PredictionSpec(
+        path="/d/pred.tif",
+        model_key="calibration_glm",
+        dataset_name="validation_2025",
+        year=2025,
+        window=11,
+        tags=("forecast",),
+        created_at="2026-06-17T00:00:00",
+        model_snapshot={"model_type": "glm", "deviance": 1.2},
+        dataset_snapshot={"name": "validation_2025", "target_name": "forest_loss",
+                          "target_year": 2025, "feature_names": ["altitude"]},
+        metrics={"auc": 0.81},
+    )
+    assert p.name is None and p.active is True
+    assert p.model_key == "calibration_glm"
+    loaded = PredictionSpec.model_validate_json(p.model_dump_json())
+    assert loaded == p
+    # no live project back-ref field exists
+    assert "project" not in PredictionSpec.model_fields
+
+
+def test_prediction_spec_rejects_non_json_snapshot():
+    with pytest.raises(ValidationError):
+        PredictionSpec(path="/d/p.tif", model_key="m", dataset_name="d",
+                       model_snapshot={"bad": object()})

@@ -271,3 +271,20 @@ ModelSpec = Annotated[
     Union[GLMSpec, RFSpec, ICARSpec, JNRSpec, MWSpec],
     Field(discriminator="model_type"),
 ]
+
+
+class PredictionSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str | None = None
+    path: str
+    model_key: str
+    dataset_name: str
+    year: int | None = None
+    window: int | None = None
+    active: bool = True
+    tags: tuple[str, ...] = ()
+    created_at: str | None = None
+    model_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
+    dataset_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
+    metrics: dict[str, JsonValue] = Field(default_factory=dict)
