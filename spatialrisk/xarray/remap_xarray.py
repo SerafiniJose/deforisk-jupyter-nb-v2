@@ -136,9 +136,10 @@ def remap_categorical_to_binary(
     out_fp = pathlib.Path(output_path)
 
     # --------------------------------------------------------------------
-    # Write the result
+    # Write the result (single-process write: a thread lock is enough; no
+    # distributed scheduler is required).
     # --------------------------------------------------------------------
-    from dask.distributed import Lock
+    import threading
 
     binary_da.rio.to_raster(
         out_fp,
@@ -146,7 +147,7 @@ def remap_categorical_to_binary(
         compress="DEFLATE",
         bigtiff="YES",
         tiled=True,
-        lock=Lock("rio"),
+        lock=threading.Lock(),
     )
 
     # ------------------------------------------------------------------------
