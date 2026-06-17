@@ -9,6 +9,8 @@ against one source of truth. ``GEEAdapter`` is the only runtime caller.
 from typing import Any, Callable, Dict
 
 import ee  # noqa: F401  (module-level so tests can patch spatialrisk.gee.catalogue.ee)
+from spatialrisk.gee.ee_fao_gaul import get_fao_gaul_subj
+from spatialrisk.gee.ee_rasterize_unique_values import gee_rasterize_unique_values
 
 Resolver = Callable[..., Any]
 
@@ -129,3 +131,29 @@ def _forest_tmf(aoi_ee, year):
     )
     band = tmf.select("Dec" + str(year - 1))
     return band.where(band.eq(2), 1).where(band.neq(1), 0).rename("B1")
+
+
+# ---------------------------------------------------------------------------
+# towns (GHSL) + subj (FAO GAUL)
+# ---------------------------------------------------------------------------
+
+
+@register("towns")
+def _towns(aoi_ee, year):
+    """JRC GHSL population + built surface -- urban-area binary mask."""
+    epochs = list(range(1975, 2021, 5))
+    epoch = min(epochs, key=lambda x: abs(x - year))
+    pop = ee.Image(f"JRC/GHSL/P2023A/GHS_POP/{epoch}")
+    built = ee.Image(f"JRC/GHSL/P2023A/GHS_BUILT_S/{epoch}").select("built_surface")
+    return ee.Image(0).where(pop.gte(15).And(built.gte(90)), 1).clip(aoi_ee)
+
+
+@register("subj")
+def _subj(aoi_ee):
+    """FAO GAUL level-2 subjurisdiction -- categorical raster."""
+    filtered_subj, _ = get_fao_gaul_subj(2, aoi_ee)
+    return (
+        ee.Image(gee_rasterize_unique_values(filtered_subj, "gaul2_name"))
+        .clip(aoi_ee)
+        .toByte()
+    )
