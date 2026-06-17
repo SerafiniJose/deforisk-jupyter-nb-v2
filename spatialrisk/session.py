@@ -9,9 +9,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from box import Box
+from pydantic import BaseModel, ConfigDict
 
 from spatialrisk.document import (
     ProjectDocument,
@@ -21,6 +22,7 @@ from spatialrisk.document import (
     VariableId,
     DatasetSpec,
     PredictionSpec,
+    GEERecipe,
 )
 
 
@@ -595,3 +597,22 @@ class ProjectSession:
         self.materialize_all(source=source, **kw)
         self.reproject_and_match_all(source=source, **kw)
         self.rasterize_all(source=source, **kw)
+
+
+class MaterializeSpec(BaseModel):
+    """Picklable, worker-sized recipe for downloading one GEE variable.
+
+    Mirrors §10: (recipe, out_path, scale, crs, export_kind, vector_selectors).
+    Carries only the catalogue/asset recipe (no live ``ee`` object) plus the
+    resolved output path; the worker rebuilds ``ee`` via GEEAdapter.build_image.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    var_key: str
+    recipe: GEERecipe
+    out_path: str
+    scale: Optional[float] = None
+    crs: Optional[str] = None
+    export_kind: Literal["raster", "vector"]
+    vector_selectors: Optional[tuple[str, ...]] = None
