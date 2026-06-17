@@ -56,3 +56,19 @@ class ProjectSession:
     @property
     def project_name(self) -> str:
         return self._doc.project_name
+
+    # ------------------------------------------------------------------ #
+    # Mutation primitive (validated — never bypass via model_copy)
+    # ------------------------------------------------------------------ #
+    def _replace(self, **changes: Any) -> ProjectDocument:
+        """Replace the document wholesale through full validation.
+
+        Equivalent to
+        ``ProjectDocument.model_validate(self._doc.model_dump() | changes)``.
+        Re-runs every validator so the JSON-only / no-`ee` type boundary holds
+        on the mutation path, not just at construction. Bumps `doc_version`.
+        """
+        merged = self._doc.model_dump() | changes
+        self._doc = ProjectDocument.model_validate(merged)
+        self.doc_version += 1
+        return self._doc
