@@ -30,7 +30,6 @@ from gui.scripts.project_io import (
     save_project,
 )
 from gui.scripts.project_ui_helpers import (
-    NameValidation,
     compute_app_title,
     format_last_saved,
     format_relative,
