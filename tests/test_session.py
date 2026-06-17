@@ -164,3 +164,36 @@ def test_set_base_raster_stores_qualified_ref():
     session.set_base_raster(ref)
     assert session.snapshot().base_raster_ref == ref
     assert session.snapshot().base_raster_ref.source == "raw"
+
+
+def _session_with_temporal_defor():
+    session = ProjectSession.from_document(_doc())
+    for yr in (2015, 2020):
+        session.add_local_raster(LocalRasterSpec(
+            kind="local_raster", name="defor", year=yr,
+            path=f"/data/defor_{yr}.tif", raster_type=RasterType.categorical,
+        ))
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="dem", path="/data/dem.tif",
+        raster_type=RasterType.continuous,
+    ))
+    return session
+
+
+def test_get_variable_and_instances_and_temporal():
+    session = _session_with_temporal_defor()
+
+    # storage-key lookup (name_year)
+    v = session.get_variable("defor", year=2020, source="raw")
+    assert v is not None and v.path == "/data/defor_2020.tif"
+    # static lookup by bare name
+    assert session.get_variable("dem", source="raw").path == "/data/dem.tif"
+    # missing -> None
+    assert session.get_variable("defor", year=1999, source="raw") is None
+
+    insts = session.get_all_instances("defor", source="raw")
+    assert {i.year for i in insts} == {2015, 2020}
+
+    assert session.is_temporal("defor", source="raw") is True
+    assert session.is_temporal("dem", source="raw") is False
+    assert session.get_variable_years("defor", source="raw") == [2015, 2020]

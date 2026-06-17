@@ -130,3 +130,39 @@ class ProjectSession:
         new = dict(self._doc.predictions)
         new[storage_key] = spec
         return self._replace(predictions=new)
+
+    # ------------------------------------------------------------------ #
+    # Registry / query (over _doc, honoring derived_from provenance)
+    # ------------------------------------------------------------------ #
+    def _collection(self, source: str):
+        return (
+            self._doc.processed_variables
+            if source == "processed"
+            else self._doc.raw_variables
+        )
+
+    def get_variable(self, name: str, year: Optional[int] = None, source: str = "processed"):
+        variables = self._collection(source)
+        storage_key = f"{name}_{year}" if year else name
+        return variables.get(storage_key)
+
+    def get_all_instances(self, name: str, source: str = "processed") -> list:
+        variables = self._collection(source)
+        out = []
+        for spec in variables.values():
+            if spec.name != name:
+                continue
+            # provenance: skip a GEESpec whose product is already materialized
+            if getattr(spec, "kind", None) == "gee" and getattr(spec, "materialized_key", None):
+                continue
+            out.append(spec)
+        return out
+
+    def is_temporal(self, name: str, source: str = "processed") -> bool:
+        instances = self.get_all_instances(name, source)
+        unique_years = {s.year for s in instances if s.year is not None}
+        return len(unique_years) > 1
+
+    def get_variable_years(self, name: str, source: str = "processed") -> list:
+        instances = self.get_all_instances(name, source)
+        return sorted({s.year for s in instances if s.year is not None})
