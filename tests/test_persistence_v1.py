@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def test_ports_are_runtime_checkable_protocols():
     from spatialrisk.persistence import EstimatorStorePort, ProjectStorePort
@@ -578,3 +580,32 @@ def test_migrate_v0_predictions_to_predictionspec(tmp_path):
     assert pred.dataset_snapshot["feature_names"] == ["slope"]
     # the live project back-ref from PR #8 is never present
     assert not hasattr(pred, "project")
+
+
+def test_golden_real_v0_fixture_migrates_and_re_saves_v1(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    src = REPO_ROOT / "data" / "delegated" / "delegated_project.json"
+    assert src.exists(), "expected real v0 fixture data/delegated/delegated_project.json"
+
+    # Copy the real v0 fixture into a temp data_root (don't mutate the repo).
+    pdir = tmp_path / "delegated"
+    pdir.mkdir()
+    (pdir / "delegated_project.json").write_text(src.read_text())
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    migrated = store.load("delegated")
+
+    assert migrated.schema_version == 1
+    assert set(migrated.raw_variables) == {"forest"}
+    assert migrated.raw_variables["forest"].kind == "local_raster"
+    assert set(migrated.processed_variables) == {"roads"}
+    assert migrated.processed_variables["roads"].kind == "local_vector"
+
+    # Re-save as v1, then reload: now schema_version is present so the migrator
+    # is bypassed; the doc round-trips losslessly and idempotently.
+    store.save(migrated)
+    on_disk = json.loads((pdir / "delegated_project.json").read_text())
+    assert on_disk["schema_version"] == 1
+    reloaded = store.load("delegated")
+    assert reloaded == migrated
