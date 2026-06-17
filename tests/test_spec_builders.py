@@ -153,3 +153,76 @@ def test_supervised_fit_spec_is_self_contained_and_picklable():
 
     with pytest.raises(Exception):
         spec.formula = "x ~ y"
+
+
+def test_icar_fit_spec_adds_target_raster_csize_rho_path():
+    from spatialrisk.session import ICARFitSpec, FeatureMeta
+    from spatialrisk.sampling import Sampling
+
+    spec = ICARFitSpec(
+        model_key="icar_calibration",
+        model_type="icar",
+        target_path="/data/proj/processed/forest_loss_2020.tif",
+        feature_paths={"altitude": "/data/proj/processed/altitude.tif"},
+        feature_meta=(FeatureMeta(name="altitude", raster_type="continuous"),),
+        formula="I(fcc) ~ scale(altitude) + cell",
+        sampling=Sampling(strategy="random", n_samples=10000),
+        output_sample_path="/data/proj/icar/samples.csv",
+        target_raster="/data/proj/processed/forest_loss_2020.tif",
+        csize=10.0,
+        mcmc=4000,
+        burnin=4000,
+        thin=1,
+        prior_vrho=-1.0,
+        csize_interpolate=0.1,
+        rho_path="/data/proj/icar/rho_calibration.tif",
+        estimator_pickle="/data/proj/icar/icar_calibration.pickle",
+    )
+    restored = _assert_picklable_pure(spec)
+    assert restored.target_raster.endswith("forest_loss_2020.tif")
+    assert restored.csize == 10.0
+    assert restored.rho_path.endswith("rho_calibration.tif")
+
+
+def test_jnr_fit_spec_carries_dist_params_and_paths():
+    from spatialrisk.session import JNRFitSpec
+
+    spec = JNRFitSpec(
+        model_key="jnr_calibration",
+        model_type="jnr",
+        defor_file="/data/proj/processed/defor_2020.tif",
+        forest_edge_file="/data/proj/processed/forest_edge.tif",
+        period="calibration",
+        defor_threshold=99.5,
+        max_dist=5000,
+        blk_rows=128,
+        out_root="/data/proj/rmj_bm",
+    )
+    restored = _assert_picklable_pure(spec)
+    assert restored.defor_file.endswith("defor_2020.tif")
+    assert restored.forest_edge_file.endswith("forest_edge.tif")
+    assert restored.defor_threshold == 99.5
+    assert restored.max_dist == 5000
+
+
+def test_mw_fit_spec_carries_win_sizes_and_time_interval():
+    from spatialrisk.session import MWFitSpec
+
+    spec = MWFitSpec(
+        model_key="mw_calibration",
+        model_type="mw",
+        defor_file="/data/proj/processed/defor_2020.tif",
+        forest_edge_file="/data/proj/processed/forest_edge.tif",
+        forest_file="/data/proj/processed/forest_2015.tif",
+        period="calibration",
+        win_sizes=(5, 11, 21),
+        time_interval=5,
+        defor_threshold=99.5,
+        blk_rows=256,
+        rescale_max_val=65535,
+        out_root="/data/proj/rmj_mw",
+    )
+    restored = _assert_picklable_pure(spec)
+    assert restored.win_sizes == (5, 11, 21)
+    assert restored.time_interval == 5
+    assert restored.forest_file.endswith("forest_2015.tif")

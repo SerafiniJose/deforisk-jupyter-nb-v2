@@ -683,3 +683,65 @@ class SupervisedFitSpec(BaseModel):
     output_sample_path: str
     parameters: Dict[str, JsonValue] = {}
     estimator_pickle: Optional[str] = None
+
+
+class ICARFitSpec(BaseModel):
+    """Self-contained iCAR fit job (§10): GLM/RF base + spatial inputs."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["icar"]
+    target_path: str
+    feature_paths: Dict[str, str]
+    feature_meta: tuple[FeatureMeta, ...] = ()
+    formula: str
+    sampling: Sampling
+    output_sample_path: str
+    # spatial inputs for cellneigh + MCMC
+    target_raster: str
+    csize: float
+    mcmc: int = 4000
+    burnin: int = 4000
+    thin: int = 1
+    prior_vrho: float = -1.0
+    beta_start: float = -99.0
+    csize_interpolate: float = 0.1
+    random_seed: Optional[int] = None
+    rho_path: Optional[str] = None
+    estimator_pickle: Optional[str] = None
+
+
+class JNRFitSpec(BaseModel):
+    """Self-contained JNR fit job (§10): dist-edge threshold + dist bins."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["jnr"]
+    defor_file: str
+    forest_edge_file: str
+    period: str
+    defor_threshold: float = 99.5
+    max_dist: int = 5000
+    blk_rows: int = 128
+    out_root: str
+
+
+class MWFitSpec(BaseModel):
+    """Self-contained MW fit job (§10): local defor rate per window."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["mw"]
+    defor_file: str
+    forest_edge_file: str
+    forest_file: str
+    period: str
+    win_sizes: tuple[int, ...]
+    time_interval: int
+    defor_threshold: float = 99.5
+    blk_rows: int = 256
+    rescale_max_val: int = 65535
+    out_root: str
