@@ -44,3 +44,46 @@ def test_variableid_frozen_and_qualified():
 def test_variableid_rejects_bad_source():
     with pytest.raises(ValidationError):
         VariableId(source="other", name="x")
+
+
+from spatialrisk.document import FrozenDict
+
+
+def test_frozendict_copies_input_and_is_immutable():
+    src = {"a": 1, "b": 2}
+    fd = FrozenDict(src)
+    src["c"] = 3                       # mutating the source must not leak in
+    assert "c" not in fd
+    assert dict(fd) == {"a": 1, "b": 2}
+    assert fd["a"] == 1
+    assert len(fd) == 2
+    assert set(fd) == {"a", "b"}
+    with pytest.raises(TypeError):
+        fd["a"] = 99
+    with pytest.raises(TypeError):
+        del fd["a"]
+
+
+def test_frozendict_hashable_and_equal():
+    assert FrozenDict({"a": 1}) == FrozenDict({"a": 1})
+    assert hash(FrozenDict({"a": 1})) == hash(FrozenDict({"a": 1}))
+    assert FrozenDict() == FrozenDict({})
+
+
+def test_frozendict_validates_values_in_pydantic_field():
+    # core schema validates VALUES; a model with FrozenDict[str, int] rejects bad values
+    class M(BaseModel):
+        model_config = ConfigDict(frozen=True)
+        m: FrozenDict[str, int] = FrozenDict()
+
+    ok = M(m={"x": 1})
+    assert isinstance(ok.m, FrozenDict)
+    assert ok.m["x"] == 1
+    with pytest.raises(ValidationError):
+        M(m={"x": "not-an-int"})
+    # round-trips through JSON as a normal object
+    assert M.model_validate_json(ok.model_dump_json()).m["x"] == 1
+
+
+# need BaseModel/ConfigDict in this test module
+from pydantic import BaseModel, ConfigDict

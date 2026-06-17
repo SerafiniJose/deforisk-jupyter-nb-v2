@@ -4,10 +4,12 @@ Leaf module — imports only the enums from variables/models.py. No Session
 import, no import-time model_rebuild, no forward references. Paths are str.
 """
 
-from typing import Literal, Union
+from collections.abc import Mapping
+from typing import Any, Literal, TypeVar, Union, get_args
 
 import pydantic
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler
+from pydantic_core import core_schema
 
 from spatialrisk.variables.models import (  # enums only
     DataType,
@@ -18,6 +20,81 @@ from spatialrisk.variables.models import (  # enums only
 
 JsonValue = pydantic.JsonValue
 GeoJSONGeometry = dict[str, JsonValue]
+
+V = TypeVar("V")
+
+
+class FrozenDict(Mapping[str, V]):
+    """Immutable, hashable str-keyed mapping for the Document registries.
+
+    Copies its input on construction; __setitem__/__delitem__ raise TypeError.
+    Carries a Pydantic core schema that validates values against V.
+    """
+
+    __slots__ = ("_data", "_hash")
+
+    def __init__(self, data: Mapping[str, V] | None = None):
+        object.__setattr__(self, "_data", dict(data) if data is not None else {})
+        object.__setattr__(self, "_hash", None)
+
+    def __getitem__(self, key: str) -> V:
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __setitem__(self, key, value):
+        raise TypeError("FrozenDict is immutable")
+
+    def __delitem__(self, key):
+        raise TypeError("FrozenDict is immutable")
+
+    def __setattr__(self, name, value):
+        raise TypeError("FrozenDict is immutable")
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, FrozenDict):
+            return self._data == other._data
+        if isinstance(other, Mapping):
+            return self._data == dict(other)
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        if self._hash is None:
+            object.__setattr__(self, "_hash", hash(frozenset(self._data.items())))
+        return self._hash
+
+    def __repr__(self) -> str:
+        return f"FrozenDict({self._data!r})"
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        args = get_args(source)
+        value_schema = handler.generate_schema(args[1]) if len(args) == 2 else core_schema.any_schema()
+        dict_schema = core_schema.dict_schema(
+            keys_schema=core_schema.str_schema(),
+            values_schema=value_schema,
+        )
+
+        def _validate(value: Any) -> "FrozenDict":
+            if isinstance(value, FrozenDict):
+                value = dict(value)
+            return cls(value)
+
+        return core_schema.no_info_after_validator_function(
+            _validate,
+            dict_schema,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda v: dict(v),
+                info_arg=False,
+                return_schema=dict_schema,
+            ),
+        )
 
 
 class VariableId(BaseModel):
