@@ -895,3 +895,64 @@ class MWFitSpec(BaseModel):
     blk_rows: int = 256
     rescale_max_val: int = 65535
     out_root: str
+
+
+class SupervisedApplySpec(BaseModel):
+    """Picklable apply job for GLM/RF/iCAR (§10).
+
+    Carries estimator_pickle + feature/target paths + formula +
+    design_sample_path; iCAR additionally carries rho_path. The worker rebuilds
+    the estimator via EstimatorStore.load and runs SupervisedPredictor.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["glm", "rf", "icar"]
+    out_path: str
+    target_path: str
+    feature_paths: Dict[str, str]
+    formula: str
+    estimator_pickle: str
+    design_sample_path: Optional[str] = None
+    rho_path: Optional[str] = None
+    mask: Optional[str] = None
+    mask_value: JsonValue = 0
+
+
+class JNRApplySpec(BaseModel):
+    """Picklable JNR apply job (§10): vulnerability map + defrate per class."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["jnr"]
+    out_path: str
+    defor_file: str
+    forest_file: str
+    forest_edge_file: str
+    subj_file: str
+    period: str
+    dist_bins: tuple[float, ...]
+    time_interval: int
+    deforate_model: Optional[str] = None
+    blk_rows: int = 128
+
+
+class MWApplySpec(BaseModel):
+    """Picklable MW apply job (§10): per-window probability maps."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["mw"]
+    defor_file: str
+    forest_file: str
+    forest_edge_file: str
+    period: str
+    ldefrate_files: Dict[str, str]
+    win_sizes: tuple[int, ...]
+    dist_thresh: float
+    time_interval: int
+    blk_rows: int = 256
+    output_folder: str

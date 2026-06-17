@@ -457,3 +457,85 @@ def test_fit_spec_mw_carries_windows():
     assert restored.time_interval == 5
     assert restored.forest_file == "/data/proj/processed/forest_2015.tif"
     assert restored.out_root == "/data/proj/rmj_mw"
+
+
+def test_supervised_apply_spec_carries_estimator_and_design():
+    from spatialrisk.session import SupervisedApplySpec
+
+    spec = SupervisedApplySpec(
+        model_key="glm_calibration",
+        model_type="glm",
+        out_path="/data/proj/predictions/glm_2020.tif",
+        target_path="/data/proj/processed/forest_loss_2020.tif",
+        feature_paths={"altitude": "/data/proj/processed/altitude.tif"},
+        formula="I(fcc) ~ scale(altitude)",
+        estimator_pickle="/data/proj/glm/glm_calibration.pickle",
+        design_sample_path="/data/proj/glm/samples_glm_calibration.csv",
+        rho_path=None,
+        mask=None,
+        mask_value=0,
+    )
+    restored = _assert_picklable_pure(spec)
+    assert restored.estimator_pickle.endswith(".pickle")
+    assert restored.design_sample_path.endswith(".csv")
+    assert restored.rho_path is None
+
+
+def test_icar_apply_spec_carries_rho_path():
+    from spatialrisk.session import SupervisedApplySpec
+
+    spec = SupervisedApplySpec(
+        model_key="icar_calibration",
+        model_type="icar",
+        out_path="/data/proj/predictions/icar_2020.tif",
+        target_path="/data/proj/processed/forest_loss_2020.tif",
+        feature_paths={"altitude": "/data/proj/processed/altitude.tif"},
+        formula="I(fcc) ~ scale(altitude) + cell",
+        estimator_pickle="/data/proj/icar/icar_calibration.pickle",
+        design_sample_path="/data/proj/icar/samples.csv",
+        rho_path="/data/proj/icar/rho_calibration.tif",
+        mask=None,
+        mask_value=0,
+    )
+    restored = _assert_picklable_pure(spec)
+    assert restored.model_type == "icar"
+    assert restored.rho_path.endswith("rho_calibration.tif")
+
+
+def test_jnr_and_mw_apply_specs():
+    from spatialrisk.session import JNRApplySpec, MWApplySpec
+
+    jnr = JNRApplySpec(
+        model_key="jnr_calibration",
+        model_type="jnr",
+        out_path="/data/proj/rmj_bm/vuln_validation.tif",
+        defor_file="/data/proj/processed/defor_2020.tif",
+        forest_file="/data/proj/processed/forest_2015.tif",
+        forest_edge_file="/data/proj/processed/forest_edge.tif",
+        subj_file="/data/proj/processed/subj.tif",
+        period="validation",
+        dist_bins=(0.0, 100.0, 200.0),
+        time_interval=5,
+        deforate_model="/data/proj/rmj_bm/defrate_cat_bm_calibration.csv",
+        blk_rows=128,
+    )
+    _assert_picklable_pure(jnr)
+    assert jnr.dist_bins == (0.0, 100.0, 200.0)
+
+    mw = MWApplySpec(
+        model_key="mw_calibration",
+        model_type="mw",
+        defor_file="/data/proj/processed/defor_2020.tif",
+        forest_file="/data/proj/processed/forest_2015.tif",
+        forest_edge_file="/data/proj/processed/forest_edge.tif",
+        period="validation",
+        ldefrate_files={"5": "/data/proj/rmj_mw/ldefrate_mw_5.tif"},
+        win_sizes=(5, 11, 21),
+        dist_thresh=300.0,
+        time_interval=5,
+        blk_rows=256,
+        output_folder="/data/proj/rmj_mw",
+    )
+    restored = _assert_picklable_pure(mw)
+    assert restored.ldefrate_files == {"5": "/data/proj/rmj_mw/ldefrate_mw_5.tif"}
+    assert restored.win_sizes == (5, 11, 21)
