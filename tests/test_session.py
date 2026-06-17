@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from spatialrisk.document import ProjectDocument
 from spatialrisk.session import ProjectSession, FolderResolver
 
@@ -565,3 +567,40 @@ def test_materialize_spec_resolves_gee_var_from_raw(tmp_path):
     assert spec.export_kind == "raster"
     assert spec.out_path.endswith("/altitude.tif")
     assert spec.recipe.catalogue_key == "altitude"
+
+
+def test_materialize_one_downloads_and_registers_raster(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    class FakeGEE:
+        def __init__(self): self.calls = []
+        def materialize(self, recipe, out_path):
+            self.calls.append((recipe.catalogue_key, out_path))
+            Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(out_path).write_bytes(b"TIFFFIXTURE")
+            return out_path
+
+    gee = FakeGEE()
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.from_document(_doc("mo"), store=store, gee=gee)
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="altitude", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(source="catalogue", catalogue_key="altitude",
+                               export_kind="raster"),
+    ), key="altitude")
+
+    spec = session.get_variable("altitude", source="raw")
+    session._materialize_one("altitude", spec)
+
+    # downloaded to the raw out_path
+    assert gee.calls and gee.calls[0][1].endswith("/altitude.tif")
+    # product registered as a local raster in raw
+    product = session.get_variable("altitude", source="raw")
+    # source GEESpec now points at the product (so materialize_all skips it)
+    src = session._collection("raw")["altitude"]
+    assert getattr(src, "materialized_key", None) is not None
+    prod = session._collection("raw")[src.materialized_key]
+    assert prod.kind == "local_raster"
+    assert prod.path.endswith("/altitude.tif")
+    assert prod.raster_type == RasterType.continuous

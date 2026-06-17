@@ -859,8 +859,50 @@ class ProjectSession:
     # Orchestration (delegates to handles/collaborators; real geoprocessing
     # lands in Phase G — these wire ordering + iteration only)
     # ------------------------------------------------------------------ #
-    def _materialize_one(self, key: str, spec, **kw):  # pragma: no cover - Phase G fills this in
-        raise NotImplementedError("materialize is wired in Phase E/G (GEEAdapter).")
+    def _materialize_one(self, key: str, spec, **kw):
+        """Download one GEE source to disk and register the product.
+
+        Uses the injected GEEAdapter (self.gee); never imports ee here. Sets the
+        source GEESpec.materialized_key so materialize_all/list_materialized
+        dedupe the recipe against its product on subsequent runs.
+        """
+        from spatialrisk.document import LocalRasterSpec, LocalVectorSpec
+
+        if self.gee is None:
+            raise ValueError("No GEE adapter injected; pass gee= to create/open.")
+
+        mspec = self.materialize_spec(key)
+        recipe = mspec.recipe
+        if getattr(recipe, "aoi", None) is None and self._doc.aoi is not None:
+            # validated reconstruction (NOT model_copy — §13 guard forbids it)
+            recipe = type(recipe).model_validate({**recipe.model_dump(), "aoi": self._doc.aoi})
+
+        out_path = self.gee.materialize(recipe, mspec.out_path)
+
+        product_key = f"{key}__materialized"
+        if spec.recipe.export_kind == "vector":
+            product = LocalVectorSpec(
+                name=spec.name, year=spec.year, tags=spec.tags,
+                path=str(out_path),
+                rasterization_method=spec.rasterization_method or "binary",
+                derived_from=key,
+            )
+        else:
+            product = LocalRasterSpec(
+                name=spec.name, year=spec.year, tags=spec.tags,
+                path=str(out_path),
+                raster_type=spec.raster_type,
+                post_processing=spec.post_processing,
+                derived_from=key,
+            )
+        self.add_local_raster(product, key=product_key) if product.kind == "local_raster" \
+            else self.add_local_vector(product, key=product_key)
+
+        # validated reconstruction via model_validate (§13 guard forbids the
+        # update-style copy primitive in session.py)
+        linked = type(spec).model_validate({**spec.model_dump(), "materialized_key": product_key})
+        self._add_raw(key, linked)
+        return product_key
 
     def materialize_all(self, source: str = "raw", **kw):
         """Materialize each un-materialized GEE source descriptor (runs FIRST)."""
