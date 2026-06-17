@@ -330,3 +330,27 @@ class EstimatorStorePort(Protocol):
 
     def save(self, payload: dict, dest: str) -> str: ...
     def load(self, ref: str) -> dict: ...
+
+
+class LocalFSEstimatorStore:
+    """Persist the curated estimator pickle payload to the local filesystem.
+
+    Payload is the existing GLM/RF/iCAR shape:
+    ``{ml_model, design_sample, formula, samples_path}``. JNR/MW have no pickle.
+    ``ref``/``dest`` are absolute path strings (see PredictionSpec/ModelSpec
+    ``estimator_pickle``).
+    """
+
+    def save(self, payload: dict, dest: str) -> str:
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest_path, "wb") as fh:
+            pickle.dump(payload, fh)
+        return str(dest_path)
+
+    def load(self, ref: str) -> dict:
+        ref_path = Path(ref)
+        if not ref_path.exists():
+            raise FileNotFoundError(f"Estimator pickle not found: {ref_path}")
+        with open(ref_path, "rb") as fh:
+            return pickle.load(fh)
