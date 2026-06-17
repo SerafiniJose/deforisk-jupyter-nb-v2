@@ -192,3 +192,79 @@ def test_rasterize_vector_requires_a_method(tmp_path):
         geoprocessing.rasterize_vector(
             spec, base_geobox=base_geobox, out_path=str(tmp_path / "x.tif"),
         )
+
+
+from spatialrisk.variables.models import PostProcessing
+
+
+def test_apply_post_processing_dist_writes_distance_raster(tmp_path):
+    from spatialrisk import geoprocessing
+
+    # A 4x4 binary mask: a single feature pixel (==1) at (0,0), rest background.
+    arr = np.zeros((4, 4), dtype=np.uint8)
+    arr[0, 0] = 1
+    src = tmp_path / "feat.tif"
+    _write_raster(src, arr, nodata=0)
+
+    in_spec = LocalRasterSpec(
+        name="rivers", path=str(src), raster_type=RasterType.categorical,
+    )
+    out_path = tmp_path / "rivers_dist.tif"
+
+    out_spec = geoprocessing.apply_post_processing(
+        in_spec, PostProcessing.dist, out_path=str(out_path),
+    )
+
+    assert isinstance(out_spec, LocalRasterSpec)
+    assert out_spec.path == str(out_path)
+    assert out_spec.name == "rivers_dist"
+    assert out_spec.raster_type == RasterType.continuous
+    assert "dist" in out_spec.processing_history
+    assert PostProcessing.dist in out_spec.post_processing
+    assert out_path.exists()
+
+    with rasterio.open(out_path) as r:
+        d = r.read(1)
+    assert d.shape == (4, 4)
+    # Under USE_INPUT_NODATA=YES (input_nodata=True, nodata=0) the value-0
+    # background is masked to nodata in the output; the feature pixel is the only
+    # valid computed cell and its distance to the nearest feature (itself) is 0.
+    assert d[0, 0] == 0
+
+
+def test_apply_post_processing_edge_passes_values_zero(tmp_path, monkeypatch):
+    from spatialrisk import geoprocessing
+
+    arr = np.zeros((2, 2), dtype=np.uint8)
+    arr[0, 0] = 1
+    src = tmp_path / "e.tif"
+    _write_raster(src, arr, nodata=0)
+
+    captured = {}
+
+    def fake_dist(input_file, dist_file, values, nodata, max_distance_value,
+                  input_nodata, verbose):
+        captured["values"] = values
+        _write_raster(dist_file, np.zeros((2, 2), dtype="uint32"), nodata=0)
+
+    monkeypatch.setattr(
+        geoprocessing, "distance_to_edge_gdal_no_mask", fake_dist
+    )
+
+    spec = LocalRasterSpec(name="roads", path=str(src), raster_type=RasterType.categorical)
+    geoprocessing.apply_post_processing(
+        spec, PostProcessing.edge, out_path=str(tmp_path / "roads_edge.tif"),
+    )
+    assert captured["values"] == 0  # edge -> distance to feature pixels (values=0)
+
+
+def test_apply_post_processing_rejects_unknown_step(tmp_path):
+    from spatialrisk import geoprocessing
+
+    arr = np.zeros((2, 2), dtype=np.uint8)
+    src = tmp_path / "u.tif"
+    _write_raster(src, arr, nodata=0)
+    spec = LocalRasterSpec(name="u", path=str(src), raster_type=RasterType.categorical)
+
+    with pytest.raises(ValueError, match="post-processing"):
+        geoprocessing.apply_post_processing(spec, "bogus", out_path=str(tmp_path / "o.tif"))
