@@ -16,6 +16,7 @@ docs/build/
 docs/superpowers/
 legacy/
 *.md
+!docs/MIGRATION.md
 .ipynb_checkpoints/
 
 #Download Folder

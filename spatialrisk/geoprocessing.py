@@ -14,7 +14,7 @@ No function in this module takes a ``project`` parameter or reaches a live
 
 from __future__ import annotations
 
-from spatialrisk.document import LocalRasterSpec
+from spatialrisk.document import LocalRasterSpec, LocalVectorSpec
 from spatialrisk.geo_utils import xr_reproject
 from spatialrisk.processing import distance_to_edge_gdal_no_mask, xr_rasterize
 from spatialrisk.variables.models import PostProcessing, RasterizationMethod, RasterType
