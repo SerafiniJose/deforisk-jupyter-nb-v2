@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Dict, List, Optional, Union, Any
 from collections.abc import Iterable
 from pathlib import Path
@@ -8,8 +9,27 @@ from spatialrisk.variables import LocalVectorVar, LocalRasterVar
 from spatialrisk.variables.models import DataType
 
 root_folder: Path = Path.cwd().parent
-downloads_folder = root_folder / "data"
-downloads_folder.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_data_dir() -> Path:
+    """Resolve the canonical project data directory.
+
+    Order: ``SPATIAL_RISK_DATA_DIR`` env var, else the package-relative
+    ``<module-root>/data`` (``spatial-risk-module/data``). Package-relative so
+    it does not depend on the current working directory — the previous
+    ``Path.cwd().parent / "data"`` diverged from the GUI's data dir depending on
+    where the app was launched, which broke loading.
+    """
+    env = os.environ.get("SPATIAL_RISK_DATA_DIR")
+    if env:
+        return Path(env).resolve()
+    return (Path(__file__).resolve().parents[1] / "data").resolve()
+
+
+DATA_DIR: Path = _resolve_data_dir()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Backward-compatible alias: save()/load()/initialize_folders() read this name.
+downloads_folder = DATA_DIR
 
 
 def _stringify_paths(obj: Any) -> Any:
