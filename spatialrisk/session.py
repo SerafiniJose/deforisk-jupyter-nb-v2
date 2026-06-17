@@ -913,8 +913,26 @@ class ProjectSession:
                 continue
             self._materialize_one(key, spec, **kw)
 
-    def reproject_and_match_all(self, source: str = "raw", **kw):  # pragma: no cover - Phase G
-        raise NotImplementedError("reproject_and_match is wired in Phase G.")
+    def reproject_and_match_all(self, source: str = "raw", **kw):
+        """Reproject+match every raster in `source` onto the base geobox.
+
+        Vectors are handled by rasterize_all; the base raster itself is skipped.
+        Requires set_base_raster() (raises a clear error if none is set).
+        """
+        # Disk-free guard: the actual geobox is resolved per-variable inside
+        # VariableHandle.reproject_and_match (which opens the base raster).
+        if self._doc.base_raster_ref is None:
+            raise ValueError("No base raster set; call set_base_raster() first.")
+        base = self._doc.base_raster_ref
+        for key, spec in dict(self._collection(source)).items():
+            if getattr(spec, "kind", None) != "local_raster":
+                continue
+            if not getattr(spec, "active", True):
+                continue
+            if base is not None and spec.name == base.name and spec.year == base.year:
+                continue
+            self.get_variable_handle(spec.name, year=spec.year, source=source) \
+                .reproject_and_match(**kw)
 
     def rasterize_all(self, source: str = "raw", **kw):  # pragma: no cover - Phase G
         raise NotImplementedError("rasterize is wired in Phase G.")

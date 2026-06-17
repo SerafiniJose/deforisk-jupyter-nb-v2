@@ -604,3 +604,30 @@ def test_materialize_one_downloads_and_registers_raster(tmp_path):
     assert prod.kind == "local_raster"
     assert prod.path.endswith("/altitude.tif")
     assert prod.raster_type == RasterType.continuous
+
+
+def test_reproject_and_match_all_iterates_rasters_only(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+    from spatialrisk import session as session_mod
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.from_document(_doc("rm"), store=store)
+    session.add_local_raster(LocalRasterSpec(
+        name="altitude", path="/a.tif", raster_type=RasterType.continuous))
+    session.add_local_vector(LocalVectorSpec(
+        name="roads", path="/r.shp", rasterization_method="binary"))
+    session.set_base_raster(VariableId(source="raw", name="altitude"))
+
+    seen = []
+    def fake_reproj(self, resampling=None, output_suffix="reprojected_matched"):
+        seen.append(self.key)
+        return self
+    monkeypatch_target = session_mod.VariableHandle.reproject_and_match
+    session_mod.VariableHandle.reproject_and_match = fake_reproj
+    try:
+        session.reproject_and_match_all(source="raw")
+    finally:
+        session_mod.VariableHandle.reproject_and_match = monkeypatch_target
+
+    assert "roads" not in seen          # vectors skipped
+    assert "altitude" not in seen        # the base raster itself skipped
