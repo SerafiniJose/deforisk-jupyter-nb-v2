@@ -51,6 +51,7 @@ class Project(BaseModel):
     base_raster: Optional["LocalRasterVar"] = None
     models: Dict[str, Any] = Field(default_factory=dict)
     datasets: Dict[str, Any] = Field(default_factory=dict)
+    predictions: Dict[str, Any] = Field(default_factory=dict)
 
     @staticmethod
     def _ensure_model_schemas() -> None:
@@ -367,6 +368,50 @@ class Project(BaseModel):
     def list_datasets(self) -> List[str]:
         """Return sorted list of registered dataset keys."""
         return sorted(self.datasets.keys())
+
+    # ------------------------------------------------------------------
+    # Prediction registry
+    # ------------------------------------------------------------------
+
+    def add_prediction(
+        self,
+        prediction: Any,
+        key: Optional[str] = None,
+        auto_save: bool = True,
+    ) -> None:
+        """Add a Prediction to the project's prediction registry."""
+        prediction.project = self
+        storage_key = key or prediction.storage_key()
+        self.predictions[storage_key] = prediction
+        print(f"  Prediction registered as project.predictions['{storage_key}']")
+        if auto_save:
+            self.save()
+
+    def get_prediction(self, key: str) -> Optional[Any]:
+        """Return the prediction stored under *key*, or None if not found."""
+        return self.predictions.get(key)
+
+    def list_predictions(self) -> List[str]:
+        """Return registered prediction keys in insertion order."""
+        return list(self.predictions.keys())
+
+    def filter_predictions(
+        self,
+        model_key: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        **attrs: Any,
+    ) -> Dict[str, Any]:
+        """Return the subset of predictions matching the given criteria."""
+        result: Dict[str, Any] = {}
+        for key, pred in self.predictions.items():
+            if model_key is not None and pred.model_key != model_key:
+                continue
+            if dataset_name is not None and pred.dataset_name != dataset_name:
+                continue
+            if any(getattr(pred, attr, None) != value for attr, value in attrs.items()):
+                continue
+            result[key] = pred
+        return result
 
     def save(self, filename: Optional[str] = None) -> Path:
         """

@@ -46,6 +46,12 @@ class Prediction(BaseModel):
 
     project: Optional[Any] = Field(default=None, exclude=True, repr=False)
 
+    def __hash__(self) -> int:  # noqa: D105
+        return id(self)
+
+    def __eq__(self, other: object) -> bool:  # noqa: D105
+        return self is other
+
     def storage_key(self) -> str:
         """Deterministic registry key: model + dataset, disambiguated by year/window."""
         key = f"{self.model_key}__{self.dataset_name}"
