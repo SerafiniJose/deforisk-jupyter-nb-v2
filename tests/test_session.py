@@ -1,5 +1,5 @@
 from spatialrisk.document import ProjectDocument
-from spatialrisk.session import ProjectSession
+from spatialrisk.session import ProjectSession, FolderResolver
 
 
 def _doc(name="proj_d"):
@@ -263,3 +263,32 @@ def test_list_variables_and_filters():
     tagged = session.filter_by_tags("elevation", look_up_in="raw")
     assert set(tagged) == {"dem_2020"}
     assert set(session.filter_by_tags(["infrastructure", "x"], look_up_in="raw")) == {"roads"}
+
+
+from box import Box
+
+
+def test_folder_resolver_preserves_it_name_suffix(tmp_path):
+    resolver = FolderResolver(project_name="proj_d", data_root=tmp_path)
+
+    plain = resolver.folders()
+    assert isinstance(plain, Box)
+    # suffix-free keys: no iteration prefix
+    assert plain.glm_model.name == "far_glm"
+    assert plain.project_folder == tmp_path / "proj_d"
+
+    suffixed = resolver.folders(it_name="run1")
+    # iteration suffix prepended to the suffixed folders
+    assert suffixed.glm_model.name == "run1_far_glm"
+    assert suffixed.icar_model.name == "run1_far_icar"
+    assert suffixed.rf_model.name == "run1_far_rf"
+    assert suffixed.rmj_bm.name == "run1_rmj_bm"
+    # non-suffixed folders are unchanged
+    assert suffixed.processed_data_folder.name == "data"
+
+
+def test_session_exposes_folders_callable(tmp_path):
+    session = ProjectSession.from_document(_doc("fp"))
+    session.folders = FolderResolver(project_name="fp", data_root=tmp_path)
+    box = session.folders.folders(it_name="r1")
+    assert box.glm_model.name == "r1_far_glm"

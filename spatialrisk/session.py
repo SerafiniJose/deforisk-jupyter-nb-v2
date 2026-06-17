@@ -7,7 +7,10 @@ the frozen ProjectDocument reached via snapshot().
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, Optional
+
+from box import Box
 
 from spatialrisk.document import (
     ProjectDocument,
@@ -18,6 +21,51 @@ from spatialrisk.document import (
     DatasetSpec,
     PredictionSpec,
 )
+
+
+class FolderResolver:
+    """Resolves project folder structure; preserves the iteration-suffix mechanic.
+
+    `folders(it_name="run1")` returns a Box where the per-iteration folders
+    carry a `<it_name>_` prefix, mirroring Project.initialize_folders. Creating
+    folders lazily — no filesystem side effect at import time.
+    """
+
+    def __init__(self, project_name: str, data_root: Path):
+        self.project_name = project_name
+        self.data_root = Path(data_root)
+
+    def folders(self, step: Optional[str] = None, it_name: str = "") -> Box:
+        if step and not it_name:
+            raise ValueError("A suffix must be provided when a specific step is specified.")
+
+        prefix = f"{it_name}_" if it_name else ""
+        project_folder = self.data_root / self.project_name
+        project_folder.mkdir(parents=True, exist_ok=True)
+
+        folders = {
+            "data_raw_folder": project_folder / "data_raw",
+            "processed_data_folder": project_folder / "data",
+            "sampling_folder": project_folder / "far_samples",
+            "rmj_mw": project_folder / "rmj_mw",
+            "plots_folder": project_folder / "plots",
+            "rmj_bm": project_folder / f"{prefix}rmj_bm",
+            "glm_model": project_folder / f"{prefix}far_glm",
+            "icar_model": project_folder / f"{prefix}far_icar",
+            "rf_model": project_folder / f"{prefix}far_rf",
+        }
+
+        if step:
+            folders[step].mkdir(parents=True, exist_ok=True)
+        else:
+            for folder in folders.values():
+                folder.mkdir(parents=True, exist_ok=True)
+
+        folders.update({
+            "data_root": self.data_root,
+            "project_folder": project_folder,
+        })
+        return Box(folders)
 
 
 class ProjectSession:
