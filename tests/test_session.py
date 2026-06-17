@@ -197,3 +197,36 @@ def test_get_variable_and_instances_and_temporal():
     assert session.is_temporal("defor", source="raw") is True
     assert session.is_temporal("dem", source="raw") is False
     assert session.get_variable_years("defor", source="raw") == [2015, 2020]
+
+
+def test_list_sources_vs_materialized_no_double_count():
+    session = ProjectSession.from_document(_doc())
+    # a GEE source recipe that has been materialized into a local raster
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="altitude", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(
+            source="catalogue", catalogue_key="altitude", export_kind="raster",
+        ),
+        materialized_key="altitude_product",
+    ), key="altitude_src")
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="altitude",
+        path="/data/altitude.tif", raster_type=RasterType.continuous,
+        derived_from="altitude_src",
+    ), key="altitude_product")
+
+    # list_sources: only the recipe(s)
+    sources = session.list_sources(source="raw")
+    assert sources == ["altitude_src"]
+
+    # list_materialized: only the on-disk product, NOT the GEE source whose
+    # materialized_key is set
+    materialized = session.list_materialized(source="raw")
+    assert materialized == ["altitude_product"]
+
+    # query honors provenance: get_all_instances("altitude") returns the
+    # product only (the materialized GEE source is skipped)
+    insts = session.get_all_instances("altitude", source="raw")
+    assert len(insts) == 1
+    assert insts[0].kind == "local_raster"

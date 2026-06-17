@@ -166,3 +166,25 @@ class ProjectSession:
     def get_variable_years(self, name: str, source: str = "processed") -> list:
         instances = self.get_all_instances(name, source)
         return sorted({s.year for s in instances if s.year is not None})
+
+    def list_sources(self, source: str = "processed") -> list:
+        """Keys of GEE recipe descriptors (the source side of provenance)."""
+        variables = self._collection(source)
+        return sorted(
+            key for key, spec in variables.items()
+            if getattr(spec, "kind", None) == "gee"
+        )
+
+    def list_materialized(self, source: str = "processed") -> list:
+        """Keys of on-disk products: local specs + GEE sources NOT yet materialized.
+
+        A GEESpec whose `materialized_key` is set is skipped (its product is
+        listed instead) so a recipe and its product never double-count.
+        """
+        variables = self._collection(source)
+        out = []
+        for key, spec in variables.items():
+            if getattr(spec, "kind", None) == "gee" and getattr(spec, "materialized_key", None):
+                continue
+            out.append(key)
+        return sorted(out)
