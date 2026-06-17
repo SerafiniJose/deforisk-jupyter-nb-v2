@@ -76,10 +76,29 @@ async def _styled_layer(image, var, gee_interface):
 
 def _variable_to_entry(key: str, var, project) -> dict:
     """Reconstruct a modal entry dict from an existing variable object."""
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+
     vtype = type(var).__name__
     is_base = project.base_raster is not None and project.base_raster.name == var.name
     pp = [p.value if hasattr(p, "value") else str(p) for p in (var.post_processing or [])]
+
+    # Predefined GEE variables hold an ee.Image (in gee_images) and carry no
+    # local path / asset id — they are rebuilt from the catalogue by key. Round-
+    # trip them as a predefined entry so editing re-fetches the image instead of
+    # dropping gee_images and stringifying path=None into the literal "None"
+    # (which then fails GEEVar validation on save).
+    if vtype == "GEEVar" and not var.path and var.name in PREDEFINED_CATALOGUE:
+        return {
+            "source": "predefined",
+            "type": "GEEVar",
+            "name": var.name,
+            "predefined_key": var.name,
+            "year": str(var.year) if var.year else "",
+            "is_base": is_base,
+        }
+
     entry = {
+        "source": "custom",
         "type": vtype,
         "name": var.name,
         "year": str(var.year) if var.year else "",
@@ -90,7 +109,7 @@ def _variable_to_entry(key: str, var, project) -> dict:
         entry["path"] = str(var.path)
         entry["raster_type"] = var.raster_type.value if hasattr(var.raster_type, "value") else str(var.raster_type)
     elif vtype == "GEEVar":
-        entry["asset_id"] = str(var.path)
+        entry["asset_id"] = str(var.path) if var.path else ""
         entry["scale"] = str(var.default_scale) if getattr(var, "default_scale", None) else ""
     elif vtype == "LocalVectorVar":
         entry["path"] = str(var.path)
