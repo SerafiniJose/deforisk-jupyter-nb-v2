@@ -11,6 +11,7 @@ import pydantic
 from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler, computed_field
 from pydantic_core import core_schema
 
+from spatialrisk.sampling import Sampling
 from spatialrisk.variables.models import (  # enums only
     DataType,
     PostProcessing,
@@ -205,3 +206,13 @@ class GEESpec(BaseModel):
 VariableSpec = Annotated[
     Union[LocalRasterSpec, LocalVectorSpec, GEESpec], Field(discriminator="kind")
 ]
+
+
+class DatasetSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    year: int | None = None
+    target_ref: VarRef | None = None
+    feature_refs: tuple[VarRef, ...] = ()
+    sampling: Sampling | None = None

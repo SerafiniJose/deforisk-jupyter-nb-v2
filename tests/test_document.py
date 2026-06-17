@@ -188,3 +188,33 @@ def test_local_raster_spec_post_processing_is_tuple_of_enum():
     # round-trip
     loaded = LocalRasterSpec.model_validate_json(s.model_dump_json())
     assert loaded == s
+
+
+from spatialrisk.document import DatasetSpec
+from spatialrisk.sampling import Sampling
+
+
+def test_dataset_spec_reference_only_and_roundtrip():
+    ds = DatasetSpec(
+        name="calibration_2020",
+        year=2020,
+        target_ref=VariableId(source="processed", name="forest_loss", year=2020),
+        feature_refs=(
+            VariableId(source="processed", name="altitude"),
+            VariableId(source="processed", name="slope"),
+        ),
+        sampling=Sampling(strategy="random", n_samples=10000, seed=1),
+    )
+    assert ds.target_ref.name == "forest_loss"
+    assert len(ds.feature_refs) == 2
+    assert ds.sampling.n_samples == 10000
+    loaded = DatasetSpec.model_validate_json(ds.model_dump_json())
+    assert loaded == ds
+
+
+def test_dataset_spec_defaults_and_frozen():
+    ds = DatasetSpec(name="empty")
+    assert ds.year is None and ds.target_ref is None
+    assert ds.feature_refs == () and ds.sampling is None
+    with pytest.raises(ValidationError):
+        ds.name = "x"
