@@ -63,6 +63,7 @@ def test_generate_forest_loss_targets_adds_raw():
 
 def test_run_processing_sequences_steps():
     p = _Proj()
+    p.base_raster = MagicMock(name="base")
     with patch("gui.scripts.process_actions.materialize_raw_layers") as mat, patch(
         "gui.scripts.process_actions.generate_forest_loss_targets"
     ) as gen:
@@ -87,3 +88,29 @@ def test_apply_post_processing_adds_processed():
     var.apply_post_processing.assert_called_once_with("dist")
     derived.add_as_processed.assert_called_once()
     assert out is derived
+
+
+def test_run_processing_raises_without_base_raster():
+    import pytest
+    p = _Proj()  # base_raster is None by default
+    with pytest.raises(ValueError, match="base raster"):
+        process_actions.run_processing(p)
+
+
+def test_generate_forest_loss_targets_skips_missing_key():
+    from spatialrisk.variables.models import ForestLossSpec
+    p = _Proj()
+    p.raw_variables = {}  # neither key present
+    p.forest_loss_specs = [
+        ForestLossSpec(
+            name="forest_loss_2015_2020",
+            start_key="forest_gfc_2015",
+            end_key="forest_gfc_2020",
+            start_year=2015,
+            end_year=2020,
+        )
+    ]
+    with patch("gui.scripts.process_actions.make_forest_loss_var") as m:
+        out = process_actions.generate_forest_loss_targets(p)
+    m.assert_not_called()
+    assert out == []

@@ -83,6 +83,8 @@ def generate_forest_loss_targets(project) -> List:
 
 def run_processing(project) -> None:
     """Full Process run, in notebook order. Requires base_raster to be set."""
+    if project.base_raster is None:
+        raise ValueError("Set a base raster before running processing.")
     materialize_raw_layers(project)
     generate_forest_loss_targets(project)
     project.reproject_and_match_all(source="raw")
