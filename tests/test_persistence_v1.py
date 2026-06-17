@@ -444,3 +444,98 @@ def test_migrate_v0_unknown_model_type_warns_and_skips(tmp_path, capsys):
     doc = LocalFSProjectStore(data_root=tmp_path).load("m")
     assert "weird" not in doc.models
     assert "bogus" in capsys.readouterr().out
+
+
+def _v0_with_datasets(raw, processed, datasets) -> dict:
+    return {
+        "project_name": "d",
+        "raw_variables": raw,
+        "processed_variables": processed,
+        "datasets": datasets,
+    }
+
+
+def _raster_var(name, year):
+    return {
+        "name": name, "data_type": "raster", "year": year, "active": True,
+        "tags": [], "path": f"/d/{name}.tif", "raster_type": "categorical",
+        "post_processing": [], "default_crs": None, "default_resolution": None,
+    }
+
+
+def test_migrate_v0_dataset_temporal_target_keeps_year(tmp_path):
+    """Temporal target: target_ref carries the dataset year."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    processed = {
+        "fl_2020": _raster_var("fl", 2020),
+        "fl_2024": _raster_var("fl", 2024),
+        "slope": _raster_var("slope", None),
+    }
+    v0 = _v0_with_datasets({}, processed, {
+        "cal": {
+            "name": "cal", "year": 2020, "target_name": "fl",
+            "target_year": 2020, "feature_names": ["slope"],
+        }
+    })
+    pdir = tmp_path / "d"
+    pdir.mkdir()
+    (pdir / "d_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("d")
+    ds = doc.datasets["cal"]
+    assert ds.name == "cal"
+    assert ds.year == 2020
+    assert ds.target_ref.name == "fl"
+    assert ds.target_ref.year == 2020          # temporal -> year retained
+    assert ds.target_ref.source == "processed"
+    assert tuple(f.name for f in ds.feature_refs) == ("slope",)
+    assert ds.feature_refs[0].year is None      # static feature -> no year
+
+
+def test_migrate_v0_dataset_static_target_no_year(tmp_path):
+    """Static target: target_ref.year is None even when the dataset has a year."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    processed = {
+        "subj": _raster_var("subj", None),
+        "slope": _raster_var("slope", None),
+    }
+    v0 = _v0_with_datasets({}, processed, {
+        "cal": {
+            "name": "cal", "year": 2020, "target_name": "subj",
+            "target_year": None, "feature_names": ["slope"],
+        }
+    })
+    pdir = tmp_path / "d"
+    pdir.mkdir()
+    (pdir / "d_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("d")
+    ds = doc.datasets["cal"]
+    assert ds.target_ref.name == "subj"
+    assert ds.target_ref.year is None           # static -> year dropped
+
+
+def test_migrate_v0_dataset_missing_feature_warns_and_skips(tmp_path, capsys):
+    """Feature not found in processed vars -> warn + skip (behaviour preserved)."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    processed = {"slope": _raster_var("slope", None)}
+    v0 = _v0_with_datasets({}, processed, {
+        "cal": {
+            "name": "cal", "year": None, "target_name": None,
+            "target_year": None, "feature_names": ["slope", "ghost"],
+        }
+    })
+    pdir = tmp_path / "d"
+    pdir.mkdir()
+    (pdir / "d_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("d")
+    ds = doc.datasets["cal"]
+    names = tuple(f.name for f in ds.feature_refs)
+    assert names == ("slope",)                  # ghost dropped
+    assert ds.target_ref is None
+    captured = capsys.readouterr().out
+    assert "ghost" in captured

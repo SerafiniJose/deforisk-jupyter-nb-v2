@@ -444,6 +444,77 @@ def _migrate_v0_model(model_data: dict) -> Optional[dict]:
     return out
 
 
+def _find_var_source(name: str, year, raw_vars: dict, processed_vars: dict):
+    """Return ('processed'|'raw', matched_year) for a var name, or (None, None).
+
+    Preference: processed over raw. ``year`` matches a temporal instance; when
+    ``year`` is None, the first instance found is used (its own year recorded).
+    """
+    for source, registry in (("processed", processed_vars), ("raw", raw_vars)):
+        # exact (name, year) match first
+        for v in registry.values():
+            if v.get("name") == name and v.get("year") == year:
+                return source, v.get("year")
+        # name-only match (static / unspecified year)
+        for v in registry.values():
+            if v.get("name") == name:
+                return source, (year if year is not None else v.get("year"))
+    return None, None
+
+
+def _var_is_temporal(name: str, raw_vars: dict, processed_vars: dict) -> bool:
+    """A var is temporal if any instance (raw or processed) has a non-null year."""
+    for registry in (processed_vars, raw_vars):
+        for v in registry.values():
+            if v.get("name") == name and v.get("year") is not None:
+                return True
+    return False
+
+
+def _migrate_v0_dataset(
+    ds_data: dict, raw_vars: dict, processed_vars: dict, key: str
+) -> dict:
+    out: dict = {
+        "name": ds_data.get("name"),
+        "year": ds_data.get("year"),
+    }
+
+    target_name = ds_data.get("target_name")
+    if target_name:
+        is_temporal = _var_is_temporal(target_name, raw_vars, processed_vars)
+        # Temporal target uses the dataset's year; static target drops the year.
+        want_year = ds_data.get("year") if is_temporal else None
+        source, matched_year = _find_var_source(
+            target_name, want_year, raw_vars, processed_vars
+        )
+        out["target_ref"] = {
+            "source": source or "processed",
+            "name": target_name,
+            "year": matched_year if is_temporal else None,
+        }
+
+    feature_refs = []
+    for fname in ds_data.get("feature_names", []):
+        source, matched_year = _find_var_source(
+            fname, ds_data.get("year"), raw_vars, processed_vars
+        )
+        if source is None:
+            print(
+                f"  Warning: dataset {key!r}: feature {fname!r} not found in "
+                f"processed/raw variables — skipped"
+            )
+            continue
+        is_temporal = _var_is_temporal(fname, raw_vars, processed_vars)
+        feature_refs.append({
+            "source": source,
+            "name": fname,
+            "year": matched_year if is_temporal else None,
+        })
+    out["feature_refs"] = tuple(feature_refs)
+    out["sampling"] = ds_data.get("sampling")
+    return out
+
+
 def _migrate_v0_to_v1(data: dict) -> dict:
     """Convert a pre-``schema_version`` (v0) project dict to a v1 dict."""
     out: dict = {
@@ -466,6 +537,15 @@ def _migrate_v0_to_v1(data: dict) -> dict:
             if spec is not None:
                 migrated_models[key] = spec
         out["models"] = migrated_models
+
+    datasets_data = data.get("datasets")
+    if datasets_data:
+        raw = data.get("raw_variables", {})
+        processed = data.get("processed_variables", {})
+        out["datasets"] = {
+            key: _migrate_v0_dataset(ds, raw, processed, key)
+            for key, ds in datasets_data.items()
+        }
 
     base_raster = data.get("base_raster")
     if base_raster:
