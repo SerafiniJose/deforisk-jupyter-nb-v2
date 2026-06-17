@@ -382,6 +382,33 @@ def _migrate_v0_variable(var_data: dict) -> dict:
     return out
 
 
+def _resolve_base_raster_ref(
+    base_raster: dict, raw_vars: dict, processed_vars: dict
+) -> Optional[dict]:
+    """Resolve a v0 embedded base_raster dict to a VariableId dict.
+
+    Matches by (name, year), preferring processed over raw (base rasters are
+    products of reprojection). Returns a plain dict for VariableId, or None.
+    """
+    name = base_raster.get("name")
+    year = base_raster.get("year")
+
+    def _match(registry: dict) -> bool:
+        return any(
+            v.get("name") == name and v.get("year") == year
+            for v in registry.values()
+        )
+
+    if _match(processed_vars):
+        source = "processed"
+    elif _match(raw_vars):
+        source = "raw"
+    else:
+        # No registry match — default to processed (base rasters live there).
+        source = "processed"
+    return {"source": source, "name": name, "year": year}
+
+
 def _migrate_v0_to_v1(data: dict) -> dict:
     """Convert a pre-``schema_version`` (v0) project dict to a v1 dict."""
     out: dict = {
@@ -396,6 +423,13 @@ def _migrate_v0_to_v1(data: dict) -> dict:
             for key, v in data.get("processed_variables", {}).items()
         },
     }
+    base_raster = data.get("base_raster")
+    if base_raster:
+        out["base_raster_ref"] = _resolve_base_raster_ref(
+            base_raster,
+            data.get("raw_variables", {}),
+            data.get("processed_variables", {}),
+        )
     return out
 
 

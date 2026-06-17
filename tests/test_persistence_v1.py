@@ -245,3 +245,79 @@ def test_migrate_v0_drops_unknown_multi_year_field(tmp_path):
     doc = LocalFSProjectStore(data_root=tmp_path).load("my")
     assert doc.raw_variables["alt"].kind == "local_raster"
     assert not hasattr(doc.raw_variables["alt"], "multi_year")
+
+
+def test_migrate_v0_base_raster_resolves_to_processed_ref(tmp_path):
+    """The embedded base_raster dict -> a VariableId, source matched by name/year."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = {
+        "project_name": "nuevo2",
+        "years": [2015, 2020, 2024],
+        "raw_variables": {},
+        "processed_variables": {
+            "subj_reprojected": {
+                "name": "subj_reprojected", "data_type": "raster", "year": None,
+                "multi_year": None, "active": True, "tags": [],
+                "path": "/d/subj_reprojected.tif", "raster_type": "categorical",
+                "post_processing": [], "default_crs": "EPSG:32618",
+                "default_resolution": 30.0,
+            }
+        },
+        "base_raster": {
+            "name": "subj_reprojected", "data_type": "raster", "year": None,
+            "multi_year": None, "active": True, "tags": [],
+            "path": "/d/subj_reprojected.tif", "raster_type": "categorical",
+            "post_processing": [], "default_crs": "EPSG:32618",
+            "default_resolution": 30.0,
+        },
+    }
+    pdir = tmp_path / "nuevo2"
+    pdir.mkdir()
+    (pdir / "nuevo2_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("nuevo2")
+    assert doc.base_raster_ref is not None
+    assert doc.base_raster_ref.source == "processed"
+    assert doc.base_raster_ref.name == "subj_reprojected"
+    assert doc.base_raster_ref.year is None
+
+
+def test_migrate_v0_base_raster_falls_back_to_raw_source(tmp_path):
+    """If base_raster matches only a raw var (by name+year), source is 'raw'."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = {
+        "project_name": "p",
+        "raw_variables": {
+            "fl_2020": {
+                "name": "fl", "data_type": "raster", "year": 2020, "active": True,
+                "tags": [], "path": "/d/fl.tif", "raster_type": "categorical",
+                "post_processing": [], "default_crs": None, "default_resolution": None,
+            }
+        },
+        "processed_variables": {},
+        "base_raster": {
+            "name": "fl", "data_type": "raster", "year": 2020, "active": True,
+            "tags": [], "path": "/d/fl.tif", "raster_type": "categorical",
+            "post_processing": [], "default_crs": None, "default_resolution": None,
+        },
+    }
+    pdir = tmp_path / "p"
+    pdir.mkdir()
+    (pdir / "p_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("p")
+    assert doc.base_raster_ref.source == "raw"
+    assert doc.base_raster_ref.name == "fl"
+    assert doc.base_raster_ref.year == 2020
+
+
+def test_migrate_v0_no_base_raster_leaves_ref_none(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    pdir = tmp_path / "delegated"
+    pdir.mkdir()
+    (pdir / "delegated_project.json").write_text(json.dumps(DELEGATED_V0))
+    doc = LocalFSProjectStore(data_root=tmp_path).load("delegated")
+    assert doc.base_raster_ref is None
