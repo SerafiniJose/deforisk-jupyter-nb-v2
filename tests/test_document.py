@@ -125,3 +125,66 @@ def test_geerecipe_discriminator_dispatch():
 def test_catalogue_recipe_rejects_non_json_param():
     with pytest.raises(ValidationError):
         CatalogueRecipe(catalogue_key="x", params={"bad": object()}, export_kind="raster")
+
+
+from pydantic import computed_field  # noqa: F401  (sanity that pydantic exports it)
+from spatialrisk.document import (
+    LocalRasterSpec,
+    LocalVectorSpec,
+    GEESpec,
+    VariableSpec,
+)
+from spatialrisk.variables.models import (
+    DataType,
+    RasterType,
+    RasterizationMethod,
+    PostProcessing,
+)
+
+
+def test_local_raster_spec_data_type_and_defaults():
+    s = LocalRasterSpec(name="altitude", path="/d/altitude.tif", raster_type=RasterType.continuous)
+    assert s.kind == "local_raster"
+    assert s.data_type == DataType.raster
+    assert s.year is None and s.active is True
+    assert s.tags == () and s.post_processing == () and s.processing_history == ()
+    assert s.derived_from is None
+
+
+def test_local_vector_spec_data_type():
+    s = LocalVectorSpec(name="aoi", year=2020, active=True, path="/d/aoi.shp",
+                        rasterization_method=RasterizationMethod.binary)
+    assert s.kind == "local_vector"
+    assert s.data_type == DataType.vector
+
+
+def test_gee_spec_carries_explicit_data_type():
+    rec = CatalogueRecipe(catalogue_key="forest_gfc", export_kind="raster")
+    s = GEESpec(name="forest_gfc", year=2020, data_type=DataType.raster,
+                raster_type=RasterType.categorical, recipe=rec)
+    assert s.kind == "gee"
+    assert s.data_type == DataType.raster
+    assert s.materialized_key is None
+
+
+def test_variablespec_discriminator_dispatch_and_frozen():
+    ta = TypeAdapter(VariableSpec)
+    r = ta.validate_python(
+        {"kind": "local_raster", "name": "x", "path": "/x.tif", "raster_type": "continuous"}
+    )
+    assert isinstance(r, LocalRasterSpec)
+    v = ta.validate_python(
+        {"kind": "local_vector", "name": "y", "path": "/y.shp", "rasterization_method": "unique"}
+    )
+    assert isinstance(v, LocalVectorSpec)
+    with pytest.raises(ValidationError):
+        r.name = "mutated"   # frozen
+
+
+def test_local_raster_spec_post_processing_is_tuple_of_enum():
+    s = LocalRasterSpec(name="x", path="/x.tif", raster_type=RasterType.categorical,
+                        post_processing=(PostProcessing.edge, PostProcessing.dist))
+    assert s.post_processing == (PostProcessing.edge, PostProcessing.dist)
+    # round-trip
+    loaded = LocalRasterSpec.model_validate_json(s.model_dump_json())
+    assert loaded == s

@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from typing import Annotated, Any, Literal, TypeVar, Union, get_args
 
 import pydantic
-from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler
+from pydantic import BaseModel, ConfigDict, Field, GetCoreSchemaHandler, computed_field
 from pydantic_core import core_schema
 
 from spatialrisk.variables.models import (  # enums only
@@ -142,4 +142,66 @@ class AssetRecipe(BaseModel):
 
 GEERecipe = Annotated[
     Union[CatalogueRecipe, AssetRecipe], Field(discriminator="source")
+]
+
+
+class LocalRasterSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["local_raster"] = "local_raster"
+    name: str
+    year: int | None = None
+    active: bool = True
+    tags: tuple[str, ...] = ()
+    path: str
+    raster_type: RasterType
+    post_processing: tuple[PostProcessing, ...] = ()
+    processing_history: tuple[str, ...] = ()
+    default_crs: str | None = None
+    default_resolution: float | None = None
+    derived_from: str | None = None
+
+    @computed_field
+    @property
+    def data_type(self) -> DataType:
+        return DataType.raster
+
+
+class LocalVectorSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["local_vector"] = "local_vector"
+    name: str
+    year: int | None = None
+    active: bool = True
+    tags: tuple[str, ...] = ()
+    path: str
+    rasterization_method: RasterizationMethod
+    default_crs: str | None = None
+    derived_from: str | None = None
+
+    @computed_field
+    @property
+    def data_type(self) -> DataType:
+        return DataType.vector
+
+
+class GEESpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["gee"] = "gee"
+    name: str
+    year: int | None = None
+    active: bool = True
+    tags: tuple[str, ...] = ()
+    data_type: DataType
+    raster_type: RasterType | None = None
+    rasterization_method: RasterizationMethod | None = None
+    post_processing: tuple[PostProcessing, ...] = ()
+    recipe: GEERecipe
+    materialized_key: str | None = None
+
+
+VariableSpec = Annotated[
+    Union[LocalRasterSpec, LocalVectorSpec, GEESpec], Field(discriminator="kind")
 ]
