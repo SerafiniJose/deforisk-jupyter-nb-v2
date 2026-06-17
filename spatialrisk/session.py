@@ -934,8 +934,21 @@ class ProjectSession:
             self.get_variable_handle(spec.name, year=spec.year, source=source) \
                 .reproject_and_match(**kw)
 
-    def rasterize_all(self, source: str = "raw", **kw):  # pragma: no cover - Phase G
-        raise NotImplementedError("rasterize is wired in Phase G.")
+    def rasterize_all(self, source: str = "raw", **kw):
+        """Rasterize every active vector in `source` onto the base geobox,
+        then apply each vector's declared post-processing steps."""
+        # Disk-free guard; geobox resolved per-variable inside VariableHandle.rasterize.
+        if self._doc.base_raster_ref is None:
+            raise ValueError("No base raster set; call set_base_raster() first.")
+        for key, spec in dict(self._collection(source)).items():
+            if getattr(spec, "kind", None) != "local_vector":
+                continue
+            if not getattr(spec, "active", True):
+                continue
+            handle = self.get_variable_handle(spec.name, year=spec.year, source=source)
+            handle = handle.rasterize(**kw)
+            for step in getattr(spec, "post_processing", ()) or ():
+                handle = handle.apply_post_processing(step)
 
     def process_all(self, source: str = "raw", **kw):
         """materialize (GEE downloads first) -> reproject -> rasterize."""

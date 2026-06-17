@@ -476,6 +476,28 @@ def test_process_all_runs_materialize_then_reproject_then_rasterize(monkeypatch)
     assert order == ["materialize", "reproject", "rasterize"]
 
 
+def test_rasterize_all_iterates_vectors_only(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+    from spatialrisk import session as session_mod
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.from_document(_doc("ra"), store=store)
+    session.add_local_raster(LocalRasterSpec(
+        name="altitude", path="/a.tif", raster_type=RasterType.continuous))
+    session.add_local_vector(LocalVectorSpec(
+        name="roads", path="/r.shp", rasterization_method="binary"))
+    session.set_base_raster(VariableId(source="raw", name="altitude"))
+
+    seen = []
+    orig = session_mod.VariableHandle.rasterize
+    session_mod.VariableHandle.rasterize = lambda self, **kw: seen.append(self.key) or self
+    try:
+        session.rasterize_all(source="raw")
+    finally:
+        session_mod.VariableHandle.rasterize = orig
+    assert seen == ["roads"]
+
+
 def test_materialize_all_iterates_gee_sources(monkeypatch):
     session = ProjectSession.from_document(_doc("m"))
     session.add_gee_variable(GEESpec(
