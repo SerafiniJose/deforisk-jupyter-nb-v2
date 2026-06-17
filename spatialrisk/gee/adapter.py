@@ -69,6 +69,31 @@ class GEEAdapter:
         return self._export_vector(obj, out_path, recipe.vector_selectors)
 
     @staticmethod
+    def to_gee_var_vector(path: str) -> "ee.FeatureCollection":
+        """Local vector file -> ee.FeatureCollection (geemap-free)."""
+        import json
+        from pathlib import Path
+
+        import geopandas as gpd
+
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Local file not found: {path}")
+        gdf = gpd.read_file(path)
+        return ee.FeatureCollection(json.loads(gdf.to_json()))
+
+    @staticmethod
+    def to_gee_var_raster(path: str) -> "ee.Image":
+        """Local raster -> ee.Image (requires manual GEE asset upload)."""
+        from pathlib import Path
+
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Local file not found: {path}")
+        raise NotImplementedError(
+            "Converting a local raster to a GEE Image requires uploading to GEE "
+            "assets. Use GEE's asset-upload tools manually."
+        )
+
+    @staticmethod
     def _export_vector(fc, out_path: str, selectors) -> str:
         """Geemap-free vector export: getInfo -> GeoDataFrame.to_file."""
         import geopandas as gpd

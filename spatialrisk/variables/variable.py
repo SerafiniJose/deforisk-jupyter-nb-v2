@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import List, Union, Optional, Any, Dict
+from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, ConfigDict, Field
 
 from spatialrisk.variables.models import DataType
-import ee
 
 
 class Variable(BaseModel):
@@ -26,7 +25,7 @@ class Variable(BaseModel):
     project: Optional["Project"] = Field(
         default=None, repr=False, exclude=True, validate_default=False
     )  # Excluded from JSON serialization and __repr__
-    aoi: Union[ee.Feature, ee.Geometry, ee.FeatureCollection] = Field(
+    aoi: Optional[Any] = Field(
         default=None, repr=False, exclude=True  # Excluded from JSON serialization
     )
 

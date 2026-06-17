@@ -1,7 +1,6 @@
 import warnings
 from pathlib import Path
 from typing import List, Optional
-import ee
 from pydantic import Field, field_validator
 import rioxarray
 import odc.geo.xr  # do not delete this
@@ -514,25 +513,6 @@ class LocalRasterVar(Variable):
         )
 
         return post_var
-
-    def to_gee_var(self) -> ee.Image:
-        """
-        Convert a local raster to a Google Earth Engine Image.
-
-        Note: This requires uploading to GEE assets first.
-
-        Raises
-        ------
-        NotImplementedError
-            Raster upload to GEE requires manual asset upload.
-        """
-        if not self.path.exists():
-            raise FileNotFoundError(f"Local file not found: {self.path}")
-
-        raise NotImplementedError(
-            "Converting local raster to GEE Image requires uploading to GEE assets. "
-            "Please use GEE's asset upload tools or geemap.upload_to_gee() manually."
-        )
 
     def use_as_base_raster(self, auto_save: bool = True) -> "LocalRasterVar":
         """

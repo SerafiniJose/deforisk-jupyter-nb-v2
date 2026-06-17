@@ -2,7 +2,6 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
-import ee
 from pydantic import Field, field_validator
 from spatialrisk.processing import xr_rasterize
 from spatialrisk.utilities.file_helpers import copy_and_rename_file
@@ -195,28 +194,6 @@ class LocalVectorVar(Variable):
             ],  # Track that this came from vector rasterization
             tags=self.tags.copy() if self.tags else [],
         )
-
-    def to_gee_var(self) -> ee.FeatureCollection:
-        """
-        Convert this local vector to a Google Earth Engine FeatureCollection.
-
-        Returns
-        -------
-        ee.FeatureCollection
-            An Earth Engine FeatureCollection.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the local file does not exist.
-        """
-        if not self.path.exists():
-            raise FileNotFoundError(f"Local file not found: {self.path}")
-
-        import json
-        import geopandas as gpd
-        gdf = gpd.read_file(str(self.path))
-        return ee.FeatureCollection(json.loads(gdf.to_json()))
 
 
 # Rebuild models after Project is imported to resolve forward references
