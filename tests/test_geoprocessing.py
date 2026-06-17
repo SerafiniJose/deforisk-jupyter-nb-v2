@@ -268,3 +268,28 @@ def test_apply_post_processing_rejects_unknown_step(tmp_path):
 
     with pytest.raises(ValueError, match="post-processing"):
         geoprocessing.apply_post_processing(spec, "bogus", out_path=str(tmp_path / "o.tif"))
+
+
+import inspect
+
+
+def test_no_stateless_function_takes_a_project_param():
+    from spatialrisk import geoprocessing
+
+    for fn in (
+        geoprocessing.reproject_and_match,
+        geoprocessing.rasterize_vector,
+        geoprocessing.apply_post_processing,
+    ):
+        params = inspect.signature(fn).parameters
+        assert "out_path" in params, f"{fn.__name__} must take an explicit out_path"
+        assert "project" not in params, f"{fn.__name__} must not take a project"
+        assert "self" not in params, f"{fn.__name__} must be a free function"
+
+
+def test_module_source_has_no_live_project_reachthrough():
+    from spatialrisk import geoprocessing
+
+    text = open(geoprocessing.__file__).read()
+    for forbidden in ("self.project", ".project.folders", ".project.save", "project="):
+        assert forbidden not in text, f"forbidden live-Project reach-through: {forbidden!r}"

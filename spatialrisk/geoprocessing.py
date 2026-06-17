@@ -7,6 +7,9 @@ NEVER reaches into a live ``Project`` (no live-Project attribute access, no
 implicit save).
 Numeric/geospatial behavior is the verbatim current path: these wrap the
 existing primitives in ``geo_utils`` / ``processing`` only.
+
+No function in this module takes a ``project`` parameter or reaches a live
+``Project`` (enforced by tests/test_geoprocessing.py).
 """
 
 from __future__ import annotations
