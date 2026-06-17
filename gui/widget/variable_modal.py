@@ -46,7 +46,6 @@ def VariableModal(
         RasterizationMethod.binary.value
     )
     post_processing, set_post_processing = solara.use_state([])
-    is_base, set_is_base = solara.use_state(False)
     error, set_error = solara.use_state(None)
 
     is_edit = editing_key is not None
@@ -66,7 +65,6 @@ def VariableModal(
         set_raster_type(RasterType.continuous.value)
         set_rasterization_method(RasterizationMethod.binary.value)
         set_post_processing([])
-        set_is_base(False)
         set_error(None)
 
     def prefill_from_initial():
@@ -85,7 +83,6 @@ def VariableModal(
             initial_entry.get("rasterization_method", RasterizationMethod.binary.value)
         )
         set_post_processing(initial_entry.get("post_processing", []))
-        set_is_base(initial_entry.get("is_base", False))
         set_error(None)
 
     solara.use_effect(prefill_from_initial, [open_.value])
@@ -108,7 +105,6 @@ def VariableModal(
             "type": "GEEVar",
             "name": predefined_key,
             "year": yr,
-            "is_base": is_base,
             "data_type": DataType.raster,
             "raster_type": RasterType(cat_entry["raster_type"]),
             "predefined_key": predefined_key,
@@ -131,7 +127,6 @@ def VariableModal(
             "type": var_type,
             "name": name.strip(),
             "year": yr,
-            "is_base": is_base and var_type != "LocalVectorVar",
             "post_processing": pp,
         }
         if var_type == "LocalRasterVar":
@@ -196,7 +191,6 @@ def VariableModal(
                     _render_predefined_fields(
                         predefined_key, set_predefined_key,
                         year, set_year,
-                        is_base, set_is_base,
                         cat,
                     )
                 else:
@@ -210,7 +204,6 @@ def VariableModal(
                         raster_type, set_raster_type,
                         rasterization_method, set_rasterization_method,
                         post_processing, set_post_processing,
-                        is_base, set_is_base,
                     )
 
                 if error:
@@ -229,7 +222,6 @@ def VariableModal(
 def _render_predefined_fields(
     predefined_key, set_predefined_key,
     year, set_year,
-    is_base, set_is_base,
     cat,
 ):
     """Fields shown when source == 'predefined'."""
@@ -271,13 +263,6 @@ def _render_predefined_fields(
             disabled=True,
         )
 
-        # Base raster switch
-        rv.Switch(
-            label="Set as base raster (used for reprojection alignment)",
-            v_model=is_base,
-            on_v_model=set_is_base,
-        )
-
 
 def _render_custom_fields(
     var_type, set_var_type,
@@ -289,7 +274,6 @@ def _render_custom_fields(
     raster_type, set_raster_type,
     rasterization_method, set_rasterization_method,
     post_processing, set_post_processing,
-    is_base, set_is_base,
 ):
     """Fields shown when source == 'custom' (original behaviour)."""
     rv.TextField(
@@ -367,10 +351,4 @@ def _render_custom_fields(
             on_v_model=set_rasterization_method,
             dense=True,
             outlined=True,
-        )
-    if var_type != "LocalVectorVar":
-        rv.Switch(
-            label="Set as base raster (used for reprojection alignment)",
-            v_model=is_base,
-            on_v_model=set_is_base,
         )

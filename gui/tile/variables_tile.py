@@ -79,7 +79,6 @@ def _variable_to_entry(key: str, var, project) -> dict:
     from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 
     vtype = type(var).__name__
-    is_base = project.base_raster is not None and project.base_raster.name == var.name
     pp = [p.value if hasattr(p, "value") else str(p) for p in (var.post_processing or [])]
 
     # Predefined GEE variables hold an ee.Image (in gee_images) and carry no
@@ -94,7 +93,6 @@ def _variable_to_entry(key: str, var, project) -> dict:
             "name": var.name,
             "predefined_key": var.name,
             "year": str(var.year) if var.year else "",
-            "is_base": is_base,
         }
 
     entry = {
@@ -102,7 +100,6 @@ def _variable_to_entry(key: str, var, project) -> dict:
         "type": vtype,
         "name": var.name,
         "year": str(var.year) if var.year else "",
-        "is_base": is_base,
         "post_processing": pp,
     }
     if vtype == "LocalRasterVar":
@@ -251,9 +248,6 @@ def VariablesTile(project, processing, process_error, map_=None):
             key = f"{var.name}_{var.year}" if var.year else var.name
             p.raw_variables[key] = var
             logger.debug("Added var '%s', raw_variables now: %s", key, list(p.raw_variables.keys()))
-            if entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
-                p.base_raster = var
-                logger.debug("Set '%s' as base raster", key)
             project.set(p.model_copy())
             logger.debug("project.set() called, project.value.raw_variables: %s", list(project.value.raw_variables.keys()))
         except Exception as exc:
@@ -277,8 +271,6 @@ def VariablesTile(project, processing, process_error, map_=None):
             var = _build_variable(new_entry, p)
             new_key = f"{var.name}_{var.year}" if var.year else var.name
             p.raw_variables[new_key] = var
-            if new_entry.get("is_base") and hasattr(var, "data_type") and str(var.data_type) in ("raster", "DataType.raster"):
-                p.base_raster = var
             set_editing_key(None)
             project.set(p.model_copy())
         except Exception as exc:
