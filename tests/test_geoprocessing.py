@@ -293,3 +293,134 @@ def test_module_source_has_no_live_project_reachthrough():
     text = open(geoprocessing.__file__).read()
     for forbidden in ("self.project", ".project.folders", ".project.save", "project="):
         assert forbidden not in text, f"forbidden live-Project reach-through: {forbidden!r}"
+
+
+# --------------------------------------------------------------------------- #
+# Phase F6: VariableHandle -> stateless-geoprocessing bridge (session-side)
+# --------------------------------------------------------------------------- #
+from spatialrisk.document import VariableId
+from spatialrisk.persistence import LocalFSProjectStore
+from spatialrisk.session import ProjectSession, VariableHandle
+
+
+def test_session_folders_works_without_a_store(monkeypatch, tmp_path):
+    """`folders()` must resolve a data_root even when store is None."""
+    from spatialrisk import project as project_mod
+
+    # Redirect the legacy default so the fallback writes under tmp_path.
+    monkeypatch.setattr(project_mod, "downloads_folder", tmp_path / "data")
+
+    session = ProjectSession.create("p", store=None, gee=None)
+    box = session.folders()
+    assert box.processed_data_folder == tmp_path / "data" / "p" / "data"
+    assert box.processed_data_folder.exists()
+
+
+def test_variable_handle_to_ref_carries_source():
+    session = ProjectSession.create("p", store=None, gee=None)
+    session.add_local_raster(LocalRasterSpec(
+        name="dem", path="/raw/dem.tif", raster_type=RasterType.continuous,
+    ))
+    handle = session.get_variable_handle("dem", source="raw")
+    ref = handle.to_ref()
+    assert isinstance(ref, VariableId)
+    assert ref == VariableId(source="raw", name="dem", year=None)
+
+
+def test_handle_reproject_and_match_delegates_registers_and_returns_handle(
+    tmp_path, monkeypatch
+):
+    from spatialrisk import geoprocessing
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.create("proj", store=store, gee=None)
+
+    # A real base raster on disk so _base_geobox() can open it (EPSG:4326).
+    base_path = tmp_path / "base.tif"
+    _write_raster(base_path, np.array([[1, 2], [3, 4]], dtype=np.uint8))
+    session.add_local_raster(LocalRasterSpec(
+        name="base", path=str(base_path), raster_type=RasterType.continuous,
+    ), key="base")
+    session.set_base_raster(VariableId(source="raw", name="base"))
+
+    # The raw input to reproject.
+    dem_path = tmp_path / "dem.tif"
+    _write_raster(dem_path, np.array([[5, 6], [7, 8]], dtype=np.uint8))
+    session.add_local_raster(LocalRasterSpec(
+        name="dem", path=str(dem_path), raster_type=RasterType.continuous,
+    ))
+
+    captured = {}
+
+    def fake_reproject_and_match(in_spec, geobox, out_path, resampling=None):
+        captured["in_spec"] = in_spec
+        captured["geobox"] = geobox
+        captured["out_path"] = out_path
+        captured["resampling"] = resampling
+        return LocalRasterSpec(
+            name=in_spec.name,
+            path=str(out_path),
+            raster_type=in_spec.raster_type,
+            processing_history=("reprojected_matched",),
+            derived_from=in_spec.name,
+        )
+
+    monkeypatch.setattr(geoprocessing, "reproject_and_match", fake_reproject_and_match)
+
+    new_handle = session.get_variable_handle("dem", source="raw").reproject_and_match()
+
+    # The stateless seam was called with the session's processed out_path ...
+    processed_dir = session.folders().processed_data_folder
+    expected_out = processed_dir / "dem_reprojected_matched.tif"
+    assert captured["out_path"] == str(expected_out)
+    # ... and the base geobox (EPSG:4326 from the base fixture).
+    assert captured["geobox"].crs.to_epsg() == 4326
+    assert captured["in_spec"].path == str(dem_path)
+
+    # The returned handle points at the freshly registered PROCESSED spec.
+    assert isinstance(new_handle, VariableHandle)
+    assert new_handle.source == "processed"
+    assert isinstance(new_handle.spec, LocalRasterSpec)
+    assert new_handle.spec.path == str(expected_out)
+    # registered into processed_variables, not raw.
+    assert session.get_variable("dem", source="processed").path == str(expected_out)
+
+
+def test_handle_apply_post_processing_delegates_and_registers(tmp_path, monkeypatch):
+    from spatialrisk import geoprocessing
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.create("proj", store=store, gee=None)
+
+    feat_path = tmp_path / "rivers.tif"
+    _write_raster(feat_path, np.array([[1, 0], [0, 0]], dtype=np.uint8), nodata=0)
+    session.add_local_raster(LocalRasterSpec(
+        name="rivers", path=str(feat_path), raster_type=RasterType.categorical,
+    ))
+
+    captured = {}
+
+    def fake_app(in_spec, post_process, out_path):
+        captured["out_path"] = out_path
+        return LocalRasterSpec(
+            name=f"{in_spec.name}_dist",
+            path=str(out_path),
+            raster_type=RasterType.continuous,
+            processing_history=("dist",),
+            post_processing=(PostProcessing.dist,),
+            derived_from=in_spec.name,
+        )
+
+    monkeypatch.setattr(geoprocessing, "apply_post_processing", fake_app)
+
+    new_handle = (
+        session.get_variable_handle("rivers", source="raw")
+        .apply_post_processing(PostProcessing.dist)
+    )
+
+    processed_dir = session.folders().processed_data_folder
+    expected_out = processed_dir / "rivers_dist.tif"
+    assert captured["out_path"] == str(expected_out)
+    assert new_handle.source == "processed"
+    assert new_handle.spec.name == "rivers_dist"
+    assert session.get_variable("rivers_dist", source="processed") is not None

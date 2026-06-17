@@ -70,7 +70,15 @@ class FolderResolver:
 
 
 class VariableHandle:
-    """Thin, never-serialized handle: a (session, source, key) pointer + spec access."""
+    """Thin, never-serialized handle: a (session, source, key) pointer + spec access.
+
+    The geoprocessing methods are the Phase F6 bridge: each derives an explicit
+    ``out_path`` from the session's processed-data folder using the legacy
+    name/history/year convention, delegates to the matching stateless function
+    in :mod:`spatialrisk.geoprocessing`, registers the returned spec into
+    ``processed_variables``, and returns a handle to the new processed spec.
+    No ``self.project`` reach-through, no implicit save.
+    """
 
     def __init__(self, session: "ProjectSession", source: str, key: str):
         self._session = session
@@ -80,6 +88,65 @@ class VariableHandle:
     @property
     def spec(self):
         return self._session._collection(self.source).get(self.key)
+
+    def to_ref(self) -> VariableId:
+        spec = self.spec
+        return VariableId(source=self.source, name=spec.name, year=spec.year)
+
+    # ------------------------------------------------------------------ #
+    # Output-path convention (mirrors LocalRasterVar processed filenames)
+    # ------------------------------------------------------------------ #
+    def _processed_out_path(self, suffix: str) -> Path:
+        spec = self.spec
+        folder = self._session.folders().processed_data_folder
+        history = tuple(getattr(spec, "processing_history", ()) or ())
+        filename_suffix = "_".join([*history, suffix]) if history else suffix
+        year_suffix = f"_{spec.year}" if spec.year else ""
+        return folder / f"{spec.name}_{filename_suffix}{year_suffix}.tif"
+
+    def _register_processed(self, new_spec) -> "VariableHandle":
+        self._session.add_local_raster(new_spec, processed=True)
+        return self._session.get_variable_handle(
+            new_spec.name, year=new_spec.year, source="processed"
+        )
+
+    # ------------------------------------------------------------------ #
+    # Geoprocessing bridge (delegates to stateless seams)
+    # ------------------------------------------------------------------ #
+    def reproject_and_match(
+        self, resampling: Optional[str] = None, output_suffix: str = "reprojected_matched"
+    ) -> "VariableHandle":
+        from spatialrisk import geoprocessing
+
+        out_path = self._processed_out_path(output_suffix)
+        geobox = self._session._base_geobox()
+        new_spec = geoprocessing.reproject_and_match(
+            self.spec, geobox=geobox, out_path=str(out_path), resampling=resampling
+        )
+        return self._register_processed(new_spec)
+
+    def rasterize(self, rasterization_method=None) -> "VariableHandle":
+        from spatialrisk import geoprocessing
+
+        out_path = self._processed_out_path("rasterized")
+        base_geobox = self._session._base_geobox()
+        new_spec = geoprocessing.rasterize_vector(
+            self.spec,
+            base_geobox=base_geobox,
+            out_path=str(out_path),
+            rasterization_method=rasterization_method,
+        )
+        return self._register_processed(new_spec)
+
+    def apply_post_processing(self, post_process) -> "VariableHandle":
+        from spatialrisk import geoprocessing
+
+        suffix = getattr(post_process, "value", str(post_process))
+        out_path = self._processed_out_path(suffix)
+        new_spec = geoprocessing.apply_post_processing(
+            self.spec, post_process, out_path=str(out_path)
+        )
+        return self._register_processed(new_spec)
 
 
 @dataclass(frozen=True)
@@ -271,8 +338,18 @@ class ProjectSession:
         new_raw[key] = spec
         return self._replace(raw_variables=new_raw)
 
-    def add_local_raster(self, spec: LocalRasterSpec, key: Optional[str] = None) -> ProjectDocument:
-        return self._add_raw(key or self._storage_key(spec), spec)
+    def _add_processed(self, key: str, spec) -> ProjectDocument:
+        new_proc = dict(self._doc.processed_variables)
+        new_proc[key] = spec
+        return self._replace(processed_variables=new_proc)
+
+    def add_local_raster(
+        self, spec: LocalRasterSpec, key: Optional[str] = None, processed: bool = False
+    ) -> ProjectDocument:
+        storage_key = key or self._storage_key(spec)
+        if processed:
+            return self._add_processed(storage_key, spec)
+        return self._add_raw(storage_key, spec)
 
     def add_local_vector(self, spec: LocalVectorSpec, key: Optional[str] = None) -> ProjectDocument:
         return self._add_raw(key or self._storage_key(spec), spec)
@@ -285,6 +362,55 @@ class ProjectSession:
 
     def set_base_raster(self, ref: VariableId) -> ProjectDocument:
         return self._replace(base_raster_ref=ref.model_dump())
+
+    # ------------------------------------------------------------------ #
+    # Folder structure + base-raster geobox (Phase F6 bridge support)
+    # ------------------------------------------------------------------ #
+    def _data_root(self) -> Path:
+        """Resolve the data root from the injected store, else the legacy default."""
+        root = getattr(self.store, "data_root", None)
+        if root is not None:
+            return Path(root)
+        from spatialrisk.project import downloads_folder
+
+        return Path(downloads_folder)
+
+    def folders(self, step: Optional[str] = None, it_name: str = "") -> Box:
+        """Resolve this project's folder structure (delegates to FolderResolver).
+
+        Works with ``store=None`` by falling back to the legacy
+        ``spatialrisk.project.downloads_folder``.
+        """
+        resolver = FolderResolver(self.project_name, self._data_root())
+        return resolver.folders(step=step, it_name=it_name)
+
+    def _base_geobox(self):
+        """Open the base raster and return its odc geobox (mirrors get_base_geobox)."""
+        ref = self._doc.base_raster_ref
+        if ref is None:
+            raise ValueError(
+                "base_raster_ref is unset; call set_base_raster() before "
+                "reprojecting/rasterizing against the base grid."
+            )
+        spec = self.get_variable(ref.name, year=ref.year, source=ref.source)
+        if spec is None:
+            raise ValueError(
+                f"base_raster_ref points at a variable that does not exist: {ref!r}"
+            )
+        path = getattr(spec, "path", None)
+        if path is None:
+            raise ValueError(f"base raster spec has no path: {spec!r}")
+
+        import rioxarray
+        import odc.geo.xr  # noqa: F401  (registers the .odc accessor)
+
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Base raster file not found: {path}")
+
+        raster_array = rioxarray.open_rasterio(
+            str(path), chunks="auto", cache=False, lock=False
+        )
+        return raster_array.odc.geobox
 
     # ------------------------------------------------------------------ #
     # Registry mutators (dataset / model / prediction)
