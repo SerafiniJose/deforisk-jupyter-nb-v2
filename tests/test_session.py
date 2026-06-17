@@ -152,6 +152,20 @@ def test_register_dataset_model_and_prediction():
     assert session.snapshot().predictions["glm_glm1_2020"].path == "/data/pred_2020.tif"
 
 
+def test_register_prediction_default_key_includes_window_no_collision():
+    # Moving-window models emit one PredictionSpec per window; with no explicit
+    # key they must NOT collide on {model_key}_{year} — the window discriminates.
+    session = ProjectSession.from_document(_doc())
+    for w in (5, 11):
+        session.register_prediction(PredictionSpec(
+            path=f"/data/mw_{w}.tif", model_key="mw_m1", dataset_name="calib",
+            year=2020, window=w,
+        ))
+    preds = session.snapshot().predictions
+    assert "mw_m1_2020_w5" in preds and "mw_m1_2020_w11" in preds
+    assert {p.window for p in preds.values()} == {5, 11}   # both survived
+
+
 def test_set_aoi_stores_geojson_and_bumps_version():
     session = ProjectSession.from_document(_doc())
     v0 = session.doc_version

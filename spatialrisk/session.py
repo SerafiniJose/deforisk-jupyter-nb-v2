@@ -435,7 +435,16 @@ class ProjectSession:
         return self._replace(models=new)
 
     def register_prediction(self, spec: PredictionSpec, key: Optional[str] = None) -> ProjectDocument:
-        storage_key = key or (spec.name or f"{spec.model_key}_{spec.year}")
+        if key is not None:
+            storage_key = key
+        elif spec.name:
+            storage_key = spec.name
+        else:
+            # Default key includes the window discriminator so multi-output
+            # (moving-window) predictions don't collide on {model_key}_{year}.
+            storage_key = f"{spec.model_key}_{spec.year}"
+            if spec.window is not None:
+                storage_key += f"_w{spec.window}"
         new = dict(self._doc.predictions)
         new[storage_key] = spec
         return self._replace(predictions=new)
