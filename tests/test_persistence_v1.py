@@ -321,3 +321,126 @@ def test_migrate_v0_no_base_raster_leaves_ref_none(tmp_path):
     (pdir / "delegated_project.json").write_text(json.dumps(DELEGATED_V0))
     doc = LocalFSProjectStore(data_root=tmp_path).load("delegated")
     assert doc.base_raster_ref is None
+
+
+def _v0_with_models(models: dict) -> dict:
+    return {
+        "project_name": "m",
+        "raw_variables": {},
+        "processed_variables": {},
+        "models": models,
+    }
+
+
+def test_migrate_v0_glm_model_path_to_estimator_pickle(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = _v0_with_models({
+        "glm_cal": {
+            "name": "cal", "model_type": "glm", "project_name": "m",
+            "dataset_name": "cal_2020", "target_name": "fl",
+            "feature_names": ["altitude", "slope"], "year": 2020,
+            "formula": "y ~ altitude + slope", "parameters": {"solver": "lbfgs"},
+            "sampling": None, "model_path": "/d/glm_cal.pickle",
+            "samples_path": "/d/samples.csv", "trained": True,
+            "trained_at": "2025-01-01T00:00:00", "n_samples": 10000,
+            "deviance": 123.4,
+        }
+    })
+    pdir = tmp_path / "m"
+    pdir.mkdir()
+    (pdir / "m_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("m")
+    glm = doc.models["glm_cal"]
+    assert glm.model_type == "glm"
+    assert glm.estimator_pickle == "/d/glm_cal.pickle"
+    assert glm.feature_names == ("altitude", "slope")
+    assert glm.target_name == "fl"
+    assert glm.trained is True
+    assert not hasattr(glm, "model_path")
+
+
+def test_migrate_v0_icar_carries_rho_path(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = _v0_with_models({
+        "icar_cal": {
+            "name": "cal", "model_type": "icar", "project_name": "m",
+            "dataset_name": "cal", "target_name": "fl", "feature_names": ["slope"],
+            "year": 2020, "formula": "y ~ slope", "parameters": {},
+            "sampling": None, "model_path": "/d/icar.pickle",
+            "rho_path": "/d/rho.tif", "samples_path": None, "trained": True,
+            "trained_at": None, "n_samples": None, "deviance": None,
+        }
+    })
+    pdir = tmp_path / "m"
+    pdir.mkdir()
+    (pdir / "m_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("m")
+    icar = doc.models["icar_cal"]
+    assert icar.model_type == "icar"
+    assert icar.estimator_pickle == "/d/icar.pickle"
+    assert icar.rho_path == "/d/rho.tif"
+
+
+def test_migrate_v0_jnr_and_mw_have_no_pickle(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = _v0_with_models({
+        "jnr_b": {
+            "name": "b", "model_type": "jnr", "project_name": "m",
+            "dataset_name": "cal", "target_name": "fl", "feature_names": [],
+            "year": 2020, "formula": None, "parameters": {}, "sampling": None,
+            "samples_path": None, "trained": True, "trained_at": None,
+            "n_samples": None, "deviance": None,
+            "dist_thresh": 1000.0, "dist_bins": [0.0, 100.0, 200.0],
+            "defrate_files": {"calibration": "/d/defrate_cal.csv"},
+        },
+        "mw_w": {
+            "name": "w", "model_type": "mw", "project_name": "m",
+            "dataset_name": "cal", "target_name": "fl", "feature_names": [],
+            "year": 2020, "formula": None, "parameters": {}, "sampling": None,
+            "samples_path": None, "trained": True, "trained_at": None,
+            "n_samples": None, "deviance": None,
+            "dist_thresh": 500.0, "win_size_list": [5, 11, 21],
+            "ldefrate_files": {"calibration": "/d/ldefrate_cal.tif"},
+        },
+    })
+    pdir = tmp_path / "m"
+    pdir.mkdir()
+    (pdir / "m_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("m")
+    jnr = doc.models["jnr_b"]
+    assert jnr.model_type == "jnr"
+    assert jnr.dist_thresh == 1000.0
+    assert jnr.dist_bins == (0.0, 100.0, 200.0)
+    assert jnr.defrate_files == {"calibration": "/d/defrate_cal.csv"}
+    assert not hasattr(jnr, "estimator_pickle")
+    mw = doc.models["mw_w"]
+    assert mw.model_type == "mw"
+    assert mw.win_size_list == (5, 11, 21)
+    assert mw.ldefrate_files == {"calibration": "/d/ldefrate_cal.tif"}
+
+
+def test_migrate_v0_unknown_model_type_warns_and_skips(tmp_path, capsys):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = _v0_with_models({
+        "weird": {
+            "name": "x", "model_type": "bogus", "project_name": "m",
+            "dataset_name": "cal", "target_name": "fl", "feature_names": [],
+            "year": None, "formula": None, "parameters": {}, "sampling": None,
+            "samples_path": None, "trained": False, "trained_at": None,
+            "n_samples": None, "deviance": None,
+        }
+    })
+    pdir = tmp_path / "m"
+    pdir.mkdir()
+    (pdir / "m_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("m")
+    assert "weird" not in doc.models
+    assert "bogus" in capsys.readouterr().out

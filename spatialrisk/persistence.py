@@ -409,6 +409,41 @@ def _resolve_base_raster_ref(
     return {"source": source, "name": name, "year": year}
 
 
+_MODEL_COMMON = (
+    "name", "model_type", "project_name", "dataset_name", "target_name",
+    "feature_names", "year", "formula", "parameters", "sampling",
+    "samples_path", "trained", "trained_at", "n_samples", "deviance",
+)
+_KNOWN_MODEL_TYPES = {"glm", "rf", "icar", "jnr", "mw"}
+
+
+def _migrate_v0_model(model_data: dict) -> Optional[dict]:
+    """Convert a v0 model dict to a typed v1 ModelSpec dict, or None to skip."""
+    mtype = model_data.get("model_type", "")
+    if mtype not in _KNOWN_MODEL_TYPES:
+        print(
+            f"  Warning: unknown model_type {mtype!r} — skipped during migration"
+        )
+        return None
+
+    out = {k: model_data[k] for k in _MODEL_COMMON if k in model_data}
+
+    if mtype in ("glm", "rf"):
+        out["estimator_pickle"] = model_data.get("model_path")
+    elif mtype == "icar":
+        out["estimator_pickle"] = model_data.get("model_path")
+        out["rho_path"] = model_data.get("rho_path")
+    elif mtype == "jnr":
+        out["dist_thresh"] = model_data.get("dist_thresh")
+        out["dist_bins"] = tuple(model_data.get("dist_bins") or ())
+        out["defrate_files"] = dict(model_data.get("defrate_files") or {})
+    elif mtype == "mw":
+        out["dist_thresh"] = model_data.get("dist_thresh")
+        out["win_size_list"] = tuple(model_data.get("win_size_list") or ())
+        out["ldefrate_files"] = dict(model_data.get("ldefrate_files") or {})
+    return out
+
+
 def _migrate_v0_to_v1(data: dict) -> dict:
     """Convert a pre-``schema_version`` (v0) project dict to a v1 dict."""
     out: dict = {
@@ -423,6 +458,15 @@ def _migrate_v0_to_v1(data: dict) -> dict:
             for key, v in data.get("processed_variables", {}).items()
         },
     }
+    models_data = data.get("models")
+    if models_data:
+        migrated_models = {}
+        for key, model_data in models_data.items():
+            spec = _migrate_v0_model(model_data)
+            if spec is not None:
+                migrated_models[key] = spec
+        out["models"] = migrated_models
+
     base_raster = data.get("base_raster")
     if base_raster:
         out["base_raster_ref"] = _resolve_base_raster_ref(
