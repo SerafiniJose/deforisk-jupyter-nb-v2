@@ -519,3 +519,32 @@ def test_full_session_suite_collects():
     session.set_base_raster(VariableId(source="raw", name="dem"))
     assert isinstance(session.snapshot(), ProjectDocument)
     assert session.doc_version == 2
+
+
+def test_materialize_out_path_roots_in_raw_folder(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.from_document(_doc("paths"), store=store)
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="altitude", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(source="catalogue", catalogue_key="altitude",
+                               export_kind="raster"),
+    ), key="altitude")
+    out = session._materialize_out_path("altitude")
+    raw = str(session.folders().data_raw_folder)
+    assert out == f"{raw}/altitude.tif"
+
+
+def test_materialize_out_path_vector_uses_shp_and_year(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+    store = LocalFSProjectStore(data_root=tmp_path)
+    session = ProjectSession.from_document(_doc("paths2"), store=store)
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="aoi", year=2020, data_type=DataType.vector,
+        recipe=CatalogueRecipe(source="catalogue", catalogue_key="aoi_fao_gaul",
+                               params={"iso": "MTQ"}, export_kind="vector"),
+    ), key="aoi_2020")
+    out = session._materialize_out_path("aoi_2020")
+    raw = str(session.folders().data_raw_folder)
+    assert out == f"{raw}/aoi_2020.shp"

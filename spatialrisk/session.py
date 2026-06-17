@@ -574,6 +574,23 @@ class ProjectSession:
     # ------------------------------------------------------------------ #
     # Spec builders (picklable payload factories — Phase G)
     # ------------------------------------------------------------------ #
+    def _materialize_out_path(self, var_key: str) -> str:
+        """Resolved raw-folder download target for a GEE source variable.
+
+        Extension derives from the recipe's export_kind ('raster' -> .tif,
+        'vector' -> .shp); the filename is the storage key (name[_year]).
+        """
+        from spatialrisk.document import GEESpec
+
+        var = self.get_variable(var_key, source="raw")
+        if not isinstance(var, GEESpec):
+            raise TypeError(
+                f"_materialize_out_path requires a GEESpec for key {var_key!r}, "
+                f"got {type(var).__name__}."
+            )
+        ext = ".shp" if var.recipe.export_kind == "vector" else ".tif"
+        return str(self.folders().data_raw_folder / f"{var_key}{ext}")
+
     def materialize_spec(self, var_key: str) -> "MaterializeSpec":
         """Build a picklable MaterializeSpec for a GEE source variable.
 
