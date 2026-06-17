@@ -9,7 +9,7 @@ against one source of truth. ``GEEAdapter`` is the only runtime caller.
 from typing import Any, Callable, Dict
 
 import ee  # noqa: F401  (module-level so tests can patch spatialrisk.gee.catalogue.ee)
-from spatialrisk.gee.ee_fao_gaul import get_fao_gaul_subj
+from spatialrisk.gee.ee_fao_gaul import get_fao_gaul_features, get_fao_gaul_subj
 from spatialrisk.gee.ee_rasterize_unique_values import gee_rasterize_unique_values
 
 Resolver = Callable[..., Any]
@@ -157,3 +157,17 @@ def _subj(aoi_ee):
         .clip(aoi_ee)
         .toByte()
     )
+
+
+# ---------------------------------------------------------------------------
+# aoi_fao_gaul (vector source -- produces the project AOI)
+# ---------------------------------------------------------------------------
+
+
+@register("aoi_fao_gaul")
+def _aoi_fao_gaul(aoi_ee, iso, level=0):
+    """FAO GAUL administrative boundary FeatureCollection for an ISO code.
+
+    A *source* recipe: it produces the AOI, so ``aoi_ee`` is unused.
+    """
+    return get_fao_gaul_features(level=level, code=iso)
