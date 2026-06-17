@@ -78,3 +78,25 @@ def test_notebook_no_set_aoi_from_variable():
     code = _all_code()
     assert "set_aoi_from_variable" not in code
     assert "session.set_aoi(" in code
+
+
+def test_notebook_recipe_params_match_resolvers():
+    import inspect
+    from spatialrisk.gee.catalogue import get_resolver
+
+    code = _all_code()
+    tree = ast.parse("\n".join(
+        l for l in code.splitlines() if not l.lstrip().startswith(("%", "!"))))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "CatalogueRecipe":
+            kws = {k.arg: k.value for k in node.keywords}
+            if "catalogue_key" not in kws or not isinstance(kws["catalogue_key"], ast.Constant):
+                continue
+            key = kws["catalogue_key"].value
+            params_node = kws.get("params")
+            param_names = set()
+            if isinstance(params_node, ast.Dict):
+                param_names = {k.value for k in params_node.keys if isinstance(k, ast.Constant)}
+            accepted = {p.name for p in inspect.signature(get_resolver(key)).parameters.values()
+                        if p.name != "aoi_ee"}
+            assert param_names <= accepted, f"{key}: {param_names - accepted} rejected by resolver"
