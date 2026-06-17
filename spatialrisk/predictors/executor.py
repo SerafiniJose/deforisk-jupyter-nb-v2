@@ -65,6 +65,29 @@ class _BenchmarkShim:
         self.year = None
 
 
+class _PredictionRegistrar:
+    """Adapts both supervised (kwargs) and jnr/mw (positional path) register
+    conventions into session.register_prediction(PredictionSpec)."""
+    def __init__(self, session):
+        self._session = session
+
+    def __call__(self, path=None, model_key=None, dataset_name=None, year=None,
+                 window=None, model_snapshot=None, dataset_snapshot=None,
+                 dataset=None, **extra):
+        from spatialrisk.document import PredictionSpec
+        if model_key is None:               # jnr/mw positional-path convention
+            ds_name = getattr(dataset, "name", None) or "unknown"
+            spec = PredictionSpec(path=str(path), model_key=self._current_key,
+                                  dataset_name=ds_name, window=window)
+        else:                                # supervised kwargs convention
+            spec = PredictionSpec(
+                path=str(path), model_key=model_key,
+                dataset_name=dataset_name or "unknown", year=year, window=window,
+                model_snapshot=dict(model_snapshot or {}),
+                dataset_snapshot=dict(dataset_snapshot or {}))
+        self._session.register_prediction(spec)
+
+
 class SessionExecutor:
     """Drives legacy mlmodels fit/apply from Session specs (the missing wiring)."""
 
@@ -77,6 +100,66 @@ class SessionExecutor:
         if spec.model_type in ("jnr", "mw"):
             return self._fit_benchmark(session, model_key, spec)
         raise NotImplementedError(f"fit: unsupported model_type {spec.model_type!r}")
+
+    # ---- apply --------------------------------------------------------
+    def apply(self, session, model_key, out_path, mask=None, **kw):
+        spec = session.apply_spec(model_key, out_path=out_path, mask=mask)
+        adapter = _PredictionRegistrar(session)
+        if spec.model_type in ("glm", "rf", "icar"):
+            return self._apply_supervised(session, spec, adapter)
+        if spec.model_type == "jnr":
+            return self._apply_jnr(session, spec, adapter)
+        if spec.model_type == "mw":
+            return self._apply_mw(session, spec, adapter)
+        raise NotImplementedError(f"apply: unsupported {spec.model_type!r}")
+
+    def _apply_supervised(self, session, spec, adapter):
+        import pandas as pd
+        from patsy import dmatrices
+        from spatialrisk.predictors.supervised import SupervisedPredictor
+        from spatialrisk.predictors.blocks import supervised_block_fn, icar_block_fn
+
+        payload = session.estimator_store.load(spec.estimator_pickle)
+        df = pd.read_csv(spec.design_sample_path).dropna()
+        _, x_ref = dmatrices(spec.formula, df, NA_action="drop")
+        design_info = x_ref.design_info
+
+        if spec.model_type == "icar":
+            betas = payload["ml_model"]["betas"]
+            block_fn = icar_block_fn(betas, spec.rho_path)
+        else:
+            block_fn = supervised_block_fn(payload["ml_model"])
+
+        return SupervisedPredictor().apply(
+            target_path=spec.target_path, feature_paths=spec.feature_paths,
+            formula=spec.formula, design_info=design_info,
+            predict_block_fn=block_fn, mask_path=spec.mask,
+            output_file=spec.out_path, mask_value=spec.mask_value,
+            register_prediction=adapter, model_key=spec.model_key,
+            dataset=None, model_snapshot={"model_key": spec.model_key})
+
+    def _apply_jnr(self, session, spec, adapter):
+        from spatialrisk.predictors.jnr import JNRPredictor
+
+        adapter._current_key = spec.model_key
+        return JNRPredictor().apply(
+            output_file=spec.out_path, defor_file=spec.defor_file,
+            forest_file=spec.forest_file, forest_edge_file=spec.forest_edge_file,
+            subj_file=spec.subj_file, dist_bins=spec.dist_bins,
+            time_interval=spec.time_interval, period=spec.period,
+            blk_rows=spec.blk_rows, deforate_model=spec.deforate_model,
+            register_prediction=adapter, dataset=None)
+
+    def _apply_mw(self, session, spec, adapter):
+        from spatialrisk.predictors.mw import MWPredictor
+
+        adapter._current_key = spec.model_key
+        return MWPredictor().apply(
+            ldefrate_files=spec.ldefrate_files, defor_file=spec.defor_file,
+            forest_file=spec.forest_file, forest_edge_file=spec.forest_edge_file,
+            dist_thresh=spec.dist_thresh, time_interval=spec.time_interval,
+            period=spec.period, output_folder=spec.output_folder,
+            blk_rows=spec.blk_rows, register_prediction=adapter, dataset=None)
 
     # ---- GLM / RF -----------------------------------------------------
     @staticmethod

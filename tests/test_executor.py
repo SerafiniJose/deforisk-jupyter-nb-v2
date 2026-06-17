@@ -81,6 +81,59 @@ def test_executor_fit_glm_pickles_estimator_and_trains_spec(tmp_path):
     assert set(payload) >= {"ml_model", "formula", "samples_path"}
 
 
+def _glm_session(tmp_path):
+    """Build a ProjectSession with a fittable GLM (defor ~ scale(dem))."""
+    import numpy as np
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
+    from spatialrisk.document import (
+        LocalRasterSpec, DatasetSpec, VariableId, GLMSpec)
+    from spatialrisk.variables.models import RasterType
+    from spatialrisk.sampling import Sampling
+
+    rng = np.random.default_rng(0)
+    tgt = tmp_path / "defor.tif"; dem = tmp_path / "dem.tif"
+    dem_arr = rng.normal(size=(40, 40)).astype("float32")
+    y_arr = (dem_arr > 0).astype("float32")
+    _write_raster(tgt, y_arr); _write_raster(dem, dem_arr)
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    est_store = LocalFSEstimatorStore()
+    doc_session = ProjectSession.create("applyglm", store=store,
+                                        estimator_store=est_store)
+    doc_session.add_local_raster(LocalRasterSpec(
+        name="defor", path=str(tgt), raster_type=RasterType.continuous))
+    doc_session.add_local_raster(LocalRasterSpec(
+        name="dem", path=str(dem), raster_type=RasterType.continuous))
+    doc_session.register_dataset(DatasetSpec(
+        name="calib",
+        target_ref=VariableId(source="raw", name="defor"),
+        feature_refs=(VariableId(source="raw", name="dem"),),
+        sampling=Sampling(strategy="random", n_samples=500, seed=1)))
+    doc_session.register_model(GLMSpec(
+        model_type="glm", name="m1", dataset_name="calib",
+        formula="defor ~ scale(dem)",
+        parameters={}, sampling=None, samples_path=None,
+        trained=False, n_samples=None, deviance=None,
+        estimator_pickle=None), key="glm_m1")
+    return doc_session
+
+
+def test_executor_apply_glm_writes_raster_and_registers(tmp_path):
+    from spatialrisk.predictors.executor import SessionExecutor
+
+    doc_session = _glm_session(tmp_path)
+    ex = SessionExecutor()
+    ex.fit(doc_session, "glm_m1")
+    out = tmp_path / "pred.tif"
+    ex.apply(doc_session, "glm_m1", str(out))
+    assert out.exists()
+    with rasterio.open(out) as src:
+        assert src.dtypes[0] == "uint16"
+    preds = doc_session._doc.predictions
+    assert any(p.model_key == "glm_m1" for p in preds.values())
+
+
 def _benchmark_session(tmp_path, name, with_forest=False):
     """Build a ProjectSession with defor + forest_edge (+ forest) rasters."""
     from spatialrisk.session import ProjectSession
@@ -247,3 +300,99 @@ def test_executor_fit_icar_captures_rho_and_pickles_estimator(tmp_path):
     assert spec.n_samples and spec.deviance is not None
     payload = est_store.load(spec.estimator_pickle)
     assert set(payload) >= {"ml_model", "formula", "samples_path"}
+
+
+def _benchmark_apply_session(tmp_path, name):
+    """Session with defor + forest_2015 + forest_edge + subj rasters."""
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
+    from spatialrisk.document import LocalRasterSpec, DatasetSpec, VariableId
+    from spatialrisk.variables.models import RasterType
+
+    rasters = {
+        "defor": np.array([[0, 1], [1, 0]], dtype="float32"),
+        "forest_2015": np.array([[1, 1], [1, 1]], dtype="float32"),
+        "forest_edge": np.array([[10, 20], [30, 40]], dtype="float32"),
+        "subj": np.array([[1, 2], [3, 4]], dtype="float32"),
+    }
+    store = LocalFSProjectStore(data_root=tmp_path)
+    est_store = LocalFSEstimatorStore()
+    sess = ProjectSession.create(name, store=store, estimator_store=est_store)
+    for rname, arr in rasters.items():
+        path = tmp_path / f"{rname}.tif"
+        _write_raster(path, arr)
+        sess.add_local_raster(LocalRasterSpec(
+            name=rname, path=str(path), raster_type=RasterType.continuous))
+    sess.register_dataset(DatasetSpec(
+        name="calib",
+        target_ref=VariableId(source="raw", name="defor"),
+        feature_refs=(
+            VariableId(source="raw", name="forest_2015"),
+            VariableId(source="raw", name="forest_edge"),
+            VariableId(source="raw", name="subj"),
+        )))
+    return sess
+
+
+def test_executor_apply_jnr_writes_raster_and_registers(tmp_path, monkeypatch):
+    import spatialrisk.rmj as rmj
+    from spatialrisk.document import JNRSpec
+    from spatialrisk.predictors.executor import SessionExecutor
+
+    sess = _benchmark_apply_session(tmp_path, "applyjnr")
+    sess.register_model(JNRSpec(
+        model_type="jnr", name="m1", dataset_name="calib",
+        parameters={"time_interval": 5, "blk_rows": 128},
+        trained=True, dist_thresh=123.0,
+        dist_bins=(0.0, 50.0, 123.0)), key="jnr_m1")
+
+    def _fake_vulnerability_map(**kw):
+        _write_raster(kw["output_file"], np.zeros((2, 2), dtype="float32"))
+
+    monkeypatch.setattr(rmj, "vulnerability_map", _fake_vulnerability_map)
+    monkeypatch.setattr(rmj.deforrate, "defrate_per_class", lambda **kw: None)
+
+    out = tmp_path / "jnr_pred.tif"
+    ex = SessionExecutor()
+    ex.apply(sess, "jnr_m1", str(out))
+
+    assert out.exists()
+    preds = sess._doc.predictions
+    assert any(p.model_key == "jnr_m1" for p in preds.values())
+
+
+def test_executor_apply_mw_writes_raster_and_registers(tmp_path, monkeypatch):
+    import spatialrisk.rmj as rmj
+    from spatialrisk.document import MWSpec
+    from spatialrisk.predictors.executor import SessionExecutor
+
+    sess = _benchmark_apply_session(tmp_path, "applymw")
+
+    # ldefrate rasters the trained MWSpec records (must exist on disk).
+    ldefrate_files = {}
+    for win in (5, 11):
+        ldf = tmp_path / f"ldefrate_{win}.tif"
+        _write_raster(ldf, np.zeros((2, 2), dtype="float32"))
+        ldefrate_files[str(win)] = str(ldf)
+
+    sess.register_model(MWSpec(
+        model_type="mw", name="m1", dataset_name="calib",
+        parameters={"time_interval": 5, "blk_rows": 256},
+        trained=True, dist_thresh=222.0,
+        win_size_list=(5, 11), ldefrate_files=ldefrate_files), key="mw_m1")
+
+    def _fake_set_defor_cat_zero(**kw):
+        _write_raster(kw["output_file"], np.zeros((2, 2), dtype="float32"))
+
+    monkeypatch.setattr(rmj, "set_defor_cat_zero", _fake_set_defor_cat_zero)
+    monkeypatch.setattr(rmj.deforrate, "defrate_per_cat", lambda **kw: None)
+
+    out = tmp_path / "mw_pred.tif"
+    ex = SessionExecutor()
+    ex.apply(sess, "mw_m1", str(out))
+
+    preds = sess._doc.predictions
+    mw_preds = [p for p in preds.values() if p.model_key == "mw_m1"]
+    assert mw_preds
+    # MW registers one PredictionSpec per window size; the window is captured.
+    assert mw_preds[-1].window in (5, 11)
