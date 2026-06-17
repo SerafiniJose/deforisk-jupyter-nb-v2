@@ -327,3 +327,31 @@ def test_create_save_open_roundtrip_via_store():
     reopened = ProjectSession.open("newproj", store=store, gee=None)
     assert "dem" in reopened.snapshot().raw_variables
     assert reopened.doc_version == 0   # freshly opened doc starts at version 0
+
+
+def test_variable_handle_resolves_spec_and_base_ref_disambiguates_source():
+    session = ProjectSession.from_document(_doc())
+    # same name "dem" in BOTH raw and processed
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="dem", path="/raw/dem.tif",
+        raster_type=RasterType.continuous,
+    ))
+    # add a processed dem with a different path
+    new_proc = dict(session.snapshot().processed_variables)
+    new_proc["dem"] = LocalRasterSpec(
+        kind="local_raster", name="dem", path="/proc/dem.tif",
+        raster_type=RasterType.continuous,
+    )
+    session._replace(processed_variables=new_proc)
+
+    # base_raster_ref pinned to the PROCESSED source resolves unambiguously
+    session.set_base_raster(VariableId(source="processed", name="dem"))
+    base_handle = session.base_raster_handle()
+    assert base_handle is not None
+    assert base_handle.spec.path == "/proc/dem.tif"
+    assert base_handle.key == "dem"
+    assert base_handle.source == "processed"
+
+    # a plain handle by (source, name)
+    raw_handle = session.get_variable_handle("dem", source="raw")
+    assert raw_handle.spec.path == "/raw/dem.tif"

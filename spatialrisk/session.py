@@ -68,6 +68,19 @@ class FolderResolver:
         return Box(folders)
 
 
+class VariableHandle:
+    """Thin, never-serialized handle: a (session, source, key) pointer + spec access."""
+
+    def __init__(self, session: "ProjectSession", source: str, key: str):
+        self._session = session
+        self.source = source
+        self.key = key
+
+    @property
+    def spec(self):
+        return self._session._collection(self.source).get(self.key)
+
+
 class ProjectSession:
     """Ergonomic, mutable-feeling wrapper over an immutable ProjectDocument.
 
@@ -306,3 +319,15 @@ class ProjectSession:
             return {k: v for k, v in result.items()
                     if all(getattr(v, a, None) == e for a, e in attrs.items())}
         return self.list_variables(source=source, **attrs)
+
+    def get_variable_handle(self, name: str, year: Optional[int] = None, source: str = "processed") -> Optional["VariableHandle"]:
+        key = f"{name}_{year}" if year else name
+        if key not in self._collection(source):
+            return None
+        return VariableHandle(self, source, key)
+
+    def base_raster_handle(self) -> Optional["VariableHandle"]:
+        ref = self._doc.base_raster_ref
+        if ref is None:
+            return None
+        return self.get_variable_handle(ref.name, year=ref.year, source=ref.source)
