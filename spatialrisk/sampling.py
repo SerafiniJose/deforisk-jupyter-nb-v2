@@ -45,7 +45,7 @@ class Sampling(BaseModel):
         for the adaptive n_samples calculation.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
     strategy: SamplingStrategy = Field(
         default=SamplingStrategy.random, description="Sampling strategy"
