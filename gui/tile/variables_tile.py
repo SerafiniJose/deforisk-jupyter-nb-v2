@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+from pathlib import Path
 
+import ee
 import solara
 
 logger = logging.getLogger("spatial_risk")
@@ -17,6 +19,59 @@ from spatialrisk.variables.local_vector_var import LocalVectorVar
 LocalRasterVar.model_rebuild()
 GEEVar.model_rebuild()
 LocalVectorVar.model_rebuild()
+
+# Keys of source variables currently displayed on the map (drives the toggle state).
+vars_on_map = solara.reactive(set())
+
+
+def _map_layer_key(key: str) -> str:
+    """Unique map-layer key for a source variable."""
+    return f"var_{key}"
+
+
+async def _grayscale_vis(image, var, gee_interface):
+    """Grayscale palette stretched to the image's min/max over its AOI.
+
+    Falls back to a bare grayscale palette (GEE's default 0–1 stretch) if the
+    min/max can't be computed.
+    """
+    vis = {"palette": ["000000", "ffffff"]}
+    aoi = getattr(var, "aoi", None)
+    if aoi is None or gee_interface is None:
+        return vis
+    try:
+        geom = aoi if isinstance(aoi, ee.Geometry) else aoi.geometry()
+        stats = await gee_interface.get_info_async(
+            image.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=geom,
+                scale=getattr(var, "default_scale", None) or 100,
+                maxPixels=1e8,
+                bestEffort=True,
+            )
+        )
+        mins = [v for k, v in stats.items() if k.endswith("_min") and v is not None]
+        maxs = [v for k, v in stats.items() if k.endswith("_max") and v is not None]
+        if mins and maxs:
+            vis["min"], vis["max"] = min(mins), max(maxs)
+    except Exception:
+        logger.debug("grayscale min/max failed; using default stretch", exc_info=True)
+    return vis
+
+
+async def _styled_layer(image, var, gee_interface):
+    """Choose visualization by raster type.
+
+    categorical (incl. binary masks) -> ``ee.Image.randomVisualizer()`` (random RGB);
+    continuous -> grayscale stretched to the image's min/max.
+
+    Returns (image_to_add, vis_params).
+    """
+    rt = getattr(var, "raster_type", None)
+    rt = rt.value if hasattr(rt, "value") else (str(rt) if rt is not None else "")
+    if rt == "categorical":
+        return image.randomVisualizer(), {}
+    return image, await _grayscale_vis(image, var, gee_interface)
 
 
 def _variable_to_entry(key: str, var, project) -> dict:
@@ -81,7 +136,7 @@ def _build_variable(entry: dict, project):
 
 def _build_predefined(entry: dict, project):
     """Build a GEEVar from a predefined catalogue entry."""
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_feature
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, resolve_aoi_ee
     from gui.store.state_manager import app_state
 
     key = entry["predefined_key"]
@@ -91,7 +146,7 @@ def _build_predefined(entry: dict, project):
     if aoi_result is None:
         raise ValueError("No AOI selected — complete the AOI step first.")
 
-    aoi_ee = get_aoi_ee_feature(aoi_result.gdf)
+    aoi_ee = resolve_aoi_ee(aoi_result)
     year = entry.get("year")
     image = cat["get_image"](aoi_ee, year)
 
@@ -106,17 +161,64 @@ def _build_predefined(entry: dict, project):
     )
 
 
+def _drop_from_map(key: str, map_):
+    """Remove a variable's layer from the map and forget its on-map state."""
+    if map_ is not None:
+        map_.remove_layer(_map_layer_key(key), none_ok=True)
+    if key in vars_on_map.value:
+        remaining = set(vars_on_map.value)
+        remaining.discard(key)
+        vars_on_map.set(remaining)
+
+
 @solara.component
-def VariablesTile(project, processing, process_error):
+def VariablesTile(project, processing, process_error, map_=None):
     """Variables step: add, inspect, and process variables.
 
     Args:
         project: Reactive holding the current Project (or None).
         processing: Reactive bool — True while batch processing is running.
         process_error: Reactive str | None — error from last Process All.
+        map_: SepalMap instance used by the per-variable "show on map" toggle.
     """
     modal_open = solara.use_reactive(False)
     editing_key, set_editing_key = solara.use_state(None)
+    pending_toggle = solara.use_reactive(None)
+
+    @solara.lab.use_task(dependencies=None, raise_error=False)
+    async def _apply_map_toggle():
+        """Add or remove a GEE-backed variable's layer using the async map API.
+
+        The async path is required: the sync ``add_ee_layer`` blocks on the GEE
+        interface's private event loop and hangs when called from a Solara handler.
+        """
+        key = pending_toggle.value
+        if key is None or map_ is None:
+            return
+        p = project.value
+        var = p.raw_variables.get(key) if p is not None else None
+        images = getattr(var, "gee_images", None) if var is not None else None
+        if not images:
+            return
+        try:
+            if key in vars_on_map.value:
+                _drop_from_map(key, map_)
+            else:
+                image, vis = await _styled_layer(images[0], var, map_.gee_interface)
+                await map_.add_ee_layer_async(
+                    image, vis, name=key, key=_map_layer_key(key), use_map_vis=False
+                )
+                vars_on_map.set(set(vars_on_map.value) | {key})
+        except Exception as exc:
+            logger.exception("map toggle failed for %s", key)
+            process_error.set(f"Could not toggle '{key}' on map: {exc}")
+
+    def on_toggle_map(key: str):
+        """Trigger the async toggle task for one source variable."""
+        if map_ is None:
+            return
+        pending_toggle.set(key)
+        _apply_map_toggle()
 
     def on_add(entry: dict):
         logger.debug("on_add called: %s", entry)
@@ -151,6 +253,8 @@ def VariablesTile(project, processing, process_error):
             old_var = p.raw_variables.pop(old_key, None)
             if old_var and p.base_raster and p.base_raster.name == old_var.name:
                 p.base_raster = None
+            # The key may change on edit — drop the stale layer so it doesn't linger.
+            _drop_from_map(old_key, map_)
             var = _build_variable(new_entry, p)
             new_key = f"{var.name}_{var.year}" if var.year else var.name
             p.raw_variables[new_key] = var
@@ -169,6 +273,25 @@ def VariablesTile(project, processing, process_error):
         removed = p.raw_variables.pop(key, None)
         if removed and p.base_raster and p.base_raster.name == removed.name:
             p.base_raster = None
+        _drop_from_map(key, map_)
+        project.set(p.model_copy())
+
+    def on_remove_derived(key: str):
+        """Remove a derived (processed) variable and delete its raster from disk."""
+        p = project.value
+        if p is None:
+            return
+        removed = p.processed_variables.pop(key, None)
+        path = getattr(removed, "path", None) if removed is not None else None
+        if path:
+            try:
+                fp = Path(path)
+                if fp.is_file():
+                    fp.unlink()
+                    logger.debug("Deleted derived raster file: %s", fp)
+            except OSError as exc:
+                logger.exception("Could not delete file for derived var '%s'", key)
+                process_error.set(f"Removed '{key}' but could not delete its file: {exc}")
         project.set(p.model_copy())
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
@@ -192,6 +315,19 @@ def VariablesTile(project, processing, process_error):
     has_vars = p is not None and bool(p.raw_variables)
     has_base = p is not None and p.base_raster is not None
     can_process = has_vars and has_base and not processing.value
+
+    # Explain why "Process All" is disabled (first unmet condition wins).
+    if processing.value:
+        process_hint = None  # progress bar already conveys the running state
+    elif not has_vars:
+        process_hint = "Add at least one variable to enable Process All."
+    elif not has_base:
+        process_hint = (
+            "No base raster set — tick “is base” on a raster variable "
+            "(in Add Variable or Edit) to enable Process All."
+        )
+    else:
+        process_hint = None
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown("### Step 2 — Variables")
@@ -218,13 +354,25 @@ def VariablesTile(project, processing, process_error):
             if processing.value:
                 solara.ProgressLinear(True)
 
+        if process_hint:
+            solara.Text(
+                process_hint,
+                style="font-size: 0.8rem; color: rgba(0,0,0,0.6); font-style: italic;",
+            )
+
         # Source variable list
         solara.Markdown("**SOURCE VARIABLES**" + (f" ({len(p.raw_variables)})" if p else " (0)"))
-        SourceVariableList(project=project, on_remove=on_remove, on_edit=on_edit_open)
+        SourceVariableList(
+            project=project,
+            on_remove=on_remove,
+            on_edit=on_edit_open,
+            on_toggle_map=on_toggle_map if map_ is not None else None,
+            vars_on_map=vars_on_map,
+        )
 
         # Derived variable list
         if p and p.processed_variables:
-            DerivedVariableList(project=project)
+            DerivedVariableList(project=project, on_remove=on_remove_derived)
 
     p = project.value
     editing_entry = (

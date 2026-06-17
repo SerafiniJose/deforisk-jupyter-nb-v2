@@ -16,6 +16,29 @@ def get_aoi_ee_feature(gdf):
     return ee.Feature(geometry)
 
 
+def resolve_aoi_ee(aoi_result):
+    """Resolve an AoiResult to an Earth Engine object for variable extraction.
+
+    AOI selections expose their geometry one of two ways:
+      * DRAW / local selections -> a GeoDataFrame in ``aoi_result.gdf``.
+      * Admin-boundary / GEE-asset selections -> an ee object in
+        ``aoi_result.feature_collection`` (``gdf`` is None — fetched lazily on GEE).
+
+    Prefer the GEE object when present (it covers admin/asset selections, which
+    have no local gdf); otherwise convert the local gdf. The returned object
+    supports ``.geometry()``/``.clip()``/``.filterBounds()`` either way.
+    """
+    fc = getattr(aoi_result, "feature_collection", None)
+    if fc is not None:
+        return fc
+    if getattr(aoi_result, "gdf", None) is not None:
+        return get_aoi_ee_feature(aoi_result.gdf)
+    raise ValueError(
+        "Selected AOI has no usable geometry. Re-select the area "
+        "(admin boundaries need GEE enabled to fetch their geometry)."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Individual get_image functions
 # ---------------------------------------------------------------------------

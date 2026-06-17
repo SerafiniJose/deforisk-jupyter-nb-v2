@@ -8,7 +8,7 @@ import solara
 
 logger = logging.getLogger("spatial_risk")
 
-_GRID = "display:grid;grid-template-columns:1fr 90px 90px 80px;align-items:center;width:100%;"
+_GRID = "display:grid;grid-template-columns:1fr 90px 90px 116px;align-items:center;width:100%;"
 _HEADER_EXTRA = (
     "padding:4px 8px 6px;"
     "border-bottom:2px solid rgba(0,0,0,0.15);"
@@ -25,8 +25,10 @@ def SourceVariableList(
     project,
     on_remove: Callable[[str], None],
     on_edit: Optional[Callable[[str], None]] = None,
+    on_toggle_map: Optional[Callable[[str], None]] = None,
+    vars_on_map=None,
 ):
-    """Table of source (raw) variables with edit and remove actions."""
+    """Table of source (raw) variables with map-toggle, edit, and remove actions."""
     p = project.value
     logger.debug(
         "SourceVariableList render — raw_variables: %s",
@@ -71,6 +73,20 @@ def SourceVariableList(
                         rv.Chip(children=[f"+{len(derived)}"], x_small=True, outlined=True)
                 # Actions — right-aligned
                 with rv.Html(tag="div", style_=_CELL_RIGHT):
+                    # Map toggle — only for GEE-backed variables (have ee images).
+                    gee_images = getattr(var, "gee_images", None)
+                    if on_toggle_map is not None and gee_images:
+                        on_map = vars_on_map.value if vars_on_map is not None else set()
+                        is_on = key in on_map
+                        solara.Button(
+                            "",
+                            icon_name="mdi-map-minus" if is_on else "mdi-map-plus",
+                            on_click=lambda *_, k=key: on_toggle_map(k),
+                            icon=True,
+                            text=True,
+                            x_small=True,
+                            color="primary" if is_on else "grey darken-1",
+                        )
                     if on_edit is not None:
                         solara.Button(
                             "",
@@ -91,8 +107,8 @@ def SourceVariableList(
 
 
 @solara.component
-def DerivedVariableList(project):
-    """Collapsible table of derived (processed) variables."""
+def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = None):
+    """Collapsible table of derived (processed) variables with a remove action."""
     collapsed, set_collapsed = solara.use_state(False)
 
     p = project.value
@@ -100,7 +116,7 @@ def DerivedVariableList(project):
         return
 
     count = len(p.processed_variables)
-    _DGRID = "display:grid;grid-template-columns:1fr 120px 80px;align-items:center;width:100%;"
+    _DGRID = "display:grid;grid-template-columns:1fr 120px 80px 56px;align-items:center;width:100%;"
 
     with solara.Column(style="gap:0;width:100%;"):
         with solara.Row(style="align-items:center;gap:8px;padding:4px 0;"):
@@ -122,6 +138,7 @@ def DerivedVariableList(project):
                 rv.Html(tag="span", children=["Name"])
                 rv.Html(tag="span", children=["Source"])
                 rv.Html(tag="span", children=["Status"])
+                rv.Html(tag="span", children=[""])
 
             for key, var in p.processed_variables.items():
                 source_name = next(
@@ -135,3 +152,14 @@ def DerivedVariableList(project):
                         rv.Chip(children=[source_name], x_small=True, outlined=True)
                     with rv.Html(tag="div", style_=_CELL_FLEX):
                         rv.Chip(children=["ready"], color="success", x_small=True, outlined=True)
+                    # Actions — delete (also removes the generated file from disk)
+                    with rv.Html(tag="div", style_=_CELL_RIGHT):
+                        if on_remove is not None:
+                            solara.Button(
+                                "",
+                                icon_name="mdi-delete-outline",
+                                on_click=lambda *_, k=key: on_remove(k),
+                                icon=True,
+                                text=True,
+                                x_small=True,
+                            )
