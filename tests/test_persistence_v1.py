@@ -150,3 +150,98 @@ def test_project_store_load_missing_raises(tmp_path):
     store = LocalFSProjectStore(data_root=tmp_path)
     with pytest.raises(FileNotFoundError):
         store.load("nope")
+
+
+DELEGATED_V0 = {
+    "project_name": "delegated",
+    "raw_variables": {
+        "forest": {
+            "name": "forest", "data_type": "raster", "year": None, "active": True,
+            "tags": [], "path": "/nope/forest.tif", "raster_type": "continuous",
+            "post_processing": [], "processing_history": [],
+            "default_crs": None, "default_resolution": None,
+        }
+    },
+    "processed_variables": {
+        "roads": {
+            "name": "roads", "data_type": "vector", "year": None, "active": True,
+            "tags": [], "path": "/nope/roads.shp", "rasterization_method": None,
+            "default_crs": None,
+        }
+    },
+}
+
+
+def test_migrate_v0_variables_inject_kind(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    pdir = tmp_path / "delegated"
+    pdir.mkdir()
+    (pdir / "delegated_project.json").write_text(json.dumps(DELEGATED_V0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("delegated")
+
+    assert doc.schema_version == 1
+    assert doc.project_name == "delegated"
+    forest = doc.raw_variables["forest"]
+    assert forest.kind == "local_raster"
+    assert forest.path == "/nope/forest.tif"
+    assert forest.raster_type.value == "continuous"
+    roads = doc.processed_variables["roads"]
+    assert roads.kind == "local_vector"
+    # a null v0 rasterization_method becomes the binary default
+    assert roads.rasterization_method.value == "binary"
+
+
+def test_migrate_v0_preserves_dict_key_distinct_from_name(tmp_path):
+    """nuevo3 keys vars 'forest_gfc_2015' but the spec.name is 'forest_gfc'."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = {
+        "project_name": "nuevo3",
+        "raw_variables": {
+            "forest_gfc_2015": {
+                "name": "forest_gfc", "data_type": "raster", "year": 2015,
+                "active": True, "tags": ["forest"],
+                "path": "/d/forest_gfc_2015.tif", "raster_type": "categorical",
+                "post_processing": [], "processing_history": [],
+                "default_crs": None, "default_resolution": None,
+            }
+        },
+        "processed_variables": {},
+    }
+    pdir = tmp_path / "nuevo3"
+    pdir.mkdir()
+    (pdir / "nuevo3_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("nuevo3")
+    assert set(doc.raw_variables) == {"forest_gfc_2015"}
+    spec = doc.raw_variables["forest_gfc_2015"]
+    assert spec.name == "forest_gfc"
+    assert spec.year == 2015
+    assert spec.kind == "local_raster"
+
+
+def test_migrate_v0_drops_unknown_multi_year_field(tmp_path):
+    """v0 raster carries a 'multi_year' field absent from v1 LocalRasterSpec."""
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = {
+        "project_name": "my", "processed_variables": {},
+        "raw_variables": {
+            "alt": {
+                "name": "alt", "data_type": "raster", "year": None,
+                "multi_year": None, "active": True, "tags": [],
+                "path": "/d/alt.tif", "raster_type": "continuous",
+                "post_processing": [], "default_crs": None,
+                "default_resolution": None,
+            }
+        },
+    }
+    pdir = tmp_path / "my"
+    pdir.mkdir()
+    (pdir / "my_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("my")
+    assert doc.raw_variables["alt"].kind == "local_raster"
+    assert not hasattr(doc.raw_variables["alt"], "multi_year")

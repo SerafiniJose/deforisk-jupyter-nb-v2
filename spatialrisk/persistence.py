@@ -358,9 +358,45 @@ class LocalFSEstimatorStore:
             return pickle.load(fh)
 
 
+_V0_RASTER_DROP = {"data_type", "multi_year"}
+_V0_VECTOR_DROP = {"data_type", "multi_year"}
+
+
+def _migrate_v0_variable(var_data: dict) -> dict:
+    """Inject the ``kind`` discriminator and strip v0-only fields."""
+    data_type = var_data.get("data_type")
+    out = {k: v for k, v in var_data.items()}
+    if data_type == "raster":
+        out["kind"] = "local_raster"
+        for k in _V0_RASTER_DROP:
+            out.pop(k, None)
+    elif data_type == "vector":
+        out["kind"] = "local_vector"
+        for k in _V0_VECTOR_DROP:
+            out.pop(k, None)
+        # v0 stored a nullable rasterization_method; v1 requires one.
+        if out.get("rasterization_method") is None:
+            out["rasterization_method"] = "binary"
+    else:
+        raise ValueError(f"Unknown v0 data_type for variable: {data_type!r}")
+    return out
+
+
 def _migrate_v0_to_v1(data: dict) -> dict:
-    """Convert a pre-schema_version (v0) project dict to a v1 dict. Filled in B6."""
-    raise NotImplementedError("v0->v1 migrator implemented in task B6")
+    """Convert a pre-``schema_version`` (v0) project dict to a v1 dict."""
+    out: dict = {
+        "schema_version": 1,
+        "project_name": data["project_name"],
+        "raw_variables": {
+            key: _migrate_v0_variable(v)
+            for key, v in data.get("raw_variables", {}).items()
+        },
+        "processed_variables": {
+            key: _migrate_v0_variable(v)
+            for key, v in data.get("processed_variables", {}).items()
+        },
+    }
+    return out
 
 
 class LocalFSProjectStore:
