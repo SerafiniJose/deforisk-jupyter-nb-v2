@@ -601,14 +601,17 @@ class ProjectSession:
         )
 
     def _categorical_levels(self, var):
-        """Return the sorted unique integer levels for a categorical raster, or None."""
-        from spatialrisk.far_helpers import get_categorical_levels
-        from spatialrisk.variables.models import RasterType
+        """Read the categorical domain of a variable for in-worker C(...) terms.
 
-        rtype = getattr(var, "raster_type", None)
-        if rtype != RasterType.categorical:
+        Delegates to far_helpers.get_categorical_levels (reads the raster once).
+        Returns a tuple of ints, or None if unreadable / not categorical.
+        """
+        from spatialrisk import far_helpers
+
+        levels = far_helpers.get_categorical_levels(var)
+        if not levels:
             return None
-        return get_categorical_levels(var)
+        return tuple(int(x) for x in levels)
 
     def _fit_sample_out_path(self, model_key: str) -> str:
         """Return the output CSV path for a fit-job's sampled data."""

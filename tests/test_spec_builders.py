@@ -620,3 +620,99 @@ def test_apply_spec_jnr_and_mw():
     assert isinstance(rm, MWApplySpec)
     assert rm.ldefrate_files == {"5": "/data/proj/rmj_mw/ldefrate_mw_5.tif"}
     assert rm.dist_thresh == 300.0
+
+
+def test_no_spec_holds_a_live_object():
+    """Every spec built in this phase must contain only JSON-safe primitives.
+
+    A spec that smuggled an ee.Image / sklearn estimator would either fail to
+    pickle or expose a non-(str/num/tuple/dict/Sampling/recipe) attribute.
+    """
+    import numbers
+    from spatialrisk.document import CatalogueRecipe, GEERecipe
+    from spatialrisk.sampling import Sampling
+    from spatialrisk.session import (
+        MaterializeSpec,
+        SupervisedFitSpec,
+        SupervisedApplySpec,
+    )
+
+    allowed = (str, bool, numbers.Number, type(None), Sampling)
+
+    def _walk(value):
+        if isinstance(value, allowed):
+            return
+        if isinstance(value, (tuple, list)):
+            for v in value:
+                _walk(v)
+            return
+        if isinstance(value, dict):
+            for k, v in value.items():
+                _walk(k)
+                _walk(v)
+            return
+        if isinstance(value, (CatalogueRecipe,)) or "Recipe" in type(value).__name__:
+            return
+        if hasattr(value, "model_fields"):  # nested frozen pydantic spec
+            for f in value.model_fields:
+                _walk(getattr(value, f))
+            return
+        raise AssertionError(f"non-JSON-safe value in spec: {value!r} ({type(value)})")
+
+    specs = [
+        MaterializeSpec(
+            var_key="altitude",
+            recipe=CatalogueRecipe(
+                source="catalogue", catalogue_key="altitude", export_kind="raster"
+            ),
+            out_path="/x.tif",
+            export_kind="raster",
+        ),
+        SupervisedFitSpec(
+            model_key="m",
+            model_type="glm",
+            target_path="/t.tif",
+            feature_paths={"a": "/a.tif"},
+            formula="y ~ a",
+            sampling=Sampling(strategy="random", n_samples=100),
+            output_sample_path="/s.csv",
+        ),
+        SupervisedApplySpec(
+            model_key="m",
+            model_type="glm",
+            out_path="/o.tif",
+            target_path="/t.tif",
+            feature_paths={"a": "/a.tif"},
+            formula="y ~ a",
+            estimator_pickle="/e.pickle",
+        ),
+    ]
+    for s in specs:
+        for f in s.model_fields:
+            _walk(getattr(s, f))
+
+
+def test_categorical_levels_reads_via_far_helpers(monkeypatch):
+    """_categorical_levels delegates to far_helpers.get_categorical_levels."""
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.document import LocalRasterSpec
+    from spatialrisk.variables.models import RasterType
+    import spatialrisk.far_helpers as fh
+
+    captured = {}
+
+    def fake_levels(var):
+        captured["var"] = var
+        return [0, 1, 2]
+
+    monkeypatch.setattr(fh, "get_categorical_levels", fake_levels)
+
+    var = LocalRasterSpec(
+        kind="local_raster",
+        name="pa",
+        path="/data/proj/processed/pa.tif",
+        raster_type=RasterType.categorical,
+    )
+    levels = ProjectSession._categorical_levels(object.__new__(ProjectSession), var)
+    assert levels == (0, 1, 2)
+    assert captured["var"] is var
