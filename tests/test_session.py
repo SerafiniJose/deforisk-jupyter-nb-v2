@@ -45,3 +45,24 @@ def test_session_never_uses_model_copy_update_for_doc_state():
     src = inspect.getsource(session_mod)
     assert "model_copy(update" not in src
     assert ".model_copy(" not in src
+
+
+import pytest
+from pydantic import ValidationError
+
+
+def test_replace_rejects_non_json_nested_value():
+    session = ProjectSession.from_document(_doc())
+    before_version = session.doc_version
+
+    class _NotJson:
+        pass
+
+    # a non-JSON object smuggled into the AOI GeoJSON map must be rejected
+    # by re-validation (GeoJSONGeometry == dict[str, JsonValue]).
+    with pytest.raises(ValidationError):
+        session._replace(aoi={"bad": _NotJson()})
+
+    # failed mutation leaves the document and version untouched
+    assert session.snapshot().aoi is None
+    assert session.doc_version == before_version

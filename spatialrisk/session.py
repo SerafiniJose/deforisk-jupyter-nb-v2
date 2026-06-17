@@ -63,12 +63,12 @@ class ProjectSession:
     def _replace(self, **changes: Any) -> ProjectDocument:
         """Replace the document wholesale through full validation.
 
-        Equivalent to
-        ``ProjectDocument.model_validate(self._doc.model_dump() | changes)``.
-        Re-runs every validator so the JSON-only / no-`ee` type boundary holds
-        on the mutation path, not just at construction. Bumps `doc_version`.
+        Validates FIRST, then commits, so a rejected mutation leaves `_doc`
+        and `doc_version` untouched. Re-runs every validator so the JSON-only /
+        no-`ee` type boundary holds on the mutation path.
         """
         merged = self._doc.model_dump() | changes
-        self._doc = ProjectDocument.model_validate(merged)
+        validated = ProjectDocument.model_validate(merged)  # raises before commit
+        self._doc = validated
         self.doc_version += 1
         return self._doc
