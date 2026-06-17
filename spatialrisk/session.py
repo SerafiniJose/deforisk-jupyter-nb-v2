@@ -754,6 +754,87 @@ class ProjectSession:
             f"fit_spec does not yet handle model_type {model.model_type!r}"
         )
 
+    def apply_spec(self, model_key: str, out_path=None, mask=None, mask_value=0):
+        """Build a picklable apply spec for ``model_key`` (§10).
+
+        GLM/RF/iCAR -> SupervisedApplySpec (iCAR carries rho_path); JNR ->
+        JNRApplySpec; MW -> MWApplySpec.
+        """
+        model = self._doc.models[model_key]
+        dataset = self._doc.datasets[model.dataset_name]
+
+        if model.model_type in ("glm", "rf", "icar"):
+            return SupervisedApplySpec(
+                model_key=model_key,
+                model_type=model.model_type,
+                out_path=str(out_path),
+                target_path=self._resolve_target_path(dataset),
+                feature_paths=self._resolve_feature_paths(dataset),
+                formula=model.formula,
+                estimator_pickle=model.estimator_pickle,
+                design_sample_path=(
+                    str(model.samples_path)
+                    if getattr(model, "samples_path", None) is not None
+                    else None
+                ),
+                rho_path=(
+                    str(model.rho_path)
+                    if getattr(model, "rho_path", None) is not None
+                    else None
+                ),
+                mask=str(mask) if mask is not None else None,
+                mask_value=mask_value,
+            )
+
+        feats = self._resolve_feature_paths(dataset)
+        if model.model_type == "jnr":
+            forest_var = getattr(model, "forest_var", "forest_2015")
+            forest_edge_var = getattr(model, "forest_edge_var", "forest_edge")
+            subj_var = getattr(model, "subj_var", "subj")
+            return JNRApplySpec(
+                model_key=model_key,
+                model_type="jnr",
+                out_path=str(out_path),
+                defor_file=self._resolve_target_path(dataset),
+                forest_file=feats[forest_var],
+                forest_edge_file=feats[forest_edge_var],
+                subj_file=feats[subj_var],
+                period=dataset.name,
+                dist_bins=tuple(float(b) for b in model.dist_bins),
+                time_interval=int(dict(model.parameters).get("time_interval", 0))
+                or int(model.parameters["time_interval"])
+                if "time_interval" in dict(model.parameters)
+                else 0,
+                deforate_model=None,
+                blk_rows=int(dict(model.parameters).get("blk_rows", 128)),
+            )
+
+        if model.model_type == "mw":
+            forest_var = getattr(model, "forest_var", "forest_2015")
+            forest_edge_var = getattr(model, "forest_edge_var", "forest_edge")
+            return MWApplySpec(
+                model_key=model_key,
+                model_type="mw",
+                defor_file=self._resolve_target_path(dataset),
+                forest_file=feats[forest_var],
+                forest_edge_file=feats[forest_edge_var],
+                period=dataset.name,
+                ldefrate_files={
+                    str(k): str(v) for k, v in model.ldefrate_files.items()
+                },
+                win_sizes=tuple(model.win_size_list),
+                dist_thresh=float(model.dist_thresh),
+                time_interval=int(dict(model.parameters).get("time_interval", 0))
+                if "time_interval" in dict(model.parameters)
+                else 0,
+                blk_rows=int(dict(model.parameters).get("blk_rows", 256)),
+                output_folder=self._fit_out_root(model_key, "mw"),
+            )
+
+        raise NotImplementedError(
+            f"apply_spec does not yet handle model_type {model.model_type!r}"
+        )
+
     # ------------------------------------------------------------------ #
     # Orchestration (delegates to handles/collaborators; real geoprocessing
     # lands in Phase G — these wire ordering + iteration only)

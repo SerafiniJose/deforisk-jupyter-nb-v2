@@ -539,3 +539,84 @@ def test_jnr_and_mw_apply_specs():
     restored = _assert_picklable_pure(mw)
     assert restored.ldefrate_files == {"5": "/data/proj/rmj_mw/ldefrate_mw_5.tif"}
     assert restored.win_sizes == (5, 11, 21)
+
+
+class _ApplyFakeSession(_FitFakeSessionMulti):
+    """Adds estimator/design/rho resolution for apply_spec."""
+
+    def __init__(self):
+        super().__init__()
+        object.__setattr__(self.icar, "rho_path", "/data/proj/icar/rho_calibration.tif")
+        object.__setattr__(self.icar, "estimator_pickle", "/data/proj/icar/icar.pickle")
+        object.__setattr__(self.glm, "estimator_pickle", "/data/proj/glm/glm.pickle")
+        object.__setattr__(self.glm, "samples_path", "/data/proj/glm/samples.csv")
+        object.__setattr__(self.icar, "samples_path", "/data/proj/icar/samples.csv")
+        object.__setattr__(self.jnr, "dataset_name", "jnr_calibration_2020")
+        object.__setattr__(self.mw, "dataset_name", "jnr_calibration_2020")
+        object.__setattr__(self.jnr, "dist_bins", (0.0, 100.0, 200.0))
+        object.__setattr__(self.jnr, "subj_var", "subj")
+        object.__setattr__(self.mw, "dist_thresh", 300.0)
+        object.__setattr__(
+            self.mw, "ldefrate_files", {"5": "/data/proj/rmj_mw/ldefrate_mw_5.tif"}
+        )
+        object.__setattr__(self.mw, "win_size_list", (5, 11, 21))
+        self._vars["subj"] = _local_raster("subj", "/data/proj/processed/subj.tif")
+        # JNR/MW datasets need subj + forest features
+        self.jnr_dataset = DatasetSpec(
+            name="jnr_calibration_2020",
+            year=2020,
+            target_ref=VariableId(source="processed", name="defor_2020", year=2020),
+            feature_refs=(
+                VariableId(source="processed", name="forest_edge"),
+                VariableId(source="processed", name="forest_2015"),
+                VariableId(source="processed", name="subj"),
+            ),
+        )
+        self._doc.datasets["jnr_calibration_2020"] = self.jnr_dataset
+
+
+def test_apply_spec_glm_carries_estimator():
+    from spatialrisk.session import ProjectSession, SupervisedApplySpec
+
+    sess = _ApplyFakeSession()
+    spec = ProjectSession.apply_spec(
+        sess, "glm_calibration", out_path="/data/proj/predictions/glm_2020.tif"
+    )
+    restored = _assert_picklable_pure(spec)
+    assert isinstance(restored, SupervisedApplySpec)
+    assert restored.estimator_pickle == "/data/proj/glm/glm.pickle"
+    assert restored.design_sample_path == "/data/proj/glm/samples.csv"
+    assert restored.rho_path is None
+    assert restored.target_path == "/data/proj/processed/forest_loss_2020.tif"
+
+
+def test_apply_spec_icar_carries_rho_path():
+    from spatialrisk.session import ProjectSession
+
+    sess = _ApplyFakeSession()
+    spec = ProjectSession.apply_spec(
+        sess, "icar_calibration", out_path="/data/proj/predictions/icar_2020.tif"
+    )
+    restored = _assert_picklable_pure(spec)
+    assert restored.model_type == "icar"
+    assert restored.rho_path == "/data/proj/icar/rho_calibration.tif"
+    assert restored.estimator_pickle == "/data/proj/icar/icar.pickle"
+
+
+def test_apply_spec_jnr_and_mw():
+    from spatialrisk.session import ProjectSession, JNRApplySpec, MWApplySpec
+
+    sess = _ApplyFakeSession()
+    jnr = ProjectSession.apply_spec(
+        sess, "jnr_calibration", out_path="/data/proj/rmj_bm/vuln.tif"
+    )
+    rj = _assert_picklable_pure(jnr)
+    assert isinstance(rj, JNRApplySpec)
+    assert rj.subj_file == "/data/proj/processed/subj.tif"
+    assert rj.dist_bins == (0.0, 100.0, 200.0)
+
+    mw = ProjectSession.apply_spec(sess, "mw_calibration", out_path=None)
+    rm = _assert_picklable_pure(mw)
+    assert isinstance(rm, MWApplySpec)
+    assert rm.ldefrate_files == {"5": "/data/proj/rmj_mw/ldefrate_mw_5.tif"}
+    assert rm.dist_thresh == 300.0
