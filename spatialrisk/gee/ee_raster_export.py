@@ -120,12 +120,12 @@ def download_ee_vector(
     filename: Union[str, Path],
     selectors: Optional[list] = None,
 ) -> Path:
-    """Download an ``ee.FeatureCollection`` to a local vector file without geemap.
+    """Download an ``ee.FeatureCollection`` to a local vector file (geemap-free).
 
     Pulls the collection client-side via ``getInfo()`` and writes it with
     geopandas/fiona (already declared deps). Intended for small admin-boundary
     collections (e.g. FAO GAUL AOI); replaces the former
-    ``geemap.ee_export_vector`` call.
+    ``ee_export_vector`` call.
 
     Parameters
     ----------
