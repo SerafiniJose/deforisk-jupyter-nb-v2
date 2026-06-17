@@ -6,7 +6,7 @@ from pathlib import Path
 from box import Box
 from pydantic import BaseModel, Field, ConfigDict
 from spatialrisk.variables import LocalVectorVar, LocalRasterVar
-from spatialrisk.variables.models import DataType
+from spatialrisk.variables.models import DataType, ForestLossSpec
 
 root_folder: Path = Path.cwd().parent
 
@@ -69,6 +69,7 @@ class Project(BaseModel):
     models: Dict[str, Any] = Field(default_factory=dict)
     datasets: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
+    forest_loss_specs: List[ForestLossSpec] = Field(default_factory=list)
 
     @staticmethod
     def _ensure_model_schemas() -> None:
@@ -523,6 +524,12 @@ class Project(BaseModel):
             for key, prediction in self.predictions.items():
                 data["predictions"][key] = prediction.model_dump(mode="json")
 
+        # Serialize deferred forest-loss target specs
+        if self.forest_loss_specs:
+            data["forest_loss_specs"] = [
+                spec.model_dump(mode="json") for spec in self.forest_loss_specs
+            ]
+
         # Write to file
         save_path.write_text(
             json.dumps(data, indent=4, ensure_ascii=False, default=str),
@@ -689,6 +696,10 @@ class Project(BaseModel):
                 prediction.project = project
                 project.predictions[key] = prediction
             print(f"Loaded {len(project.predictions)} prediction(s)")
+
+        # Reconstruct deferred forest-loss target specs
+        for spec_data in data.get("forest_loss_specs", []):
+            project.forest_loss_specs.append(ForestLossSpec(**spec_data))
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
