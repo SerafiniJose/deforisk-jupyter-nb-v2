@@ -387,8 +387,8 @@ def make_forest_loss_var(
     whether to add_as_raw().
     """
     from pathlib import Path
-    from spatialrisk.variables.local_raster_var import LocalRasterVar
-    from spatialrisk.variables.models import DataType, RasterType
+    from spatialrisk.variables import LocalRasterVar
+    from spatialrisk.variables.models import RasterType
 
     start_year = start_layer.year
     end_year = end_layer.year
@@ -403,24 +403,15 @@ def make_forest_loss_var(
             str(output_path),
         )
 
-    # Use model_construct to bypass Pydantic's project-type validation so that
-    # callers may pass duck-typed project objects (e.g. in tests).  All field
-    # values are provided explicitly since model_construct does not apply defaults.
-    return LocalRasterVar.model_construct(
+    return LocalRasterVar(
         name=var_name,
         path=Path(output_path),
-        data_type=DataType.raster,
         raster_type=RasterType.categorical,
-        post_processing=[],
-        processing_history=[],
         project=project,
         tags=["deforestation", "forest_loss", f"{start_year}_{end_year}"],
         default_crs=end_layer.default_crs or start_layer.default_crs,
         default_resolution=end_layer.default_resolution
         or start_layer.default_resolution,
-        active=True,
-        year=None,
-        aoi=None,
     )
 
 

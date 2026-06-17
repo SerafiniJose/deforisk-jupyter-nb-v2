@@ -1,7 +1,9 @@
-from pathlib import Path
-from unittest.mock import patch
+"""Tests for make_forest_loss_var (2-layer forest-loss helper)."""
 
-from spatialrisk.processing import make_forest_loss_var
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import spatialrisk.processing as processing
 from spatialrisk.variables.models import RasterType
 
 
@@ -32,23 +34,34 @@ def test_make_forest_loss_var_naming_and_tags(tmp_path):
     start = _Layer(2015, tmp_path / "forest_gfc_2015.tif")
     end = _Layer(2020, tmp_path / "forest_gfc_2020.tif")
 
-    with patch("spatialrisk.processing.process_forest_loss_xarray") as m:
-        var = make_forest_loss_var(project, start, end)
+    with patch.object(processing, "process_forest_loss_xarray") as m_proc, patch(
+        "spatialrisk.variables.LocalRasterVar"
+    ) as m_lrv:
+        m_lrv.return_value = MagicMock(name="forest_loss_var")
+        var = processing.make_forest_loss_var(project, start, end)
 
-    m.assert_called_once()
-    assert var.name == "forest_loss_2015_2020"
-    assert var.raster_type == RasterType.categorical
-    assert var.tags == ["deforestation", "forest_loss", "2015_2020"]
-    assert var.path == tmp_path / "forest_loss_2015_2020.tif"
+    out_path = tmp_path / "forest_loss_2015_2020.tif"
+    m_proc.assert_called_once_with(str(start.path), str(end.path), str(out_path))
+    m_lrv.assert_called_once()
+    kwargs = m_lrv.call_args.kwargs
+    assert kwargs["name"] == "forest_loss_2015_2020"
+    assert kwargs["raster_type"] == RasterType.categorical
+    assert kwargs["tags"] == ["deforestation", "forest_loss", "2015_2020"]
+    assert kwargs["path"] == out_path
+    assert kwargs["project"] is project  # 3-layer behavior preserved: real project passed
+    assert var is m_lrv.return_value
 
 
 def test_make_forest_loss_var_idempotent(tmp_path):
     project = _FakeProject(tmp_path)
     start = _Layer(2015, tmp_path / "forest_gfc_2015.tif")
     end = _Layer(2020, tmp_path / "forest_gfc_2020.tif")
-    (tmp_path / "forest_loss_2015_2020.tif").write_bytes(b"x")  # pretend it exists
+    (tmp_path / "forest_loss_2015_2020.tif").write_bytes(b"x")  # output already exists
 
-    with patch("spatialrisk.processing.process_forest_loss_xarray") as m:
-        make_forest_loss_var(project, start, end)
+    with patch.object(processing, "process_forest_loss_xarray") as m_proc, patch(
+        "spatialrisk.variables.LocalRasterVar"
+    ) as m_lrv:
+        m_lrv.return_value = MagicMock(name="forest_loss_var")
+        processing.make_forest_loss_var(project, start, end)
 
-    m.assert_not_called()  # output already exists -> skip the heavy write
+    m_proc.assert_not_called()  # existing output -> heavy step skipped
