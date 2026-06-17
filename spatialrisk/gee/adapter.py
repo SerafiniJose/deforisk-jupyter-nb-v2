@@ -67,3 +67,16 @@ class GEEAdapter:
             )
             return out_path
         return self._export_vector(obj, out_path, recipe.vector_selectors)
+
+    @staticmethod
+    def _export_vector(fc, out_path: str, selectors) -> str:
+        """Geemap-free vector export: getInfo -> GeoDataFrame.to_file."""
+        import geopandas as gpd
+
+        if selectors:
+            geojson = fc.select(list(selectors)).getInfo()
+        else:
+            geojson = fc.getInfo()
+        gdf = gpd.GeoDataFrame.from_features(geojson["features"])
+        gdf.to_file(out_path)
+        return out_path
