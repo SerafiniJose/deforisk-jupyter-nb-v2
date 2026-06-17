@@ -304,3 +304,29 @@ class ModelStore:
             model.formula = payload["formula"]
         if payload.get("samples_path") is not None:
             model.samples_path = payload["samples_path"]
+
+
+# ---------------------------------------------------------------------------
+# v1 persistence layer (ProjectDocument-based) — successor to the classes above.
+# Added alongside the legacy ProjectRepository/ModelStore, which stay until the
+# Project god object is retired.
+# ---------------------------------------------------------------------------
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class ProjectStorePort(Protocol):
+    """Port for persisting/retrieving a :class:`ProjectDocument`."""
+
+    def save(self, doc: "ProjectDocument") -> str: ...
+    def load(self, name: str) -> "ProjectDocument": ...
+    def list(self) -> List[str]: ...
+    def exists(self, name: str) -> bool: ...
+
+
+@runtime_checkable
+class EstimatorStorePort(Protocol):
+    """Port for persisting/retrieving a curated estimator pickle payload."""
+
+    def save(self, payload: dict, dest: str) -> str: ...
+    def load(self, ref: str) -> dict: ...
