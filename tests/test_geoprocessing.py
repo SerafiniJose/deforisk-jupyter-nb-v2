@@ -424,3 +424,15 @@ def test_handle_apply_post_processing_delegates_and_registers(tmp_path, monkeypa
     assert new_handle.source == "processed"
     assert new_handle.spec.name == "rivers_dist"
     assert session.get_variable("rivers_dist", source="processed") is not None
+
+
+def test_phase6_public_surface_is_complete():
+    """Codifies the Phase 6 public surface so a later refactor can't silently
+    drop a stateless seam."""
+    from spatialrisk import geoprocessing
+
+    expected = {"reproject_and_match", "rasterize_vector", "apply_post_processing"}
+    present = {
+        n for n in expected if callable(getattr(geoprocessing, n, None))
+    }
+    assert present == expected
