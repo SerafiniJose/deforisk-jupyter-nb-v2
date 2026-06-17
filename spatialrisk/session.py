@@ -7,6 +7,7 @@ the frozen ProjectDocument reached via snapshot().
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -79,6 +80,82 @@ class VariableHandle:
     @property
     def spec(self):
         return self._session._collection(self.source).get(self.key)
+
+
+@dataclass(frozen=True)
+class ResolvedFeature:
+    name: str
+    path: str
+    raster_type: Any
+    levels: Optional[list] = None
+
+
+@dataclass(frozen=True)
+class ResolvedTarget:
+    name: str
+    path: str
+    raster_type: Any
+
+
+@dataclass(frozen=True)
+class ResolvedDataset:
+    name: str
+    year: Optional[int]
+    target: Optional[ResolvedTarget]
+    features: tuple = field(default_factory=tuple)
+
+
+class DatasetHandle:
+    """Thin handle resolving a DatasetSpec's VarRefs into paths + raster_type + levels."""
+
+    def __init__(self, session: "ProjectSession", key: str):
+        self._session = session
+        self.key = key
+
+    @property
+    def spec(self):
+        return self._session._doc.datasets.get(self.key)
+
+    def _resolve_ref(self, ref):
+        return self._session.get_variable(ref.name, year=ref.year, source=ref.source)
+
+    def resolve(self) -> ResolvedDataset:
+        from spatialrisk.variables.models import RasterType
+        from spatialrisk.far_helpers import get_categorical_levels
+
+        spec = self.spec
+        # --- target (temporal/static year rules ported from Dataset.set_target) ---
+        target = None
+        if spec.target_ref is not None:
+            name, source = spec.target_ref.name, spec.target_ref.source
+            is_temporal = self._session.is_temporal(name, source=source)
+            if is_temporal and spec.target_ref.year is None:
+                years = self._session.get_variable_years(name, source=source)
+                raise ValueError(
+                    f"Target variable '{name}' is multitemporal. "
+                    f"You must specify a year. Available years: {years}"
+                )
+            tspec = self._resolve_ref(spec.target_ref)
+            if tspec is None:
+                raise ValueError(f"Target variable '{name}' not found.")
+            target = ResolvedTarget(name=name, path=tspec.path, raster_type=getattr(tspec, "raster_type", None))
+
+        # --- features: path + raster_type + lazy categorical levels ---
+        features = []
+        for ref in spec.feature_refs:
+            fspec = self._resolve_ref(ref)
+            if fspec is None:
+                # preserve "feature not found -> warn + skip"
+                import warnings
+                warnings.warn(f"Feature '{ref.name}' not found; skipping.", UserWarning, stacklevel=2)
+                continue
+            rtype = getattr(fspec, "raster_type", None)
+            levels = None
+            if rtype == RasterType.categorical:
+                levels = get_categorical_levels(fspec)   # reads fspec.path
+            features.append(ResolvedFeature(name=ref.name, path=fspec.path, raster_type=rtype, levels=levels))
+
+        return ResolvedDataset(name=spec.name, year=spec.year, target=target, features=tuple(features))
 
 
 class ProjectSession:
@@ -331,3 +408,8 @@ class ProjectSession:
         if ref is None:
             return None
         return self.get_variable_handle(ref.name, year=ref.year, source=ref.source)
+
+    def get_dataset_handle(self, key: str) -> Optional["DatasetHandle"]:
+        if key not in self._doc.datasets:
+            return None
+        return DatasetHandle(self, key)

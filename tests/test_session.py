@@ -355,3 +355,78 @@ def test_variable_handle_resolves_spec_and_base_ref_disambiguates_source():
     # a plain handle by (source, name)
     raw_handle = session.get_variable_handle("dem", source="raw")
     assert raw_handle.spec.path == "/raw/dem.tif"
+
+
+import numpy as np
+import rasterio
+from rasterio.transform import from_origin
+
+
+def _write_raster(path, arr, nodata=None):
+    arr = np.asarray(arr)
+    with rasterio.open(
+        path, "w", driver="GTiff", height=arr.shape[0], width=arr.shape[1],
+        count=1, dtype=arr.dtype, crs="EPSG:4326",
+        transform=from_origin(0, arr.shape[0], 1, 1),
+        nodata=nodata,
+    ) as dst:
+        dst.write(arr, 1)
+
+
+def test_dataset_handle_resolves_paths_rastertype_and_levels(tmp_path):
+    defor = tmp_path / "defor_2020.tif"
+    subj = tmp_path / "subj.tif"
+    dem = tmp_path / "dem.tif"
+    _write_raster(defor, np.array([[0, 1], [1, 0]], dtype="int16"))
+    _write_raster(subj, np.array([[1, 2], [3, 2]], dtype="int16"))   # categorical levels 1,2,3
+    _write_raster(dem, np.array([[10.0, 20.0], [30.0, 40.0]], dtype="float32"))
+
+    session = ProjectSession.from_document(_doc())
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="defor", year=2020, path=str(defor),
+        raster_type=RasterType.categorical,
+    ))
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="subj", path=str(subj),
+        raster_type=RasterType.categorical,
+    ))
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="dem", path=str(dem),
+        raster_type=RasterType.continuous,
+    ))
+
+    ds = DatasetSpec(
+        name="calib", year=2020,
+        target_ref=VariableId(source="raw", name="defor", year=2020),
+        feature_refs=(
+            VariableId(source="raw", name="dem"),
+            VariableId(source="raw", name="subj"),
+        ),
+    )
+    session.register_dataset(ds)
+
+    resolved = session.get_dataset_handle("calib").resolve()
+
+    assert resolved.target.path == str(defor)
+    feats = {f.name: f for f in resolved.features}
+    assert feats["dem"].raster_type == RasterType.continuous
+    assert feats["dem"].levels is None              # continuous -> no levels
+    assert feats["subj"].raster_type == RasterType.categorical
+    assert feats["subj"].levels == [1, 2, 3]        # read from the real raster
+
+
+def test_dataset_handle_temporal_target_requires_year(tmp_path):
+    session = ProjectSession.from_document(_doc())
+    for yr in (2015, 2020):
+        session.add_local_raster(LocalRasterSpec(
+            kind="local_raster", name="defor", year=yr,
+            path=str(tmp_path / f"defor_{yr}.tif"), raster_type=RasterType.categorical,
+        ))
+    # target_ref omits the year for a temporal target -> resolve must raise
+    ds = DatasetSpec(
+        name="bad",
+        target_ref=VariableId(source="raw", name="defor"),   # no year
+    )
+    session.register_dataset(ds)
+    with pytest.raises(ValueError, match="multitemporal"):
+        session.get_dataset_handle("bad").resolve()
