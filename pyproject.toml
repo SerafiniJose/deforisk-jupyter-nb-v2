@@ -54,40 +54,21 @@ dev = [
 testpaths = ["tests"]
 
 [tool.ruff]
-select = ["E", "F", "W", "I", "D", "RUF"]
 exclude = [".venv"]
-ignore = [
-    # Docstring style variants — pre-existing, not enforced
-    "D200", "D212",
-    # Missing docstrings — pre-existing throughout codebase, not enforced yet
-    "D100", "D101", "D102", "D103", "D104", "D105", "D107",
-    "D205", "D415",
-    # Line length — pre-existing throughout codebase
-    "E501",
-    # Pre-existing issues not introduced by Phase 9 — suppressed to reach green gate
-    "E402",   # module-level import not at top of file (lazy/conditional imports)
-    "E702",   # multiple statements on one line (semicolon)
-    "E741",   # ambiguous variable name
-    "F401",   # unused import (re-exports and pydantic forward refs use inline noqa)
-    "F841",   # local variable assigned but never used
-    "RUF001", # string contains ambiguous unicode character
-    "RUF002", # docstring contains ambiguous unicode character
-    "RUF003", # comment contains ambiguous unicode character
-    "RUF005", # collection literal concatenation
-    "RUF012", # mutable class attribute default
-    "RUF013", # implicit Optional
-    "RUF015", # prefer next(iter(...)) over single-element slice
-    "RUF022", # __all__ not sorted
-    "RUF059", # unused unpacked variable
-    "RUF100", # unused noqa directive (kept as intent documentation)
-]
 
-[tool.ruff.flake8-quotes]
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "D", "RUF"]
+# Original policy (restored): only the two docstring-style variants are ignored.
+# Pre-existing codebase-wide D (missing-docstring) / E501 (line-length) debt is
+# NOT masked here — it predates this refactor and is out of its scope.
+ignore = ["D200", "D212"]
+
+[tool.ruff.lint.flake8-quotes]
 docstring-quotes = "double"
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.ruff.per-file-ignores]
-"*/__init__.py" = ["F403"] # unable to detect undefined names | hide internal structure
-"setup.py" = ["D100"] # nothing to see there
+[tool.ruff.lint.per-file-ignores]
+"*/__init__.py" = ["F403"] # hide internal structure / re-exports
+"setup.py" = ["D100"]

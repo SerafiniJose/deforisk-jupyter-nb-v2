@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # Imported so Pydantic can resolve the "LocalVectorVar"/"LocalRasterVar" string
 # forward references in the field annotations below (ruff F401 is a false
 # positive -- the names are used by the annotation machinery, not directly).
-from spatialrisk.variables import LocalRasterVar, LocalVectorVar  # noqa: F401
+from spatialrisk.variables import LocalRasterVar, LocalVectorVar
 from spatialrisk.variables.models import DataType
 
 root_folder: Path = Path.cwd().parent
