@@ -599,6 +599,56 @@ class ProjectSession:
             vector_selectors=recipe.vector_selectors,
         )
 
+    def _resolve_target_path(self, dataset) -> str:
+        var = self.get_variable(dataset.target_ref)
+        return var.path
+
+    def _resolve_feature_paths(self, dataset) -> Dict[str, str]:
+        return {ref.name: self.get_variable(ref).path for ref in dataset.feature_refs}
+
+    def _resolve_feature_meta(self, dataset) -> tuple:
+        metas = []
+        for ref in dataset.feature_refs:
+            var = self.get_variable(ref)
+            rtype = getattr(var, "raster_type", None)
+            rtype_str = (
+                rtype.value if hasattr(rtype, "value")
+                else (rtype or "continuous")
+            )
+            levels = (
+                self._categorical_levels(var)
+                if rtype_str == "categorical"
+                else None
+            )
+            metas.append(
+                FeatureMeta(name=ref.name, raster_type=rtype_str, levels=levels)
+            )
+        return tuple(metas)
+
+    def fit_spec(self, model_key: str):
+        """Build a self-contained, picklable fit spec for ``model_key`` (§10).
+
+        GLM/RF -> SupervisedFitSpec; iCAR/JNR/MW handled in fit_spec extensions.
+        """
+        model = self._doc.models[model_key]
+        if model.model_type in ("glm", "rf"):
+            dataset = self._doc.datasets[model.dataset_name]
+            return SupervisedFitSpec(
+                model_key=model_key,
+                model_type=model.model_type,
+                target_path=ProjectSession._resolve_target_path(self, dataset),
+                feature_paths=ProjectSession._resolve_feature_paths(self, dataset),
+                feature_meta=ProjectSession._resolve_feature_meta(self, dataset),
+                formula=model.formula,
+                sampling=model.sampling or dataset.sampling,
+                output_sample_path=self._fit_sample_out_path(model_key),
+                parameters=dict(model.parameters),
+                estimator_pickle=getattr(model, "estimator_pickle", None),
+            )
+        raise NotImplementedError(
+            f"fit_spec does not yet handle model_type {model.model_type!r}"
+        )
+
     # ------------------------------------------------------------------ #
     # Orchestration (delegates to handles/collaborators; real geoprocessing
     # lands in Phase G — these wire ordering + iteration only)

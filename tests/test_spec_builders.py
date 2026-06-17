@@ -226,3 +226,92 @@ def test_mw_fit_spec_carries_win_sizes_and_time_interval():
     assert restored.win_sizes == (5, 11, 21)
     assert restored.time_interval == 5
     assert restored.forest_file.endswith("forest_2015.tif")
+
+
+from spatialrisk.document import GLMSpec, DatasetSpec, VariableId, LocalRasterSpec
+from spatialrisk.variables.models import RasterType
+from spatialrisk.sampling import Sampling
+
+
+def _local_raster(name, path, raster_type=RasterType.continuous):
+    return LocalRasterSpec(
+        kind="local_raster", name=name, path=path, raster_type=raster_type
+    )
+
+
+class _FitFakeSession:
+    """Stand-in exposing models/datasets registries + variable resolution."""
+
+    def __init__(self):
+        self.sampling = Sampling(strategy="random", n_samples=10000, seed=7)
+        self.glm = GLMSpec(
+            model_type="glm",
+            name="calibration",
+            project_name="p",
+            dataset_name="calibration_2020",
+            target_name="forest_loss_2020",
+            feature_names=("altitude", "pa"),
+            year=2020,
+            formula="I(fcc) ~ scale(altitude) + C(pa, levels=[0, 1])",
+            parameters={"solver": "lbfgs", "max_iter": 1000},
+            sampling=self.sampling,
+            samples_path=None,
+            trained=False,
+        )
+        self.dataset = DatasetSpec(
+            name="calibration_2020",
+            year=2020,
+            target_ref=VariableId(source="processed", name="forest_loss_2020", year=2020),
+            feature_refs=(
+                VariableId(source="processed", name="altitude"),
+                VariableId(source="processed", name="pa"),
+            ),
+            sampling=self.sampling,
+        )
+        self._vars = {
+            "forest_loss_2020": _local_raster(
+                "forest_loss_2020", "/data/proj/processed/forest_loss_2020.tif"
+            ),
+            "altitude": _local_raster("altitude", "/data/proj/processed/altitude.tif"),
+            "pa": _local_raster(
+                "pa", "/data/proj/processed/pa.tif", RasterType.categorical
+            ),
+        }
+        self._doc = type("Doc", (), {"models": {"glm_calibration": self.glm},
+                                     "datasets": {"calibration_2020": self.dataset}})()
+
+    def get_variable(self, ref, source=None):
+        name = ref.name if isinstance(ref, VariableId) else ref
+        return self._vars[name]
+
+    def _categorical_levels(self, var):
+        # avoid touching real rasters in the test
+        return (0, 1) if var.raster_type == RasterType.categorical else None
+
+    def _fit_sample_out_path(self, model_key):
+        return f"/data/proj/glm/samples_{model_key}.csv"
+
+
+def test_fit_spec_glm_is_self_contained():
+    from spatialrisk.session import ProjectSession, SupervisedFitSpec
+
+    sess = _FitFakeSession()
+    spec = ProjectSession.fit_spec(sess, "glm_calibration")
+
+    restored = _assert_picklable_pure(spec)
+    assert isinstance(restored, SupervisedFitSpec)
+    assert restored.model_type == "glm"
+    assert restored.target_path == "/data/proj/processed/forest_loss_2020.tif"
+    assert restored.feature_paths == {
+        "altitude": "/data/proj/processed/altitude.tif",
+        "pa": "/data/proj/processed/pa.tif",
+    }
+    # categorical metadata present for patsy formula generation in-worker
+    metas = {m.name: m for m in restored.feature_meta}
+    assert metas["pa"].raster_type == "categorical"
+    assert metas["pa"].levels == (0, 1)
+    assert metas["altitude"].raster_type == "continuous"
+    # sampling carried, not a pre-built CSV
+    assert restored.sampling.seed == 7
+    assert restored.output_sample_path.endswith("samples_glm_calibration.csv")
+    assert restored.formula.startswith("I(fcc)")
