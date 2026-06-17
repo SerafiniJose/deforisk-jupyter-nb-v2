@@ -159,7 +159,7 @@ class ProjectRepository:
             self._load_datasets(project, data["datasets"])
 
         # Reconstruct registered predictions
-        if "predictions" in data and data["predictions"]:
+        if data.get("predictions"):
             from spatialrisk.predictions.prediction import Prediction
 
             for key, pred_data in data["predictions"].items():

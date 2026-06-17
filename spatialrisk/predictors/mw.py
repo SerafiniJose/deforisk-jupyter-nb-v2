@@ -18,7 +18,7 @@ class MWPredictor:
         defrate_per_cat_fn: Optional[Callable] = None,
     ):
         if set_defor_cat_zero_fn is None or defrate_per_cat_fn is None:
-            from spatialrisk.rmj import set_defor_cat_zero, deforrate
+            from spatialrisk.rmj import deforrate, set_defor_cat_zero
 
             set_defor_cat_zero_fn = set_defor_cat_zero_fn or set_defor_cat_zero
             defrate_per_cat_fn = defrate_per_cat_fn or deforrate.defrate_per_cat

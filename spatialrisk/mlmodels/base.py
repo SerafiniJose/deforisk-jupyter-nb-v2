@@ -129,7 +129,7 @@ class BaseRiskModel(BaseModel):
             If provided, saves the full training DataFrame to this CSV path
             and sets self.samples_path.
 
-        Returns
+        Returns:
         -------
         df : pd.DataFrame
             Sampled training data from dataset.to_dataframe().
@@ -221,7 +221,7 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Folder for saving the model pickle.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -252,7 +252,7 @@ class BaseRiskModel(BaseModel):
             Value(s) in the mask raster that identify pixels to suppress.
             Defaults to 0. Ignored when ``mask`` is None.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written GeoTIFF.
@@ -432,7 +432,7 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Target folder. Falls back to the project model folder, then cwd.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written pickle file.

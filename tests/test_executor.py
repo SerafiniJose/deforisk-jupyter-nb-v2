@@ -35,13 +35,13 @@ def test_dataset_shim_to_dataframe(tmp_path):
 
 def test_executor_fit_glm_pickles_estimator_and_trains_spec(tmp_path):
     import numpy as np
-    from spatialrisk.session import ProjectSession
-    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
-    from spatialrisk.document import (
-        LocalRasterSpec, DatasetSpec, VariableId, GLMSpec)
-    from spatialrisk.variables.models import RasterType
-    from spatialrisk.sampling import Sampling
+
+    from spatialrisk.document import DatasetSpec, GLMSpec, LocalRasterSpec, VariableId
+    from spatialrisk.persistence import LocalFSEstimatorStore, LocalFSProjectStore
     from spatialrisk.predictors.executor import SessionExecutor
+    from spatialrisk.sampling import Sampling
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.variables.models import RasterType
 
     rng = np.random.default_rng(0)
     tgt = tmp_path / "defor.tif"; dem = tmp_path / "dem.tif"
@@ -84,12 +84,12 @@ def test_executor_fit_glm_pickles_estimator_and_trains_spec(tmp_path):
 def _glm_session(tmp_path):
     """Build a ProjectSession with a fittable GLM (defor ~ scale(dem))."""
     import numpy as np
-    from spatialrisk.session import ProjectSession
-    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
-    from spatialrisk.document import (
-        LocalRasterSpec, DatasetSpec, VariableId, GLMSpec)
-    from spatialrisk.variables.models import RasterType
+
+    from spatialrisk.document import DatasetSpec, GLMSpec, LocalRasterSpec, VariableId
+    from spatialrisk.persistence import LocalFSEstimatorStore, LocalFSProjectStore
     from spatialrisk.sampling import Sampling
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.variables.models import RasterType
 
     rng = np.random.default_rng(0)
     tgt = tmp_path / "defor.tif"; dem = tmp_path / "dem.tif"
@@ -136,9 +136,9 @@ def test_executor_apply_glm_writes_raster_and_registers(tmp_path):
 
 def _benchmark_session(tmp_path, name, with_forest=False):
     """Build a ProjectSession with defor + forest_edge (+ forest) rasters."""
+    from spatialrisk.document import DatasetSpec, LocalRasterSpec, VariableId
+    from spatialrisk.persistence import LocalFSEstimatorStore, LocalFSProjectStore
     from spatialrisk.session import ProjectSession
-    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
-    from spatialrisk.document import LocalRasterSpec, DatasetSpec, VariableId
     from spatialrisk.variables.models import RasterType
 
     defor = tmp_path / "defor.tif"
@@ -250,13 +250,13 @@ def _write_raster_m(path, arr, res=1000):
 
 def test_executor_fit_icar_captures_rho_and_pickles_estimator(tmp_path):
     import numpy as np
-    from spatialrisk.session import ProjectSession
-    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
-    from spatialrisk.document import (
-        LocalRasterSpec, DatasetSpec, VariableId, ICARSpec)
-    from spatialrisk.variables.models import RasterType
-    from spatialrisk.sampling import Sampling
+
+    from spatialrisk.document import DatasetSpec, ICARSpec, LocalRasterSpec, VariableId
+    from spatialrisk.persistence import LocalFSEstimatorStore, LocalFSProjectStore
     from spatialrisk.predictors.executor import SessionExecutor
+    from spatialrisk.sampling import Sampling
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.variables.models import RasterType
 
     # 60 x 60 grid of 1 km pixels -> cellneigh(csize=10 km) yields a 6 x 6
     # spatial-cell grid (36 cells), small enough for a fast MCMC fit.
@@ -304,9 +304,9 @@ def test_executor_fit_icar_captures_rho_and_pickles_estimator(tmp_path):
 
 def _benchmark_apply_session(tmp_path, name):
     """Session with defor + forest_2015 + forest_edge + subj rasters."""
+    from spatialrisk.document import DatasetSpec, LocalRasterSpec, VariableId
+    from spatialrisk.persistence import LocalFSEstimatorStore, LocalFSProjectStore
     from spatialrisk.session import ProjectSession
-    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
-    from spatialrisk.document import LocalRasterSpec, DatasetSpec, VariableId
     from spatialrisk.variables.models import RasterType
 
     rasters = {

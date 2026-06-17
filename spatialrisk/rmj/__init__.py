@@ -29,11 +29,10 @@ pre-migration results. ``deforrate`` is verified numerically identical to them o
 equivalent inputs. Reach them explicitly via ``rmj.legacy.<name>`` if needed.
 """
 
+from spatialrisk.rmj import deforrate, legacy
 from spatialrisk.rmj.compute_dist_bins import compute_dist_bins
-from spatialrisk.rmj.vulnerability_map import vulnerability_map
 from spatialrisk.rmj.set_defor_cat_zero import set_defor_cat_zero
-from spatialrisk.rmj import deforrate
-from spatialrisk.rmj import legacy
+from spatialrisk.rmj.vulnerability_map import vulnerability_map
 
 __all__ = [
     # current native core

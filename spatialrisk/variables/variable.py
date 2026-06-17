@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import List, Optional, Any, Dict
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from spatialrisk.variables.models import DataType
@@ -52,7 +53,6 @@ class Variable(BaseModel):
 
     @field_serializer("*", when_used="json", check_fields=False)
     def _serialize_paths(self, value):
-        from pathlib import Path
         return str(value) if isinstance(value, Path) else value
 
     def activate(self, auto_save: bool = True) -> "Variable":
@@ -67,12 +67,12 @@ class Variable(BaseModel):
         auto_save : bool, optional
             If True (default), automatically saves the project after activation.
 
-        Returns
+        Returns:
         -------
         Variable
             Returns self for method chaining.
 
-        Examples
+        Examples:
         --------
         >>> var.activate()
         >>> var.deactivate().activate()  # Toggle state
@@ -97,12 +97,12 @@ class Variable(BaseModel):
         auto_save : bool, optional
             If True (default), automatically saves the project after deactivation.
 
-        Returns
+        Returns:
         -------
         Variable
             Returns self for method chaining.
 
-        Examples
+        Examples:
         --------
         >>> var.deactivate()
         >>> var.deactivate(auto_save=False)  # Skip auto-save

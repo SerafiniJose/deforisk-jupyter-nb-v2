@@ -54,11 +54,11 @@ def remap_categorical_to_binary(
         belong to either list.  If ``None``, the original No‑Data value
         from *input_path* is preserved.
 
-    Returns
+    Returns:
     -------
     None
 
-    Raises
+    Raises:
     ------
     FileNotFoundError
         If *input_path* does not exist.

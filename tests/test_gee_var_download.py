@@ -1,8 +1,6 @@
 import sys
 from pathlib import Path
 
-import pytest
-
 
 def test_gee_var_vector_download_uses_helper_not_geemap(tmp_path, monkeypatch):
     """The vector download branch calls download_ee_vector, never importing geemap."""

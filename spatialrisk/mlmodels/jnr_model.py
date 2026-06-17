@@ -43,7 +43,7 @@ class JNRBenchmarkModel(BaseRiskModel):
     All raster processing logic lives there; this class manages datasets,
     Pydantic metadata, and project registration.
 
-    Attributes
+    Attributes:
     ----------
     blk_rows : int
         Number of raster rows per processing block (default: 128).
@@ -123,11 +123,11 @@ class JNRBenchmarkModel(BaseRiskModel):
         var_name : str
             Exact name to look for in ``dataset.features``.
 
-        Returns
+        Returns:
         -------
         Path
 
-        Raises
+        Raises:
         ------
         ValueError
             If the feature is not found, listing available names.
@@ -183,13 +183,13 @@ class JNRBenchmarkModel(BaseRiskModel):
             Root output folder.  Defaults to the project ``rmj_bm`` folder,
             then the current working directory.
 
-        Returns
+        Returns:
         -------
         self
         """
         import numpy as np
 
-        from spatialrisk.rmj import deforrate, compute_dist_bins
+        from spatialrisk.rmj import compute_dist_bins, deforrate
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -312,12 +312,12 @@ class JNRBenchmarkModel(BaseRiskModel):
             ``model.defrate_files.get("calibration")`` for validation or
             ``model.defrate_files.get("historical")`` for forecast.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written vulnerability GeoTIFF.
         """
-        from spatialrisk.rmj import vulnerability_map, deforrate
+        from spatialrisk.rmj import deforrate, vulnerability_map
 
         if not self.dist_bins:
             raise RuntimeError("Model has not been fitted. Call fit() first.")

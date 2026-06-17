@@ -1,4 +1,5 @@
 import inspect
+
 from spatialrisk.gee.catalogue import get_resolver
 
 

@@ -21,7 +21,6 @@ def _assert_picklable_pure(spec):
     restored = pickle.loads(blob)
     assert restored == spec
     # No module named `ee` may have been imported to (de)serialize the spec.
-    import sys
 
     text = blob  # bytes
     for banned in (b"ee.image", b"ee.Image", b"sklearn", b"RandomForest"):
@@ -102,8 +101,8 @@ def test_materialize_spec_builds_from_gee_var():
 
 
 def test_materialize_spec_rejects_non_gee_var():
-    from spatialrisk.session import ProjectSession
     from spatialrisk.document import LocalRasterSpec
+    from spatialrisk.session import ProjectSession
     from spatialrisk.variables.models import RasterType
 
     local = LocalRasterSpec(
@@ -118,8 +117,8 @@ def test_materialize_spec_rejects_non_gee_var():
 
 
 def test_supervised_fit_spec_is_self_contained_and_picklable():
-    from spatialrisk.session import SupervisedFitSpec, FeatureMeta
     from spatialrisk.sampling import Sampling
+    from spatialrisk.session import FeatureMeta, SupervisedFitSpec
 
     spec = SupervisedFitSpec(
         model_key="glm_calibration",
@@ -156,8 +155,8 @@ def test_supervised_fit_spec_is_self_contained_and_picklable():
 
 
 def test_icar_fit_spec_adds_target_raster_csize_rho_path():
-    from spatialrisk.session import ICARFitSpec, FeatureMeta
     from spatialrisk.sampling import Sampling
+    from spatialrisk.session import FeatureMeta, ICARFitSpec
 
     spec = ICARFitSpec(
         model_key="icar_calibration",
@@ -228,9 +227,9 @@ def test_mw_fit_spec_carries_win_sizes_and_time_interval():
     assert restored.forest_file.endswith("forest_2015.tif")
 
 
-from spatialrisk.document import GLMSpec, DatasetSpec, VariableId, LocalRasterSpec
-from spatialrisk.variables.models import RasterType
+from spatialrisk.document import DatasetSpec, GLMSpec, LocalRasterSpec, VariableId
 from spatialrisk.sampling import Sampling
+from spatialrisk.variables.models import RasterType
 
 
 def _local_raster(name, path, raster_type=RasterType.continuous):
@@ -418,7 +417,7 @@ class _FitFakeSessionMulti(_FitFakeSession):
 
 
 def test_fit_spec_icar_carries_spatial_inputs():
-    from spatialrisk.session import ProjectSession, ICARFitSpec
+    from spatialrisk.session import ICARFitSpec, ProjectSession
 
     sess = _FitFakeSessionMulti()
     spec = ProjectSession.fit_spec(sess, "icar_calibration")
@@ -431,7 +430,7 @@ def test_fit_spec_icar_carries_spatial_inputs():
 
 
 def test_fit_spec_jnr_carries_dist_params():
-    from spatialrisk.session import ProjectSession, JNRFitSpec
+    from spatialrisk.session import JNRFitSpec, ProjectSession
 
     sess = _FitFakeSessionMulti()
     object.__setattr__(sess.jnr, "dataset_name", "jnr_calibration_2020")
@@ -446,7 +445,7 @@ def test_fit_spec_jnr_carries_dist_params():
 
 
 def test_fit_spec_mw_carries_windows():
-    from spatialrisk.session import ProjectSession, MWFitSpec
+    from spatialrisk.session import MWFitSpec, ProjectSession
 
     sess = _FitFakeSessionMulti()
     object.__setattr__(sess.mw, "dataset_name", "jnr_calibration_2020")
@@ -604,7 +603,7 @@ def test_apply_spec_icar_carries_rho_path():
 
 
 def test_apply_spec_jnr_and_mw():
-    from spatialrisk.session import ProjectSession, JNRApplySpec, MWApplySpec
+    from spatialrisk.session import JNRApplySpec, MWApplySpec, ProjectSession
 
     sess = _ApplyFakeSession()
     jnr = ProjectSession.apply_spec(
@@ -629,12 +628,13 @@ def test_no_spec_holds_a_live_object():
     pickle or expose a non-(str/num/tuple/dict/Sampling/recipe) attribute.
     """
     import numbers
-    from spatialrisk.document import CatalogueRecipe, GEERecipe
+
+    from spatialrisk.document import CatalogueRecipe
     from spatialrisk.sampling import Sampling
     from spatialrisk.session import (
         MaterializeSpec,
-        SupervisedFitSpec,
         SupervisedApplySpec,
+        SupervisedFitSpec,
     )
 
     allowed = (str, bool, numbers.Number, type(None), Sampling)
@@ -694,10 +694,10 @@ def test_no_spec_holds_a_live_object():
 
 def test_categorical_levels_reads_via_far_helpers(monkeypatch):
     """_categorical_levels delegates to far_helpers.get_categorical_levels."""
-    from spatialrisk.session import ProjectSession
-    from spatialrisk.document import LocalRasterSpec
-    from spatialrisk.variables.models import RasterType
     import spatialrisk.far_helpers as fh
+    from spatialrisk.document import LocalRasterSpec
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.variables.models import RasterType
 
     captured = {}
 

@@ -20,7 +20,8 @@ class _Var:
 @dataclass
 class _DatasetShim:
     """Minimal dataset duck-type for BaseRiskModel._prepare_samples /
-    Dataset.to_dataframe — carries only resolved paths + sampling metadata."""
+    Dataset.to_dataframe — carries only resolved paths + sampling metadata.
+    """
     name: str
     year: Optional[int]
     target: _Var
@@ -67,7 +68,8 @@ class _BenchmarkShim:
 
 class _PredictionRegistrar:
     """Adapts both supervised (kwargs) and jnr/mw (positional path) register
-    conventions into session.register_prediction(PredictionSpec)."""
+    conventions into session.register_prediction(PredictionSpec).
+    """
     def __init__(self, session):
         self._session = session
 
@@ -116,8 +118,9 @@ class SessionExecutor:
     def _apply_supervised(self, session, spec, adapter):
         import pandas as pd
         from patsy import dmatrices
+
+        from spatialrisk.predictors.blocks import icar_block_fn, supervised_block_fn
         from spatialrisk.predictors.supervised import SupervisedPredictor
-        from spatialrisk.predictors.blocks import supervised_block_fn, icar_block_fn
 
         payload = session.estimator_store.load(spec.estimator_pickle)
         df = pd.read_csv(spec.design_sample_path).dropna()
@@ -191,9 +194,10 @@ class SessionExecutor:
 
     def _fit_supervised(self, session, model_key, spec):
         import os
+
+        from spatialrisk.document import GLMSpec, RFSpec
         from spatialrisk.mlmodels.glm_model import GLMModel
         from spatialrisk.mlmodels.rf_model import RFModel
-        from spatialrisk.document import GLMSpec, RFSpec
 
         cls = GLMModel if spec.model_type == "glm" else RFModel
         model = cls(name=model_key, sampling=spec.sampling,
@@ -276,8 +280,8 @@ class SessionExecutor:
 
     # ---- iCAR ---------------------------------------------------------
     def _fit_icar(self, session, model_key, spec):
-        from spatialrisk.mlmodels.icar_model import ICARModel
         from spatialrisk.document import ICARSpec
+        from spatialrisk.mlmodels.icar_model import ICARModel
 
         model = ICARModel(
             name=model_key, sampling=spec.sampling, formula=spec.formula,

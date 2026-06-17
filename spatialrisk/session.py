@@ -15,14 +15,14 @@ from box import Box
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from spatialrisk.document import (
-    ProjectDocument,
+    DatasetSpec,
+    GEERecipe,
+    GEESpec,
     LocalRasterSpec,
     LocalVectorSpec,
-    GEESpec,
-    VariableId,
-    DatasetSpec,
     PredictionSpec,
-    GEERecipe,
+    ProjectDocument,
+    VariableId,
 )
 from spatialrisk.sampling import Sampling
 
@@ -190,8 +190,8 @@ class DatasetHandle:
         return self._session.get_variable(ref.name, year=ref.year, source=ref.source)
 
     def resolve(self) -> ResolvedDataset:
-        from spatialrisk.variables.models import RasterType
         from spatialrisk.far_helpers import get_categorical_levels
+        from spatialrisk.variables.models import RasterType
 
         spec = self.spec
         # --- target (temporal/static year rules ported from Dataset.set_target) ---
@@ -407,8 +407,8 @@ class ProjectSession:
         if path is None:
             raise ValueError(f"base raster spec has no path: {spec!r}")
 
-        import rioxarray
         import odc.geo.xr  # noqa: F401  (registers the .odc accessor)
+        import rioxarray
 
         if not Path(path).exists():
             raise FileNotFoundError(f"Base raster file not found: {path}")
@@ -939,7 +939,8 @@ class ProjectSession:
 
     def rasterize_all(self, source: str = "raw", **kw):
         """Rasterize every active vector in `source` onto the base geobox,
-        then apply each vector's declared post-processing steps."""
+        then apply each vector's declared post-processing steps.
+        """
         # Disk-free guard; geobox resolved per-variable inside VariableHandle.rasterize.
         if self._doc.base_raster_ref is None:
             raise ValueError("No base raster set; call set_base_raster() first.")
@@ -954,7 +955,7 @@ class ProjectSession:
                 handle = handle.apply_post_processing(step)
 
     def process_all(self, source: str = "raw", **kw):
-        """materialize (GEE downloads first) -> reproject -> rasterize."""
+        """Materialize (GEE downloads first) -> reproject -> rasterize."""
         self.materialize_all(source=source, **kw)
         self.reproject_and_match_all(source=source, **kw)
         self.rasterize_all(source=source, **kw)

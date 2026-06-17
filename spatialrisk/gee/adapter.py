@@ -8,9 +8,14 @@ materializes it to a local file (``materialize``). Raster export reuses
 
 from typing import Optional, Union
 
-import ee  # noqa: F401  (module-level so tests can patch spatialrisk.gee.adapter.ee)
+import ee
 
-from spatialrisk.document import AssetRecipe, CatalogueRecipe, GEERecipe, GeoJSONGeometry
+from spatialrisk.document import (
+    AssetRecipe,
+    CatalogueRecipe,
+    GEERecipe,
+    GeoJSONGeometry,
+)
 from spatialrisk.gee.catalogue import get_resolver
 from spatialrisk.gee.ee_raster_export import download_ee_image
 

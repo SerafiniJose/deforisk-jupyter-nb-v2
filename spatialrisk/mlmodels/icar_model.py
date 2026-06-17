@@ -78,7 +78,7 @@ class ICARModel(BaseRiskModel):
     ``dataset.to_dataframe()``, which encodes the raster cell index and
     enables construction of the spatial neighbourhood graph.
 
-    Attributes
+    Attributes:
     ----------
     csize : float
         Cell size (km) for building the spatial neighbourhood (default: 10).
@@ -128,7 +128,7 @@ class ICARModel(BaseRiskModel):
             Folder for saving the model pickle and rho raster. Defaults to
             the project icar_model folder.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -248,7 +248,7 @@ class ICARModel(BaseRiskModel):
         return self
 
     def _check_apply_preconditions(self) -> None:
-        """iCAR requires the interpolated rho raster produced by fit()."""
+        """ICAR requires the interpolated rho raster produced by fit()."""
         if self.rho_path is None or not Path(self.rho_path).exists():
             raise RuntimeError(
                 "rho_path is not set or file not found. "
@@ -256,7 +256,7 @@ class ICARModel(BaseRiskModel):
             )
 
     def _predict_block(self, x_arr, valid_mask, window, block_bounds, n_rows, n_cols):
-        """iCAR prediction: logit(p) = X @ betas + rho (spatial random effect).
+        """ICAR prediction: logit(p) = X @ betas + rho (spatial random effect).
 
         Reads the interpolated rho raster for this block (bilinear-resampled
         onto the target grid) and adds it to the linear predictor.

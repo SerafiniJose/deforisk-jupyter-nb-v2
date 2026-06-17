@@ -1,12 +1,11 @@
 from pathlib import Path
 from typing import Literal
-import geopandas as gpd
 
-import rioxarray
 import fiona
-from shapely.geometry import shape
 import geopandas as gpd
+import rioxarray
 from odc.geo import xr
+from shapely.geometry import shape
 
 
 def calculate_utm_rioxarray(
@@ -24,12 +23,12 @@ def calculate_utm_rioxarray(
         How to return the CRS.  ``"str"`` returns an EPSG string (e.g.,
         ``EPSG:32633``); ``"int"`` returns the numeric EPSG code.
 
-    Returns
+    Returns:
     -------
     str | int | None
         The CRS representation or ``None`` if it could not be estimated.
 
-    Raises
+    Raises:
     ------
     FileNotFoundError
         If the file does not exist.
@@ -38,7 +37,7 @@ def calculate_utm_rioxarray(
     RuntimeError
         If rioxarray fails to open the raster.
 
-    Examples
+    Examples:
     --------
     >>> calculate_utm_rioxarray("sample.tif")
     'EPSG:32633'
@@ -193,12 +192,11 @@ def xr_reproject(
         A set of keyword arguments to ``rasterio.features.rasterize``.
         Can include: 'all_touched', 'merge_alg', 'dtype'.
 
-    Returns
+    Returns:
     -------
     da_rasterized : xarray.DataArray
         The rasterized vector data.
     """
-
     # Read the raster
     raster_array = rioxarray.open_rasterio(
         raster_path,

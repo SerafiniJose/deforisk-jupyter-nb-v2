@@ -3,11 +3,12 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import Field, field_validator
+
 from spatialrisk.processing import xr_rasterize
 from spatialrisk.utilities.file_helpers import copy_and_rename_file
-from spatialrisk.variables.models import DataType, RasterType, RasterizationMethod
-from spatialrisk.variables.variable import Variable
 from spatialrisk.variables.local_raster_var import LocalRasterVar
+from spatialrisk.variables.models import DataType, RasterizationMethod, RasterType
+from spatialrisk.variables.variable import Variable
 
 
 class LocalVectorVar(Variable):
@@ -47,12 +48,12 @@ class LocalVectorVar(Variable):
         auto_save : bool, optional
             If True (default), automatically saves the project after adding the variable.
 
-        Returns
+        Returns:
         -------
         LocalVectorVar
             Returns self for method chaining.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the variable is not associated with a project.
@@ -85,12 +86,12 @@ class LocalVectorVar(Variable):
         auto_save : bool, optional
             If True (default), automatically saves the project after adding the variable.
 
-        Returns
+        Returns:
         -------
         LocalVectorVar
             Returns self for method chaining.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the variable is not associated with a project.
@@ -134,7 +135,7 @@ class LocalVectorVar(Variable):
         **kwargs
             Additional keyword arguments to pass to xr_rasterize.
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             A new LocalRasterVar instance.

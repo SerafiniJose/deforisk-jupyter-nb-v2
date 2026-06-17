@@ -32,22 +32,21 @@ def get_fao_gaul_features(
     filter_attribute : str, optional
         The attribute name to use for filtering. Default is "iso3_code".
 
-    Returns
+    Returns:
     -------
     ee.FeatureCollection
         The selected FeatureCollection from the FAO GAUL 2024 dataset.
 
-    Raises
+    Raises:
     ------
     ValueError
         If level is not 0, 1, or 2, or if code is not provided.
 
-    Notes
+    Notes:
     -----
     The function assumes Earth Engine has already been initialized (`ee.Initialize()`)
     in your script or notebook.
     """
-
     # Validate inputs
     if level not in (0, 1, 2):
         raise ValueError("`level` must be 0, 1, or 2.")
@@ -87,12 +86,12 @@ def get_fao_gaul_subj(level: int, feature_collection: ee.FeatureCollection):
     feature_collection : ee.FeatureCollection
         A FeatureCollection used to filter the FAO GAUL dataset.
 
-    Returns
+    Returns:
     -------
     ee.FeatureCollection
         The selected FeatureCollection from the FAO GAUL 2024 dataset
 
-    Raises
+    Raises:
     ------
     ValueError
         If `level` is not 1 or 2.

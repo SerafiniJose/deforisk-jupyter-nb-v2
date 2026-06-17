@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
-from spatialrisk.sampling import Sampling, SamplingStrategy
+
 from spatialrisk.document import VariableId, VarRef
+from spatialrisk.sampling import Sampling, SamplingStrategy
 
 
 def test_sampling_is_frozen_and_json_safe():
@@ -86,10 +87,10 @@ def test_frozendict_validates_values_in_pydantic_field():
 
 
 # need BaseModel/ConfigDict in this test module
-from pydantic import BaseModel, ConfigDict
-from typing import Annotated, Union
-from pydantic import Field as PField, TypeAdapter
-from spatialrisk.document import CatalogueRecipe, AssetRecipe, GEERecipe
+
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+
+from spatialrisk.document import AssetRecipe, CatalogueRecipe, GEERecipe
 
 
 def test_catalogue_recipe_defaults_and_construction():
@@ -128,17 +129,18 @@ def test_catalogue_recipe_rejects_non_json_param():
 
 
 from pydantic import computed_field  # noqa: F401  (sanity that pydantic exports it)
+
 from spatialrisk.document import (
+    GEESpec,
     LocalRasterSpec,
     LocalVectorSpec,
-    GEESpec,
     VariableSpec,
 )
 from spatialrisk.variables.models import (
     DataType,
-    RasterType,
-    RasterizationMethod,
     PostProcessing,
+    RasterizationMethod,
+    RasterType,
 )
 
 
@@ -191,7 +193,6 @@ def test_local_raster_spec_post_processing_is_tuple_of_enum():
 
 
 from spatialrisk.document import DatasetSpec
-from spatialrisk.sampling import Sampling
 
 
 def test_dataset_spec_reference_only_and_roundtrip():
@@ -221,7 +222,12 @@ def test_dataset_spec_defaults_and_frozen():
 
 
 from spatialrisk.document import (
-    GLMSpec, RFSpec, ICARSpec, JNRSpec, MWSpec, ModelSpec,
+    GLMSpec,
+    ICARSpec,
+    JNRSpec,
+    ModelSpec,
+    MWSpec,
+    RFSpec,
 )
 
 

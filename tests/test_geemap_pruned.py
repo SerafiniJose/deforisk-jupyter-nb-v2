@@ -1,6 +1,7 @@
 # tests/test_geemap_pruned.py
 """geemap must be fully pruned: no import in source, not in pyproject, the
-package imports without geemap installed."""
+package imports without geemap installed.
+"""
 
 import importlib.util
 from pathlib import Path

@@ -11,7 +11,7 @@ from spatialrisk.mlmodels.base import BaseRiskModel
 class GLMModel(BaseRiskModel):
     """Logistic Regression risk model with Patsy formula support.
 
-    Attributes
+    Attributes:
     ----------
     solver : str
         sklearn LogisticRegression solver (default: "lbfgs").
@@ -41,7 +41,7 @@ class GLMModel(BaseRiskModel):
         folder : str or Path, optional
             Folder for saving the model pickle. Defaults to project model folder.
 
-        Returns
+        Returns:
         -------
         self
         """

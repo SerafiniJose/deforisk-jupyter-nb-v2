@@ -1,5 +1,6 @@
 """The predictors package must be importable WITHOUT touching the (currently
-broken) spatialrisk/__init__.py import chain."""
+broken) spatialrisk/__init__.py import chain.
+"""
 
 
 def test_predictors_package_imports_standalone():

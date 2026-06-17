@@ -35,6 +35,7 @@ def test_supervised_block_fn_uses_predict_proba_col1():
 
 def test_icar_block_fn_adds_rho_to_linear_predictor(tmp_path):
     import rasterio  # noqa: F401
+
     from spatialrisk.predictors.blocks import icar_block_fn
 
     pytest.importorskip("forestatrisk")

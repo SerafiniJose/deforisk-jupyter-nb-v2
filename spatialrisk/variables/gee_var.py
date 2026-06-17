@@ -1,18 +1,18 @@
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+from pydantic import Field, model_validator
+
 from spatialrisk.gee.ee_raster_export import download_ee_image, download_ee_vector
 from spatialrisk.variables.local_raster_var import LocalRasterVar
+from spatialrisk.variables.local_vector_var import LocalVectorVar
 from spatialrisk.variables.models import (
     DataType,
     PostProcessing,
-    RasterType,
     RasterizationMethod,
+    RasterType,
 )
-from pydantic import Field, model_validator
-
 from spatialrisk.variables.variable import Variable
-from spatialrisk.variables.local_vector_var import LocalVectorVar
 
 
 class GEEVar(Variable):
@@ -56,7 +56,7 @@ class GEEVar(Variable):
         overwrite : bool, optional
             Whether to overwrite existing files (default: False).
 
-        Returns
+        Returns:
         -------
         List[Path]
             List of paths to the downloaded files.
@@ -127,13 +127,13 @@ class GEEVar(Variable):
         overwrite : bool, optional
             Whether to overwrite existing files (default: False).
 
-        Returns
+        Returns:
         -------
         LocalVectorVar or List[LocalVectorVar]
             A LocalVectorVar instance if single image, or a list of LocalVectorVar instances
             if multiple images were downloaded.
 
-        Raises
+        Raises:
         ------
         ValueError
             If data_type is not 'vector'.
@@ -200,13 +200,13 @@ class GEEVar(Variable):
         **rasterize_kwargs
             Additional keyword arguments passed to LocalVectorVar.rasterize().
 
-        Returns
+        Returns:
         -------
         LocalRasterVar or List[LocalRasterVar]
             A LocalRasterVar instance if single image, or a list of LocalRasterVar instances
             if multiple images were downloaded.
 
-        Raises
+        Raises:
         ------
         ValueError
             If required parameters are missing based on data_type.

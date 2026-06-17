@@ -82,6 +82,7 @@ def test_notebook_no_set_aoi_from_variable():
 
 def test_notebook_recipe_params_match_resolvers():
     import inspect
+
     from spatialrisk.gee.catalogue import get_resolver
 
     code = _all_code()

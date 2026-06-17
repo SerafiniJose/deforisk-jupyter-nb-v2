@@ -1,9 +1,10 @@
 from typing import TYPE_CHECKING, List
+
 import numpy as np
-from osgeo import gdal
 import rasterio
 import rioxarray
 import xarray as xr
+from osgeo import gdal
 
 from spatialrisk.variables.models import RasterType
 
@@ -109,12 +110,11 @@ def xr_rasterize(
         A set of keyword arguments to ``rasterio.features.rasterize``.
         Can include: 'all_touched', 'merge_alg', 'dtype'.
 
-    Returns
+    Returns:
     -------
     da_rasterized : xarray.DataArray
         The rasterized vector data.
     """
-
     import geopandas as gpd
     import rasterio
     from odc.geo import xr
@@ -197,8 +197,8 @@ def distance_to_edge_gdal_no_mask(
     verbose=False,
 ):
     """Computes the shortest distance to given pixel values in a raster,
-    while preserving the original nodata mask in the output."""
-
+    while preserving the original nodata mask in the output.
+    """
     # Read input file
     src_ds = gdal.Open(input_file)
     srcband = src_ds.GetRasterBand(1)
@@ -266,7 +266,7 @@ def compute_forest_loss(forest_t1, forest_t2, nodata1, nodata2, where=np.where):
         ``numpy.where`` (default) for in-memory arrays, or ``xarray.where`` to
         preserve lazy/dask evaluation in the raster pipeline.
 
-    Returns
+    Returns:
     -------
     array-like of uint8
         The deforestation raster using the encoding above.
@@ -414,14 +414,15 @@ def get_forest_loss_calculated(
         List of exactly 3 forest raster layers, each with a year attribute.
         Years are automatically extracted from the layers.
 
-    Returns
+    Returns:
     -------
     List[LocalRasterVar]
         Three LocalRasterVar objects for the generated forest loss rasters
     """
     # Import here to avoid circular dependency
-    from spatialrisk.variables import LocalRasterVar
     from pathlib import Path
+
+    from spatialrisk.variables import LocalRasterVar
 
     # Validate input - must have exactly 3 layers
     if len(forest_layers) != 3:
@@ -515,15 +516,15 @@ def display_raster(
         Maximum dimension for display (default: 1024). Rasters larger than this
         will be downsampled for faster visualization.
 
-    Returns
+    Returns:
     -------
     tuple or None
         If return_fig=True, returns (fig, ax) tuple. Otherwise returns None.
     """
     import matplotlib.pyplot as plt
+    import numpy as np
     import rasterio
     from rasterio.enums import Resampling
-    import numpy as np
 
     # Open the raster file using rasterio
     with rasterio.open(path) as src:

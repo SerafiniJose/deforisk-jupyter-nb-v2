@@ -1,12 +1,14 @@
-from typing import Dict, List, Optional, Union, Any
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 from box import Box
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
 # Imported so Pydantic can resolve the "LocalVectorVar"/"LocalRasterVar" string
 # forward references in the field annotations below (ruff F401 is a false
 # positive -- the names are used by the annotation machinery, not directly).
-from spatialrisk.variables import LocalVectorVar, LocalRasterVar  # noqa: F401
+from spatialrisk.variables import LocalRasterVar, LocalVectorVar
 from spatialrisk.variables.models import DataType
 
 root_folder: Path = Path.cwd().parent
@@ -57,9 +59,9 @@ class Project(BaseModel):
     def _ensure_model_schemas() -> None:
         """Ensure Pydantic forward references between Project and variable models are resolved."""
         from spatialrisk.variables import (
-            LocalVectorVar,
-            LocalRasterVar,
             GEEVar,
+            LocalRasterVar,
+            LocalVectorVar,
         )
         from spatialrisk.variables.variable import Variable
 
@@ -154,7 +156,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         LocalVectorVar | LocalRasterVar | None
             The variable if found, None otherwise
@@ -185,7 +187,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         List[LocalVectorVar | LocalRasterVar]
             List of all variable instances with matching name
@@ -206,7 +208,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         bool
             True if variable has multiple years, False otherwise
@@ -226,7 +228,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         List[int]
             Sorted list of years for the variable
@@ -247,12 +249,12 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default), 'raw', or 'all'
 
-        Returns
+        Returns:
         -------
         List[int]
             Sorted list of all unique years found in variables
 
-        Examples
+        Examples:
         --------
         >>> project.get_available_years()  # All years from all variables
         [2015, 2020, 2024]
@@ -282,7 +284,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         List[str]
             Sorted list of unique variable names (e.g., ['altitude', 'towns', 'forest_gfc'])
@@ -422,7 +424,7 @@ class Project(BaseModel):
         filename : str, optional
             Custom filename for the project file. If None, uses '{project_name}_project.json'
 
-        Returns
+        Returns:
         -------
         Path
             Path to the saved JSON file
@@ -443,7 +445,7 @@ class Project(BaseModel):
         filename : str, optional
             Custom filename for the project file. If None, uses '{project_name}_project.json'
 
-        Returns
+        Returns:
         -------
         Project
             Loaded project instance with all variables
@@ -479,18 +481,18 @@ class Project(BaseModel):
         **reproject_kwargs
             Additional arguments passed to LocalRasterVar.reproject().
 
-        Returns
+        Returns:
         -------
         Dict[str, LocalRasterVar]
             Dictionary of reprojected variables {name: LocalRasterVar}.
 
-        Raises
+        Raises:
         ------
         ValueError
             If base_raster is not set when target_epsg or resolution is None.
             If source is not 'raw' or 'processed'.
 
-        Examples
+        Examples:
         --------
         >>> # Reproject all raw variables to base raster's CRS
         >>> project.reproject_all()
@@ -498,8 +500,6 @@ class Project(BaseModel):
         >>> # Reproject to specific CRS
         >>> project.reproject_all(target_epsg="EPSG:32618", resolution=30)
         """
-        from spatialrisk.variables import LocalRasterVar
-
         # Determine source collection
         if source == "raw":
             source_vars = self.raw_variables
@@ -565,18 +565,18 @@ class Project(BaseModel):
         **rasterize_kwargs
             Additional arguments passed to LocalVectorVar.rasterize().
 
-        Returns
+        Returns:
         -------
         Dict[str, LocalRasterVar]
             Dictionary of rasterized variables {name: LocalRasterVar}.
 
-        Raises
+        Raises:
         ------
         ValueError
             If base_raster is not set.
             If source is not 'raw' or 'processed'.
 
-        Examples
+        Examples:
         --------
         >>> # Set base raster first
         >>> dem.use_as_base_raster()
@@ -584,8 +584,6 @@ class Project(BaseModel):
         >>> # Rasterize all raw vector variables
         >>> project.rasterize_all()
         """
-        from spatialrisk.variables import LocalVectorVar
-
         # Check base raster is set
         if self.base_raster is None:
             raise ValueError(
@@ -649,7 +647,6 @@ class Project(BaseModel):
             strings/bytes) are treated as lists of acceptable values. Callables
             are invoked with the attribute value and must return True to keep it.
         """
-
         if source == "processed":
             candidates = self.processed_vars
         elif source == "raw":
@@ -712,12 +709,12 @@ class Project(BaseModel):
             **filters : keyword arguments
                 Additional filter criteria (same as list_variables).
 
-            Returns
+        Returns:
             -------
             Dict[str, Variable]
                 Dictionary of variables that match the tag criteria and any additional filters.
 
-            Examples
+        Examples:
             --------
             >>> # Get all variables with 'climate' tag
         >>> project.filter_by_tags('climate')
@@ -778,12 +775,12 @@ class Project(BaseModel):
             - Callable functions: year=lambda y: y >= 2015
             - Tags (special): tags=["tag1"] or tags="tag1" checks if ANY tag matches (OR logic)
 
-        Returns
+        Returns:
         -------
         Dict[str, Variable]
             Dictionary of variables that match all specified attribute criteria.
 
-        Examples
+        Examples:
         --------
         >>> # Filter by year
         >>> project.filter_by_attrs(year=2020)
@@ -810,7 +807,7 @@ class Project(BaseModel):
         >>> # Search in both raw and processed
         >>> project.filter_by_attrs(source='both', active=True)
 
-        Notes
+        Notes:
         -----
         - String and bytes values are compared for exact equality.
         - Iterable values (lists, tuples, sets) are treated as "value in list" checks.
@@ -891,17 +888,17 @@ class Project(BaseModel):
             If True (default), shows a warning message before clearing.
             Set to False to skip confirmation (useful in scripts).
 
-        Returns
+        Returns:
         -------
         int
             Number of variables removed.
 
-        Raises
+        Raises:
         ------
         ValueError
             If source is not 'processed', 'raw', or 'both'.
 
-        Examples
+        Examples:
         --------
         >>> # Reset processed variables (default)
         >>> project.reset()
@@ -915,7 +912,7 @@ class Project(BaseModel):
         >>> # Reset without confirmation (in automated scripts)
         >>> project.reset(confirm=False, auto_save=False)
 
-        Notes
+        Notes:
         -----
         This does NOT delete the actual files on disk, only removes the
         variable references from the project. Use with caution as this
@@ -1035,10 +1032,10 @@ class Project(BaseModel):
 # Rebuild Project model after Variable classes are imported to resolve forward references
 try:
     from spatialrisk.variables import (
-        Variable,
-        LocalVectorVar,
-        LocalRasterVar,
         GEEVar,
+        LocalRasterVar,
+        LocalVectorVar,
+        Variable,
     )
 
     # Rebuild Variable classes first to ensure they're fully defined

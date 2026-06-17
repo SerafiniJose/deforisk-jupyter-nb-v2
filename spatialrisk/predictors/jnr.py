@@ -18,7 +18,7 @@ class JNRPredictor:
         defrate_per_class_fn: Optional[Callable] = None,
     ):
         if vulnerability_map_fn is None or defrate_per_class_fn is None:
-            from spatialrisk.rmj import vulnerability_map, deforrate
+            from spatialrisk.rmj import deforrate, vulnerability_map
 
             vulnerability_map_fn = vulnerability_map_fn or vulnerability_map
             defrate_per_class_fn = defrate_per_class_fn or deforrate.defrate_per_class

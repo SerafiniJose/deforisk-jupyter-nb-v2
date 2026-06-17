@@ -32,8 +32,8 @@ def test_geoprocessing_does_not_import_project_or_ee():
 import numpy as np
 import pytest
 import rasterio
-from rasterio.transform import from_origin
 from odc.geo.geobox import GeoBox
+from rasterio.transform import from_origin
 
 from spatialrisk.document import LocalRasterSpec
 from spatialrisk.variables.models import RasterType
@@ -428,7 +428,8 @@ def test_handle_apply_post_processing_delegates_and_registers(tmp_path, monkeypa
 
 def test_phase6_public_surface_is_complete():
     """Codifies the Phase 6 public surface so a later refactor can't silently
-    drop a stateless seam."""
+    drop a stateless seam.
+    """
     from spatialrisk import geoprocessing
 
     expected = {"reproject_and_match", "rasterize_vector", "apply_post_processing"}

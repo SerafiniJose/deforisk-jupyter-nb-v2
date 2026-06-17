@@ -11,7 +11,7 @@ from spatialrisk.mlmodels.base import BaseRiskModel
 class RFModel(BaseRiskModel):
     """Random Forest risk model with Patsy formula support.
 
-    Attributes
+    Attributes:
     ----------
     n_trees : int
         Number of decision trees (default: 100).
@@ -44,7 +44,7 @@ class RFModel(BaseRiskModel):
         folder : str or Path, optional
             Folder for saving the model pickle. Defaults to project model folder.
 
-        Returns
+        Returns:
         -------
         self
         """

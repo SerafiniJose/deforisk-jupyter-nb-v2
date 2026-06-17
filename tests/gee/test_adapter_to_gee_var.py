@@ -15,7 +15,6 @@ def fake_ee(monkeypatch):
 
 
 def test_to_gee_var_vector_reads_file_and_builds_fc(fake_ee, monkeypatch, tmp_path):
-    from spatialrisk.gee import adapter as adapter_mod
     from spatialrisk.gee.adapter import GEEAdapter
 
     shp = tmp_path / "v.shp"

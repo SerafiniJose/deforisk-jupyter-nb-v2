@@ -1,7 +1,6 @@
 """Phase 2 — v1 persistence (ports + LocalFS adapters + v0->v1 migrator)."""
 
 import json
-import pickle
 from pathlib import Path
 
 import pytest
@@ -613,8 +612,12 @@ def test_golden_real_v0_fixture_migrates_and_re_saves_v1(tmp_path):
 
 def test_full_document_round_trip_all_registries(tmp_path):
     from spatialrisk.document import (
-        DatasetSpec, GLMSpec, LocalRasterSpec, PredictionSpec,
-        ProjectDocument, VariableId,
+        DatasetSpec,
+        GLMSpec,
+        LocalRasterSpec,
+        PredictionSpec,
+        ProjectDocument,
+        VariableId,
     )
     from spatialrisk.persistence import LocalFSProjectStore
     from spatialrisk.variables.models import RasterType

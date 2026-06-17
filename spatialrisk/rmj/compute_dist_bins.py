@@ -22,7 +22,7 @@ def compute_dist_bins(
     dist_thresh : float
         Distance threshold in metres (from ``dist_edge_threshold``).
 
-    Returns
+    Returns:
     -------
     list of float
         30 bin edges (29 classes + boundaries), increasing from

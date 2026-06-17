@@ -59,6 +59,7 @@ def _rescale_expected(proba_valid, valid_idx, n_pixels):
 
 def test_supervised_predictor_matches_rescaled_predict_block(tmp_path):
     import rasterio
+
     from spatialrisk.predictors.supervised import SupervisedPredictor
 
     pytest.importorskip("forestatrisk")
@@ -85,6 +86,7 @@ def test_supervised_predictor_matches_rescaled_predict_block(tmp_path):
 
 def test_supervised_predictor_feature_nodata_becomes_zero(tmp_path):
     import rasterio
+
     from spatialrisk.predictors.supervised import SupervisedPredictor
 
     pytest.importorskip("forestatrisk")
@@ -110,6 +112,7 @@ def test_supervised_predictor_feature_nodata_becomes_zero(tmp_path):
 
 def test_supervised_predictor_mask_suppresses_pixels(tmp_path):
     import rasterio
+
     from spatialrisk.predictors.supervised import SupervisedPredictor
 
     pytest.importorskip("forestatrisk")

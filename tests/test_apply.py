@@ -90,6 +90,7 @@ def _make_supervised_model(model_cls, tmp_path, x_vals, feature_nodata=None):
 @pytest.mark.parametrize("model_name", ["GLMModel", "RFModel"])
 def test_supervised_apply_writes_rescaled_predict_proba(tmp_path, model_name):
     import rasterio
+
     import spatialrisk.mlmodels as mlmodels
 
     pytest.importorskip("forestatrisk")
@@ -107,6 +108,7 @@ def test_supervised_apply_writes_rescaled_predict_proba(tmp_path, model_name):
 
 def test_glm_and_rf_apply_are_identical(tmp_path):
     import rasterio
+
     from spatialrisk.mlmodels import GLMModel, RFModel
 
     pytest.importorskip("forestatrisk")
@@ -125,6 +127,7 @@ def test_glm_and_rf_apply_are_identical(tmp_path):
 
 def test_apply_feature_nodata_becomes_zero(tmp_path):
     import rasterio
+
     from spatialrisk.mlmodels import RFModel
 
     pytest.importorskip("forestatrisk")
@@ -142,6 +145,7 @@ def test_apply_feature_nodata_becomes_zero(tmp_path):
 
 def test_apply_mask_suppresses_pixels(tmp_path):
     import rasterio
+
     from spatialrisk.mlmodels import RFModel
 
     pytest.importorskip("forestatrisk")
@@ -161,6 +165,7 @@ def test_apply_mask_suppresses_pixels(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_icar_apply_uses_logit_plus_rho(tmp_path):
     import rasterio
+
     from spatialrisk.mlmodels import ICARModel
 
     pytest.importorskip("forestatrisk")

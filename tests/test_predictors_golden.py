@@ -38,9 +38,10 @@ def _design_info(formula="y ~ x"):
 def _legacy_apply(target_path, feature_paths, design_info, predict_block_fn,
                   output_file, mask_path=None, mask_value=0):
     """Verbatim reproduction of base.py:300-360 (legacy reference kernel)."""
-    import rasterio
-    import forestatrisk as far
     from pathlib import Path
+
+    import forestatrisk as far
+    import rasterio
     from patsy.highlevel import build_design_matrices
 
     output_file = Path(output_file)
@@ -95,8 +96,9 @@ def _legacy_apply(target_path, feature_paths, design_info, predict_block_fn,
 
 def test_supervised_golden_matches_legacy(tmp_path):
     import rasterio
-    from spatialrisk.predictors.supervised import SupervisedPredictor
+
     from spatialrisk.predictors.blocks import supervised_block_fn
+    from spatialrisk.predictors.supervised import SupervisedPredictor
 
     pytest.importorskip("forestatrisk")
     x_vals = [0.2, 0.8, 1.5, 2.5]
@@ -117,8 +119,9 @@ def test_supervised_golden_matches_legacy(tmp_path):
 
 def test_icar_golden_matches_legacy(tmp_path):
     import rasterio
-    from spatialrisk.predictors.supervised import SupervisedPredictor
+
     from spatialrisk.predictors.blocks import icar_block_fn
+    from spatialrisk.predictors.supervised import SupervisedPredictor
 
     pytest.importorskip("forestatrisk")
     x_vals = [0.0, 1.0, 2.0, 3.0]

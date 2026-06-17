@@ -7,4 +7,4 @@ from spatialrisk.mlmodels.jnr_model import JNRBenchmarkModel
 from spatialrisk.mlmodels.mw_model import MWModel
 from spatialrisk.mlmodels.rf_model import RFModel
 
-__all__ = ["BaseRiskModel", "GLMModel", "RFModel", "ICARModel", "MWModel", "JNRBenchmarkModel"]
+__all__ = ["BaseRiskModel", "GLMModel", "ICARModel", "JNRBenchmarkModel", "MWModel", "RFModel"]

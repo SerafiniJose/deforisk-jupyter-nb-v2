@@ -1,6 +1,6 @@
-from pathlib import Path
 import os
 import shutil
+from pathlib import Path
 from typing import Union
 
 
@@ -40,6 +40,7 @@ def list_files_by_extension(folder_path, file_extensions, recursive=False):
     folder_path (str or Path): The path to the folder where you want to search for files.
     file_extensions (list of str): A list of file extensions to search for (e.g., ['.shp', '.tif']).
     recursive (bool): Whether to recursively search through subdirectories or not.
+
     Returns:
     list: A list of file paths with the specified extensions.
     """
@@ -96,7 +97,6 @@ def filter_file_os(input_files, filter_words, exclude_words=None):
     return filtered_files
 
 
-from pathlib import Path
 
 
 def filter_files(input_files, filter_words, exclude_words=None):
@@ -127,7 +127,6 @@ def filter_files(input_files, filter_words, exclude_words=None):
     return filtered_files
 
 
-from pathlib import Path
 
 
 def generate_output_filename_change(i1: Path, i2: Path, change_keyword: str) -> Path:

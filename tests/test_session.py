@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from spatialrisk.document import ProjectDocument
-from spatialrisk.session import ProjectSession, FolderResolver
+from spatialrisk.session import FolderResolver, ProjectSession
 
 
 def _doc(name="proj_d"):
@@ -42,6 +42,7 @@ def test_session_never_uses_model_copy_update_for_doc_state():
     # Regression guard (spec §13): Document state must go through validated
     # _replace, never model_copy(update=...), which skips validation.
     import inspect
+
     import spatialrisk.session as session_mod
 
     src = inspect.getsource(session_mod)
@@ -70,8 +71,13 @@ def test_replace_rejects_non_json_nested_value():
     assert session.doc_version == before_version
 
 
-from spatialrisk.document import LocalRasterSpec, LocalVectorSpec, GEESpec, CatalogueRecipe
-from spatialrisk.variables.models import RasterType, RasterizationMethod, DataType
+from spatialrisk.document import (
+    CatalogueRecipe,
+    GEESpec,
+    LocalRasterSpec,
+    LocalVectorSpec,
+)
+from spatialrisk.variables.models import DataType, RasterizationMethod, RasterType
 
 
 def test_add_local_raster_registers_under_storage_key_and_bumps_version():
@@ -113,7 +119,7 @@ def test_add_gee_variable_registers_in_raw():
     assert session.snapshot().raw_variables["altitude"].kind == "gee"
 
 
-from spatialrisk.document import VariableId, DatasetSpec, GLMSpec, PredictionSpec
+from spatialrisk.document import DatasetSpec, GLMSpec, PredictionSpec, VariableId
 
 
 def test_register_dataset_model_and_prediction():
@@ -477,8 +483,8 @@ def test_process_all_runs_materialize_then_reproject_then_rasterize(monkeypatch)
 
 
 def test_rasterize_all_iterates_vectors_only(tmp_path):
-    from spatialrisk.persistence import LocalFSProjectStore
     from spatialrisk import session as session_mod
+    from spatialrisk.persistence import LocalFSProjectStore
 
     store = LocalFSProjectStore(data_root=tmp_path)
     session = ProjectSession.from_document(_doc("ra"), store=store)
@@ -526,6 +532,7 @@ def test_materialize_all_iterates_gee_sources(monkeypatch):
 def test_session_module_imports_no_ee():
     # The Session module must NOT import `ee` (that lives only in GEEAdapter).
     import inspect
+
     import spatialrisk.session as session_mod
     src = inspect.getsource(session_mod)
     assert "import ee" not in src
@@ -629,8 +636,8 @@ def test_materialize_one_downloads_and_registers_raster(tmp_path):
 
 
 def test_reproject_and_match_all_iterates_rasters_only(tmp_path):
-    from spatialrisk.persistence import LocalFSProjectStore
     from spatialrisk import session as session_mod
+    from spatialrisk.persistence import LocalFSProjectStore
 
     store = LocalFSProjectStore(data_root=tmp_path)
     session = ProjectSession.from_document(_doc("rm"), store=store)
@@ -657,11 +664,10 @@ def test_reproject_and_match_all_iterates_rasters_only(tmp_path):
 
 def test_model_handle_fit_uses_default_executor(tmp_path):
     """A handle with no injected predictor delegates to the SessionExecutor."""
-    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
-    from spatialrisk.document import (
-        LocalRasterSpec, DatasetSpec, VariableId, GLMSpec)
-    from spatialrisk.variables.models import RasterType
+    from spatialrisk.document import DatasetSpec, GLMSpec, LocalRasterSpec, VariableId
+    from spatialrisk.persistence import LocalFSEstimatorStore, LocalFSProjectStore
     from spatialrisk.sampling import Sampling
+    from spatialrisk.variables.models import RasterType
 
     rng = np.random.default_rng(0)
     tgt = tmp_path / "defor.tif"; dem = tmp_path / "dem.tif"

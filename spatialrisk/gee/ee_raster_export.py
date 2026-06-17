@@ -137,7 +137,7 @@ def download_ee_vector(
         Property names to keep. When given, the collection is narrowed with
         ``.select(selectors)`` before fetching.
 
-    Returns
+    Returns:
     -------
     Path
         The written file path.

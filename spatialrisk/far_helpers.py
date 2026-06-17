@@ -15,12 +15,12 @@ def extract_variables(formula: str, mode: str = "predictors") -> set:
         - 'I': extract variables only inside I() expressions on the LHS
         - 'all': extract all variables from both sides
 
-    Returns
+    Returns:
     -------
     set
         A set of raw variable names (unique, untransformed).
 
-    Example
+    Example:
     -------
     >>> formula = "I(1-fcc) + trial ~ scale(altitude) + scale(dist_edge) + C(pa)"
     >>> extract_variables(formula)
@@ -87,10 +87,10 @@ def extract_variables(formula: str, mode: str = "predictors") -> set:
 
 
 import warnings
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from patsy import dmatrices
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from spatialrisk.dataset import Dataset
@@ -124,7 +124,7 @@ def get_categorical_levels(var) -> "list | None":
     var : LocalRasterVar
         Categorical variable exposing a ``.path`` attribute.
 
-    Returns
+    Returns:
     -------
     list or None
         Sorted list of unique levels, or ``None`` if the raster cannot be read
@@ -151,7 +151,7 @@ def get_categorical_levels(var) -> "list | None":
             return int(v) if float(v).is_integer() else v
 
         return sorted(_coerce(v) for v in values)
-    except Exception as exc:  # noqa: BLE001 — fall back to data-discovered levels
+    except Exception as exc:
         warnings.warn(
             f"Could not read categorical levels for '{getattr(var, 'name', var)}' "
             f"from {getattr(var, 'path', '?')}: {exc}. "
@@ -175,19 +175,19 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     dataset : Dataset
         Dataset instance with configured target and features
 
-    Returns
+    Returns:
     -------
     str
         Patsy formula string
 
-    Example
+    Example:
     -------
     >>> dataset.set_target('fcc', year=2020)
     >>> dataset.set_features(['altitude', 'pa', 'dist_edge'])
     >>> generate_patsy_formula(dataset)
     "I(fcc) + trial ~ scale(altitude) + scale(dist_edge) + C(pa, levels=[0, 1])"
 
-    Notes
+    Notes:
     -----
     Categorical terms declare their full level domain via ``levels=...``, read
     from each categorical raster with :func:`get_categorical_levels`. This
@@ -203,7 +203,7 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     dependent_variable = dataset.target.name
 
     # Print dataset configuration
-    print(f"\n📊 Generating Patsy formula:")
+    print("\n📊 Generating Patsy formula:")
     print(f"  Target: {dependent_variable}")
     print(f"  Features: {', '.join([f.name for f in dataset.features])}")
 

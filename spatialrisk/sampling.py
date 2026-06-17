@@ -5,10 +5,11 @@ Provides different sampling strategies for extracting pixel samples from rasters
 Handles random, stratified, and systematic sampling with reproducibility.
 """
 
-from typing import Optional, Tuple, Literal
 from enum import Enum
+from typing import Optional, Tuple
+
 import numpy as np
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SamplingStrategy(str, Enum):
@@ -26,7 +27,7 @@ class Sampling(BaseModel):
     Provides different sampling strategies for extracting pixel samples from rasters.
     Handles random, stratified, systematic, and legacy sampling with reproducibility.
 
-    Attributes
+    Attributes:
     ----------
     strategy : SamplingStrategy or str
         Sampling strategy: 'random', 'stratified', 'systematic', or 'legacy'
@@ -123,7 +124,7 @@ class Sampling(BaseModel):
         target_values : np.ndarray, optional
             Target variable values for stratified sampling
 
-        Returns
+        Returns:
         -------
         Tuple[np.ndarray, np.ndarray]
             Tuple of (sampled_row_indices, sampled_col_indices)
@@ -232,7 +233,7 @@ class Sampling(BaseModel):
             Target variable values aligned with ``valid_indices``.
             Expected values: 1 = deforested (event of interest), 0 = forest.
 
-        Returns
+        Returns:
         -------
         Tuple[np.ndarray, np.ndarray]
             (row_indices, col_indices) with deforested samples first.

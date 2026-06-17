@@ -8,7 +8,8 @@ against one source of truth. ``GEEAdapter`` is the only runtime caller.
 
 from typing import Any, Callable, Dict
 
-import ee  # noqa: F401  (module-level so tests can patch spatialrisk.gee.catalogue.ee)
+import ee
+
 from spatialrisk.gee.ee_fao_gaul import get_fao_gaul_features, get_fao_gaul_subj
 from spatialrisk.gee.ee_rasterize_unique_values import gee_rasterize_unique_values
 
