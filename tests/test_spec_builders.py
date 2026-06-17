@@ -688,7 +688,7 @@ def test_no_spec_holds_a_live_object():
         ),
     ]
     for s in specs:
-        for f in s.model_fields:
+        for f in type(s).model_fields:
             _walk(getattr(s, f))
 
 
