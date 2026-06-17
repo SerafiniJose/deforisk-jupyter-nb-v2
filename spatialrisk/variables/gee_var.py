@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
-from spatialrisk.gee.ee_raster_export import download_ee_image
+from spatialrisk.gee.ee_raster_export import download_ee_image, download_ee_vector
 from spatialrisk.variables.local_raster_var import LocalRasterVar
 from spatialrisk.variables.models import (
     DataType,
@@ -85,14 +85,10 @@ class GEEVar(Variable):
         if overwrite or not output_path.exists():
 
             if self.data_type == DataType.vector:
-                import geemap
-                geemap.ee_export_vector(
+                download_ee_vector(
                     self.gee_images[0],
                     output_path,
                     selectors=["gaul0_name", "iso3_code"],
-                    keep_zip=False,
-                    timeout=600,
-                    verbose=False,
                 )
 
             elif self.data_type == DataType.raster:
