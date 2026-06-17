@@ -34,6 +34,13 @@ class SupervisedPredictor:
         mask_path: Optional[Union[str, Path]],
         output_file: Union[str, Path],
         mask_value: Union[int, float, list, tuple] = 0,
+        register_prediction: Optional[Callable] = None,
+        model_key: Optional[str] = None,
+        dataset: Optional[object] = None,
+        year: Optional[int] = None,
+        model_year: Optional[int] = None,
+        model_snapshot: Optional[Dict[str, object]] = None,
+        window: Optional[int] = None,
     ) -> Path:
         """Write a uint16 probability raster and return its Path.
 
@@ -67,10 +74,12 @@ class SupervisedPredictor:
                 py = b // nblock_x
                 col_start, row_start = x_off[px], y_off[py]
                 n_cols, n_rows = nx[px], ny[py]
-                window = rasterio.windows.Window(
+                block_window = rasterio.windows.Window(
                     col_start, row_start, n_cols, n_rows
                 )
-                block_bounds = rasterio.windows.bounds(window, target_transform)
+                block_bounds = rasterio.windows.bounds(
+                    block_window, target_transform
+                )
 
                 mask_invalid = np.zeros(n_rows * n_cols, dtype=bool)
                 if mask_path is not None:
@@ -92,7 +101,7 @@ class SupervisedPredictor:
                 block_dict = {}
                 for name, path in feature_paths.items():
                     with rasterio.open(path) as src:
-                        arr = src.read(1, window=window).astype(float)
+                        arr = src.read(1, window=block_window).astype(float)
                         if src.nodata is not None:
                             arr[arr == src.nodata] = np.nan
                     block_dict[name] = arr.ravel()
@@ -110,12 +119,26 @@ class SupervisedPredictor:
                     )
                     x_arr = np.asarray(x_block)
                     proba = predict_block_fn(
-                        x_arr, valid_mask, window, block_bounds, n_rows, n_cols
+                        x_arr, valid_mask, block_window, block_bounds, n_rows, n_cols
                     )
                     out_arr[valid_mask] = far.misc.rescale(
                         np.asarray(proba, dtype=float)
                     ).astype(np.uint16)
 
-                dst.write(out_arr.reshape(n_rows, n_cols), 1, window=window)
+                dst.write(out_arr.reshape(n_rows, n_cols), 1, window=block_window)
+
+        if register_prediction is not None and model_key is not None:
+            from spatialrisk.predictors.registration import register_supervised
+
+            register_supervised(
+                register_prediction=register_prediction,
+                path=output_file,
+                model_key=model_key,
+                dataset=dataset,
+                year=year,
+                model_year=model_year,
+                window=window,
+                model_snapshot=model_snapshot or {},
+            )
 
         return output_file
