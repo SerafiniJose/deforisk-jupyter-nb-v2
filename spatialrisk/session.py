@@ -441,3 +441,31 @@ class ProjectSession:
         if key not in self._doc.models:
             return None
         return ModelHandle(self, key, predictor=predictor)
+
+    # ------------------------------------------------------------------ #
+    # Orchestration (delegates to handles/collaborators; real geoprocessing
+    # lands in Phase G — these wire ordering + iteration only)
+    # ------------------------------------------------------------------ #
+    def _materialize_one(self, key: str, spec, **kw):  # pragma: no cover - Phase G fills this in
+        raise NotImplementedError("materialize is wired in Phase E/G (GEEAdapter).")
+
+    def materialize_all(self, source: str = "raw", **kw):
+        """Materialize each un-materialized GEE source descriptor (runs FIRST)."""
+        for key, spec in dict(self._collection(source)).items():
+            if getattr(spec, "kind", None) != "gee":
+                continue
+            if getattr(spec, "materialized_key", None):
+                continue
+            self._materialize_one(key, spec, **kw)
+
+    def reproject_and_match_all(self, source: str = "raw", **kw):  # pragma: no cover - Phase G
+        raise NotImplementedError("reproject_and_match is wired in Phase G.")
+
+    def rasterize_all(self, source: str = "raw", **kw):  # pragma: no cover - Phase G
+        raise NotImplementedError("rasterize is wired in Phase G.")
+
+    def process_all(self, source: str = "raw", **kw):
+        """materialize (GEE downloads first) -> reproject -> rasterize."""
+        self.materialize_all(source=source, **kw)
+        self.reproject_and_match_all(source=source, **kw)
+        self.rasterize_all(source=source, **kw)

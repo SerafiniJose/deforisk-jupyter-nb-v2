@@ -460,3 +460,39 @@ def test_model_handle_delegates_fit_and_apply_to_predictor():
 
     assert handle.apply(out_path="/data/pred.tif", mask="/data/mask.tif") == "/data/pred.tif"
     assert calls["apply"] == ("glm_glm1", "/data/pred.tif", "/data/mask.tif")
+
+
+def test_process_all_runs_materialize_then_reproject_then_rasterize(monkeypatch):
+    session = ProjectSession.from_document(_doc("orch"))
+    order = []
+    monkeypatch.setattr(session, "materialize_all", lambda **kw: order.append("materialize"))
+    monkeypatch.setattr(session, "reproject_and_match_all", lambda **kw: order.append("reproject"))
+    monkeypatch.setattr(session, "rasterize_all", lambda **kw: order.append("rasterize"))
+
+    session.process_all(source="raw")
+    assert order == ["materialize", "reproject", "rasterize"]
+
+
+def test_materialize_all_iterates_gee_sources(monkeypatch):
+    session = ProjectSession.from_document(_doc("m"))
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="altitude", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(
+            source="catalogue", catalogue_key="altitude", export_kind="raster",
+        ),
+    ), key="altitude_src")
+    # an already-materialized GEE source must be skipped
+    session.add_gee_variable(GEESpec(
+        kind="gee", name="slope", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(
+            source="catalogue", catalogue_key="slope", export_kind="raster",
+        ),
+        materialized_key="slope_product",
+    ), key="slope_src")
+
+    seen = []
+    session._materialize_one = lambda key, spec, **kw: seen.append(key)
+    session.materialize_all(source="raw")
+    assert seen == ["altitude_src"]   # slope_src skipped (already materialized)
