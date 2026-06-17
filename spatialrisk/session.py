@@ -14,6 +14,8 @@ from spatialrisk.document import (
     LocalVectorSpec,
     GEESpec,
     VariableId,
+    DatasetSpec,
+    PredictionSpec,
 )
 
 
@@ -106,3 +108,25 @@ class ProjectSession:
 
     def set_base_raster(self, ref: VariableId) -> ProjectDocument:
         return self._replace(base_raster_ref=ref.model_dump())
+
+    # ------------------------------------------------------------------ #
+    # Registry mutators (dataset / model / prediction)
+    # ------------------------------------------------------------------ #
+    def register_dataset(self, spec: DatasetSpec, key: Optional[str] = None) -> ProjectDocument:
+        new = dict(self._doc.datasets)
+        new[key or spec.name] = spec
+        return self._replace(datasets=new)
+
+    def register_model(self, spec, key: Optional[str] = None) -> ProjectDocument:
+        storage_key = key or (
+            f"{spec.model_type}_{spec.name}" if spec.name else spec.model_type
+        )
+        new = dict(self._doc.models)
+        new[storage_key] = spec
+        return self._replace(models=new)
+
+    def register_prediction(self, spec: PredictionSpec, key: Optional[str] = None) -> ProjectDocument:
+        storage_key = key or (spec.name or f"{spec.model_key}_{spec.year}")
+        new = dict(self._doc.predictions)
+        new[storage_key] = spec
+        return self._replace(predictions=new)

@@ -111,7 +111,37 @@ def test_add_gee_variable_registers_in_raw():
     assert session.snapshot().raw_variables["altitude"].kind == "gee"
 
 
-from spatialrisk.document import VariableId
+from spatialrisk.document import VariableId, DatasetSpec, GLMSpec, PredictionSpec
+
+
+def test_register_dataset_model_and_prediction():
+    session = ProjectSession.from_document(_doc())
+
+    ds = DatasetSpec(
+        name="calib",
+        target_ref=VariableId(source="processed", name="defor", year=2020),
+        feature_refs=(VariableId(source="processed", name="dem"),),
+    )
+    session.register_dataset(ds)
+    assert "calib" in session.snapshot().datasets
+
+    model = GLMSpec(
+        name="glm1", model_type="glm", project_name="proj_d",
+        dataset_name="calib", target_name="defor", feature_names=("dem",),
+        year=2020, formula="defor ~ scale(dem)", parameters={},
+        sampling=None, samples_path=None, trained=False, trained_at=None,
+        n_samples=None, deviance=None, estimator_pickle=None,
+    )
+    session.register_model(model, key="glm_glm1")
+    assert "glm_glm1" in session.snapshot().models
+
+    pred = PredictionSpec(
+        path="/data/pred_2020.tif", model_key="glm_glm1", dataset_name="calib",
+        year=2020,
+    )
+    session.register_prediction(pred, key="glm_glm1_2020")
+    assert "glm_glm1_2020" in session.snapshot().predictions
+    assert session.snapshot().predictions["glm_glm1_2020"].path == "/data/pred_2020.tif"
 
 
 def test_set_aoi_stores_geojson_and_bumps_version():
