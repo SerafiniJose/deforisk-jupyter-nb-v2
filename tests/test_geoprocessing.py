@@ -106,3 +106,89 @@ def test_reproject_and_match_auto_resampling_by_raster_type(tmp_path, monkeypatc
         spec, geobox=geobox, out_path=str(tmp_path / "o.tif"),
     )
     assert captured["resampling"] == "nearest"
+
+
+from spatialrisk.document import LocalVectorSpec
+from spatialrisk.variables.models import RasterizationMethod
+
+
+def test_rasterize_vector_to_base_grid(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    from spatialrisk import geoprocessing
+
+    # A small polygon covering the lower-left quadrant of a 2x2 grid.
+    shp = tmp_path / "poly.shp"
+    gpd.GeoDataFrame(
+        {"id": [1]}, geometry=[box(0, 0, 1, 1)], crs="EPSG:4326"
+    ).to_file(shp)
+
+    base_geobox = GeoBox.from_bbox((0, 0, 2, 2), crs="EPSG:4326", resolution=1)
+
+    in_spec = LocalVectorSpec(
+        name="towns", year=2020, path=str(shp),
+        rasterization_method=RasterizationMethod.binary,
+    )
+    out_path = tmp_path / "towns.tif"
+
+    out_spec = geoprocessing.rasterize_vector(
+        in_spec, base_geobox=base_geobox, out_path=str(out_path),
+    )
+
+    assert isinstance(out_spec, LocalRasterSpec)
+    assert out_spec.path == str(out_path)
+    assert out_spec.raster_type == RasterType.continuous  # binary -> continuous
+    assert "rasterized" in out_spec.processing_history
+    assert out_spec.year == 2020
+
+    with rasterio.open(out_path) as r:
+        assert (r.height, r.width) == base_geobox.shape == (2, 2)
+        data = r.read(1)
+    # exactly one cell (the covered quadrant) is burned to 1
+    assert data.sum() == 1
+
+
+def test_rasterize_vector_unique_yields_categorical(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    from spatialrisk import geoprocessing
+
+    shp = tmp_path / "poly2.shp"
+    gpd.GeoDataFrame(
+        {"id": [1, 2]}, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:4326"
+    ).to_file(shp)
+    base_geobox = GeoBox.from_bbox((0, 0, 2, 2), crs="EPSG:4326", resolution=1)
+
+    # The spec carries a valid (required) method; the `unique` OVERRIDE arg wins.
+    spec = LocalVectorSpec(name="subj", path=str(shp), rasterization_method=RasterizationMethod.binary)
+    out_spec = geoprocessing.rasterize_vector(
+        spec, base_geobox=base_geobox, out_path=str(tmp_path / "subj.tif"),
+        rasterization_method=RasterizationMethod.unique,
+    )
+    assert out_spec.raster_type == RasterType.categorical
+
+
+def test_rasterize_vector_requires_a_method(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    from spatialrisk import geoprocessing
+
+    shp = tmp_path / "poly3.shp"
+    gpd.GeoDataFrame(
+        {"id": [1]}, geometry=[box(0, 0, 1, 1)], crs="EPSG:4326"
+    ).to_file(shp)
+    base_geobox = GeoBox.from_bbox((0, 0, 2, 2), crs="EPSG:4326", resolution=1)
+
+    # rasterization_method is REQUIRED on a valid LocalVectorSpec, so the only way
+    # _method is None is a validation-bypassing model_construct. The guard must
+    # still raise rather than silently producing a bad raster.
+    spec = LocalVectorSpec.model_construct(
+        kind="local_vector", name="x", path=str(shp), rasterization_method=None
+    )
+    with pytest.raises(ValueError, match="rasterization_method"):
+        geoprocessing.rasterize_vector(
+            spec, base_geobox=base_geobox, out_path=str(tmp_path / "x.tif"),
+        )

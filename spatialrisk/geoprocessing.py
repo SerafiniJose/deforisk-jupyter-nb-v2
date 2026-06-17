@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from spatialrisk.document import LocalRasterSpec
 from spatialrisk.geo_utils import xr_reproject
+from spatialrisk.processing import xr_rasterize
 from spatialrisk.variables.models import PostProcessing, RasterizationMethod, RasterType
 
 
@@ -64,8 +65,56 @@ def reproject_and_match(
     )
 
 
-def rasterize_vector(*args, **kwargs):  # implemented in F3
-    raise NotImplementedError
+def rasterize_vector(
+    in_spec: "LocalVectorSpec",
+    base_geobox,
+    out_path: str,
+    rasterization_method: "RasterizationMethod | None" = None,
+    **kwargs,
+) -> "LocalRasterSpec":
+    """Rasterize ``in_spec``'s vector onto ``base_geobox``, writing to ``out_path``.
+
+    Stateless replacement for ``LocalVectorVar.rasterize``: the geobox is passed
+    in explicitly (no ``base.get_base_geobox()`` reach-through), the output path
+    is explicit, and a new ``LocalRasterSpec`` is returned. The mode mapping and
+    the ``xr_rasterize`` call are verbatim from the old method.
+    """
+    _method = rasterization_method or in_spec.rasterization_method
+    if _method is None:
+        raise ValueError(
+            "rasterization_method must be provided either as an argument or set "
+            "on the LocalVectorSpec"
+        )
+
+    mode_mapping = {
+        RasterizationMethod.binary: "binary",
+        RasterizationMethod.unique: "unique",
+    }
+    mode = mode_mapping.get(_method, "binary")
+
+    xr_rasterize(
+        shapefile_path=str(in_spec.path),
+        geobox=base_geobox,
+        output_path=str(out_path),
+        mode=mode,
+        **kwargs,
+    )
+
+    raster_type = (
+        RasterType.categorical if mode == "unique" else RasterType.continuous
+    )
+
+    return LocalRasterSpec(
+        name=in_spec.name,
+        year=in_spec.year,
+        active=in_spec.active,
+        tags=in_spec.tags,
+        path=str(out_path),
+        raster_type=raster_type,
+        default_crs=in_spec.default_crs,
+        processing_history=("rasterized",),
+        derived_from=in_spec.name,
+    )
 
 
 def apply_post_processing(*args, **kwargs):  # implemented in F4
