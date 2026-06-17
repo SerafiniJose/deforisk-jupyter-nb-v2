@@ -72,3 +72,9 @@ def test_notebook_imports_ee_for_auth():
     # auth cells remain (live-EE; documented credential limitation)
     assert "ee.Authenticate()" in code
     assert "ee.Initialize(" in code
+
+
+def test_notebook_no_set_aoi_from_variable():
+    code = _all_code()
+    assert "set_aoi_from_variable" not in code
+    assert "session.set_aoi(" in code
