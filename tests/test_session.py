@@ -430,3 +430,33 @@ def test_dataset_handle_temporal_target_requires_year(tmp_path):
     session.register_dataset(ds)
     with pytest.raises(ValueError, match="multitemporal"):
         session.get_dataset_handle("bad").resolve()
+
+
+def test_model_handle_delegates_fit_and_apply_to_predictor():
+    session = ProjectSession.from_document(_doc("mh"))
+    session.register_model(GLMSpec(
+        name="glm1", model_type="glm", project_name="mh",
+        dataset_name="calib", target_name="defor", feature_names=("dem",),
+        year=2020, formula="defor ~ scale(dem)", parameters={},
+        sampling=None, samples_path=None, trained=False, trained_at=None,
+        n_samples=None, deviance=None, estimator_pickle=None,
+    ), key="glm_glm1")
+
+    calls = {}
+
+    class FakePredictor:
+        def fit(self, session, model_key, **kw):
+            calls["fit"] = (model_key, kw)
+            return "FITTED"
+        def apply(self, session, model_key, out_path, mask=None, **kw):
+            calls["apply"] = (model_key, out_path, mask)
+            return out_path
+
+    handle = session.get_model_handle("glm_glm1", predictor=FakePredictor())
+    assert handle.spec.model_type == "glm"
+
+    assert handle.fit(foo=1) == "FITTED"
+    assert calls["fit"] == ("glm_glm1", {"foo": 1})
+
+    assert handle.apply(out_path="/data/pred.tif", mask="/data/mask.tif") == "/data/pred.tif"
+    assert calls["apply"] == ("glm_glm1", "/data/pred.tif", "/data/mask.tif")

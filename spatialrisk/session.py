@@ -158,6 +158,29 @@ class DatasetHandle:
         return ResolvedDataset(name=spec.name, year=spec.year, target=target, features=tuple(features))
 
 
+class ModelHandle:
+    """Thin handle delegating fit/apply to a predictor collaborator (Phase E)."""
+
+    def __init__(self, session: "ProjectSession", key: str, predictor: Any = None):
+        self._session = session
+        self.key = key
+        self._predictor = predictor
+
+    @property
+    def spec(self):
+        return self._session._doc.models.get(self.key)
+
+    def fit(self, **kw):
+        if self._predictor is None:
+            raise ValueError("No predictor injected for ModelHandle.fit().")
+        return self._predictor.fit(self._session, self.key, **kw)
+
+    def apply(self, out_path: str, mask: Optional[str] = None, **kw):
+        if self._predictor is None:
+            raise ValueError("No predictor injected for ModelHandle.apply().")
+        return self._predictor.apply(self._session, self.key, out_path, mask=mask, **kw)
+
+
 class ProjectSession:
     """Ergonomic, mutable-feeling wrapper over an immutable ProjectDocument.
 
@@ -413,3 +436,8 @@ class ProjectSession:
         if key not in self._doc.datasets:
             return None
         return DatasetHandle(self, key)
+
+    def get_model_handle(self, key: str, predictor: Any = None) -> Optional["ModelHandle"]:
+        if key not in self._doc.models:
+            return None
+        return ModelHandle(self, key, predictor=predictor)
