@@ -100,3 +100,32 @@ def _roads(aoi_ee):
         .clip(aoi_ee)
         .toByte()
     )
+
+
+# ---------------------------------------------------------------------------
+# Forest resolvers (temporal)
+# ---------------------------------------------------------------------------
+
+
+@register("forest_gfc")
+def _forest_gfc(aoi_ee, year, tree_cover_threshold=10):
+    """Hansen Global Forest Change -- forest cover at a given year."""
+    gfc = ee.Image("UMD/hansen/global_forest_change_2024_v1_12").clip(aoi_ee)
+    forest2000 = gfc.select("treecover2000")
+    forest2000_thr = (
+        ee.Image(0).where(forest2000.gte(tree_cover_threshold), 1).clip(aoi_ee)
+    )
+    loss = gfc.select("lossyear")
+    return forest2000_thr.where(loss.lt(year - 2000), 0).rename("B1")
+
+
+@register("forest_tmf")
+def _forest_tmf(aoi_ee, year):
+    """JRC TMF AnnualChanges -- forest mask from the Dec{year-1} band."""
+    tmf = (
+        ee.ImageCollection("projects/JRC/TMF/v1_2024/AnnualChanges")
+        .filterBounds(aoi_ee)
+        .mosaic()
+    )
+    band = tmf.select("Dec" + str(year - 1))
+    return band.where(band.eq(2), 1).where(band.neq(1), 0).rename("B1")
