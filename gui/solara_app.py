@@ -392,7 +392,6 @@ def WorkflowTabs(map_, gee_interface):
         with rv.TabItem():
             VariablesTile(
                 project=app_state.project,
-                processing=app_state.processing,
                 process_error=app_state.process_error,
                 map_=map_,
             )

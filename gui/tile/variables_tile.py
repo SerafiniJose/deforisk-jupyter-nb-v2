@@ -188,12 +188,11 @@ def _drop_from_map(key: str, map_):
 
 
 @solara.component
-def VariablesTile(project, processing, process_error, map_=None):
+def VariablesTile(project, process_error, map_=None):
     """Variables step: add, inspect, and process variables.
 
     Args:
         project: Reactive holding the current Project (or None).
-        processing: Reactive bool — True while batch processing is running.
         process_error: Reactive str | None — error from last processing action.
         map_: SepalMap instance used by the per-variable "show on map" toggle.
     """
@@ -266,6 +265,10 @@ def VariablesTile(project, processing, process_error, map_=None):
             old_var = p.raw_variables.pop(old_key, None)
             if old_var and p.base_raster and p.base_raster.name == old_var.name:
                 p.base_raster = None
+                process_error.set(
+                    f"Base raster was reset because its source layer '{old_var.name}' "
+                    "changed — re-set it in Step 3 — Process."
+                )
             # The key may change on edit — drop the stale layer so it doesn't linger.
             _drop_from_map(old_key, map_)
             var = _build_variable(new_entry, p)
@@ -284,6 +287,10 @@ def VariablesTile(project, processing, process_error, map_=None):
         removed = p.raw_variables.pop(key, None)
         if removed and p.base_raster and p.base_raster.name == removed.name:
             p.base_raster = None
+            process_error.set(
+                f"Base raster was reset because its source layer '{removed.name}' "
+                "was removed — re-set it in Step 3 — Process."
+            )
         _drop_from_map(key, map_)
         project.set(p.model_copy())
 

@@ -37,6 +37,7 @@ def test_materialize_replaces_raster_geevar(monkeypatch):
 
     assert "altitude" in done
     assert p.raw_variables["altitude"] is local
+    local.add_as_raw.assert_called_once_with(auto_save=False)
 
 
 def test_materialize_skips_non_geevar():

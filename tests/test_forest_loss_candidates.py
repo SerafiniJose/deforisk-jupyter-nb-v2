@@ -48,3 +48,16 @@ def test_add_spec_appends_unique():
     # second identical add is a no-op
     add_forest_loss_spec(p, "forest_gfc", 2015, 2020)
     assert len(p.forest_loss_specs) == 1
+
+
+def test_candidates_excludes_vectors():
+    p = _Proj()
+    p.raw_variables = {
+        "forest_gfc_2015": _Var("forest_gfc", 2015),
+        "forest_gfc_2020": _Var("forest_gfc", 2020),
+        "rivers_2015": _Var("rivers", 2015, data_type=DataType.vector),
+        "rivers_2020": _Var("rivers", 2020, data_type=DataType.vector),
+    }
+    cands = forest_loss_candidates(p)
+    assert "rivers" not in cands
+    assert cands == {"forest_gfc": [2015, 2020]}
