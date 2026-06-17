@@ -108,6 +108,12 @@ class ProjectRepository:
                     "feature_names": [f.name for f in dataset.features],
                 }
 
+        # Serialize registered predictions
+        if project.predictions:
+            data["predictions"] = {}
+            for key, prediction in project.predictions.items():
+                data["predictions"][key] = prediction.model_dump(mode="json")
+
         save_path.write_text(
             json.dumps(data, indent=4, ensure_ascii=False, default=str),
             encoding="utf-8",
@@ -151,6 +157,18 @@ class ProjectRepository:
 
         if data.get("datasets"):
             self._load_datasets(project, data["datasets"])
+
+        # Reconstruct registered predictions
+        if "predictions" in data and data["predictions"]:
+            from spatialrisk.predictions.prediction import Prediction
+
+            for key, pred_data in data["predictions"].items():
+                if pred_data.get("path"):
+                    pred_data["path"] = Path(pred_data["path"])
+                prediction = Prediction(**pred_data)
+                prediction.project = project
+                project.predictions[key] = prediction
+            print(f"Loaded {len(project.predictions)} prediction(s)")
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")

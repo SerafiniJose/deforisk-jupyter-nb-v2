@@ -50,3 +50,54 @@ def test_filter_predictions():
     assert set(project.filter_predictions(dataset_name="ds1").values()) == {a, b}
     assert set(project.filter_predictions(year=2020).values()) == {a, b}
     assert set(project.filter_predictions(model_key="glm_m", year=2020).values()) == {a}
+
+
+def test_predictions_round_trip_save_load(tmp_path, monkeypatch):
+    import spatialrisk.project as project_mod
+
+    monkeypatch.setattr(
+        project_mod.Project, "save", project_mod.Project.save, raising=True
+    )
+    project = _make_project()
+    # Redirect the project folder to a temp dir.
+    monkeypatch.setattr(
+        type(project), "save",
+        lambda self, filename=None: _save_to(self, tmp_path, filename),
+        raising=False,
+    )
+
+    pred = Prediction(
+        path=Path("/tmp/glm_2020.tif"),
+        model_key="glm_m",
+        dataset_name="ds",
+        year=2020,
+        model_snapshot={"model_type": "glm", "formula": "y ~ x"},
+        dataset_snapshot={"name": "ds", "feature_names": ["slope"]},
+    )
+    project.add_prediction(pred, auto_save=True)
+
+    loaded = project_mod.Project.load("pred_test", filename=str(tmp_path / "pred_test_project.json"))
+    assert loaded.list_predictions() == ["glm_m__ds_y2020"]
+    restored = loaded.get_prediction("glm_m__ds_y2020")
+    assert restored.path == Path("/tmp/glm_2020.tif")
+    assert restored.model_key == "glm_m"
+    assert restored.year == 2020
+    assert restored.model_snapshot == {"model_type": "glm", "formula": "y ~ x"}
+    assert restored.dataset_snapshot == {"name": "ds", "feature_names": ["slope"]}
+    assert restored.project is loaded
+
+
+def _save_to(project, tmp_path, filename):
+    """Minimal save() shim writing into tmp_path, exercising the real serializer."""
+    import json
+
+    data = {
+        "project_name": project.project_name,
+        "predictions": {
+            key: pred.model_dump(mode="json")
+            for key, pred in project.predictions.items()
+        },
+    }
+    out = tmp_path / "pred_test_project.json"
+    out.write_text(json.dumps(data, indent=4, default=str), encoding="utf-8")
+    return out
