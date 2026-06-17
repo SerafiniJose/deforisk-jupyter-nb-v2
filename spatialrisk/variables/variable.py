@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from spatialrisk.variables.models import DataType
 
@@ -11,10 +11,6 @@ class Variable(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         use_enum_values=True,
-        # Exclude non-serializable fields by default
-        json_encoders={
-            Path: str,
-        },
     )
 
     name: str  # Clean variable identifier: "towns", "forest_gfc", "altitude"
@@ -53,6 +49,11 @@ class Variable(BaseModel):
             exclude = {"project": True, "aoi": True}
 
         return super().model_dump(mode=mode, include=include, exclude=exclude, **kwargs)
+
+    @field_serializer("*", when_used="json", check_fields=False)
+    def _serialize_paths(self, value):
+        from pathlib import Path
+        return str(value) if isinstance(value, Path) else value
 
     def activate(self, auto_save: bool = True) -> "Variable":
         """
