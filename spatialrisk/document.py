@@ -216,3 +216,58 @@ class DatasetSpec(BaseModel):
     target_ref: VarRef | None = None
     feature_refs: tuple[VarRef, ...] = ()
     sampling: Sampling | None = None
+
+
+class _ModelSpecBase(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str | None = None
+    project_name: str | None = None
+    dataset_name: str | None = None
+    target_name: str | None = None
+    feature_names: tuple[str, ...] = ()
+    year: int | None = None
+    formula: str | None = None
+    parameters: dict[str, JsonValue] = Field(default_factory=dict)
+    sampling: Sampling | None = None
+    samples_path: str | None = None
+    trained: bool = False
+    trained_at: str | None = None
+    n_samples: int | None = None
+    deviance: float | None = None
+
+
+class GLMSpec(_ModelSpecBase):
+    model_type: Literal["glm"]
+    estimator_pickle: str | None = None
+
+
+class RFSpec(_ModelSpecBase):
+    model_type: Literal["rf"]
+    estimator_pickle: str | None = None
+
+
+class ICARSpec(_ModelSpecBase):
+    model_type: Literal["icar"]
+    estimator_pickle: str | None = None
+    rho_path: str | None = None
+
+
+class JNRSpec(_ModelSpecBase):
+    model_type: Literal["jnr"]
+    dist_thresh: float | None = None
+    dist_bins: tuple[float, ...] = ()
+    defrate_files: dict[str, str] = Field(default_factory=dict)
+
+
+class MWSpec(_ModelSpecBase):
+    model_type: Literal["mw"]
+    dist_thresh: float | None = None
+    win_size_list: tuple[int, ...] = ()
+    ldefrate_files: dict[str, str] = Field(default_factory=dict)
+
+
+ModelSpec = Annotated[
+    Union[GLMSpec, RFSpec, ICARSpec, JNRSpec, MWSpec],
+    Field(discriminator="model_type"),
+]

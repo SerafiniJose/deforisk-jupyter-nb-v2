@@ -218,3 +218,60 @@ def test_dataset_spec_defaults_and_frozen():
     assert ds.feature_refs == () and ds.sampling is None
     with pytest.raises(ValidationError):
         ds.name = "x"
+
+
+from spatialrisk.document import (
+    GLMSpec, RFSpec, ICARSpec, JNRSpec, MWSpec, ModelSpec,
+)
+
+
+def _common():
+    return dict(
+        name="calibration", project_name="p", dataset_name="calibration_2020",
+        target_name="forest_loss", feature_names=("altitude", "slope"),
+        year=2020, formula="fl ~ altitude + slope", parameters={"solver": "lbfgs"},
+        sampling=Sampling(strategy="random", n_samples=5000), samples_path="/d/s.csv",
+        trained=True, trained_at="2026-06-17T00:00:00", n_samples=5000, deviance=123.4,
+    )
+
+
+def test_glm_rf_carry_estimator_pickle():
+    g = GLMSpec(model_type="glm", estimator_pickle="/d/glm.pkl", **_common())
+    assert g.model_type == "glm" and g.estimator_pickle == "/d/glm.pkl"
+    r = RFSpec(model_type="rf", estimator_pickle="/d/rf.pkl", **_common())
+    assert r.model_type == "rf"
+    assert g.feature_names == ("altitude", "slope")
+
+
+def test_icar_carries_rho_path():
+    s = ICARSpec(model_type="icar", estimator_pickle="/d/icar.pkl", rho_path="/d/rho.tif", **_common())
+    assert s.rho_path == "/d/rho.tif"
+
+
+def test_jnr_typed_fields():
+    s = JNRSpec(model_type="jnr", dist_thresh=120.0, dist_bins=(0.0, 30.0, 60.0),
+                defrate_files={"calibration": "/d/defrate.tif"}, **_common())
+    assert s.dist_thresh == 120.0
+    assert s.dist_bins == (0.0, 30.0, 60.0)
+    assert s.defrate_files["calibration"] == "/d/defrate.tif"
+
+
+def test_mw_typed_fields():
+    s = MWSpec(model_type="mw", dist_thresh=120.0, win_size_list=(5, 11, 21),
+               ldefrate_files={"5": "/d/ldef5.tif"}, **_common())
+    assert s.win_size_list == (5, 11, 21)
+    assert s.ldefrate_files["5"] == "/d/ldef5.tif"
+
+
+def test_modelspec_discriminator_dispatch_and_frozen():
+    ta = TypeAdapter(ModelSpec)
+    payload = {"model_type": "jnr", "name": "c", "project_name": "p",
+               "dataset_name": "d", "target_name": "t", "feature_names": [],
+               "year": None, "formula": None, "parameters": {}, "sampling": None,
+               "samples_path": None, "trained": False, "trained_at": None,
+               "n_samples": None, "deviance": None, "dist_thresh": None,
+               "dist_bins": [], "defrate_files": {}}
+    s = ta.validate_python(payload)
+    assert isinstance(s, JNRSpec)
+    with pytest.raises(ValidationError):
+        s.name = "x"   # frozen
