@@ -458,3 +458,22 @@ def test_serialized_document_is_pure_json_and_picklable():
     # picklable (worker-shippable) and round-trips through pickle
     restored = pickle.loads(pickle.dumps(doc))
     assert restored == doc
+
+
+# guards the leaf-module constraint (§6: imports enums only)
+import ast
+from pathlib import Path as _P
+
+
+def test_document_module_does_not_import_session_or_ee():
+    src = _P(__file__).resolve().parent.parent / "spatialrisk" / "document.py"
+    tree = ast.parse(src.read_text())
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module or "")
+    assert "ee" not in imported
+    assert not any(m.startswith("spatialrisk.session") for m in imported)
+    assert not any(m.startswith("spatialrisk.project") for m in imported)
