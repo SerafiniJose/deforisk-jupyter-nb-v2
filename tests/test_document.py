@@ -339,3 +339,79 @@ def test_project_document_doc_field_is_frozen():
     doc = ProjectDocument(project_name="p")
     with pytest.raises(ValidationError):
         doc.project_name = "other"
+
+
+def _full_document() -> "ProjectDocument":
+    gee_rec = CatalogueRecipe(
+        catalogue_key="forest_gfc",
+        params={"tree_cover_threshold": 10, "year": 2020},
+        export_kind="raster",
+        scale=30.0,
+    )
+    return ProjectDocument(
+        project_name="amazonia",
+        aoi={"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [0, 0]]]},
+        base_raster_ref=VariableId(source="processed", name="forest_gfc", year=2020),
+        raw_variables={
+            "forest_gfc_2020": GEESpec(
+                name="forest_gfc", year=2020, data_type=DataType.raster,
+                raster_type=RasterType.categorical, recipe=gee_rec,
+                materialized_key="forest_gfc_2020_local",
+            ),
+            "aoi": LocalVectorSpec(name="aoi", path="/d/aoi.shp",
+                                   rasterization_method=RasterizationMethod.binary),
+        },
+        processed_variables={
+            "altitude": LocalRasterSpec(name="altitude", path="/d/altitude.tif",
+                                        raster_type=RasterType.continuous,
+                                        post_processing=(PostProcessing.dist,)),
+        },
+        datasets={
+            "calibration_2020": DatasetSpec(
+                name="calibration_2020", year=2020,
+                target_ref=VariableId(source="processed", name="forest_loss", year=2020),
+                feature_refs=(VariableId(source="processed", name="altitude"),),
+                sampling=Sampling(strategy="legacy", n_samples=10000, seed=7),
+            ),
+        },
+        models={
+            "calib_glm": GLMSpec(model_type="glm", name="calib", project_name="amazonia",
+                                 dataset_name="calibration_2020", target_name="forest_loss",
+                                 feature_names=("altitude",), year=2020,
+                                 formula="fl ~ altitude", parameters={"solver": "lbfgs"},
+                                 sampling=Sampling(strategy="legacy", n_samples=10000),
+                                 samples_path="/d/s.csv", trained=True,
+                                 estimator_pickle="/d/glm.pkl", deviance=42.0),
+            "calib_jnr": JNRSpec(model_type="jnr", name="calib_jnr",
+                                 dist_thresh=120.0, dist_bins=(0.0, 30.0),
+                                 defrate_files={"calibration": "/d/def.tif"}),
+        },
+        predictions={
+            "pred1": PredictionSpec(path="/d/pred.tif", model_key="calib_glm",
+                                    dataset_name="validation_2025", year=2025,
+                                    model_snapshot={"deviance": 42.0},
+                                    dataset_snapshot={"feature_names": ["altitude"]},
+                                    metrics={"auc": 0.8}),
+        },
+    )
+
+
+def test_project_document_roundtrip_total_and_lossless():
+    doc = _full_document()
+    restored = ProjectDocument.model_validate_json(doc.model_dump_json(indent=2))
+    assert restored == doc
+    # discriminated unions survived
+    assert isinstance(restored.raw_variables["forest_gfc_2020"], GEESpec)
+    assert isinstance(restored.raw_variables["forest_gfc_2020"].recipe, CatalogueRecipe)
+    assert isinstance(restored.models["calib_glm"], GLMSpec)
+    assert isinstance(restored.models["calib_jnr"], JNRSpec)
+    assert restored.base_raster_ref.source == "processed"
+    # tuples survive as tuples
+    assert restored.processed_variables["altitude"].post_processing == (PostProcessing.dist,)
+
+
+def test_roundtrip_survives_snapshot_style_revalidation():
+    doc = _full_document()
+    # model_dump() | changes round-trip is the Session mutation primitive shape
+    reconstructed = ProjectDocument.model_validate(doc.model_dump())
+    assert reconstructed == doc
