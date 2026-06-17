@@ -115,3 +115,41 @@ def test_materialize_spec_rejects_non_gee_var():
     sess = _FakeSession(var=local)
     with pytest.raises(TypeError):
         ProjectSession.materialize_spec(sess, "altitude")
+
+
+def test_supervised_fit_spec_is_self_contained_and_picklable():
+    from spatialrisk.session import SupervisedFitSpec, FeatureMeta
+    from spatialrisk.sampling import Sampling
+
+    spec = SupervisedFitSpec(
+        model_key="glm_calibration",
+        model_type="glm",
+        target_path="/data/proj/processed/forest_loss_2020.tif",
+        feature_paths={
+            "altitude": "/data/proj/processed/altitude.tif",
+            "pa": "/data/proj/processed/pa.tif",
+        },
+        feature_meta=(
+            FeatureMeta(name="altitude", raster_type="continuous", levels=None),
+            FeatureMeta(name="pa", raster_type="categorical", levels=(0, 1)),
+        ),
+        formula="I(fcc) ~ scale(altitude) + C(pa, levels=[0, 1])",
+        sampling=Sampling(strategy="random", n_samples=10000, seed=42),
+        output_sample_path="/data/proj/glm/samples_glm_calibration.csv",
+        parameters={"solver": "lbfgs", "max_iter": 1000},
+        estimator_pickle="/data/proj/glm/glm_calibration_20260617.pickle",
+    )
+
+    restored = _assert_picklable_pure(spec)
+    # carries raster paths + sampling, NOT just a CSV
+    assert restored.target_path.endswith("forest_loss_2020.tif")
+    assert restored.feature_paths["altitude"].endswith("altitude.tif")
+    assert restored.sampling.n_samples == 10000
+    assert restored.sampling.seed == 42
+    assert restored.feature_meta[1].levels == (0, 1)
+    assert restored.output_sample_path.endswith(".csv")
+    # frozen
+    import pytest
+
+    with pytest.raises(Exception):
+        spec.formula = "x ~ y"

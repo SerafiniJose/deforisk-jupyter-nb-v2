@@ -645,3 +645,41 @@ class MaterializeSpec(BaseModel):
     crs: Optional[str] = None
     export_kind: Literal["raster", "vector"]
     vector_selectors: Optional[tuple[str, ...]] = None
+
+
+from typing import Any, Dict
+from spatialrisk.sampling import Sampling
+from pydantic import JsonValue
+
+
+class FeatureMeta(BaseModel):
+    """Per-feature categorical metadata needed for in-worker formula handling."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    raster_type: Literal["continuous", "categorical"]
+    levels: Optional[tuple[int, ...]] = None
+
+
+class SupervisedFitSpec(BaseModel):
+    """Self-contained fit job for GLM/RF (§10).
+
+    Sampling happens inside the worker (base._prepare_samples -> to_dataframe),
+    so the spec carries the raster paths + Sampling + categorical metadata +
+    formula + the output CSV destination, NOT a pre-built CSV. The worker
+    samples, fits, and emits ``output_sample_path`` + ``estimator_pickle``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    model_key: str
+    model_type: Literal["glm", "rf"]
+    target_path: str
+    feature_paths: Dict[str, str]
+    feature_meta: tuple[FeatureMeta, ...] = ()
+    formula: str
+    sampling: Sampling
+    output_sample_path: str
+    parameters: Dict[str, JsonValue] = {}
+    estimator_pickle: Optional[str] = None
