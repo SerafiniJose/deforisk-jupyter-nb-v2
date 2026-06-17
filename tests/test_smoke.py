@@ -65,3 +65,19 @@ def test_sampling_runs_on_in_memory_indices():
     assert len(rows) == 10
     assert len(cols) == 10
     assert set(rows.tolist()).issubset(set(range(100)))
+
+
+def test_import_spatialrisk_succeeds():
+    import importlib
+
+    import spatialrisk
+
+    importlib.reload(spatialrisk)
+    assert hasattr(spatialrisk, "Prediction")
+
+
+def test_prediction_is_same_object_as_module():
+    from spatialrisk import Prediction as TopLevelPrediction
+    from spatialrisk.predictions.prediction import Prediction as ModulePrediction
+
+    assert TopLevelPrediction is ModulePrediction
