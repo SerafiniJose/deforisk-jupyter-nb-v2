@@ -280,7 +280,7 @@ class _FitFakeSession:
         self._doc = type("Doc", (), {"models": {"glm_calibration": self.glm},
                                      "datasets": {"calibration_2020": self.dataset}})()
 
-    def get_variable(self, ref, source=None):
+    def get_variable(self, ref, year=None, source=None):
         name = ref.name if isinstance(ref, VariableId) else ref
         return self._vars[name]
 
@@ -290,6 +290,18 @@ class _FitFakeSession:
 
     def _fit_sample_out_path(self, model_key):
         return f"/data/proj/glm/samples_{model_key}.csv"
+
+    def _resolve_target_path(self, dataset):
+        from spatialrisk.session import ProjectSession
+        return ProjectSession._resolve_target_path(self, dataset)
+
+    def _resolve_feature_paths(self, dataset):
+        from spatialrisk.session import ProjectSession
+        return ProjectSession._resolve_feature_paths(self, dataset)
+
+    def _resolve_feature_meta(self, dataset):
+        from spatialrisk.session import ProjectSession
+        return ProjectSession._resolve_feature_meta(self, dataset)
 
 
 def test_fit_spec_glm_is_self_contained():

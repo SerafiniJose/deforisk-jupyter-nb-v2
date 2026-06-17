@@ -9,10 +9,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from box import Box
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from spatialrisk.document import (
     ProjectDocument,
@@ -24,6 +24,7 @@ from spatialrisk.document import (
     PredictionSpec,
     GEERecipe,
 )
+from spatialrisk.sampling import Sampling
 
 
 class FolderResolver:
@@ -599,17 +600,36 @@ class ProjectSession:
             vector_selectors=recipe.vector_selectors,
         )
 
+    def _categorical_levels(self, var):
+        """Return the sorted unique integer levels for a categorical raster, or None."""
+        from spatialrisk.far_helpers import get_categorical_levels
+        from spatialrisk.variables.models import RasterType
+
+        rtype = getattr(var, "raster_type", None)
+        if rtype != RasterType.categorical:
+            return None
+        return get_categorical_levels(var)
+
+    def _fit_sample_out_path(self, model_key: str) -> str:
+        """Return the output CSV path for a fit-job's sampled data."""
+        folders = self.folders()
+        return str(folders.sampling_folder / f"samples_{model_key}.csv")
+
     def _resolve_target_path(self, dataset) -> str:
-        var = self.get_variable(dataset.target_ref)
+        ref = dataset.target_ref
+        var = self.get_variable(ref.name, year=ref.year, source=ref.source)
         return var.path
 
     def _resolve_feature_paths(self, dataset) -> Dict[str, str]:
-        return {ref.name: self.get_variable(ref).path for ref in dataset.feature_refs}
+        return {
+            ref.name: self.get_variable(ref.name, year=ref.year, source=ref.source).path
+            for ref in dataset.feature_refs
+        }
 
     def _resolve_feature_meta(self, dataset) -> tuple:
         metas = []
         for ref in dataset.feature_refs:
-            var = self.get_variable(ref)
+            var = self.get_variable(ref.name, year=ref.year, source=ref.source)
             rtype = getattr(var, "raster_type", None)
             rtype_str = (
                 rtype.value if hasattr(rtype, "value")
@@ -636,9 +656,9 @@ class ProjectSession:
             return SupervisedFitSpec(
                 model_key=model_key,
                 model_type=model.model_type,
-                target_path=ProjectSession._resolve_target_path(self, dataset),
-                feature_paths=ProjectSession._resolve_feature_paths(self, dataset),
-                feature_meta=ProjectSession._resolve_feature_meta(self, dataset),
+                target_path=self._resolve_target_path(dataset),
+                feature_paths=self._resolve_feature_paths(dataset),
+                feature_meta=self._resolve_feature_meta(dataset),
                 formula=model.formula,
                 sampling=model.sampling or dataset.sampling,
                 output_sample_path=self._fit_sample_out_path(model_key),
@@ -695,11 +715,6 @@ class MaterializeSpec(BaseModel):
     crs: Optional[str] = None
     export_kind: Literal["raster", "vector"]
     vector_selectors: Optional[tuple[str, ...]] = None
-
-
-from typing import Any, Dict
-from spatialrisk.sampling import Sampling
-from pydantic import JsonValue
 
 
 class FeatureMeta(BaseModel):
