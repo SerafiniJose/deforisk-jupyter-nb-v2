@@ -716,3 +716,34 @@ def test_categorical_levels_reads_via_far_helpers(monkeypatch):
     levels = ProjectSession._categorical_levels(object.__new__(ProjectSession), var)
     assert levels == (0, 1, 2)
     assert captured["var"] is var
+
+
+def test_all_fit_and_apply_specs_round_trip_for_every_model_type():
+    """Smoke guard: fit_spec + apply_spec for glm/rf/icar/jnr/mw all pickle."""
+    from spatialrisk.session import ProjectSession
+
+    sess = _ApplyFakeSession()
+    object.__setattr__(sess.jnr, "dataset_name", "jnr_calibration_2020")
+    object.__setattr__(sess.mw, "dataset_name", "jnr_calibration_2020")
+    object.__setattr__(
+        sess.jnr, "parameters", {"defor_threshold": 99.5, "max_dist": 5000,
+                                 "blk_rows": 128, "time_interval": 5}
+    )
+    object.__setattr__(
+        sess.mw, "parameters", {"win_size_list": [5, 11, 21], "time_interval": 5,
+                                "defor_threshold": 99.5, "blk_rows": 256}
+    )
+
+    for key in ("glm_calibration", "icar_calibration", "jnr_calibration",
+                "mw_calibration"):
+        fs = ProjectSession.fit_spec(sess, key)
+        _assert_picklable_pure(fs)
+
+    for key, outp in (
+        ("glm_calibration", "/o/glm.tif"),
+        ("icar_calibration", "/o/icar.tif"),
+        ("jnr_calibration", "/o/jnr.tif"),
+        ("mw_calibration", None),
+    ):
+        aps = ProjectSession.apply_spec(sess, key, out_path=outp)
+        _assert_picklable_pure(aps)
