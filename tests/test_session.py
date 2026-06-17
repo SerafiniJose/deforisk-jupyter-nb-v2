@@ -496,3 +496,25 @@ def test_materialize_all_iterates_gee_sources(monkeypatch):
     session._materialize_one = lambda key, spec, **kw: seen.append(key)
     session.materialize_all(source="raw")
     assert seen == ["altitude_src"]   # slope_src skipped (already materialized)
+
+
+def test_session_module_imports_no_ee():
+    # The Session module must NOT import `ee` (that lives only in GEEAdapter).
+    import inspect
+    import spatialrisk.session as session_mod
+    src = inspect.getsource(session_mod)
+    assert "import ee" not in src
+    assert "from ee" not in src
+
+
+def test_full_session_suite_collects():
+    # sanity: snapshot is the only crossing-boundary artifact and stays a
+    # ProjectDocument after a sequence of mutations
+    session = ProjectSession.create("final", store=None, gee=None)
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="dem", path="/d/dem.tif",
+        raster_type=RasterType.continuous,
+    ))
+    session.set_base_raster(VariableId(source="raw", name="dem"))
+    assert isinstance(session.snapshot(), ProjectDocument)
+    assert session.doc_version == 2
