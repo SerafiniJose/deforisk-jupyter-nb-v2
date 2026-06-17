@@ -230,3 +230,36 @@ def test_list_sources_vs_materialized_no_double_count():
     insts = session.get_all_instances("altitude", source="raw")
     assert len(insts) == 1
     assert insts[0].kind == "local_raster"
+
+
+def _session_for_filters():
+    session = ProjectSession.from_document(_doc())
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="dem", path="/data/dem.tif",
+        raster_type=RasterType.continuous, tags=("elevation", "terrain"),
+        year=2020,
+    ))
+    session.add_local_vector(LocalVectorSpec(
+        kind="local_vector", name="roads", path="/data/roads.shp",
+        rasterization_method=RasterizationMethod.binary, tags=("infrastructure",),
+    ))
+    return session
+
+
+def test_list_variables_and_filters():
+    session = _session_for_filters()
+
+    # no filter -> all raw
+    assert set(session.list_variables(source="raw")) == {"dem_2020", "roads"}
+
+    # filter by computed data_type property (works across all kinds)
+    rasters = session.list_variables(source="raw", data_type=DataType.raster)
+    assert set(rasters) == {"dem_2020"}
+
+    # filter by year (scalar)
+    assert set(session.filter_by_attrs(source="raw", year=2020)) == {"dem_2020"}
+
+    # filter by tag (OR semantics)
+    tagged = session.filter_by_tags("elevation", look_up_in="raw")
+    assert set(tagged) == {"dem_2020"}
+    assert set(session.filter_by_tags(["infrastructure", "x"], look_up_in="raw")) == {"roads"}

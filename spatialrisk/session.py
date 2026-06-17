@@ -6,6 +6,7 @@ the frozen ProjectDocument reached via snapshot().
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Optional
 
 from spatialrisk.document import (
@@ -188,3 +189,57 @@ class ProjectSession:
                 continue
             out.append(key)
         return sorted(out)
+
+    def list_variables(self, source: str = "processed", **filters) -> dict:
+        if source == "both":
+            candidates = {**dict(self._doc.raw_variables), **dict(self._doc.processed_variables)}
+        else:
+            candidates = dict(self._collection(source))
+
+        if not filters:
+            return candidates
+
+        def matches(spec) -> bool:
+            for attr, expected in filters.items():
+                if not hasattr(spec, attr):
+                    return False
+                value = getattr(spec, attr)
+                if callable(expected):
+                    if not expected(value):
+                        return False
+                elif isinstance(expected, Iterable) and not isinstance(expected, (str, bytes, bytearray)):
+                    if value not in expected:
+                        return False
+                else:
+                    if value != expected:
+                        return False
+            return True
+
+        return {k: v for k, v in candidates.items() if matches(v)}
+
+    def filter_by_tags(self, tags, match_all: bool = False, look_up_in: Optional[str] = None, **filters) -> dict:
+        if isinstance(tags, str):
+            tags = [tags]
+        if look_up_in is None:
+            look_up_in = filters.pop("source", "processed")
+        variables = self.list_variables(source=look_up_in, **filters)
+        result = {}
+        for k, spec in variables.items():
+            spec_tags = getattr(spec, "tags", ())
+            if match_all:
+                if all(t in spec_tags for t in tags):
+                    result[k] = spec
+            else:
+                if any(t in spec_tags for t in tags):
+                    result[k] = spec
+        return result
+
+    def filter_by_attrs(self, source: str = "processed", **attrs) -> dict:
+        if "tags" in attrs:
+            tags_filter = attrs.pop("tags")
+            result = self.filter_by_tags(tags_filter, look_up_in=source)
+            if not attrs:
+                return result
+            return {k: v for k, v in result.items()
+                    if all(getattr(v, a, None) == e for a, e in attrs.items())}
+        return self.list_variables(source=source, **attrs)
