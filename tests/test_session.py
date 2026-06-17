@@ -66,3 +66,46 @@ def test_replace_rejects_non_json_nested_value():
     # failed mutation leaves the document and version untouched
     assert session.snapshot().aoi is None
     assert session.doc_version == before_version
+
+
+from spatialrisk.document import LocalRasterSpec, LocalVectorSpec, GEESpec, CatalogueRecipe
+from spatialrisk.variables.models import RasterType, RasterizationMethod, DataType
+
+
+def test_add_local_raster_registers_under_storage_key_and_bumps_version():
+    session = ProjectSession.from_document(_doc())
+    v0 = session.doc_version
+    spec = LocalRasterSpec(
+        kind="local_raster", name="forest", year=2020,
+        path="/data/forest_2020.tif", raster_type=RasterType.categorical,
+    )
+    session.add_local_raster(spec)
+
+    raw = session.snapshot().raw_variables
+    assert "forest_2020" in raw                 # name_year storage key
+    assert raw["forest_2020"].path == "/data/forest_2020.tif"
+    assert session.doc_version == v0 + 1
+
+
+def test_add_local_vector_static_uses_bare_name_key():
+    session = ProjectSession.from_document(_doc())
+    spec = LocalVectorSpec(
+        kind="local_vector", name="roads",
+        path="/data/roads.shp", rasterization_method=RasterizationMethod.binary,
+    )
+    session.add_local_vector(spec)
+    assert "roads" in session.snapshot().raw_variables   # no year -> bare name
+
+
+def test_add_gee_variable_registers_in_raw():
+    session = ProjectSession.from_document(_doc())
+    spec = GEESpec(
+        kind="gee", name="altitude", data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        recipe=CatalogueRecipe(
+            source="catalogue", catalogue_key="altitude", export_kind="raster",
+        ),
+    )
+    session.add_gee_variable(spec)
+    assert "altitude" in session.snapshot().raw_variables
+    assert session.snapshot().raw_variables["altitude"].kind == "gee"

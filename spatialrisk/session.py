@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from spatialrisk.document import ProjectDocument
+from spatialrisk.document import (
+    ProjectDocument,
+    LocalRasterSpec,
+    LocalVectorSpec,
+    GEESpec,
+)
 
 
 class ProjectSession:
@@ -72,3 +77,25 @@ class ProjectSession:
         self._doc = validated
         self.doc_version += 1
         return self._doc
+
+    # ------------------------------------------------------------------ #
+    # Storage-key helper + variable mutators
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _storage_key(spec) -> str:
+        year = getattr(spec, "year", None)
+        return f"{spec.name}_{year}" if year else spec.name
+
+    def _add_raw(self, key: str, spec) -> ProjectDocument:
+        new_raw = dict(self._doc.raw_variables)
+        new_raw[key] = spec
+        return self._replace(raw_variables=new_raw)
+
+    def add_local_raster(self, spec: LocalRasterSpec, key: Optional[str] = None) -> ProjectDocument:
+        return self._add_raw(key or self._storage_key(spec), spec)
+
+    def add_local_vector(self, spec: LocalVectorSpec, key: Optional[str] = None) -> ProjectDocument:
+        return self._add_raw(key or self._storage_key(spec), spec)
+
+    def add_gee_variable(self, spec: GEESpec, key: Optional[str] = None) -> ProjectDocument:
+        return self._add_raw(key or self._storage_key(spec), spec)
