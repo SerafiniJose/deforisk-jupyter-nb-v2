@@ -375,6 +375,55 @@ def generate_deforestation_raster(
     )
 
 
+def make_forest_loss_var(
+    project: "Project",
+    start_layer: "LocalRasterVar",
+    end_layer: "LocalRasterVar",
+) -> "LocalRasterVar":
+    """Create one forest-loss target from two forest layers (start -> end year).
+
+    Idempotent: if the output raster already exists, it is reused rather than
+    regenerated. Returns an (unregistered) LocalRasterVar; the caller decides
+    whether to add_as_raw().
+    """
+    from pathlib import Path
+    from spatialrisk.variables.local_raster_var import LocalRasterVar
+    from spatialrisk.variables.models import DataType, RasterType
+
+    start_year = start_layer.year
+    end_year = end_layer.year
+    var_name = f"forest_loss_{start_year}_{end_year}"
+    output_path = project.folders.data_raw_folder / f"{var_name}.tif"
+
+    if not output_path.exists():
+        print(f"Calculating forest loss between {start_year} and {end_year}...")
+        process_forest_loss_xarray(
+            str(start_layer.path),
+            str(end_layer.path),
+            str(output_path),
+        )
+
+    # Use model_construct to bypass Pydantic's project-type validation so that
+    # callers may pass duck-typed project objects (e.g. in tests).  All field
+    # values are provided explicitly since model_construct does not apply defaults.
+    return LocalRasterVar.model_construct(
+        name=var_name,
+        path=Path(output_path),
+        data_type=DataType.raster,
+        raster_type=RasterType.categorical,
+        post_processing=[],
+        processing_history=[],
+        project=project,
+        tags=["deforestation", "forest_loss", f"{start_year}_{end_year}"],
+        default_crs=end_layer.default_crs or start_layer.default_crs,
+        default_resolution=end_layer.default_resolution
+        or start_layer.default_resolution,
+        active=True,
+        year=None,
+        aoi=None,
+    )
+
+
 def get_forest_loss_calculated(
     project: "Project", forest_layers: List["LocalRasterVar"]
 ) -> List["LocalRasterVar"]:
@@ -439,35 +488,10 @@ def get_forest_loss_calculated(
     ]
 
     forest_loss_vars: List[LocalRasterVar] = []
-
     for start_layer, end_layer in pairings:
-        start_year = start_layer.year
-        end_year = end_layer.year
-        var_name = f"forest_loss_{start_year}_{end_year}"
-        output_path = project.folders.data_raw_folder / f"{var_name}.tif"
-
-        print(f"Calculating forest loss between {start_year} and {end_year}...")
-        process_forest_loss_xarray(
-            str(start_layer.path),
-            str(end_layer.path),
-            str(output_path),
-        )
-
-        new_var = LocalRasterVar(
-            name=var_name,
-            path=Path(output_path),
-            raster_type=RasterType.categorical,
-            project=project,
-            tags=["deforestation", "forest_loss", f"{start_year}_{end_year}"],
-            default_crs=end_layer.default_crs or start_layer.default_crs,
-            default_resolution=end_layer.default_resolution
-            or start_layer.default_resolution,
-        )
-
-        forest_loss_vars.append(new_var)
+        forest_loss_vars.append(make_forest_loss_var(project, start_layer, end_layer))
 
     print("✓ Forest loss calculation complete!")
-
     return forest_loss_vars
 
 
