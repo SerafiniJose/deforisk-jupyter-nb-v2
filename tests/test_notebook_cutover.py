@@ -64,3 +64,11 @@ def test_notebook_uses_catalogue_recipes_for_all_layers():
         "forest_gfc", "rivers", "roads", "towns",
     ):
         assert f'catalogue_key="{key}"' in code, f"missing recipe: {key}"
+
+
+def test_notebook_imports_ee_for_auth():
+    code = _all_code()
+    assert "import ee" in code
+    # auth cells remain (live-EE; documented credential limitation)
+    assert "ee.Authenticate()" in code
+    assert "ee.Initialize(" in code
