@@ -571,6 +571,35 @@ class ProjectSession:
         return ModelHandle(self, key, predictor=predictor)
 
     # ------------------------------------------------------------------ #
+    # Spec builders (picklable payload factories — Phase G)
+    # ------------------------------------------------------------------ #
+    def materialize_spec(self, var_key: str) -> "MaterializeSpec":
+        """Build a picklable MaterializeSpec for a GEE source variable.
+
+        Resolves the variable's recipe + resolved output path so the worker can
+        download it with GEEAdapter.build_image/materialize without the Session.
+        """
+        from spatialrisk.document import GEESpec
+
+        var = self.get_variable(var_key)
+        if not isinstance(var, GEESpec):
+            raise TypeError(
+                f"materialize_spec requires a GEESpec source variable, "
+                f"got {type(var).__name__} for key {var_key!r}."
+            )
+        recipe = var.recipe
+        out_path = self._materialize_out_path(var_key)
+        return MaterializeSpec(
+            var_key=var_key,
+            recipe=recipe,
+            out_path=out_path,
+            scale=getattr(recipe, "scale", None),
+            crs=getattr(recipe, "crs", None),
+            export_kind=recipe.export_kind,
+            vector_selectors=recipe.vector_selectors,
+        )
+
+    # ------------------------------------------------------------------ #
     # Orchestration (delegates to handles/collaborators; real geoprocessing
     # lands in Phase G — these wire ordering + iteration only)
     # ------------------------------------------------------------------ #
