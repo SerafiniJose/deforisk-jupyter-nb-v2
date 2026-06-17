@@ -9,7 +9,6 @@ dependencies = [
     # GPU / RAPIDS (CUDA 12)
     "cudf-cu12>=25.8.0",
     "cuml-cu12>=25.8.0",
-    "dask-ml>=2025.1.0",
     # Earth Engine — openforis SEPAL fork (satisfies pysepal>1.6.0)
     "earthengine-api @ git+https://github.com/openforis/earthengine-api.git@v1.6.14#subdirectory=python",
     "geedim>=2.0.0",
