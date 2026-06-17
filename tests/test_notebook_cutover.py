@@ -39,3 +39,28 @@ def test_notebook_uses_session_create_not_project():
     assert "ProjectSession.create(" in code
     assert "Project(project_name=" not in code
     assert "from spatialrisk.project import Project" not in code
+
+
+def test_notebook_has_no_live_ee_or_geevar_calls():
+    code = _all_code()
+    # No live Earth Engine objects constructed in the notebook anymore.
+    assert "GEEVar(" not in code
+    assert "gee_images=" not in code
+    assert "ee.Image(" not in code
+    assert "ee.ImageCollection(" not in code
+    assert "ee.FeatureCollection(" not in code
+    assert ".to_local_raster(" not in code
+    assert ".to_local_vector(" not in code
+    assert ".add_as_raw(" not in code
+
+
+def test_notebook_uses_catalogue_recipes_for_all_layers():
+    code = _all_code()
+    assert "session.add_gee_variable(" in code
+    assert "CatalogueRecipe(" in code
+    # Every catalogue key the old notebook covered must appear by name.
+    for key in (
+        "aoi_fao_gaul", "subj", "protected_area", "altitude", "slope",
+        "forest_gfc", "rivers", "roads", "towns",
+    ):
+        assert f'catalogue_key="{key}"' in code, f"missing recipe: {key}"
