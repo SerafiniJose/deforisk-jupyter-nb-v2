@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from typing import List
 
+from spatialrisk.processing import make_forest_loss_var
+
 logger = logging.getLogger("spatial_risk")
 
 
@@ -50,3 +52,47 @@ def auto_utm_epsg(path) -> str:
     epsg = calculate_utm_rioxarray(Path(path))
     epsg = str(epsg)
     return epsg if epsg.startswith("EPSG:") else f"EPSG:{epsg}"
+
+
+def set_base_raster(project, base_key: str, epsg: str, resolution: float):
+    """Reproject the chosen raw raster to `epsg`/`resolution` and set it as base."""
+    base = project.raw_variables[base_key]
+    reprojected = base.reproject(target_epsg=epsg, resolution=resolution)
+    reprojected.use_as_base_raster()
+    return reprojected
+
+
+def generate_forest_loss_targets(project) -> List:
+    """Materialize every ForestLossSpec into a raw forest-loss variable."""
+    created = []
+    for spec in project.forest_loss_specs:
+        start = project.raw_variables.get(spec.start_key)
+        end = project.raw_variables.get(spec.end_key)
+        if start is None or end is None:
+            logger.warning(
+                "forest-loss target '%s' skipped: missing %s",
+                spec.name,
+                spec.start_key if start is None else spec.end_key,
+            )
+            continue
+        var = make_forest_loss_var(project, start, end)
+        var.add_as_raw(auto_save=False)
+        created.append(var)
+    return created
+
+
+def run_processing(project) -> None:
+    """Full Process run, in notebook order. Requires base_raster to be set."""
+    materialize_raw_layers(project)
+    generate_forest_loss_targets(project)
+    project.reproject_and_match_all(source="raw")
+    project.rasterize_all(source="raw")
+    project.save()
+
+
+def apply_post_processing(project, processed_key: str, step: str):
+    """Apply edge/dist to a processed variable and register the result."""
+    var = project.processed_variables[processed_key]
+    derived = var.apply_post_processing(step)
+    derived.add_as_processed()
+    return derived
