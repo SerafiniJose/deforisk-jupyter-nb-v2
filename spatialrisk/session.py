@@ -240,15 +240,18 @@ class ModelHandle:
     def spec(self):
         return self._session._doc.models.get(self.key)
 
+    def _resolve_predictor(self):
+        if self._predictor is not None:
+            return self._predictor
+        from spatialrisk.predictors.executor import SessionExecutor
+        self._predictor = SessionExecutor()
+        return self._predictor
+
     def fit(self, **kw):
-        if self._predictor is None:
-            raise ValueError("No predictor injected for ModelHandle.fit().")
-        return self._predictor.fit(self._session, self.key, **kw)
+        return self._resolve_predictor().fit(self._session, self.key, **kw)
 
     def apply(self, out_path: str, mask: Optional[str] = None, **kw):
-        if self._predictor is None:
-            raise ValueError("No predictor injected for ModelHandle.apply().")
-        return self._predictor.apply(self._session, self.key, out_path, mask=mask, **kw)
+        return self._resolve_predictor().apply(self._session, self.key, out_path, mask=mask, **kw)
 
 
 class ProjectSession:

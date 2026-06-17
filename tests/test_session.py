@@ -653,3 +653,42 @@ def test_reproject_and_match_all_iterates_rasters_only(tmp_path):
 
     assert "roads" not in seen          # vectors skipped
     assert "altitude" not in seen        # the base raster itself skipped
+
+
+def test_model_handle_fit_uses_default_executor(tmp_path):
+    """A handle with no injected predictor delegates to the SessionExecutor."""
+    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
+    from spatialrisk.document import (
+        LocalRasterSpec, DatasetSpec, VariableId, GLMSpec)
+    from spatialrisk.variables.models import RasterType
+    from spatialrisk.sampling import Sampling
+
+    rng = np.random.default_rng(0)
+    tgt = tmp_path / "defor.tif"; dem = tmp_path / "dem.tif"
+    dem_arr = rng.normal(size=(40, 40)).astype("float32")
+    y_arr = (dem_arr > 0).astype("float32")
+    _write_raster(tgt, y_arr); _write_raster(dem, dem_arr)
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    est_store = LocalFSEstimatorStore()
+    doc_session = ProjectSession.create("fitglm_handle", store=store,
+                                        estimator_store=est_store)
+    doc_session.add_local_raster(LocalRasterSpec(
+        name="defor", path=str(tgt), raster_type=RasterType.continuous))
+    doc_session.add_local_raster(LocalRasterSpec(
+        name="dem", path=str(dem), raster_type=RasterType.continuous))
+    doc_session.register_dataset(DatasetSpec(
+        name="calib",
+        target_ref=VariableId(source="raw", name="defor"),
+        feature_refs=(VariableId(source="raw", name="dem"),),
+        sampling=Sampling(strategy="random", n_samples=500, seed=1)))
+    doc_session.register_model(GLMSpec(
+        model_type="glm", name="m1", dataset_name="calib",
+        formula="defor ~ scale(dem)",
+        parameters={}, sampling=None, samples_path=None,
+        trained=False, n_samples=None, deviance=None,
+        estimator_pickle=None), key="glm_m1")
+
+    handle = doc_session.get_model_handle("glm_m1")  # no predictor injected
+    handle.fit()
+    assert doc_session._doc.models["glm_m1"].trained is True
