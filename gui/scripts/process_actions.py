@@ -98,3 +98,45 @@ def apply_post_processing(project, processed_key: str, step: str):
     derived = var.apply_post_processing(step)
     derived.add_as_processed()
     return derived
+
+
+def forest_loss_candidates(project) -> dict:
+    """Map variable name -> sorted years for raw raster vars with >=2 years.
+
+    These are the temporal masks (e.g. forest_gfc) a forest-loss target can be
+    derived from. Static vars (year is None) and vectors are excluded.
+    """
+    from spatialrisk.variables.models import DataType
+
+    years_by_name: dict = {}
+    for var in project.raw_variables.values():
+        if getattr(var, "data_type", None) == DataType.vector:
+            continue
+        if getattr(var, "year", None) is None:
+            continue
+        years_by_name.setdefault(var.name, set()).add(var.year)
+    return {
+        name: sorted(years)
+        for name, years in years_by_name.items()
+        if len(years) >= 2
+    }
+
+
+def add_forest_loss_spec(project, var_name: str, start_year: int, end_year: int):
+    """Append a ForestLossSpec for a (start -> end) forest pair. Idempotent."""
+    from spatialrisk.variables.models import ForestLossSpec
+
+    if start_year >= end_year:
+        raise ValueError("start_year must be earlier than end_year.")
+    name = f"forest_loss_{start_year}_{end_year}"
+    if any(s.name == name for s in project.forest_loss_specs):
+        return next(s for s in project.forest_loss_specs if s.name == name)
+    spec = ForestLossSpec(
+        name=name,
+        start_key=f"{var_name}_{start_year}",
+        end_key=f"{var_name}_{end_year}",
+        start_year=start_year,
+        end_year=end_year,
+    )
+    project.forest_loss_specs.append(spec)
+    return spec

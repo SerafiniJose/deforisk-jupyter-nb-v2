@@ -1,10 +1,10 @@
 """Step 2 — Variables tile."""
 
-import asyncio
 import logging
 from pathlib import Path
 
 import ee
+import reacton.ipyvuetify as rv
 import solara
 
 logger = logging.getLogger("spatial_risk")
@@ -194,7 +194,7 @@ def VariablesTile(project, processing, process_error, map_=None):
     Args:
         project: Reactive holding the current Project (or None).
         processing: Reactive bool — True while batch processing is running.
-        process_error: Reactive str | None — error from last Process All.
+        process_error: Reactive str | None — error from last processing action.
         map_: SepalMap instance used by the per-variable "show on map" toggle.
     """
     modal_open = solara.use_reactive(False)
@@ -305,44 +305,35 @@ def VariablesTile(project, processing, process_error, map_=None):
                 process_error.set(f"Removed '{key}' but could not delete its file: {exc}")
         project.set(p.model_copy())
 
-    @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
-    async def process_all():
+    fl_var, set_fl_var = solara.use_state("")
+    fl_start, set_fl_start = solara.use_state(None)
+    fl_end, set_fl_end = solara.use_state(None)
+
+    def on_add_forest_loss():
+        from gui.scripts.process_actions import add_forest_loss_spec
         p = project.value
-        if p is None or p.base_raster is None:
+        if p is None:
             return
-        processing.set(True)
-        process_error.set(None)
         try:
-            await asyncio.to_thread(p.reproject_and_match_all, source="raw")
-            await asyncio.to_thread(p.rasterize_all, source="raw")
-            await asyncio.to_thread(p.save)
+            add_forest_loss_spec(p, fl_var, int(fl_start), int(fl_end))
+            set_fl_start(None)
+            set_fl_end(None)
+            project.set(p.model_copy())
         except Exception as exc:
-            process_error.set(str(exc))
-        finally:
-            processing.set(False)
-        project.set(project.value)  # trigger re-render
+            process_error.set(f"Could not add forest-loss target: {exc}")
+
+    def on_remove_forest_loss(name: str):
+        p = project.value
+        if p is None:
+            return
+        p.forest_loss_specs = [s for s in p.forest_loss_specs if s.name != name]
+        project.set(p.model_copy())
 
     p = project.value
-    has_vars = p is not None and bool(p.raw_variables)
-    has_base = p is not None and p.base_raster is not None
-    can_process = has_vars and has_base and not processing.value
-
-    # Explain why "Process All" is disabled (first unmet condition wins).
-    if processing.value:
-        process_hint = None  # progress bar already conveys the running state
-    elif not has_vars:
-        process_hint = "Add at least one variable to enable Process All."
-    elif not has_base:
-        process_hint = (
-            "No base raster set — tick “is base” on a raster variable "
-            "(in Add Variable or Edit) to enable Process All."
-        )
-    else:
-        process_hint = None
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown("### Step 2 — Variables")
-        solara.Text("Add input variables for the risk model. Designate one raster as the base for reprojection.")
+        solara.Text("Add input variables and deforestation targets for the risk model.")
 
         # Action bar
         with solara.Row(style="gap: 8px; align-items: center;"):
@@ -352,23 +343,6 @@ def VariablesTile(project, processing, process_error, map_=None):
                 color="primary",
                 small=True,
                 on_click=lambda: modal_open.set(True),
-            )
-            solara.Button(
-                "Process All",
-                icon_name="mdi-cog-play-outline",
-                color="primary",
-                outlined=True,
-                small=True,
-                on_click=lambda: process_all(),
-                disabled=not can_process,
-            )
-            if processing.value:
-                solara.ProgressLinear(True)
-
-        if process_hint:
-            solara.Text(
-                process_hint,
-                style="font-size: 0.8rem; color: rgba(0,0,0,0.6); font-style: italic;",
             )
 
         # Source variable list
@@ -381,11 +355,55 @@ def VariablesTile(project, processing, process_error, map_=None):
             vars_on_map=vars_on_map,
         )
 
+        # Forest-loss target declaration (deferred; generated during Process)
+        from gui.scripts.process_actions import forest_loss_candidates
+        candidates = forest_loss_candidates(p) if p else {}
+        with solara.Column(style="gap:8px;"):
+            solara.Markdown("**FOREST-LOSS TARGETS** (generated during Process)")
+            if not candidates:
+                solara.Text(
+                    "Add a temporal forest layer with at least two years "
+                    "(e.g. forest_gfc) to create a forest-loss target.",
+                    style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
+                )
+            else:
+                years = candidates.get(fl_var, [])
+                with solara.Row(style="gap:8px;align-items:center;"):
+                    rv.Select(
+                        label="Forest layer",
+                        items=list(candidates.keys()),
+                        v_model=fl_var,
+                        on_v_model=set_fl_var,
+                        dense=True, outlined=True,
+                    )
+                    rv.Select(
+                        label="From year", items=years,
+                        v_model=fl_start, on_v_model=set_fl_start,
+                        dense=True, outlined=True,
+                    )
+                    rv.Select(
+                        label="To year", items=years,
+                        v_model=fl_end, on_v_model=set_fl_end,
+                        dense=True, outlined=True,
+                    )
+                    solara.Button(
+                        "Add target", icon_name="mdi-plus", small=True, color="primary",
+                        on_click=on_add_forest_loss,
+                        disabled=not (fl_var and fl_start and fl_end),
+                    )
+            for spec in (p.forest_loss_specs if p else []):
+                with solara.Row(style="gap:8px;align-items:center;"):
+                    rv.Chip(children=[spec.name], x_small=True, outlined=True)
+                    rv.Chip(children=["pending"], color="amber", x_small=True)
+                    solara.Button(
+                        "", icon_name="mdi-delete-outline", icon=True, text=True, x_small=True,
+                        on_click=lambda *_, n=spec.name: on_remove_forest_loss(n),
+                    )
+
         # Derived variable list
         if p and p.processed_variables:
             DerivedVariableList(project=project, on_remove=on_remove_derived)
 
-    p = project.value
     editing_entry = (
         _variable_to_entry(editing_key, p.raw_variables[editing_key], p)
         if editing_key and p and editing_key in p.raw_variables
