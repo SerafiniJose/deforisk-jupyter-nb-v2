@@ -615,6 +615,21 @@ class ProjectSession:
         folders = self.folders()
         return str(folders.sampling_folder / f"samples_{model_key}.csv")
 
+    def _fit_out_root(self, model_key: str, model_type: str) -> str:
+        """Return the output directory root for a fit job (icar/jnr/mw)."""
+        folders = self.folders()
+        roots = {
+            "icar": str(folders.icar_model),
+            "jnr": str(folders.rmj_bm),
+            "mw": str(folders.rmj_mw),
+        }
+        return roots[model_type]
+
+    def _fit_rho_path(self, model_key: str) -> str:
+        """Return the rho spatial-effects raster path for an iCAR fit job."""
+        folders = self.folders()
+        return str(folders.icar_model / f"rho_{model_key}.tif")
+
     def _resolve_target_path(self, dataset) -> str:
         ref = dataset.target_ref
         var = self.get_variable(ref.name, year=ref.year, source=ref.source)
@@ -665,6 +680,76 @@ class ProjectSession:
                 parameters=dict(model.parameters),
                 estimator_pickle=getattr(model, "estimator_pickle", None),
             )
+        if model.model_type == "icar":
+            dataset = self._doc.datasets[model.dataset_name]
+            params = dict(model.parameters)
+            target_path = self._resolve_target_path(dataset)
+            all_feat_paths = self._resolve_feature_paths(dataset)
+            all_feat_meta = self._resolve_feature_meta(dataset)
+            feat_names = set(model.feature_names) if getattr(model, "feature_names", None) else None
+            if feat_names is not None:
+                feature_paths = {k: v for k, v in all_feat_paths.items() if k in feat_names}
+                feature_meta = tuple(m for m in all_feat_meta if m.name in feat_names)
+            else:
+                feature_paths = all_feat_paths
+                feature_meta = all_feat_meta
+            return ICARFitSpec(
+                model_key=model_key,
+                model_type="icar",
+                target_path=target_path,
+                feature_paths=feature_paths,
+                feature_meta=feature_meta,
+                formula=model.formula,
+                sampling=model.sampling or dataset.sampling,
+                output_sample_path=self._fit_sample_out_path(model_key),
+                target_raster=target_path,
+                csize=float(params.get("csize", 10.0)),
+                mcmc=int(params.get("mcmc", 4000)),
+                burnin=int(params.get("burnin", 4000)),
+                thin=int(params.get("thin", 1)),
+                prior_vrho=float(params.get("prior_vrho", -1.0)),
+                beta_start=float(params.get("beta_start", -99.0)),
+                csize_interpolate=float(params.get("csize_interpolate", 0.1)),
+                random_seed=params.get("random_seed"),
+                rho_path=self._fit_rho_path(model_key),
+                estimator_pickle=getattr(model, "estimator_pickle", None),
+            )
+
+        if model.model_type == "jnr":
+            dataset = self._doc.datasets[model.dataset_name]
+            params = dict(model.parameters)
+            feats = self._resolve_feature_paths(dataset)
+            return JNRFitSpec(
+                model_key=model_key,
+                model_type="jnr",
+                defor_file=self._resolve_target_path(dataset),
+                forest_edge_file=feats["forest_edge"],
+                period=dataset.name,
+                defor_threshold=float(params.get("defor_threshold", 99.5)),
+                max_dist=int(params.get("max_dist", 5000)),
+                blk_rows=int(params.get("blk_rows", 128)),
+                out_root=self._fit_out_root(model_key, "jnr"),
+            )
+
+        if model.model_type == "mw":
+            dataset = self._doc.datasets[model.dataset_name]
+            params = dict(model.parameters)
+            feats = self._resolve_feature_paths(dataset)
+            return MWFitSpec(
+                model_key=model_key,
+                model_type="mw",
+                defor_file=self._resolve_target_path(dataset),
+                forest_edge_file=feats["forest_edge"],
+                forest_file=feats["forest_2015"],
+                period=dataset.name,
+                win_sizes=tuple(params.get("win_size_list", (5, 11, 21))),
+                time_interval=int(params["time_interval"]),
+                defor_threshold=float(params.get("defor_threshold", 99.5)),
+                blk_rows=int(params.get("blk_rows", 256)),
+                rescale_max_val=int(params.get("rescale_max_val", 65535)),
+                out_root=self._fit_out_root(model_key, "mw"),
+            )
+
         raise NotImplementedError(
             f"fit_spec does not yet handle model_type {model.model_type!r}"
         )

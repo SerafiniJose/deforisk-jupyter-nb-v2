@@ -327,3 +327,133 @@ def test_fit_spec_glm_is_self_contained():
     assert restored.sampling.seed == 7
     assert restored.output_sample_path.endswith("samples_glm_calibration.csv")
     assert restored.formula.startswith("I(fcc)")
+
+
+from spatialrisk.document import ICARSpec, JNRSpec, MWSpec
+
+
+class _FitFakeSessionMulti(_FitFakeSession):
+    def __init__(self):
+        super().__init__()
+        self.icar = ICARSpec(
+            model_type="icar",
+            name="calibration",
+            project_name="p",
+            dataset_name="calibration_2020",
+            target_name="forest_loss_2020",
+            feature_names=("altitude",),
+            year=2020,
+            formula="I(fcc) ~ scale(altitude)",
+            parameters={"csize": 10.0, "mcmc": 4000, "burnin": 4000},
+            sampling=self.sampling,
+            samples_path=None,
+            trained=False,
+        )
+        self.jnr = JNRSpec(
+            model_type="jnr",
+            name="calibration",
+            project_name="p",
+            dataset_name="calibration_2020",
+            target_name="defor_2020",
+            feature_names=("forest_edge",),
+            year=2020,
+            formula=None,
+            parameters={"defor_threshold": 99.5, "max_dist": 5000, "blk_rows": 128},
+            sampling=None,
+            samples_path=None,
+            trained=False,
+        )
+        self.mw = MWSpec(
+            model_type="mw",
+            name="calibration",
+            project_name="p",
+            dataset_name="calibration_2020",
+            target_name="defor_2020",
+            feature_names=("forest_edge", "forest_2015"),
+            year=2020,
+            formula=None,
+            parameters={
+                "win_size_list": [5, 11, 21],
+                "time_interval": 5,
+                "defor_threshold": 99.5,
+                "blk_rows": 256,
+            },
+            sampling=None,
+            samples_path=None,
+            trained=False,
+        )
+        # JNR/MW datasets reference defor/forest_edge/forest features
+        self.jnr_dataset = DatasetSpec(
+            name="jnr_calibration_2020",
+            year=2020,
+            target_ref=VariableId(source="processed", name="defor_2020", year=2020),
+            feature_refs=(
+                VariableId(source="processed", name="forest_edge"),
+                VariableId(source="processed", name="forest_2015"),
+            ),
+        )
+        self.icar.__dict__  # touch to keep linter calm
+        self._doc.models.update(
+            {"icar_calibration": self.icar, "jnr_calibration": self.jnr,
+             "mw_calibration": self.mw}
+        )
+        self._doc.datasets["jnr_calibration_2020"] = self.jnr_dataset
+        # extra vars for JNR/MW
+        self._vars.update({
+            "defor_2020": _local_raster("defor_2020", "/data/proj/processed/defor_2020.tif"),
+            "forest_edge": _local_raster("forest_edge", "/data/proj/processed/forest_edge.tif"),
+            "forest_2015": _local_raster("forest_2015", "/data/proj/processed/forest_2015.tif"),
+        })
+        # point jnr/mw models at the jnr dataset
+        object.__setattr__(self.jnr, "dataset_name", "jnr_calibration_2020") \
+            if hasattr(self.jnr, "__dict__") else None
+
+    def _fit_out_root(self, model_key, model_type):
+        roots = {"icar": "/data/proj/icar", "jnr": "/data/proj/rmj_bm",
+                 "mw": "/data/proj/rmj_mw"}
+        return roots[model_type]
+
+    def _fit_rho_path(self, model_key):
+        return f"/data/proj/icar/rho_{model_key}.tif"
+
+
+def test_fit_spec_icar_carries_spatial_inputs():
+    from spatialrisk.session import ProjectSession, ICARFitSpec
+
+    sess = _FitFakeSessionMulti()
+    spec = ProjectSession.fit_spec(sess, "icar_calibration")
+    restored = _assert_picklable_pure(spec)
+    assert isinstance(restored, ICARFitSpec)
+    assert restored.target_raster == "/data/proj/processed/forest_loss_2020.tif"
+    assert restored.csize == 10.0
+    assert restored.rho_path == "/data/proj/icar/rho_icar_calibration.tif"
+    assert restored.feature_paths == {"altitude": "/data/proj/processed/altitude.tif"}
+
+
+def test_fit_spec_jnr_carries_dist_params():
+    from spatialrisk.session import ProjectSession, JNRFitSpec
+
+    sess = _FitFakeSessionMulti()
+    object.__setattr__(sess.jnr, "dataset_name", "jnr_calibration_2020")
+    spec = ProjectSession.fit_spec(sess, "jnr_calibration")
+    restored = _assert_picklable_pure(spec)
+    assert isinstance(restored, JNRFitSpec)
+    assert restored.defor_file == "/data/proj/processed/defor_2020.tif"
+    assert restored.forest_edge_file == "/data/proj/processed/forest_edge.tif"
+    assert restored.defor_threshold == 99.5
+    assert restored.max_dist == 5000
+    assert restored.out_root == "/data/proj/rmj_bm"
+
+
+def test_fit_spec_mw_carries_windows():
+    from spatialrisk.session import ProjectSession, MWFitSpec
+
+    sess = _FitFakeSessionMulti()
+    object.__setattr__(sess.mw, "dataset_name", "jnr_calibration_2020")
+    spec = ProjectSession.fit_spec(sess, "mw_calibration")
+    restored = _assert_picklable_pure(spec)
+    assert isinstance(restored, MWFitSpec)
+    assert restored.win_sizes == (5, 11, 21)
+    assert restored.time_interval == 5
+    assert restored.forest_file == "/data/proj/processed/forest_2015.tif"
+    assert restored.out_root == "/data/proj/rmj_mw"
