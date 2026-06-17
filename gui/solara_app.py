@@ -22,8 +22,22 @@ from pysepal.solara import (
     with_sepal_sessions,
 )
 
+from spatialrisk.project import DATA_DIR
 from gui.store.state_manager import app_state
-from gui.scripts.project_io import list_projects, load_project, save_project
+from gui.scripts.project_io import (
+    list_projects,
+    list_project_infos,
+    load_project,
+    save_project,
+)
+from gui.scripts.project_ui_helpers import (
+    NameValidation,
+    compute_app_title,
+    format_last_saved,
+    format_relative,
+    overwrite_needed,
+    validate_project_name,
+)
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
@@ -36,8 +50,6 @@ logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
 logger.debug("Spatial Risk app initialized")
 logger.debug("Solara version: %s", solara.__version__)
-
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 setup_solara_server(extra_asset_locations=[])
 
@@ -181,6 +193,7 @@ def WorkflowTabs(map_, gee_interface):
                 project=app_state.project,
                 processing=app_state.processing,
                 process_error=app_state.process_error,
+                map_=map_,
             )
         with rv.TabItem():
             DatasetTile(project=app_state.project)
@@ -264,7 +277,9 @@ def Page():
         logger.debug("SOLARA_TEST: seeding AOI with San Marino")
         app_state.aoi_result.set(AoiResult(method="DRAW", name="San Marino", gdf=gdf))
 
-    solara.use_effect(_seed_test_aoi, [])
+    # Test AOI seeding disabled for now — start from an empty project.
+    # (SOLARA_TEST stays on; re-enable by uncommenting the line below.)
+    # solara.use_effect(_seed_test_aoi, [])
 
     def _seed_test_variables():
         import os
@@ -343,7 +358,9 @@ def Page():
                       len(p.raw_variables), len(p.processed_variables))
         app_state.project.set(p.model_copy())
 
-    solara.use_effect(_seed_test_variables, [app_state.project.value])
+    # Test variable seeding disabled for now — Step 2 starts with no variables.
+    # (SOLARA_TEST stays on; re-enable by uncommenting the line below.)
+    # solara.use_effect(_seed_test_variables, [app_state.project.value])
 
     def _seed_test_model_and_prediction():
         import os
@@ -395,8 +412,12 @@ def Page():
 
     solara.Title("Spatial Risk")
 
+    app_title = compute_app_title(
+        app_state.project.value, app_state.project_dirty.value
+    )
+
     MapApp.element(
-        app_title="Spatial Risk",
+        app_title=app_title,
         app_icon="mdi-tree",
         main_map=[sepal_map],
         steps_data=steps_data,
