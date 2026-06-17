@@ -539,3 +539,42 @@ def test_migrate_v0_dataset_missing_feature_warns_and_skips(tmp_path, capsys):
     assert ds.target_ref is None
     captured = capsys.readouterr().out
     assert "ghost" in captured
+
+
+def test_migrate_v0_predictions_to_predictionspec(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    v0 = {
+        "project_name": "pr",
+        "raw_variables": {},
+        "processed_variables": {},
+        "predictions": {
+            "glm_cal_2020": {
+                "name": "glm_cal_2020", "path": "/d/pred.tif",
+                "model_key": "glm_cal", "dataset_name": "cal", "year": 2020,
+                "window": None, "active": True, "tags": ["calibration"],
+                "created_at": "2025-01-01T00:00:00",
+                "model_snapshot": {"model_type": "glm", "deviance": 1.2},
+                "dataset_snapshot": {
+                    "name": "cal", "year": 2020, "target_name": "fl",
+                    "target_year": 2020, "feature_names": ["slope"],
+                },
+                "metrics": {},
+            }
+        },
+    }
+    pdir = tmp_path / "pr"
+    pdir.mkdir()
+    (pdir / "pr_project.json").write_text(json.dumps(v0))
+
+    doc = LocalFSProjectStore(data_root=tmp_path).load("pr")
+    pred = doc.predictions["glm_cal_2020"]
+    assert pred.path == "/d/pred.tif"
+    assert pred.model_key == "glm_cal"
+    assert pred.dataset_name == "cal"
+    assert pred.year == 2020
+    assert pred.tags == ("calibration",)
+    assert pred.model_snapshot == {"model_type": "glm", "deviance": 1.2}
+    assert pred.dataset_snapshot["feature_names"] == ["slope"]
+    # the live project back-ref from PR #8 is never present
+    assert not hasattr(pred, "project")

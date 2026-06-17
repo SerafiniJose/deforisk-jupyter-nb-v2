@@ -515,6 +515,21 @@ def _migrate_v0_dataset(
     return out
 
 
+_PREDICTION_FIELDS = (
+    "name", "path", "model_key", "dataset_name", "year", "window",
+    "active", "tags", "created_at", "model_snapshot", "dataset_snapshot",
+    "metrics",
+)
+
+
+def _migrate_v0_prediction(pred_data: dict) -> dict:
+    """Drop the live ``project`` back-ref; keep the PredictionSpec field set."""
+    out = {k: pred_data[k] for k in _PREDICTION_FIELDS if k in pred_data}
+    if isinstance(out.get("tags"), list):
+        out["tags"] = tuple(out["tags"])
+    return out
+
+
 def _migrate_v0_to_v1(data: dict) -> dict:
     """Convert a pre-``schema_version`` (v0) project dict to a v1 dict."""
     out: dict = {
@@ -545,6 +560,13 @@ def _migrate_v0_to_v1(data: dict) -> dict:
         out["datasets"] = {
             key: _migrate_v0_dataset(ds, raw, processed, key)
             for key, ds in datasets_data.items()
+        }
+
+    predictions_data = data.get("predictions")
+    if predictions_data:
+        out["predictions"] = {
+            key: _migrate_v0_prediction(p)
+            for key, p in predictions_data.items()
         }
 
     base_raster = data.get("base_raster")
