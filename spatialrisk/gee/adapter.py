@@ -12,6 +12,7 @@ import ee  # noqa: F401  (module-level so tests can patch spatialrisk.gee.adapte
 
 from spatialrisk.document import AssetRecipe, CatalogueRecipe, GEERecipe, GeoJSONGeometry
 from spatialrisk.gee.catalogue import get_resolver
+from spatialrisk.gee.ee_raster_export import download_ee_image
 
 
 class GEEAdapter:
@@ -48,3 +49,21 @@ class GEEAdapter:
             return image
 
         raise TypeError(f"unsupported recipe type: {type(recipe).__name__}")
+
+    def materialize(self, recipe: GEERecipe, out_path: str) -> str:
+        """Download the recipe's ee object to ``out_path``; return the path."""
+        obj = self.build_image(recipe)
+        if recipe.export_kind == "raster":
+            region = self.aoi_to_ee(recipe.aoi, as_feature=False)
+            download_ee_image(
+                obj,
+                out_path,
+                scale=recipe.scale or 30,
+                crs=recipe.crs or "EPSG:4326",
+                region=region,
+                overwrite=True,
+                unmask_value=recipe.unmask_value,
+                nodata_value=recipe.nodata_value,
+            )
+            return out_path
+        return self._export_vector(obj, out_path, recipe.vector_selectors)
