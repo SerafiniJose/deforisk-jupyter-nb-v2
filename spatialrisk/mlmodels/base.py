@@ -360,6 +360,7 @@ class BaseRiskModel(BaseModel):
                 dst.write(out_arr.reshape(n_rows, n_cols), 1, window=window)
 
         print(f"✓ {label} raster written: {output_file}")
+        self._register_prediction(output_file, dataset=active_dataset)
         return output_file
 
     def _predict_block(self, x_arr, valid_mask, window, block_bounds, n_rows, n_cols):
