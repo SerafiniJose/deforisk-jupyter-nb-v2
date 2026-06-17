@@ -100,3 +100,12 @@ def test_notebook_recipe_params_match_resolvers():
             accepted = {p.name for p in inspect.signature(get_resolver(key)).parameters.values()
                         if p.name != "aoi_ee"}
             assert param_names <= accepted, f"{key}: {param_names - accepted} rejected by resolver"
+
+
+def test_notebook_wires_store_and_base_raster():
+    code = _all_code()
+    assert "ProjectSession.create(" in code and "store=" in code
+    assert "set_base_raster(" in code
+    # commented examples are API-correct: spec objects, not name=/path= kwargs
+    assert "add_local_vector(name=" not in code
+    assert "add_local_raster(name=" not in code
