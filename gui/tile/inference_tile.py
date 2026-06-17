@@ -105,7 +105,7 @@ def InferenceTile(project):
     can_run = bool(selected_model and selected_dataset)
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 5 — Inference")
+        solara.Markdown("### Step 6 — Inference")
         solara.Text("Select a trained model and a dataset, then run inference.")
 
         # Trained model selector

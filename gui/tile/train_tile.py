@@ -492,7 +492,7 @@ def TrainTile(project):
         train_jobs.set([j for j in train_jobs.value if j["id"] != job_id])
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 4 — Train")
+        solara.Markdown("### Step 5 — Train")
         solara.Text("Select a model, configure its parameters, and launch training.")
 
         # Model selector

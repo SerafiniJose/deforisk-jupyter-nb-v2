@@ -68,7 +68,7 @@ def EvaluationTile(project):
         ).start()
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 6 — Evaluation")
+        solara.Markdown("### Step 7 — Evaluation")
         solara.Text(
             "Validate registered predictions against observed deforestation "
             "(udef-arp indices: MedAE / R² / RMSE / wRMSE).")

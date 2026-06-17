@@ -17,27 +17,31 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
     elif tab == 1:  # Variables
         if process_error:
             return (process_error, "error")
-        if project and project.raw_variables and not project.base_raster:
-            return ("Set one variable as the base raster before processing.", "warning")
 
-    elif tab == 2:  # Dataset
+    elif tab == 2:  # Process
+        if process_error:
+            return (process_error, "error")
+        if project and project.raw_variables and not project.base_raster:
+            return ("Set a base raster in the Process step before running processing.", "warning")
+
+    elif tab == 3:  # Dataset
         if project and not project.processed_variables:
-            return ("Process variables in Step 2 before creating datasets.", "warning")
+            return ("Run Step 3 — Process before creating datasets.", "warning")
         if project and project.datasets:
             count = len(project.datasets)
             return (f"{count} dataset(s) registered.", "success")
 
-    elif tab == 3:  # Train
+    elif tab == 4:  # Train
         if project is not None and not project.datasets:
-            return ("Register at least one dataset (Step 3) before training.", "warning")
+            return ("Register at least one dataset (Step 4) before training.", "warning")
 
-    elif tab == 4:  # Inference
+    elif tab == 5:  # Inference
         if project is not None and not project.models:
-            return ("Train at least one model (Step 4) before inference.", "warning")
+            return ("Train at least one model (Step 5) before inference.", "warning")
 
-    elif tab == 5:  # Evaluation
+    elif tab == 6:  # Evaluation
         if project is not None and not project.predictions:
-            return ("Run inference (Step 5) to produce predictions before evaluation.", "warning")
+            return ("Run inference (Step 6) to produce predictions before evaluation.", "warning")
 
     # Global status (project load/save) visible on any step
     if status_message:

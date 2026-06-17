@@ -143,13 +143,13 @@ def DatasetTile(project):
     has_processed = p is not None and bool(p.processed_variables)
 
     with solara.Column(style="gap:16px;"):
-        solara.Markdown("### Step 3 — Dataset")
+        solara.Markdown("### Step 4 — Dataset")
         solara.Text(
             "Bundle a target and feature variables into a dataset for model training."
         )
 
         if not has_processed:
-            solara.Info("Process variables in Step 2 first.")
+            solara.Info("Run Step 3 — Process first.")
             return
 
         # Existing datasets

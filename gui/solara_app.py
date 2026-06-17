@@ -39,6 +39,7 @@ from gui.scripts.project_ui_helpers import (
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
+from gui.tile.process_tile import ProcessTile
 from gui.tile.train_tile import TrainTile
 from gui.tile.inference_tile import InferenceTile
 from gui.tile.evaluation_tile import EvaluationTile
@@ -367,30 +368,18 @@ def WorkflowTabs(map_, gee_interface):
     active_tab, set_active_tab = solara.use_state(0)
 
     aoi_complete = app_state.aoi_result.value is not None
-    variables_complete = (
-        app_state.project.value is not None
-        and bool(app_state.project.value.raw_variables)
-        and app_state.project.value.base_raster is not None
-    )
+    p = app_state.project.value
+    has_raw = p is not None and bool(p.raw_variables)
+    has_processed = p is not None and bool(p.processed_variables)
 
     with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=True):
         rv.Tab(children=["Area of Interest"])
         rv.Tab(children=["Variables"], disabled=not aoi_complete)
-        rv.Tab(
-            children=["Dataset"],
-            # disabled=not variables_complete
-        )
-        rv.Tab(
-            children=["Train"],
-            # disabled=not variables_complete
-        )
-        rv.Tab(
-            children=["Inference"],
-            # disabled=not variables_complete
-        )
-        rv.Tab(
-            children=["Evaluation"],
-        )
+        rv.Tab(children=["Process"], disabled=not has_raw)
+        rv.Tab(children=["Dataset"], disabled=not has_processed)
+        rv.Tab(children=["Train"])
+        rv.Tab(children=["Inference"])
+        rv.Tab(children=["Evaluation"])
 
     with rv.TabsItems(v_model=active_tab):
         with rv.TabItem():
@@ -406,6 +395,12 @@ def WorkflowTabs(map_, gee_interface):
                 processing=app_state.processing,
                 process_error=app_state.process_error,
                 map_=map_,
+            )
+        with rv.TabItem():
+            ProcessTile(
+                project=app_state.project,
+                processing=app_state.processing,
+                process_error=app_state.process_error,
             )
         with rv.TabItem():
             DatasetTile(project=app_state.project)
