@@ -14,6 +14,7 @@ from typing import List, Optional
 class _Var:
     name: str
     path: str
+    tags: tuple = ()
 
 
 @dataclass
@@ -35,6 +36,33 @@ class _DatasetShim:
         # call it directly with ``self`` as the first positional argument.
         return Dataset.to_dataframe(self, sampling=sampling,
                                     output_csv=output_csv, **kwargs)
+
+
+@dataclass
+class _BenchmarkShim:
+    """Dataset duck-type for ``JNRBenchmarkModel.fit`` / ``MWModel.fit``.
+
+    The legacy benchmark fits read the dataset's ``target`` (path + name +
+    ``deforestation`` tag) and named features (``forest_edge`` always;
+    ``forest`` for MW), plus ``name`` / ``year``. We mirror that shape from the
+    resolved spec paths. Feature names match the model defaults
+    (``forest_edge_var="forest_edge"``, ``forest_var="forest"``) so the legacy
+    ``_get_feature`` lookups succeed without overriding those mappings.
+    """
+    defor_file: str
+    forest_edge_file: str
+    forest_file: Optional[str] = None
+
+    def __post_init__(self):
+        # JNRBenchmarkModel.fit validates the target carries the
+        # 'deforestation' tag; both benchmarks operate on a defor/event target.
+        self.target = _Var(name="defor", path=self.defor_file,
+                           tags=("deforestation",))
+        self.features = [_Var(name="forest_edge", path=self.forest_edge_file)]
+        if self.forest_file is not None:
+            self.features.append(_Var(name="forest", path=self.forest_file))
+        self.name = None
+        self.year = None
 
 
 class SessionExecutor:
@@ -116,6 +144,50 @@ class SessionExecutor:
             n_samples=model.n_samples, deviance=model.deviance,
             estimator_pickle=ref,
         )
+        session.register_model(new, key=model_key)
+        return new
+
+    # ---- JNR / MW -----------------------------------------------------
+    def _fit_benchmark(self, session, model_key, spec):
+        from spatialrisk.document import JNRSpec, MWSpec
+        base_model = session._doc.models[model_key]
+
+        if spec.model_type == "jnr":
+            from spatialrisk.mlmodels.jnr_model import JNRBenchmarkModel
+            model = JNRBenchmarkModel(
+                name=model_key, defor_threshold=spec.defor_threshold,
+                max_dist=spec.max_dist, parameters={})
+            model.fit(
+                dataset=_BenchmarkShim(defor_file=spec.defor_file,
+                                       forest_edge_file=spec.forest_edge_file),
+                folder=spec.out_root)
+            new = JNRSpec(
+                model_type="jnr", name=model_key,
+                dataset_name=base_model.dataset_name,
+                parameters=dict(base_model.parameters),
+                trained=True, trained_at=model.trained_at,
+                dist_thresh=float(model.dist_thresh),
+                dist_bins=tuple(float(b) for b in model.dist_bins))
+        else:
+            from spatialrisk.mlmodels.mw_model import MWModel
+            model = MWModel(
+                name=model_key, defor_threshold=spec.defor_threshold,
+                win_size_list=list(spec.win_sizes), parameters={})
+            model.fit(
+                dataset=_BenchmarkShim(defor_file=spec.defor_file,
+                                       forest_edge_file=spec.forest_edge_file,
+                                       forest_file=spec.forest_file),
+                defor_threshold=spec.defor_threshold,
+                time_interval=spec.time_interval, folder=spec.out_root)
+            new = MWSpec(
+                model_type="mw", name=model_key,
+                dataset_name=base_model.dataset_name,
+                parameters=dict(base_model.parameters),
+                trained=True, trained_at=model.trained_at,
+                dist_thresh=float(model.dist_thresh),
+                win_size_list=tuple(spec.win_sizes),
+                ldefrate_files={str(k): str(v)
+                                for k, v in model.ldefrate_files.items()})
         session.register_model(new, key=model_key)
         return new
 

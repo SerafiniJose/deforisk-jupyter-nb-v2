@@ -81,6 +81,104 @@ def test_executor_fit_glm_pickles_estimator_and_trains_spec(tmp_path):
     assert set(payload) >= {"ml_model", "formula", "samples_path"}
 
 
+def _benchmark_session(tmp_path, name, with_forest=False):
+    """Build a ProjectSession with defor + forest_edge (+ forest) rasters."""
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
+    from spatialrisk.document import LocalRasterSpec, DatasetSpec, VariableId
+    from spatialrisk.variables.models import RasterType
+
+    defor = tmp_path / "defor.tif"
+    edge = tmp_path / "forest_edge.tif"
+    _write_raster(defor, np.array([[0, 1], [1, 0]], dtype="float32"))
+    _write_raster(edge, np.array([[10, 20], [30, 40]], dtype="float32"))
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    est_store = LocalFSEstimatorStore()
+    sess = ProjectSession.create(name, store=store, estimator_store=est_store)
+    sess.add_local_raster(LocalRasterSpec(
+        name="defor", path=str(defor), raster_type=RasterType.continuous))
+    sess.add_local_raster(LocalRasterSpec(
+        name="forest_edge", path=str(edge), raster_type=RasterType.continuous))
+
+    feature_refs = [VariableId(source="raw", name="forest_edge")]
+    if with_forest:
+        forest = tmp_path / "forest_2015.tif"
+        _write_raster(forest, np.array([[1, 1], [1, 1]], dtype="float32"))
+        sess.add_local_raster(LocalRasterSpec(
+            name="forest_2015", path=str(forest), raster_type=RasterType.continuous))
+        feature_refs.append(VariableId(source="raw", name="forest_2015"))
+
+    sess.register_dataset(DatasetSpec(
+        name="calib",
+        target_ref=VariableId(source="raw", name="defor"),
+        feature_refs=tuple(feature_refs)))
+    return sess
+
+
+def test_executor_fit_jnr_captures_thresh_and_bins(tmp_path, monkeypatch):
+    import spatialrisk.rmj as rmj
+    from spatialrisk.document import JNRSpec
+    from spatialrisk.predictors.executor import SessionExecutor
+
+    sess = _benchmark_session(tmp_path, "fitjnr")
+    sess.register_model(JNRSpec(
+        model_type="jnr", name="m1", dataset_name="calib",
+        parameters={"defor_threshold": 99.5, "max_dist": 5000},
+        trained=False), key="jnr_m1")
+
+    # Fakes for the heavy rmj ops (real ones need representative rasters).
+    monkeypatch.setattr(
+        rmj.deforrate, "dist_edge_threshold",
+        lambda **kw: {"dist_thresh": 123.0})
+    monkeypatch.setattr(
+        rmj, "compute_dist_bins",
+        lambda **kw: [0.0, 50.0, 123.0])
+
+    ex = SessionExecutor()
+    ex.fit(sess, "jnr_m1")
+
+    spec = sess._doc.models["jnr_m1"]
+    assert isinstance(spec, JNRSpec)
+    assert spec.trained is True
+    assert spec.dist_thresh == 123.0
+    assert len(spec.dist_bins) > 0
+
+
+def test_executor_fit_mw_captures_thresh_and_ldefrate(tmp_path, monkeypatch):
+    import spatialrisk.rmj as rmj
+    from spatialrisk.document import MWSpec
+    from spatialrisk.predictors.executor import SessionExecutor
+
+    sess = _benchmark_session(tmp_path, "fitmw", with_forest=True)
+    sess.register_model(MWSpec(
+        model_type="mw", name="m1", dataset_name="calib",
+        parameters={"win_size_list": [5, 11], "time_interval": 5,
+                    "defor_threshold": 99.5},
+        trained=False), key="mw_m1")
+
+    monkeypatch.setattr(
+        rmj.deforrate, "dist_edge_threshold",
+        lambda **kw: {"dist_thresh": 222.0})
+
+    def _fake_local_defor_rate(**kw):
+        # Create the ldefrate raster the model records so it exists on disk.
+        _write_raster(kw["ldefrate_file"], np.zeros((2, 2), dtype="float32"))
+
+    monkeypatch.setattr(
+        rmj.deforrate, "local_defor_rate", _fake_local_defor_rate)
+
+    ex = SessionExecutor()
+    ex.fit(sess, "mw_m1")
+
+    spec = sess._doc.models["mw_m1"]
+    assert isinstance(spec, MWSpec)
+    assert spec.trained is True
+    assert spec.dist_thresh == 222.0
+    assert spec.win_size_list == (5, 11)
+    assert len(spec.ldefrate_files) > 0
+
+
 def _write_raster_m(path, arr, res=1000):
     """Write a metric-CRS raster (EPSG:3857, ``res`` m pixels).
 
