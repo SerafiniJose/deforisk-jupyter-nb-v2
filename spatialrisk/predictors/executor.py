@@ -51,10 +51,26 @@ class SessionExecutor:
         raise NotImplementedError(f"fit: unsupported model_type {spec.model_type!r}")
 
     # ---- GLM / RF -----------------------------------------------------
+    @staticmethod
+    def _target_column(formula):
+        """Recover the bare target column name from a Patsy formula LHS.
+
+        Handles both the supervised convention ``defor ~ ...`` and the
+        binomial/iCAR convention ``I(defor) + trial ~ ...`` (forestatrisk
+        requires the ``I(<target>) + trial`` response), returning the bare
+        ``defor`` either way — the column ``dataset.to_dataframe`` writes.
+        """
+        import re
+        lhs = formula.split("~", 1)[0]
+        # First term of the LHS (drop the binomial ``+ trial`` companion).
+        first = lhs.split("+", 1)[0].strip()
+        m = re.match(r"I\((.+)\)$", first)
+        return (m.group(1) if m else first).strip()
+
     def _build_shim(self, spec):
         # The target name is the dataset target column; recover it from the
         # formula LHS (the same column the legacy sampler writes).
-        target_name = spec.formula.split("~", 1)[0].strip()
+        target_name = self._target_column(spec.formula)
         features = [_Var(name, path) for name, path in spec.feature_paths.items()]
         return _DatasetShim(
             name=spec.model_key, year=None,
@@ -99,6 +115,42 @@ class SessionExecutor:
             trained=True, trained_at=model.trained_at,
             n_samples=model.n_samples, deviance=model.deviance,
             estimator_pickle=ref,
+        )
+        session.register_model(new, key=model_key)
+        return new
+
+    # ---- iCAR ---------------------------------------------------------
+    def _fit_icar(self, session, model_key, spec):
+        from spatialrisk.mlmodels.icar_model import ICARModel
+        from spatialrisk.document import ICARSpec
+
+        model = ICARModel(
+            name=model_key, sampling=spec.sampling, formula=spec.formula,
+            csize=spec.csize, mcmc=spec.mcmc, burnin=spec.burnin, thin=spec.thin,
+            prior_vrho=spec.prior_vrho, beta_start=spec.beta_start,
+            parameters={}, random_seed=spec.random_seed,
+        )
+        model.dataset = self._build_shim(spec)
+        out_dir = str(spec.rho_path).rsplit("/", 1)[0] if spec.rho_path else \
+            str(spec.output_sample_path).rsplit("/", 1)[0]
+        model.fit(folder=out_dir)
+
+        payload = {
+            "ml_model": model._ml_model, "design_sample": None,
+            "formula": model.formula, "samples_path": str(model.samples_path),
+        }
+        est_path = spec.estimator_pickle or f"{out_dir}/{model_key}.pickle"
+        ref = session.estimator_store.save(payload, est_path)
+
+        new = ICARSpec(
+            model_type="icar", name=model_key,
+            dataset_name=session._doc.models[model_key].dataset_name,
+            formula=model.formula, parameters={}, sampling=spec.sampling,
+            samples_path=str(model.samples_path),
+            feature_names=tuple(spec.feature_paths.keys()),
+            trained=True, trained_at=model.trained_at,
+            n_samples=model.n_samples, deviance=model.deviance,
+            estimator_pickle=ref, rho_path=str(model.rho_path),
         )
         session.register_model(new, key=model_key)
         return new

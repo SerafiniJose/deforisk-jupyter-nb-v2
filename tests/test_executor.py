@@ -79,3 +79,73 @@ def test_executor_fit_glm_pickles_estimator_and_trains_spec(tmp_path):
     assert spec.n_samples and spec.deviance is not None
     payload = est_store.load(spec.estimator_pickle)
     assert set(payload) >= {"ml_model", "formula", "samples_path"}
+
+
+def _write_raster_m(path, arr, res=1000):
+    """Write a metric-CRS raster (EPSG:3857, ``res`` m pixels).
+
+    forestatrisk's ``cellneigh`` derives the spatial-cell grid from the
+    raster's geotransform extent in CRS units, so the iCAR fit needs a
+    projected (metres) raster rather than the degree-based EPSG:4326 grid
+    used by the supervised tests.
+    """
+    h, w = arr.shape
+    profile = dict(driver="GTiff", height=h, width=w, count=1,
+                   dtype="float32", crs="EPSG:3857",
+                   transform=from_origin(0, h * res, res, res))
+    with rasterio.open(path, "w", **profile) as dst:
+        dst.write(arr.astype("float32"), 1)
+
+
+def test_executor_fit_icar_captures_rho_and_pickles_estimator(tmp_path):
+    import numpy as np
+    from spatialrisk.session import ProjectSession
+    from spatialrisk.persistence import LocalFSProjectStore, LocalFSEstimatorStore
+    from spatialrisk.document import (
+        LocalRasterSpec, DatasetSpec, VariableId, ICARSpec)
+    from spatialrisk.variables.models import RasterType
+    from spatialrisk.sampling import Sampling
+    from spatialrisk.predictors.executor import SessionExecutor
+
+    # 60 x 60 grid of 1 km pixels -> cellneigh(csize=10 km) yields a 6 x 6
+    # spatial-cell grid (36 cells), small enough for a fast MCMC fit.
+    rng = np.random.default_rng(0)
+    tgt = tmp_path / "defor.tif"; dem = tmp_path / "dem.tif"
+    dem_arr = rng.normal(size=(60, 60)).astype("float32")
+    p = 1.0 / (1.0 + np.exp(-dem_arr))
+    y_arr = (rng.random(size=(60, 60)) < p).astype("float32")
+    _write_raster_m(tgt, y_arr); _write_raster_m(dem, dem_arr)
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    est_store = LocalFSEstimatorStore()
+    doc_session = ProjectSession.create("fiticar", store=store,
+                                        estimator_store=est_store)
+    doc_session.add_local_raster(LocalRasterSpec(
+        name="defor", path=str(tgt), raster_type=RasterType.continuous))
+    doc_session.add_local_raster(LocalRasterSpec(
+        name="dem", path=str(dem), raster_type=RasterType.continuous))
+    doc_session.register_dataset(DatasetSpec(
+        name="calib",
+        target_ref=VariableId(source="raw", name="defor"),
+        feature_refs=(VariableId(source="raw", name="dem"),),
+        sampling=Sampling(strategy="random", n_samples=600, seed=1)))
+    doc_session.register_model(ICARSpec(
+        model_type="icar", name="m1", dataset_name="calib",
+        formula="I(defor) + trial ~ scale(dem)",
+        parameters={"csize": 10, "mcmc": 100, "burnin": 20,
+                    "csize_interpolate": 2},
+        sampling=None, samples_path=None,
+        trained=False, n_samples=None, deviance=None,
+        estimator_pickle=None, rho_path=None), key="icar_m1")
+
+    ex = SessionExecutor()
+    ex.fit(doc_session, "icar_m1")
+
+    spec = doc_session._doc.models["icar_m1"]
+    assert spec.trained is True
+    assert spec.rho_path and Path(spec.rho_path).exists()
+    assert spec.estimator_pickle and Path(spec.estimator_pickle).exists()
+    assert spec.samples_path and Path(spec.samples_path).exists()
+    assert spec.n_samples and spec.deviance is not None
+    payload = est_store.load(spec.estimator_pickle)
+    assert set(payload) >= {"ml_model", "formula", "samples_path"}
