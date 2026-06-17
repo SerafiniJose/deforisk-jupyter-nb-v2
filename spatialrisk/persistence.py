@@ -358,6 +358,11 @@ class LocalFSEstimatorStore:
             return pickle.load(fh)
 
 
+def _migrate_v0_to_v1(data: dict) -> dict:
+    """Convert a pre-schema_version (v0) project dict to a v1 dict. Filled in B6."""
+    raise NotImplementedError("v0->v1 migrator implemented in task B6")
+
+
 class LocalFSProjectStore:
     """Persist a :class:`ProjectDocument` to ``<data_root>/<name>/<name>_project.json``.
 
@@ -386,6 +391,17 @@ class LocalFSProjectStore:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         save_path.write_text(doc.model_dump_json(indent=2), encoding="utf-8")
         return str(save_path)
+
+    def load(self, name: str) -> "ProjectDocument":
+        load_path = self._project_file(name)
+        if not load_path.exists():
+            raise FileNotFoundError(f"Project file not found: {load_path}")
+        raw = load_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if "schema_version" not in data:
+            data = _migrate_v0_to_v1(data)
+            return ProjectDocument.model_validate(data)
+        return ProjectDocument.model_validate_json(raw)
 
     def exists(self, name: str) -> bool:
         return self._project_file(name).exists()

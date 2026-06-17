@@ -120,3 +120,33 @@ def test_project_store_exists_and_list(tmp_path):
     store.save(_minimal_doc("alpha"))
     assert store.exists("alpha") is True
     assert store.list() == ["alpha", "beta"]
+
+
+def test_project_store_round_trip_preserves_registries(tmp_path):
+    from spatialrisk.document import FrozenDict, ProjectDocument
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    doc = _minimal_doc("rt")
+    store.save(doc)
+
+    loaded = store.load("rt")
+    assert isinstance(loaded, ProjectDocument)
+    assert loaded == doc  # frozen models compare by value, totally lossless
+
+    # Registries survive as immutable FrozenDicts.
+    assert isinstance(loaded.raw_variables, FrozenDict)
+    assert set(loaded.raw_variables) == {"forest"}
+    assert set(loaded.processed_variables) == {"roads"}
+    assert loaded.raw_variables["forest"].kind == "local_raster"
+    assert loaded.raw_variables["forest"].path == "/nope/forest.tif"
+    with pytest.raises(TypeError):
+        loaded.raw_variables["x"] = doc.raw_variables["forest"]
+
+
+def test_project_store_load_missing_raises(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    with pytest.raises(FileNotFoundError):
+        store.load("nope")
