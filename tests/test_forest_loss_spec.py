@@ -36,3 +36,7 @@ def test_project_forest_loss_specs_roundtrip(tmp_path, monkeypatch):
     assert len(loaded.forest_loss_specs) == 1
     assert loaded.forest_loss_specs[0].name == "forest_loss_2015_2020"
     assert loaded.forest_loss_specs[0].start_key == "forest_gfc_2015"
+    assert loaded.forest_loss_specs[0].end_key == "forest_gfc_2020"
+    assert loaded.forest_loss_specs[0].start_year == 2015
+    assert loaded.forest_loss_specs[0].end_year == 2020
+    assert loaded.forest_loss_specs[0].tags == ["deforestation", "forest_loss"]

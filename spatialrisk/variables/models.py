@@ -1,4 +1,7 @@
 from enum import Enum
+from typing import List
+
+from pydantic import BaseModel, Field
 
 
 class DataType(str, Enum):
@@ -19,11 +22,6 @@ class RasterType(str, Enum):
 class PostProcessing(str, Enum):
     edge = "edge"
     dist = "dist"
-
-
-from typing import List
-
-from pydantic import BaseModel, Field
 
 
 class ForestLossSpec(BaseModel):
