@@ -415,3 +415,46 @@ def test_roundtrip_survives_snapshot_style_revalidation():
     # model_dump() | changes round-trip is the Session mutation primitive shape
     reconstructed = ProjectDocument.model_validate(doc.model_dump())
     assert reconstructed == doc
+
+
+import pickle
+
+
+class _FakeEEImage:
+    """Stand-in for an ee.Image / live estimator — a non-JSON object."""
+    def __init__(self):
+        self.id = "ee.Image"
+
+
+def test_no_weird_object_in_geojson_aoi():
+    with pytest.raises(ValidationError):
+        ProjectDocument(project_name="p", aoi={"geom": _FakeEEImage()})
+
+
+def test_no_weird_object_in_recipe_params():
+    with pytest.raises(ValidationError):
+        CatalogueRecipe(catalogue_key="x", params={"img": _FakeEEImage()},
+                        export_kind="raster")
+
+
+def test_no_weird_object_in_model_snapshot():
+    with pytest.raises(ValidationError):
+        PredictionSpec(path="/p.tif", model_key="m", dataset_name="d",
+                       model_snapshot={"estimator": _FakeEEImage()})
+
+
+def test_document_has_no_field_typed_to_hold_a_live_object():
+    # No field on any Document type allows arbitrary objects: arbitrary_types_allowed is off
+    for cls in (ProjectDocument, LocalRasterSpec, LocalVectorSpec, GEESpec,
+                DatasetSpec, GLMSpec, RFSpec, ICARSpec, JNRSpec, MWSpec,
+                PredictionSpec, CatalogueRecipe, AssetRecipe, VariableId):
+        assert cls.model_config.get("arbitrary_types_allowed") is not True
+
+
+def test_serialized_document_is_pure_json_and_picklable():
+    doc = _full_document()
+    json_text = doc.model_dump_json()
+    assert "_FakeEEImage" not in json_text and "ee.Image" not in json_text
+    # picklable (worker-shippable) and round-trips through pickle
+    restored = pickle.loads(pickle.dumps(doc))
+    assert restored == doc

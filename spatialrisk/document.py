@@ -71,6 +71,9 @@ class FrozenDict(Mapping[str, V]):
     def __repr__(self) -> str:
         return f"FrozenDict({self._data!r})"
 
+    def __reduce__(self):
+        return (self.__class__, (self._data,))
+
     @classmethod
     def __get_pydantic_core_schema__(
         cls, source: Any, handler: GetCoreSchemaHandler
