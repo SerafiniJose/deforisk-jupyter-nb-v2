@@ -292,3 +292,38 @@ def test_session_exposes_folders_callable(tmp_path):
     session.folders = FolderResolver(project_name="fp", data_root=tmp_path)
     box = session.folders.folders(it_name="r1")
     assert box.glm_model.name == "r1_far_glm"
+
+
+class FakeStore:
+    """In-memory ProjectStorePort double."""
+    def __init__(self):
+        self.docs = {}
+    def save(self, doc):
+        self.docs[doc.project_name] = doc
+        return f"mem://{doc.project_name}"
+    def load(self, name):
+        return self.docs[name]
+    def list(self):
+        return sorted(self.docs)
+    def exists(self, name):
+        return name in self.docs
+
+
+def test_create_save_open_roundtrip_via_store():
+    store = FakeStore()
+
+    session = ProjectSession.create("newproj", store=store, gee=None)
+    assert session.snapshot().project_name == "newproj"
+    assert session.store is store
+
+    session.add_local_raster(LocalRasterSpec(
+        kind="local_raster", name="dem", path="/data/dem.tif",
+        raster_type=RasterType.continuous,
+    ))
+    ref = session.save()
+    assert ref == "mem://newproj"
+    assert store.exists("newproj")
+
+    reopened = ProjectSession.open("newproj", store=store, gee=None)
+    assert "dem" in reopened.snapshot().raw_variables
+    assert reopened.doc_version == 0   # freshly opened doc starts at version 0

@@ -106,6 +106,21 @@ class ProjectSession:
     ) -> "ProjectSession":
         return cls(doc, store=store, estimator_store=estimator_store, gee=gee)
 
+    @classmethod
+    def create(cls, name: str, *, store: Any = None, estimator_store: Any = None, gee: Any = None) -> "ProjectSession":
+        doc = ProjectDocument(project_name=name)
+        return cls(doc, store=store, estimator_store=estimator_store, gee=gee)
+
+    @classmethod
+    def open(cls, name: str, *, store: Any, estimator_store: Any = None, gee: Any = None) -> "ProjectSession":
+        doc = store.load(name)
+        return cls(doc, store=store, estimator_store=estimator_store, gee=gee)
+
+    def save(self) -> str:
+        if self.store is None:
+            raise ValueError("No store injected; pass store= to create/open.")
+        return self.store.save(self._doc)
+
     def snapshot(self) -> ProjectDocument:
         """Return the current inert document (the crossing-boundary artifact)."""
         return self._doc
