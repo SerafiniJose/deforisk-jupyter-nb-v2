@@ -313,6 +313,8 @@ class ModelStore:
 # ---------------------------------------------------------------------------
 from typing import Protocol, runtime_checkable
 
+from spatialrisk.document import ProjectDocument
+
 
 @runtime_checkable
 class ProjectStorePort(Protocol):
@@ -354,3 +356,46 @@ class LocalFSEstimatorStore:
             raise FileNotFoundError(f"Estimator pickle not found: {ref_path}")
         with open(ref_path, "rb") as fh:
             return pickle.load(fh)
+
+
+class LocalFSProjectStore:
+    """Persist a :class:`ProjectDocument` to ``<data_root>/<name>/<name>_project.json``.
+
+    Pure ``model_dump_json``/``model_validate_json`` — the discriminated unions
+    dispatch automatically. ``data_root`` is injectable (tests + future remote
+    adapter). When omitted, it resolves lazily to ``project.downloads_folder``
+    so production code is unchanged.
+    """
+
+    def __init__(self, data_root: Optional[Union[str, Path]] = None) -> None:
+        self._data_root = Path(data_root) if data_root is not None else None
+
+    @property
+    def data_root(self) -> Path:
+        if self._data_root is not None:
+            return self._data_root
+        from spatialrisk.project import downloads_folder
+
+        return downloads_folder
+
+    def _project_file(self, name: str) -> Path:
+        return self.data_root / name / f"{name}_project.json"
+
+    def save(self, doc: "ProjectDocument") -> str:
+        save_path = self._project_file(doc.project_name)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_text(doc.model_dump_json(indent=2), encoding="utf-8")
+        return str(save_path)
+
+    def exists(self, name: str) -> bool:
+        return self._project_file(name).exists()
+
+    def list(self) -> List[str]:
+        root = self.data_root
+        if not root.exists():
+            return []
+        return sorted(
+            p.name
+            for p in root.iterdir()
+            if p.is_dir() and (p / f"{p.name}_project.json").exists()
+        )

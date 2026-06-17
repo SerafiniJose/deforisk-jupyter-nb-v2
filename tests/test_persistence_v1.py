@@ -70,3 +70,53 @@ def test_estimator_store_load_missing_raises(tmp_path):
     store = LocalFSEstimatorStore()
     with pytest.raises(FileNotFoundError):
         store.load(str(tmp_path / "does_not_exist.pickle"))
+
+
+def _minimal_doc(name="ut_v1"):
+    from spatialrisk.document import LocalRasterSpec, LocalVectorSpec, ProjectDocument
+    from spatialrisk.variables.models import RasterizationMethod, RasterType
+
+    raster = LocalRasterSpec(
+        kind="local_raster", name="forest", path="/nope/forest.tif",
+        raster_type=RasterType.continuous,
+    )
+    vector = LocalVectorSpec(
+        kind="local_vector", name="roads", year=None, active=True,
+        path="/nope/roads.shp", rasterization_method=RasterizationMethod.binary,
+    )
+    return ProjectDocument(
+        project_name=name,
+        raw_variables={"forest": raster},
+        processed_variables={"roads": vector},
+    )
+
+
+def test_project_store_save_writes_json_and_returns_path(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    doc = _minimal_doc("ut_v1")
+
+    ref = store.save(doc)
+    save_path = tmp_path / "ut_v1" / "ut_v1_project.json"
+    assert ref == str(save_path)
+    assert save_path.exists()
+
+    payload = json.loads(save_path.read_text())
+    assert payload["project_name"] == "ut_v1"
+    assert payload["schema_version"] == 1
+    assert payload["raw_variables"]["forest"]["kind"] == "local_raster"
+    assert payload["processed_variables"]["roads"]["kind"] == "local_vector"
+
+
+def test_project_store_exists_and_list(tmp_path):
+    from spatialrisk.persistence import LocalFSProjectStore
+
+    store = LocalFSProjectStore(data_root=tmp_path)
+    assert store.list() == []
+    assert store.exists("alpha") is False
+
+    store.save(_minimal_doc("beta"))
+    store.save(_minimal_doc("alpha"))
+    assert store.exists("alpha") is True
+    assert store.list() == ["alpha", "beta"]
