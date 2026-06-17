@@ -109,3 +109,28 @@ def test_add_gee_variable_registers_in_raw():
     session.add_gee_variable(spec)
     assert "altitude" in session.snapshot().raw_variables
     assert session.snapshot().raw_variables["altitude"].kind == "gee"
+
+
+from spatialrisk.document import VariableId
+
+
+def test_set_aoi_stores_geojson_and_bumps_version():
+    session = ProjectSession.from_document(_doc())
+    v0 = session.doc_version
+    geom = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+    session.set_aoi(geom)
+    assert session.snapshot().aoi == geom
+    assert session.doc_version == v0 + 1
+
+
+def test_set_base_raster_stores_qualified_ref():
+    session = ProjectSession.from_document(_doc())
+    spec = LocalRasterSpec(
+        kind="local_raster", name="dem", path="/data/dem.tif",
+        raster_type=RasterType.continuous,
+    )
+    session.add_local_raster(spec)
+    ref = VariableId(source="raw", name="dem")
+    session.set_base_raster(ref)
+    assert session.snapshot().base_raster_ref == ref
+    assert session.snapshot().base_raster_ref.source == "raw"

@@ -13,6 +13,7 @@ from spatialrisk.document import (
     LocalRasterSpec,
     LocalVectorSpec,
     GEESpec,
+    VariableId,
 )
 
 
@@ -99,3 +100,9 @@ class ProjectSession:
 
     def add_gee_variable(self, spec: GEESpec, key: Optional[str] = None) -> ProjectDocument:
         return self._add_raw(key or self._storage_key(spec), spec)
+
+    def set_aoi(self, geojson: dict) -> ProjectDocument:
+        return self._replace(aoi=geojson)
+
+    def set_base_raster(self, ref: VariableId) -> ProjectDocument:
+        return self._replace(base_raster_ref=ref.model_dump())
