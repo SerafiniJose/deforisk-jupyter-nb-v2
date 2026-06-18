@@ -184,3 +184,100 @@ def test_evaluate_predictions_filters_and_aggregates(tmp_path, monkeypatch):
     assert list(df["period"].unique()) == ["calibration"]   # validation filtered out
     assert set(["MedAE", "R2", "RMSE", "wRMSE"]).issubset(df.columns)
     assert (_Path(tmp_path) / "evaluation" / "indices_all.csv").exists()
+
+
+def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
+    pred = _types.SimpleNamespace(
+        model_key="glm_glm_v1", window=None, dataset_name="validation",
+        path=tmp_path / "risk.tif", metrics={},
+        storage_key=lambda: "glm_glm_v1__validation")
+    project = _types.SimpleNamespace(
+        folders=_types.SimpleNamespace(project_folder=tmp_path))
+    calls = {}
+
+    def fake_defrate(**kw):
+        calls["defrate"] = kw
+        _Path(kw["tab_file_defrate"]).write_text("cat,defor_dens\n1,0.01\n")
+
+    def fake_validate(**kw):
+        calls["validate"] = kw
+        return {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26,
+                "csize_coarse_grid": kw["csize_coarse_grid"],
+                "csize_coarse_grid_ha": 8100.0}
+
+    monkeypatch.setattr(ev, "_defrate_per_cat", fake_defrate)
+    monkeypatch.setattr(ev, "validate_two_layer", fake_validate)
+
+    truth_defor = tmp_path / "truth_defor.tif"
+    truth_forest = tmp_path / "truth_forest.tif"
+    rows = ev._evaluate_one_against_truth(
+        project, pred, defor_file=truth_defor, forest_file=truth_forest,
+        time_interval=7, truth_tag="forest_loss_2015_2020", csizes=(300,))
+
+    # the SHARED truth is used, not the map's own dataset
+    assert calls["defrate"]["defor_file"] == truth_defor
+    assert calls["defrate"]["forest_file"] == truth_forest
+    assert calls["defrate"]["time_interval"] == 7
+    assert calls["validate"]["riskmap_file"] == pred.path
+    assert calls["validate"]["time_interval"] == 7
+    # row annotations
+    assert rows[0]["truth"] == "forest_loss_2015_2020"
+    assert rows[0]["period"] == "validation"
+    assert rows[0]["model"] == "GLM"
+    assert rows[0]["prediction"] == "glm_glm_v1__validation"
+    # output namespaced under evaluation/<truth_tag>/
+    assert (tmp_path / "evaluation" / "forest_loss_2015_2020").is_dir()
+    assert rows[0]["fig_path"].endswith(
+        "evaluation/forest_loss_2015_2020/pred_obs_GLM_validation_300.png")
+    # metrics keyed by "<tag>__<period>_<csize>"
+    assert pred.metrics == {
+        "forest_loss_2015_2020__validation_300":
+            {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26}}
+
+
+def test_evaluate_against_truth_selects_keys_and_namespaces(tmp_path, monkeypatch):
+    p1 = _types.SimpleNamespace(model_key="glm_glm_v1", window=None,
+                                dataset_name="calibration", path=tmp_path / "r1.tif",
+                                metrics={}, storage_key=lambda: "glm_glm_v1__calibration")
+    p2 = _types.SimpleNamespace(model_key="rf_rf_v1", window=None,
+                                dataset_name="validation", path=tmp_path / "r2.tif",
+                                metrics={}, storage_key=lambda: "rf_rf_v1__validation")
+    saved = {"n": 0}
+    project = _types.SimpleNamespace(
+        folders=_types.SimpleNamespace(project_folder=tmp_path),
+        predictions={"k1": p1, "k2": p2},
+        save=lambda: saved.__setitem__("n", saved["n"] + 1))
+
+    monkeypatch.setattr(
+        ev, "_evaluate_one_against_truth",
+        lambda proj, pred, **kw: [{
+            "prediction": pred.storage_key(), "model": ev.label_for(pred),
+            "period": pred.dataset_name, "truth": kw["truth_tag"],
+            "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0, "ncell": 26,
+            "MedAE": 1.0, "R2": 0.5, "RMSE": 2.0, "wRMSE": 3.0, "fig_path": "x.png"}])
+
+    df = ev.evaluate_against_truth(
+        project, prediction_keys=["k1"], defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif", time_interval=5,
+        truth_tag="forest_loss_2015_2020")
+
+    assert list(df["period"]) == ["calibration"]          # only k1 was selected
+    assert list(df["truth"]) == ["forest_loss_2015_2020"]
+    assert "truth" in df.columns
+    assert (tmp_path / "evaluation" / "forest_loss_2015_2020"
+            / "indices_all.csv").exists()
+    assert saved["n"] == 1                                 # auto_save ran
+
+
+def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys):
+    project = _types.SimpleNamespace(
+        folders=_types.SimpleNamespace(project_folder=tmp_path),
+        predictions={}, save=lambda: None)
+
+    df = ev.evaluate_against_truth(
+        project, prediction_keys=["nope"], defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif", time_interval=5, truth_tag="t")
+
+    assert len(df) == 0
+    assert "skipped nope" in capsys.readouterr().out
+    assert (tmp_path / "evaluation" / "t" / "indices_all.csv").exists()

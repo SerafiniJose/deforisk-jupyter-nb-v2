@@ -233,6 +233,57 @@ def evaluate_prediction(project, pred, csizes=(300,), recompute_defrate=True):
     return rows
 
 
+def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
+                                time_interval, truth_tag, csizes=(300,),
+                                recompute_defrate=True):
+    """Defrate + validate ONE prediction against an explicit shared truth.
+
+    Mirrors evaluate_prediction but takes the truth (defor + forest + interval)
+    explicitly instead of deriving it from the prediction's own dataset, and
+    namespaces all output under evaluation/<truth_tag>/.
+    """
+    label, period = label_for(pred), pred.dataset_name
+    riskmap_file = pred.path
+    truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
+    truth_dir.mkdir(parents=True, exist_ok=True)
+
+    defrate_csv = truth_dir / f"defrate_cat_{label}_{period}.csv"
+    if recompute_defrate or not defrate_csv.exists():
+        _defrate_per_cat(
+            defor_file=defor_file,
+            forest_file=forest_file,
+            riskmap_file=riskmap_file,
+            time_interval=time_interval,
+            tab_file_defrate=defrate_csv,
+            verbose=False,
+        )
+
+    rows = []
+    for csize in csizes:
+        fig_path = truth_dir / f"pred_obs_{label}_{period}_{csize}.png"
+        idx = validate_two_layer(
+            defor_file=defor_file,
+            forest_file=forest_file,
+            riskmap_file=riskmap_file,
+            tab_file_defor=defrate_csv,
+            time_interval=time_interval,
+            csize_coarse_grid=csize,
+            indices_file_pred=truth_dir / f"indices_{label}_{period}_{csize}.csv",
+            tab_file_pred=truth_dir / f"pred_obs_{label}_{period}_{csize}.csv",
+            fig_file_pred=fig_path,
+            model_name=label,
+            period=period,
+        )
+        idx.update({"prediction": pred.storage_key() if hasattr(pred, "storage_key")
+                    else f"{pred.model_key}__{period}",
+                    "model": label, "period": period, "truth": truth_tag,
+                    "fig_path": str(fig_path)})
+        pred.metrics[f"{truth_tag}__{period}_{csize}"] = {k: idx[k] for k in
+                                                          ("RMSE", "wRMSE", "MedAE", "R2", "ncell")}
+        rows.append(idx)
+    return rows
+
+
 def evaluate_predictions(project, dataset_filter=None, model_filter=None,
                          windows=None, csizes=(300,), recompute_defrate=True,
                          auto_save=True):
@@ -268,6 +319,58 @@ def evaluate_predictions(project, dataset_filter=None, model_filter=None,
     evaluation_folder = Path(project.folders.project_folder) / "evaluation"
     evaluation_folder.mkdir(parents=True, exist_ok=True)
     df.to_csv(evaluation_folder / "indices_all.csv", index=False)
+
+    if auto_save and rows:
+        try:
+            project.save()
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠ project.save() after evaluation failed: {exc}")
+    return df
+
+
+def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
+                           forest_file, time_interval, truth_tag,
+                           csizes=(300,), recompute_defrate=True, auto_save=True):
+    """Score selected maps against ONE common truth.
+
+    Unlike evaluate_predictions (which derives each map's truth from its own
+    dataset), this applies a single user-chosen truth (defor + forest + interval)
+    to every selected map, enabling comparison of maps from different datasets.
+
+    prediction_keys : list[str] or None
+        Registry keys of the maps to score. None = all registered predictions.
+        Unknown keys are skipped with a printed warning.
+    """
+    if prediction_keys is None:
+        selected = dict(project.predictions)
+    else:
+        selected = {}
+        for key in prediction_keys:
+            pred = project.predictions.get(key)
+            if pred is None:
+                print(f"⚠ skipped {key}: not registered")
+                continue
+            selected[key] = pred
+
+    rows = []
+    for key, pred in selected.items():
+        try:
+            rows.extend(_evaluate_one_against_truth(
+                project, pred, defor_file=defor_file, forest_file=forest_file,
+                time_interval=time_interval, truth_tag=truth_tag,
+                csizes=csizes, recompute_defrate=recompute_defrate))
+        except Exception as exc:  # noqa: BLE001 - skip-and-warn is intentional
+            print(f"⚠ skipped {key}: {exc}")
+
+    cols = ["prediction", "model", "period", "truth", "csize_coarse_grid",
+            "csize_coarse_grid_ha", "ncell", "MedAE", "R2", "RMSE", "wRMSE"]
+    df = (pd.DataFrame(rows, columns=cols).sort_values(
+        ["csize_coarse_grid", "period", "model"]).reset_index(drop=True)
+        if rows else pd.DataFrame(columns=cols))
+
+    truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
+    truth_dir.mkdir(parents=True, exist_ok=True)
+    df.to_csv(truth_dir / "indices_all.csv", index=False)
 
     if auto_save and rows:
         try:
