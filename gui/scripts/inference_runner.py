@@ -40,8 +40,8 @@ def run_inference(project, model_key, dataset_name):
                 f"ML inference needs a 'forest_gfc' feature in dataset "
                 f"'{dataset_name}' to use as a mask."
             )
-        out_dir = Path(getattr(project.folders, _ML_FOLDER[family])) / getattr(
-            model, "name", model_key)
+        out_dir = Path(getattr(project.folders, _ML_FOLDER[family])) / (
+            getattr(model, "name", None) or model_key)
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / f"{dataset_name}.tif"
         model.apply(out, dataset, mask, 0)

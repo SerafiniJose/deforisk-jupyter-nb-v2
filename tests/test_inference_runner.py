@@ -48,6 +48,25 @@ def test_ml_model_apply_gets_mask_and_output(tmp_path):
     assert args[3] == 0                      # mask_value
 
 
+def test_ml_model_with_none_name_falls_back_to_model_key(tmp_path):
+    """Regression: a model whose ``name`` attribute is None must fall back to
+    model_key for the output subfolder, not crash.
+
+    Real models (BaseRiskModel) default ``name`` to None. The old code used
+    ``getattr(model, "name", model_key)``, whose default only applies when the
+    attribute is *missing* — so an existing-but-None name returned None and
+    ``Path(...) / None`` raised TypeError.
+    """
+    m = _RecordingModel()
+    m.name = None
+    proj = _project(m, "glm")
+    run_inference(proj, "glm", "calibration")
+    (args, _kwargs) = m.apply_calls[0]
+    out_path = Path(args[0])
+    assert out_path.parent == Path("/tmp/far_glm/glm")   # model_key is the fallback
+    assert out_path.name == "calibration.tif"
+
+
 def test_jnr_model_apply_gets_time_interval(tmp_path):
     m = _RecordingModel()
     proj = _project(m, "jnr_calibration_jnr")

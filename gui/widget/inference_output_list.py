@@ -23,8 +23,12 @@ STATUS_ICONS = {
 
 
 @solara.component
-def InferenceOutputItem(job: dict, on_remove):
-    """Single inference output row."""
+def InferenceOutputItem(job: dict, on_remove, on_toggle_map=None, is_on=False, has_preds=False):
+    """Single inference output row.
+
+    A completed job whose prediction raster(s) are registered on the project
+    (``has_preds``) gets a map-toggle button mirroring the Variables tab.
+    """
     status = job["status"]
     color = STATUS_COLORS.get(status, "grey")
     icon = STATUS_ICONS.get(status, "mdi-help-circle")
@@ -52,29 +56,60 @@ def InferenceOutputItem(job: dict, on_remove):
                 rv.ListItemSubtitle(children=["Cancelled by user"])
 
         with rv.ListItemAction():
-            if status != "running":
-                rv.Btn(
-                    children=[rv.Icon(children=["mdi-close"], small=True)],
-                    icon=True,
-                    x_small=True,
-                    on_click=lambda *_: on_remove(job["id"]),
-                )
+            with solara.Row(style="gap:0;align-items:center;flex-direction:row;"):
+                # Map toggle — only for completed jobs with a registered prediction.
+                if status == "completed" and has_preds and on_toggle_map is not None:
+                    solara.Button(
+                        "",
+                        icon_name="mdi-map-minus" if is_on else "mdi-map-plus",
+                        on_click=lambda *_: on_toggle_map(job),
+                        icon=True,
+                        text=True,
+                        x_small=True,
+                        color="primary" if is_on else "grey darken-1",
+                    )
+                if status != "running":
+                    rv.Btn(
+                        children=[rv.Icon(children=["mdi-close"], small=True)],
+                        icon=True,
+                        x_small=True,
+                        on_click=lambda *_: on_remove(job["id"]),
+                    )
 
 
 @solara.component
-def InferenceOutputList(inference_jobs, on_remove):
+def InferenceOutputList(
+    inference_jobs,
+    on_remove,
+    on_toggle_map=None,
+    preds_on_map=None,
+    predictions_for=None,
+):
     """List of inference outputs with status and actions.
 
     Args:
         inference_jobs: solara.Reactive[list] — list of inference job dicts.
         on_remove: callback(job_id) — remove a finished/failed/cancelled job.
+        on_toggle_map: callback(job) — add/remove the job's prediction on the map.
+        preds_on_map: solara.Reactive[set] — job ids currently shown on the map.
+        predictions_for: callable(job) -> dict — registered predictions for a job
+            (empty when none); drives whether the map-toggle button is shown.
     """
     jobs = inference_jobs.value
 
     if not jobs:
         return
 
+    on_map = preds_on_map.value if preds_on_map is not None else set()
+
     solara.Markdown(f"**OUTPUTS** ({len(jobs)})")
     with rv.List(dense=True):
         for job in reversed(jobs):
-            InferenceOutputItem(job=job, on_remove=on_remove)
+            has_preds = bool(predictions_for(job)) if predictions_for is not None else False
+            InferenceOutputItem(
+                job=job,
+                on_remove=on_remove,
+                on_toggle_map=on_toggle_map,
+                is_on=job["id"] in on_map,
+                has_preds=has_preds,
+            )

@@ -1,18 +1,25 @@
 """Step 5 — Inference tile."""
 
 import logging
-import threading
 import uuid
 
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.inference_output_list import InferenceOutputList
 
 logger = logging.getLogger("spatial_risk")
 
-# Module-level reactive shared across re-renders
+# Module-level reactives shared across re-renders
 inference_jobs = solara.reactive([])
+# Ids of completed jobs whose prediction raster(s) are currently on the map.
+preds_on_map = solara.reactive(set())
+
+
+def _pred_layer_key(storage_key: str) -> str:
+    """Unique map-layer key for a registered prediction."""
+    return f"pred_{storage_key}"
 
 
 def _run_inference(job_id, model_key, dataset_key, project):
@@ -22,32 +29,27 @@ def _run_inference(job_id, model_key, dataset_key, project):
 
         run_inference(project, model_key, dataset_key)
 
-        jobs = list(inference_jobs.value)
-        for j in jobs:
-            if j["id"] == job_id:
-                if j["status"] == "cancelled":
-                    break
-                j["status"] = "completed"
-                j["output_path"] = "see project predictions"
-                break
-        inference_jobs.set(jobs)
+        update_job(
+            inference_jobs,
+            job_id,
+            status="completed",
+            output_path="see project predictions",
+        )
         logger.info("Inference completed: %s on %s", model_key, dataset_key)
 
     except Exception as exc:
         logger.exception("Inference failed for %s on %s", model_key, dataset_key)
-        jobs = list(inference_jobs.value)
-        for j in jobs:
-            if j["id"] == job_id:
-                if j["status"] != "cancelled":
-                    j["status"] = "failed"
-                    j["error"] = str(exc)
-                break
-        inference_jobs.set(jobs)
+        update_job(inference_jobs, job_id, status="failed", error=str(exc))
 
 
 @solara.component
-def InferenceTile(project):
-    """Inference tab: select trained model and dataset, run prediction."""
+def InferenceTile(project, map_=None):
+    """Inference tab: select trained model and dataset, run prediction.
+
+    Args:
+        project: Reactive holding the current Project (or None).
+        map_: SepalMap instance used by the per-prediction "add to map" toggle.
+    """
     p = project.value
 
     # Trained model selection
@@ -84,12 +86,10 @@ def InferenceTile(project):
         }
         inference_jobs.set(list(inference_jobs.value) + [job])
 
-        thread = threading.Thread(
-            target=_run_inference,
-            args=(job_id, selected_model, selected_dataset, p),
-            daemon=True,
+        spawn_in_context(
+            _run_inference,
+            (job_id, selected_model, selected_dataset, p),
         )
-        thread.start()
         logger.info(
             "Inference started: %s on %s (job=%s)",
             selected_model,
@@ -97,7 +97,59 @@ def InferenceTile(project):
             job_id,
         )
 
+    def _matching_predictions(job):
+        """Predictions registered for *job*, keyed by storage_key (empty if none)."""
+        if p is None:
+            return {}
+        return p.filter_predictions(
+            model_key=job["model_key"], dataset_name=job["dataset_name"]
+        )
+
+    def predictions_for(job):
+        """Registered predictions for a *completed* job (drives the map button)."""
+        if job.get("status") != "completed":
+            return {}
+        return _matching_predictions(job)
+
+    def _forget_on_map(job_id):
+        remaining = set(preds_on_map.value)
+        remaining.discard(job_id)
+        preds_on_map.set(remaining)
+
+    def on_toggle_map(job):
+        """Add or remove a completed job's prediction raster(s) on the map."""
+        if map_ is None:
+            return
+        matches = predictions_for(job)
+        if not matches:
+            return
+        job_id = job["id"]
+        try:
+            if job_id in preds_on_map.value:
+                for sk in matches:
+                    map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+                _forget_on_map(job_id)
+            else:
+                for sk, pred in matches.items():
+                    map_.add_raster(
+                        str(pred.path),
+                        layer_name=sk,
+                        key=_pred_layer_key(sk),
+                        fit_bounds=True,
+                    )
+                preds_on_map.set(set(preds_on_map.value) | {job_id})
+        except Exception as exc:
+            logger.exception("prediction map toggle failed for job %s", job_id)
+            set_form_error(f"Could not toggle prediction on map: {exc}")
+
     def on_remove(job_id):
+        # Drop any prediction layers this job placed on the map before forgetting it.
+        if map_ is not None and job_id in preds_on_map.value:
+            job = next((j for j in inference_jobs.value if j["id"] == job_id), None)
+            if job is not None:
+                for sk in _matching_predictions(job):
+                    map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+            _forget_on_map(job_id)
         inference_jobs.set(
             [j for j in inference_jobs.value if j["id"] != job_id]
         )
@@ -147,4 +199,7 @@ def InferenceTile(project):
         InferenceOutputList(
             inference_jobs=inference_jobs,
             on_remove=on_remove,
+            on_toggle_map=on_toggle_map if map_ is not None else None,
+            preds_on_map=preds_on_map,
+            predictions_for=predictions_for,
         )
