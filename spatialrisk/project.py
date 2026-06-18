@@ -70,6 +70,44 @@ class Project(BaseModel):
     datasets: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
     forest_loss_specs: List[ForestLossSpec] = Field(default_factory=list)
+    # AOI descriptor (GUI-populated, library-agnostic): light metadata only
+    # (method, name, gee, admin, geometry_file). The geometry itself lives in a
+    # sidecar ``aoi.geojson`` in the project folder, written/read by the GUI —
+    # the project model stays free of geopandas/pysepal types. None when no AOI.
+    aoi: Optional[Dict[str, Any]] = None
+
+    def _relink_backrefs(self) -> None:
+        """Point every contained variable/model/prediction's ``.project`` at self.
+
+        pydantic's shallow ``model_copy()`` shares child objects with the original
+        and does not run ``model_post_init``, so a copy's children keep their
+        ``.project`` pointing at the *original* project. The GUI replaces
+        ``project.value`` via ``project.set(p.model_copy())`` on every action, so
+        without re-linking, operations that mutate via a variable's ``.project``
+        back-reference (e.g. ``use_as_base_raster`` -> ``self.project.base_raster
+        = self``) hit the discarded original instead of the live project.
+        """
+        for var in self.raw_variables.values():
+            var.project = self
+        for var in self.processed_variables.values():
+            var.project = self
+        if self.base_raster is not None:
+            self.base_raster.project = self
+        for model in self.models.values():
+            if hasattr(model, "project"):
+                model.project = self
+        for prediction in self.predictions.values():
+            if hasattr(prediction, "project"):
+                prediction.project = self
+
+    def model_copy(self, *, update=None, deep=False) -> "Project":
+        """Copy the project and re-link all child ``.project`` back-references.
+
+        See ``_relink_backrefs`` for why this is required.
+        """
+        copied = super().model_copy(update=update, deep=deep)
+        copied._relink_backrefs()
+        return copied
 
     @staticmethod
     def _ensure_model_schemas() -> None:
@@ -530,6 +568,10 @@ class Project(BaseModel):
                 spec.model_dump(mode="json") for spec in self.forest_loss_specs
             ]
 
+        # Serialize the AOI descriptor (geometry lives in the sidecar file)
+        if self.aoi:
+            data["aoi"] = self.aoi
+
         # Write to file
         save_path.write_text(
             json.dumps(data, indent=4, ensure_ascii=False, default=str),
@@ -575,7 +617,11 @@ class Project(BaseModel):
         data = json.loads(load_path.read_text(encoding="utf-8"))
 
         # Create project instance without variables first
-        project = cls(project_name=data["project_name"], years=data.get("years"))
+        project = cls(
+            project_name=data["project_name"],
+            years=data.get("years"),
+            aoi=data.get("aoi"),
+        )
 
         # Reconstruct raw variables
         for var_name, var_data in data.get("raw_variables", {}).items():
