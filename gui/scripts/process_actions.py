@@ -54,6 +54,28 @@ def auto_utm_epsg(path) -> str:
     return epsg if epsg.startswith("EPSG:") else f"EPSG:{epsg}"
 
 
+def base_raster_resolution(var) -> "float | None":
+    """Native pixel resolution (m) of a raw raster var, for pre-filling the base field.
+
+    Prefers the var's recorded scale (``default_resolution`` / ``default_scale``, in
+    metres). Falls back to the GeoTIFF's native pixel size, converting degrees -> metres
+    for geographic CRSs. Returns ``None`` when nothing is available.
+    """
+    res = getattr(var, "default_resolution", None) or getattr(var, "default_scale", None)
+    if res:
+        return float(res)
+    path = getattr(var, "path", None)
+    if path is None:
+        return None
+    import rasterio
+
+    with rasterio.open(path) as src:
+        xres = abs(src.res[0])
+        if src.crs is not None and src.crs.is_geographic:
+            xres *= 111320.0  # approx metres per degree of longitude at the equator
+    return float(xres)
+
+
 def set_base_raster(project, base_key: str, epsg: str, resolution: float):
     """Reproject the chosen raw raster to `epsg`/`resolution` and set it as base."""
     base = project.raw_variables[base_key]

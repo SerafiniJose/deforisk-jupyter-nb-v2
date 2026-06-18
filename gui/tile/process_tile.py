@@ -44,18 +44,33 @@ def ProcessTile(project, processing, process_error):
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
     async def download_task():
+        # Runs on a worker thread (prefer_threaded) so the UI stays responsive;
+        # progress is driven by download_task.pending, not the shared processing flag.
         if p is None:
             return
-        processing.set(True)
         process_error.set(None)
         try:
             await asyncio.to_thread(process_actions.materialize_raw_layers, p)
             await asyncio.to_thread(p.save)
         except Exception as exc:
             process_error.set(str(exc))
-        finally:
-            processing.set(False)
         project.set(p.model_copy())
+
+    @solara.lab.use_task(dependencies=[base_key], raise_error=False, prefer_threaded=True)
+    async def autofill_base():
+        """On base-raster selection, pre-fill EPSG (UTM) + resolution; stay editable."""
+        if p is None or not base_key:
+            return
+        var = p.raw_variables.get(base_key)
+        if var is None:
+            return
+        res = await asyncio.to_thread(process_actions.base_raster_resolution, var)
+        if res:
+            set_resolution(str(round(res)))
+        path = getattr(var, "path", None)
+        if path is None:
+            return  # not downloaded yet — auto-UTM needs the GeoTIFF on disk
+        set_epsg(await asyncio.to_thread(process_actions.auto_utm_epsg, path))
 
     def on_auto_utm():
         if p is None or not base_key:
@@ -113,38 +128,50 @@ def ProcessTile(project, processing, process_error):
             solara.Info("Add variables in Step 2 first.")
             return
 
-        # A — Download / prepare
-        solara.Markdown("**1 · PREPARE LAYERS**")
+        # A — Download layers
+        solara.Markdown("**1 · DOWNLOAD LAYERS**")
         solara.Text(f"{len(pending_geevars)} GEE layer(s) need downloading.")
         solara.Button(
-            "Download / prepare layers", icon_name="mdi-cloud-download-outline",
+            "Download layers", icon_name="mdi-cloud-download-outline",
             color="primary", outlined=True, small=True,
             on_click=lambda: download_task(),
-            disabled=processing.value or not pending_geevars,
+            loading=download_task.pending,
+            disabled=download_task.pending or not pending_geevars,
         )
+        if download_task.pending:
+            solara.ProgressLinear(True)
 
         # B — Base & projection
         solara.Markdown("**2 · BASE & PROJECTION**")
-        with solara.Row(style="gap:8px;align-items:center;"):
+        with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
             rv.Select(
                 label="Base raster", items=_raw_raster_keys(p),
                 v_model=base_key, on_v_model=set_base_key, dense=True, outlined=True,
+                style_="min-width:200px;flex:1 1 200px;",
             )
             rv.TextField(
                 label="EPSG", v_model=epsg, on_v_model=set_epsg,
                 dense=True, outlined=True, placeholder="EPSG:5490",
+                style_="min-width:130px;max-width:170px;",
             )
             rv.TextField(
                 label="Resolution (m)", v_model=resolution, on_v_model=set_resolution,
                 dense=True, outlined=True, type="number",
+                style_="min-width:130px;max-width:170px;",
             )
             solara.Button(
                 "Auto (UTM)", small=True, text=True, on_click=on_auto_utm,
-                disabled=not base_key,
+                disabled=not base_key or autofill_base.pending,
             )
             solara.Button(
                 "Set base", icon_name="mdi-target", color="primary", small=True,
-                on_click=on_set_base, disabled=not (base_key and epsg.strip()),
+                on_click=on_set_base,
+                disabled=autofill_base.pending or not (base_key and epsg.strip()),
+            )
+        if autofill_base.pending:
+            solara.Text(
+                "Detecting projection & resolution…",
+                style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
             )
         if has_base:
             solara.Text(
@@ -163,7 +190,7 @@ def ProcessTile(project, processing, process_error):
         solara.Button(
             "Run processing", icon_name="mdi-cog-play-outline",
             color="primary", small=True, on_click=lambda: process_task(),
-            disabled=processing.value or not has_base,
+            disabled=processing.value or download_task.pending or not has_base,
         )
         if processing.value:
             solara.ProgressLinear(True)
