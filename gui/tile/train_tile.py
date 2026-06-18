@@ -1,7 +1,6 @@
 """Step 4 — Train tile."""
 
 import logging
-import threading
 import uuid
 
 import reacton.ipyvuetify as rv
@@ -17,6 +16,7 @@ from spatialrisk.mlmodels import (
 from spatialrisk.evaluation import interval_from_target
 from spatialrisk.sampling import Sampling
 
+from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.train_model_list import TrainModelList
 
 logger = logging.getLogger("spatial_risk")
@@ -47,11 +47,11 @@ MODEL_REGISTRY = {
                 "default": 99.5,
             },
             {"key": "forest_edge_var", "label": "Forest-edge variable",
-             "type": "text", "default": "forest_gfc_edge"},
+             "type": "text", "default": "forest_gfc_edge", "group": "variables"},
             {"key": "forest_var", "label": "Forest variable",
-             "type": "text", "default": "forest_gfc"},
+             "type": "text", "default": "forest_gfc", "group": "variables"},
             {"key": "subj_var", "label": "Subjurisdiction variable",
-             "type": "text", "default": "subj"},
+             "type": "text", "default": "subj", "group": "variables"},
         ],
         "has_sampling": False,
     },
@@ -82,9 +82,9 @@ MODEL_REGISTRY = {
                 "default": 99.5,
             },
             {"key": "forest_edge_var", "label": "Forest-edge variable",
-             "type": "text", "default": "forest_gfc_edge"},
+             "type": "text", "default": "forest_gfc_edge", "group": "variables"},
             {"key": "forest_var", "label": "Forest variable",
-             "type": "text", "default": "forest_gfc"},
+             "type": "text", "default": "forest_gfc", "group": "variables"},
         ],
         "has_sampling": False,
     },
@@ -118,7 +118,7 @@ MODEL_REGISTRY = {
                 "key": "random_seed",
                 "label": "Random seed",
                 "type": "int",
-                "default": None,
+                "default": 1234,
             },
         ],
         "has_sampling": True,
@@ -158,7 +158,7 @@ MODEL_REGISTRY = {
                 "key": "random_seed",
                 "label": "Random seed",
                 "type": "int",
-                "default": None,
+                "default": 1234,
             },
         ],
         "has_sampling": True,
@@ -211,7 +211,7 @@ MODEL_REGISTRY = {
                 "key": "random_seed",
                 "label": "Random seed",
                 "type": "int",
-                "default": None,
+                "default": 1234,
             },
             {
                 "key": "csize_interpolate",
@@ -243,6 +243,11 @@ def _default_params(model_key: str) -> dict:
     return {
         p["key"]: p["default"] for p in MODEL_REGISTRY[model_key]["params"]
     }
+
+
+def _update_job(job_id, *, skip_if_cancelled=True, **changes):
+    """Immutably update a train job by id so the UI re-renders (see update_job)."""
+    update_job(train_jobs, job_id, skip_if_cancelled=skip_if_cancelled, **changes)
 
 
 def _parse_param(value: str, ptype: str):
@@ -293,17 +298,13 @@ def _run_training(job_id, model_key, param_values, dataset, sampling_cfg, projec
 
         model.fit(**build_fit_kwargs(model_key, dataset, project))
 
-        # Update job on success
-        jobs = list(train_jobs.value)
-        for j in jobs:
-            if j["id"] == job_id:
-                if j["status"] == "cancelled":
-                    break
-                j["status"] = "completed"
-                j["deviance"] = model.deviance
-                j["n_samples"] = model.n_samples
-                break
-        train_jobs.set(jobs)
+        # Update job on success (immutably, so the UI actually re-renders).
+        _update_job(
+            job_id,
+            status="completed",
+            deviance=model.deviance,
+            n_samples=model.n_samples,
+        )
 
         # Auto-register in project
         model.register(project, auto_save=True)
@@ -311,14 +312,7 @@ def _run_training(job_id, model_key, param_values, dataset, sampling_cfg, projec
 
     except Exception as exc:
         logger.exception("Training failed for %s", model_key)
-        jobs = list(train_jobs.value)
-        for j in jobs:
-            if j["id"] == job_id:
-                if j["status"] != "cancelled":
-                    j["status"] = "failed"
-                    j["error"] = str(exc)
-                break
-        train_jobs.set(jobs)
+        _update_job(job_id, status="failed", error=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -326,21 +320,26 @@ def _run_training(job_id, model_key, param_values, dataset, sampling_cfg, projec
 # ---------------------------------------------------------------------------
 
 
-def _make_param_component(model_key: str):
+def _make_param_component(model_key: str, group: str):
     """Factory: create a dedicated Solara component for one model's params.
 
-    Each model gets its own component *type*, so when the user switches models
-    reacton unmounts the old component and mounts the new one cleanly — no
-    child-tree reconciliation, no callback-cleanup crashes.
+    ``group`` selects which subset of the model's params this component renders
+    ("params" for hyperparameters, "variables" for dataset-layer references).
+    Each (model, group) pair gets its own component *type*, so when the user
+    switches models reacton unmounts the old component and mounts the new one
+    cleanly — no child-tree reconciliation, no callback-cleanup crashes.
     """
-    registry = MODEL_REGISTRY[model_key]
+    param_defs = [
+        p for p in MODEL_REGISTRY[model_key]["params"]
+        if p.get("group", "params") == group
+    ]
 
     @solara.component
     def _Params(params: dict, set_params):
         def _update(param_key, value):
             set_params({**params, param_key: value})
 
-        for param_def in registry["params"]:
+        for param_def in param_defs:
             pkey = param_def["key"]
             current = params.get(pkey, param_def["default"])
             ptype = param_def["type"]
@@ -372,13 +371,20 @@ def _make_param_component(model_key: str):
                     outlined=True,
                 )
 
-    _Params.__name__ = f"Params_{model_key}"
-    _Params.__qualname__ = f"Params_{model_key}"
+    _Params.__name__ = f"Params_{model_key}_{group}"
+    _Params.__qualname__ = f"Params_{model_key}_{group}"
     return _Params
 
 
-# One component per model — distinct types avoid reconciliation issues.
-PARAM_COMPONENTS = {k: _make_param_component(k) for k in MODEL_KEYS}
+# One component per (model, group) — distinct types avoid reconciliation issues.
+# "params" render inside the collapsed Parameters panel; "variables" (the
+# dataset-layer references used by Benchmark/MW) render with the dataset.
+PARAM_COMPONENTS = {k: _make_param_component(k, "params") for k in MODEL_KEYS}
+VARIABLE_COMPONENTS = {k: _make_param_component(k, "variables") for k in MODEL_KEYS}
+MODEL_HAS_VARIABLES = {
+    k: any(p.get("group") == "variables" for p in MODEL_REGISTRY[k]["params"])
+    for k in MODEL_KEYS
+}
 
 
 @solara.component
@@ -472,21 +478,14 @@ def TrainTile(project):
         }
         train_jobs.set(list(train_jobs.value) + [job])
 
-        thread = threading.Thread(
-            target=_run_training,
-            args=(job_id, selected_key, all_params.get(selected_key, {}), dataset, sampling_cfg, p),
-            daemon=True,
+        spawn_in_context(
+            _run_training,
+            (job_id, selected_key, all_params.get(selected_key, {}), dataset, sampling_cfg, p),
         )
-        thread.start()
         logger.info("Training started: %s on %s (job=%s)", selected_key, selected_dataset, job_id)
 
     def on_cancel(job_id):
-        jobs = list(train_jobs.value)
-        for j in jobs:
-            if j["id"] == job_id:
-                j["status"] = "cancelled"
-                break
-        train_jobs.set(jobs)
+        _update_job(job_id, skip_if_cancelled=False, status="cancelled")
 
     def on_remove(job_id):
         train_jobs.set([j for j in train_jobs.value if j["id"] != job_id])
@@ -505,26 +504,38 @@ def TrainTile(project):
             outlined=True,
         )
 
-        # Description
-        rv.Alert(
-            type_="info",
-            dense=True,
-            text=True,
-            children=[registry["description"]],
-        )
+        # Collapsible model description — collapsed by default to save space.
+        # The expansion panel handles expand/collapse entirely in the browser,
+        # so it needs no Python state or click round-trip.
+        with rv.ExpansionPanels(flat=True):
+            with rv.ExpansionPanel():
+                with rv.ExpansionPanelHeader():
+                    solara.Text("Model description")
+                with rv.ExpansionPanelContent():
+                    solara.Markdown(registry["description"])
 
         # Parameters — each model has its own component type, so reacton
-        # does clean unmount/mount instead of reconciling children.
-        solara.Markdown("**Parameters**")
-
+        # does clean unmount/mount instead of reconciling children. Collapsed
+        # by default (same self-managed ExpansionPanels pattern as the model
+        # description) to keep the form compact; the dataset and sampling
+        # options below stay visible.
         def _set_model_params(new_params, mk=selected_key):
             set_all_params({**all_params, mk: new_params})
 
         ParamComponent = PARAM_COMPONENTS[selected_key]
-        ParamComponent(
-            params=all_params.get(selected_key, {}),
-            set_params=_set_model_params,
-        )
+        with rv.ExpansionPanels(flat=True):
+            with rv.ExpansionPanel():
+                with rv.ExpansionPanelHeader():
+                    solara.Text("Parameters")
+                with rv.ExpansionPanelContent():
+                    ParamComponent(
+                        params=all_params.get(selected_key, {}),
+                        set_params=_set_model_params,
+                    )
+
+        # Training data — the dataset and the variable (layer) references that
+        # name fields within it live together under one heading.
+        solara.Markdown("**Training data**")
 
         # Dataset selector
         rv.Select(
@@ -536,6 +547,17 @@ def TrainTile(project):
             outlined=True,
             no_data_text="No datasets registered. Create one in Step 3.",
         )
+
+        # Variables — for Benchmark/MW these name layers within the dataset, so
+        # they belong with the dataset selection rather than the collapsed
+        # parameters. Models without variable params render nothing here.
+        if MODEL_HAS_VARIABLES[selected_key]:
+            solara.Markdown("**Variables**")
+            VarComponent = VARIABLE_COMPONENTS[selected_key]
+            VarComponent(
+                params=all_params.get(selected_key, {}),
+                set_params=_set_model_params,
+            )
 
         # Sampling (conditional)
         if registry["has_sampling"]:
