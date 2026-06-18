@@ -26,10 +26,15 @@ V = TypeVar("V")
 
 
 class FrozenDict(Mapping[str, V]):
-    """Immutable, hashable str-keyed mapping for the Document registries.
+    """Read-only, hashable str-keyed mapping for the Document registries.
 
-    Copies its input on construction; __setitem__/__delitem__ raise TypeError.
-    Carries a Pydantic core schema that validates values against V.
+    Copies its input on construction; __setitem__/__delitem__/__setattr__ raise
+    TypeError. Carries a Pydantic core schema that validates values against V.
+
+    Immutability is *shallow*: the mapping itself cannot be re-keyed, but it does
+    not deep-freeze nested mutable values (a spec's ``dict[str, JsonValue]``
+    fields stay mutable). The registries hold frozen Pydantic specs, so this is
+    safe in practice; do not rely on FrozenDict to deep-freeze arbitrary values.
     """
 
     __slots__ = ("_data", "_hash")
@@ -261,6 +266,12 @@ class JNRSpec(_ModelSpecBase):
     dist_thresh: float | None = None
     dist_bins: tuple[float, ...] = ()
     defrate_files: dict[str, str] = Field(default_factory=dict)
+    # Names of the dataset features this model consumes (defaults preserve the
+    # prior hard-coded session behaviour; real projects override them, e.g.
+    # forest_gfc_edge / forest_gfc).
+    forest_edge_var: str = "forest_edge"
+    forest_var: str = "forest_2015"
+    subj_var: str = "subj"
 
 
 class MWSpec(_ModelSpecBase):
@@ -268,6 +279,8 @@ class MWSpec(_ModelSpecBase):
     dist_thresh: float | None = None
     win_size_list: tuple[int, ...] = ()
     ldefrate_files: dict[str, str] = Field(default_factory=dict)
+    forest_edge_var: str = "forest_edge"
+    forest_var: str = "forest_2015"
 
 
 ModelSpec = Annotated[
@@ -294,6 +307,17 @@ class PredictionSpec(BaseModel):
 
 
 class ProjectDocument(BaseModel):
+    """Frozen, references-only project aggregate (the only persisted artifact).
+
+    Holds no live ``ee`` objects, no fitted estimators, and no back-reference to
+    the session. ``frozen=True`` blocks attribute rebinding and the FrozenDict
+    registries block re-keying, so the document is a value object compared by
+    equality. Note the immutability is *shallow*: the free-form
+    ``dict[str, JsonValue]`` maps (``parameters``/``*_snapshot``/``metrics``/
+    ``aoi``) are plain dicts, so the aggregate is equality-comparable but not
+    hashable and not deep-frozen.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     schema_version: int = 1

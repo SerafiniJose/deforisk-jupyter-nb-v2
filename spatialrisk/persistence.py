@@ -362,8 +362,89 @@ _V0_RASTER_DROP = {"data_type", "multi_year"}
 _V0_VECTOR_DROP = {"data_type", "multi_year"}
 
 
+def _is_v0_gee_variable(var_data: dict) -> bool:
+    """Detect a v0 GEEVar dict.
+
+    Distinguished by its ``gee_images`` field (local variables lack it) or an
+    Earth Engine asset-like ``path``.
+    """
+    if "gee_images" in var_data:
+        return True
+    path = var_data.get("path")
+    return isinstance(path, str) and (
+        path.startswith("users/") or path.startswith("projects/")
+    )
+
+
+def _recover_asset_id(var_data: dict) -> Optional[str]:
+    """Return a usable EE asset id from a v0 GEEVar, or None if unrecoverable.
+
+    A live ``ee.Image`` dumped to JSON (e.g. ``"<ee.Image object ...>"`` or an
+    ``ee.Image(...)`` expression repr) is NOT a usable asset id.
+    """
+    def _usable(value) -> bool:
+        return (
+            isinstance(value, str)
+            and "/" in value
+            and not value.startswith(("ee.", "<"))
+            and "(" not in value
+        )
+
+    path = var_data.get("path")
+    if _usable(path):
+        return path
+    for image in var_data.get("gee_images") or []:
+        if _usable(image):
+            return image
+    return None
+
+
+def _migrate_v0_gee_variable(var_data: dict) -> dict:
+    """Convert a v0 GEEVar dict to a GEESpec dict backed by an AssetRecipe.
+
+    Recoverable asset refs become ``GEESpec(AssetRecipe(...))``; an unrecoverable
+    live-image dump raises with a clear, actionable message rather than silently
+    validating as a broken local raster.
+    """
+    name = var_data.get("name")
+    data_type = var_data.get("data_type") or "raster"
+    asset_id = _recover_asset_id(var_data)
+    if asset_id is None:
+        raise ValueError(
+            f"Cannot migrate GEE variable {name!r}: it carries a live/"
+            f"unrecoverable image dump (gee_images="
+            f"{var_data.get('gee_images')!r}, path={var_data.get('path')!r}) "
+            f"with no asset id. Re-create it from a catalogue/asset recipe."
+        )
+    export_kind = "vector" if data_type == "vector" else "raster"
+    recipe = {
+        "source": "asset",
+        "asset_id": asset_id,
+        "export_kind": export_kind,
+        "scale": var_data.get("default_scale"),
+        "crs": var_data.get("default_crs"),
+    }
+    out = {
+        "kind": "gee",
+        "name": name,
+        "year": var_data.get("year"),
+        "active": var_data.get("active", True),
+        "tags": var_data.get("tags") or (),
+        "data_type": data_type,
+        "recipe": recipe,
+    }
+    if export_kind == "raster":
+        out["raster_type"] = var_data.get("raster_type")
+        out["post_processing"] = var_data.get("post_processing") or ()
+    else:
+        out["rasterization_method"] = var_data.get("rasterization_method")
+    return out
+
+
 def _migrate_v0_variable(var_data: dict) -> dict:
     """Inject the ``kind`` discriminator and strip v0-only fields."""
+    if _is_v0_gee_variable(var_data):
+        return _migrate_v0_gee_variable(var_data)
     data_type = var_data.get("data_type")
     out = {k: v for k, v in var_data.items()}
     if data_type == "raster":
@@ -382,31 +463,79 @@ def _migrate_v0_variable(var_data: dict) -> dict:
     return out
 
 
-def _resolve_base_raster_ref(
-    base_raster: dict, raw_vars: dict, processed_vars: dict
-) -> Optional[dict]:
-    """Resolve a v0 embedded base_raster dict to a VariableId dict.
+_BASE_NAME_SUFFIXES = ("_reprojected_matched", "_matched", "_reprojected")
 
-    Matches by (name, year), preferring processed over raw (base rasters are
-    products of reprojection). Returns a plain dict for VariableId, or None.
+
+def _normalize_base_name(name: Optional[str]) -> Optional[str]:
+    """Strip trailing reprojection/match suffixes for fuzzy base-raster matching.
+
+    ``subj_reprojected`` and ``subj_reprojected_matched`` both normalize to
+    ``subj`` so a v0 base raster recorded under its pre-match name still resolves
+    to its on-disk ``*_reprojected_matched`` product.
+    """
+    if not name:
+        return name
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _BASE_NAME_SUFFIXES:
+            if name.endswith(suffix) and len(name) > len(suffix):
+                name = name[: -len(suffix)]
+                changed = True
+    return name
+
+
+def _resolve_base_raster_ref(base_raster: dict, raw_vars: dict, processed_vars: dict):
+    """Resolve a v0 embedded base_raster dict to a non-dangling VariableId.
+
+    Resolution order (processed preferred over raw at each step):
+
+    1. **path** — same on-disk file under any registry name;
+    2. **exact (name, year)**;
+    3. **suffix-normalized name** (``subj_reprojected`` and
+       ``subj_reprojected_matched`` both normalize to ``subj``);
+    4. **insert** — the base raster matches nothing, so it is migrated and added
+       as a processed variable and referenced, rather than left dangling.
+
+    Returns ``(ref_dict, inject_key, inject_spec)``; ``inject_*`` are non-None
+    only in case 4 (the caller adds the spec to ``processed_variables``).
     """
     name = base_raster.get("name")
     year = base_raster.get("year")
+    path = base_raster.get("path")
+    registries = (("processed", processed_vars), ("raw", raw_vars))
 
-    def _match(registry: dict) -> bool:
-        return any(
-            v.get("name") == name and v.get("year") == year
-            for v in registry.values()
-        )
+    def _search(predicate):
+        for source, registry in registries:
+            for v in registry.values():
+                if predicate(v):
+                    return {
+                        "source": source,
+                        "name": v.get("name"),
+                        "year": v.get("year"),
+                    }
+        return None
 
-    if _match(processed_vars):
-        source = "processed"
-    elif _match(raw_vars):
-        source = "raw"
-    else:
-        # No registry match — default to processed (base rasters live there).
-        source = "processed"
-    return {"source": source, "name": name, "year": year}
+    if path:
+        ref = _search(lambda v: v.get("path") and v.get("path") == path)
+        if ref:
+            return ref, None, None
+
+    ref = _search(lambda v: v.get("name") == name and v.get("year") == year)
+    if ref:
+        return ref, None, None
+
+    norm = _normalize_base_name(name)
+    if norm:
+        ref = _search(lambda v: _normalize_base_name(v.get("name")) == norm)
+        if ref:
+            return ref, None, None
+
+    # Nothing matched: migrate and inject the embedded base raster itself so the
+    # reference always points at a real variable.
+    inject_key = f"{name}_{year}" if year else name
+    inject_spec = _migrate_v0_variable(base_raster)
+    return {"source": "processed", "name": name, "year": year}, inject_key, inject_spec
 
 
 _MODEL_COMMON = (
@@ -415,6 +544,27 @@ _MODEL_COMMON = (
     "samples_path", "trained", "trained_at", "n_samples", "deviance",
 )
 _KNOWN_MODEL_TYPES = {"glm", "rf", "icar", "jnr", "mw"}
+
+# Legacy v0 stored each model's behaviour state as TOP-LEVEL fields. The v1
+# ModelSpecs keep only artifact/state fields typed and treat ``parameters`` as
+# the canonical home for re-fit hyperparameters, so these are folded in on
+# migration (and re-read by SessionExecutor / fit_spec). Without this the
+# values were silently dropped and re-fit fell back to library defaults.
+_PARAM_KEYS = {
+    "glm": ("solver", "max_iter", "random_seed"),
+    "rf": ("n_trees", "max_depth", "min_samples_leaf", "random_seed"),
+    "icar": ("csize", "mcmc", "burnin", "thin", "prior_vrho", "beta_start",
+             "random_seed", "csize_interpolate"),
+    "jnr": ("blk_rows", "defor_threshold", "max_dist", "forest_value",
+            "defor_value"),
+    "mw": ("blk_rows", "defor_threshold", "max_dist", "rescale_max_val",
+           "forest_value", "defor_value", "time_interval", "win_size_list"),
+}
+# Feature-name mappings that become typed fields on JNR/MW specs.
+_MAP_KEYS = {
+    "jnr": ("forest_edge_var", "forest_var", "subj_var"),
+    "mw": ("forest_edge_var", "forest_var"),
+}
 
 
 def _migrate_v0_model(model_data: dict) -> Optional[dict]:
@@ -427,6 +577,19 @@ def _migrate_v0_model(model_data: dict) -> Optional[dict]:
         return None
 
     out = {k: model_data[k] for k in _MODEL_COMMON if k in model_data}
+
+    # Fold legacy top-level hyperparameters into the canonical ``parameters``
+    # map (existing parameters win; only missing keys are filled).
+    params = dict(out.get("parameters") or {})
+    for key in _PARAM_KEYS[mtype]:
+        if key in model_data and key not in params:
+            params[key] = model_data[key]
+    out["parameters"] = params
+
+    # Carry feature-name mappings onto the typed JNR/MW spec fields.
+    for key in _MAP_KEYS.get(mtype, ()):
+        if model_data.get(key) is not None:
+            out[key] = model_data[key]
 
     if mtype in ("glm", "rf"):
         out["estimator_pickle"] = model_data.get("model_path")
@@ -571,11 +734,14 @@ def _migrate_v0_to_v1(data: dict) -> dict:
 
     base_raster = data.get("base_raster")
     if base_raster:
-        out["base_raster_ref"] = _resolve_base_raster_ref(
+        ref, inject_key, inject_spec = _resolve_base_raster_ref(
             base_raster,
             data.get("raw_variables", {}),
             data.get("processed_variables", {}),
         )
+        out["base_raster_ref"] = ref
+        if inject_spec is not None:
+            out["processed_variables"][inject_key] = inject_spec
     return out
 
 

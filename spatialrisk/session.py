@@ -755,7 +755,7 @@ class ProjectSession:
                 model_key=model_key,
                 model_type="jnr",
                 defor_file=self._resolve_target_path(dataset),
-                forest_edge_file=feats["forest_edge"],
+                forest_edge_file=feats[model.forest_edge_var],
                 period=dataset.name,
                 defor_threshold=float(params.get("defor_threshold", 99.5)),
                 max_dist=int(params.get("max_dist", 5000)),
@@ -771,8 +771,8 @@ class ProjectSession:
                 model_key=model_key,
                 model_type="mw",
                 defor_file=self._resolve_target_path(dataset),
-                forest_edge_file=feats["forest_edge"],
-                forest_file=feats["forest_2015"],
+                forest_edge_file=feats[model.forest_edge_var],
+                forest_file=feats[model.forest_var],
                 period=dataset.name,
                 win_sizes=tuple(params.get("win_size_list", (5, 11, 21))),
                 time_interval=int(params["time_interval"]),
@@ -820,17 +820,14 @@ class ProjectSession:
 
         feats = self._resolve_feature_paths(dataset)
         if model.model_type == "jnr":
-            forest_var = getattr(model, "forest_var", "forest_2015")
-            forest_edge_var = getattr(model, "forest_edge_var", "forest_edge")
-            subj_var = getattr(model, "subj_var", "subj")
             return JNRApplySpec(
                 model_key=model_key,
                 model_type="jnr",
                 out_path=str(out_path),
                 defor_file=self._resolve_target_path(dataset),
-                forest_file=feats[forest_var],
-                forest_edge_file=feats[forest_edge_var],
-                subj_file=feats[subj_var],
+                forest_file=feats[model.forest_var],
+                forest_edge_file=feats[model.forest_edge_var],
+                subj_file=feats[model.subj_var],
                 period=dataset.name,
                 dist_bins=tuple(float(b) for b in model.dist_bins),
                 time_interval=int(dict(model.parameters).get("time_interval", 0))
@@ -842,14 +839,12 @@ class ProjectSession:
             )
 
         if model.model_type == "mw":
-            forest_var = getattr(model, "forest_var", "forest_2015")
-            forest_edge_var = getattr(model, "forest_edge_var", "forest_edge")
             return MWApplySpec(
                 model_key=model_key,
                 model_type="mw",
                 defor_file=self._resolve_target_path(dataset),
-                forest_file=feats[forest_var],
-                forest_edge_file=feats[forest_edge_var],
+                forest_file=feats[model.forest_var],
+                forest_edge_file=feats[model.forest_edge_var],
                 period=dataset.name,
                 ldefrate_files={
                     str(k): str(v) for k, v in model.ldefrate_files.items()
@@ -943,8 +938,10 @@ class ProjectSession:
                 continue
             if base is not None and spec.name == base.name and spec.year == base.year:
                 continue
-            self.get_variable_handle(spec.name, year=spec.year, source=source) \
-                .reproject_and_match(**kw)
+            # Iterate by the registry KEY, not spec.name: a materialized GEE
+            # product lives under e.g. ``altitude__materialized`` while its
+            # spec.name stays ``altitude`` (which also keys the GEE recipe).
+            VariableHandle(self, source, key).reproject_and_match(**kw)
 
     def rasterize_all(self, source: str = "raw", **kw):
         """Rasterize every active vector in `source` onto the base geobox,
@@ -958,7 +955,9 @@ class ProjectSession:
                 continue
             if not getattr(spec, "active", True):
                 continue
-            handle = self.get_variable_handle(spec.name, year=spec.year, source=source)
+            # Iterate by registry KEY (see reproject_and_match_all): a materialized
+            # GEE vector product is keyed e.g. ``roads__materialized``.
+            handle = VariableHandle(self, source, key)
             handle = handle.rasterize(**kw)
             for step in getattr(spec, "post_processing", ()) or ():
                 handle = handle.apply_post_processing(step)

@@ -40,9 +40,9 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]  
-include = ["component*"]  
-exclude = ["notebooks*", "notebooks_dask*", "data*", "docs*", "legacy*"]
+where = ["."]
+include = ["spatialrisk*"]
+exclude = ["notebooks*", "notebooks_dask*", "data*", "docs*", "legacy*", "tests*"]
 
 [dependency-groups]
 dev = [

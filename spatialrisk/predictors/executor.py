@@ -192,16 +192,28 @@ class SessionExecutor:
             features=features,
         )
 
+    # Hyperparameters the supervised models read from typed constructor fields
+    # (canonical home is spec.parameters; forward them so a migrated/configured
+    # model fits with its real settings instead of library defaults).
+    _GLM_HP = ("solver", "max_iter", "random_seed")
+    _RF_HP = ("n_trees", "max_depth", "min_samples_leaf", "random_seed")
+
     def _fit_supervised(self, session, model_key, spec):
         import os
 
         from spatialrisk.document import GLMSpec, RFSpec
-        from spatialrisk.mlmodels.glm_model import GLMModel
-        from spatialrisk.mlmodels.rf_model import RFModel
 
-        cls = GLMModel if spec.model_type == "glm" else RFModel
-        model = cls(name=model_key, sampling=spec.sampling,
-                    formula=spec.formula, parameters=dict(spec.parameters))
+        params = dict(spec.parameters)
+        if spec.model_type == "glm":
+            from spatialrisk.mlmodels.glm_model import GLMModel
+            hp = {k: params[k] for k in self._GLM_HP if k in params}
+            model = GLMModel(name=model_key, sampling=spec.sampling,
+                             formula=spec.formula, parameters=params, **hp)
+        else:
+            from spatialrisk.mlmodels.rf_model import RFModel
+            hp = {k: params[k] for k in self._RF_HP if k in params}
+            model = RFModel(name=model_key, sampling=spec.sampling,
+                            formula=spec.formula, parameters=params, **hp)
         model.dataset = self._build_shim(spec)
         # Leave samples_path=None so legacy fit() samples + writes the auto CSV
         # into the spec's folder (filename samples_{model_type}_{name}.csv);
@@ -283,11 +295,21 @@ class SessionExecutor:
         from spatialrisk.document import ICARSpec
         from spatialrisk.mlmodels.icar_model import ICARModel
 
+        # Effective iCAR hyperparameters; the canonical home is ICARSpec.parameters
+        # (persisted below) so a re-fit / round-trip reproduces this run.
+        icar_params = {
+            "csize": spec.csize, "mcmc": spec.mcmc, "burnin": spec.burnin,
+            "thin": spec.thin, "prior_vrho": spec.prior_vrho,
+            "beta_start": spec.beta_start,
+            "csize_interpolate": spec.csize_interpolate,
+            "random_seed": spec.random_seed,
+        }
         model = ICARModel(
             name=model_key, sampling=spec.sampling, formula=spec.formula,
             csize=spec.csize, mcmc=spec.mcmc, burnin=spec.burnin, thin=spec.thin,
             prior_vrho=spec.prior_vrho, beta_start=spec.beta_start,
-            parameters={}, random_seed=spec.random_seed,
+            csize_interpolate=spec.csize_interpolate,
+            parameters=dict(icar_params), random_seed=spec.random_seed,
         )
         model.dataset = self._build_shim(spec)
         out_dir = str(spec.rho_path).rsplit("/", 1)[0] if spec.rho_path else \
@@ -304,7 +326,8 @@ class SessionExecutor:
         new = ICARSpec(
             model_type="icar", name=model_key,
             dataset_name=session._doc.models[model_key].dataset_name,
-            formula=model.formula, parameters={}, sampling=spec.sampling,
+            formula=model.formula, parameters=dict(icar_params),
+            sampling=spec.sampling,
             samples_path=str(model.samples_path),
             feature_names=tuple(spec.feature_paths.keys()),
             trained=True, trained_at=model.trained_at,

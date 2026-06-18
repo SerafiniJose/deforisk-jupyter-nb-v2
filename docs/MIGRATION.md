@@ -13,15 +13,15 @@ materialized by the single `GEEAdapter`; persistence is now explicit.
 | --- | --- |
 | `from spatialrisk.project import Project` | `from spatialrisk.session import ProjectSession` |
 | `project = Project(project_name=name)` | `session = ProjectSession.create(name)` |
-| `project = Project.load(project_name=name)` | `session = ProjectSession.open(name)` |
+| `project = Project.load(project_name=name)` | `session = ProjectSession.open(name, store=store)` |
 | `GEEVar(name=..., gee_images=[live_ee_image], aoi=ee_geom, project=p)` | `session.add_gee_variable(GEESpec(name=..., recipe=CatalogueRecipe(catalogue_key=..., params={...}, export_kind="raster")))` |
 | ad-hoc user asset via `GEEVar(gee_images=[ee.Image("users/...")])` | `session.add_gee_variable(GEESpec(recipe=AssetRecipe(asset_id="users/...", band=..., export_kind="raster")))` |
 | `var.to_local_raster(); var.add_as_raw()` | `session.add_gee_variable(...)` then `session.process_all()` (materialize is part of orchestration) |
-| `LocalRasterVar(name=..., path=..., project=p).add_as_raw()` | `session.add_local_raster(name=..., path=..., raster_type=...)` |
-| `LocalVectorVar(name=..., path=..., project=p).add_as_raw()` | `session.add_local_vector(name=..., path=..., rasterization_method=...)` |
+| `LocalRasterVar(name=..., path=..., project=p).add_as_raw()` | `session.add_local_raster(LocalRasterSpec(name=..., path=..., raster_type=...))` |
+| `LocalVectorVar(name=..., path=..., project=p).add_as_raw()` | `session.add_local_vector(LocalVectorSpec(name=..., path=..., rasterization_method=...))` |
 | `project.reproject_and_match_all()` | `session.process_all()` (= materialize → reproject → rasterize) |
-| `project.base_raster = var` | `session.set_base_raster(ref)` |
-| AOI from `aoi_var.to_local_vector()` + `project.aoi` | `session.add_gee_variable(GEESpec(recipe=CatalogueRecipe(catalogue_key="aoi_fao_gaul", ...)))` then `session.set_aoi_from_variable("aoi")` |
+| `project.base_raster = var` | `session.set_base_raster(VariableId(source=..., name=..., year=...))` |
+| AOI from `aoi_var.to_local_vector()` + `project.aoi` | `session.add_gee_variable(GEESpec(recipe=CatalogueRecipe(catalogue_key="aoi_fao_gaul", ...)))` → `session.materialize_all()` → read the product → `session.set_aoi(aoi_geojson_geometry)` |
 | `model.fit()` | `ModelHandle.fit()` |
 | `model.apply(output_file=...)` | `ModelHandle.apply(out_path=...)` |
 | auto-save after every mutation | explicit `session.save()` |

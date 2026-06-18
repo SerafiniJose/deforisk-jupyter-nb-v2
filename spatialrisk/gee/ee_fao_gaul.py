@@ -70,7 +70,10 @@ def get_fao_gaul_features(
     return selected_features
 
 
-def get_fao_gaul_subj(level: int, feature_collection: ee.FeatureCollection):
+def get_fao_gaul_subj(
+    level: int,
+    feature_collection: "ee.Geometry | ee.Feature | ee.FeatureCollection",
+):
     """
     Selects features from FAO GAUL 2024 dataset based on the level provided.
 
@@ -117,8 +120,11 @@ def get_fao_gaul_subj(level: int, feature_collection: ee.FeatureCollection):
     # Get the attribute name for the specified level
     fao_gaul_attribute = gaul_names_attribute[level]
 
-    # Select features based on the geometry of the provided feature collection
-    selected_features = fao_gaul_fc.filterBounds(feature_collection.geometry())
+    # Filter to the provided AOI. ``filterBounds`` accepts a Geometry, Feature,
+    # or FeatureCollection directly, so we pass the AOI through unchanged — a
+    # bare ``ee.Geometry`` (what the catalogue ``subj`` resolver receives) has no
+    # ``.geometry()`` method, which previously raised AttributeError.
+    selected_features = fao_gaul_fc.filterBounds(feature_collection)
 
     # You might want to use fao_gaul_attribute here for further operations
     # For example, you could select features based on this attribute
