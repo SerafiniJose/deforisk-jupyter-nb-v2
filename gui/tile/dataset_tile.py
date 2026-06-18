@@ -98,8 +98,12 @@ def DatasetTile(project):
             set_form_error("Select at least one feature variable.")
             return
         try:
-            ds = Dataset(project=p, name=ds_name.strip())
-            ds.set_target(target_name, year=year)
+            # year is stored on the dataset for temporal feature alignment.
+            ds = Dataset(project=p, name=ds_name.strip(), year=year)
+            # Only pass the year to set_target when the target itself is temporal,
+            # since set_target rejects a year argument for static targets.
+            target_is_temporal = p.is_temporal(target_name)
+            ds.set_target(target_name, year=year if target_is_temporal else None)
             ds.set_features(feature_names)
             ds.validate()
             set_form_success("Dataset is valid.")
@@ -122,8 +126,11 @@ def DatasetTile(project):
             set_form_error("Select at least one feature variable.")
             return
         try:
-            ds = Dataset(project=p, name=ds_name.strip())
-            ds.set_target(target_name, year=year)
+            # See on_validate: store year for feature alignment, but only pass it
+            # to set_target for temporal targets.
+            ds = Dataset(project=p, name=ds_name.strip(), year=year)
+            target_is_temporal = p.is_temporal(target_name)
+            ds.set_target(target_name, year=year if target_is_temporal else None)
             ds.set_features(feature_names)
 
             key = editing_key if editing_key else ds_name.strip()
@@ -216,7 +223,7 @@ def DatasetTile(project):
             )
             solara.Button(
                 "Register",
-                icon_name="mdi-database-plus-outline",
+                icon_name="mdi-database-plus",
                 color="primary",
                 small=True,
                 on_click=on_register,
@@ -228,6 +235,15 @@ def DatasetTile(project):
                     text=True,
                     small=True,
                 )
+            # Push Clear to the right; resets all form inputs.
+            rv.Spacer()
+            solara.Button(
+                "Clear",
+                icon_name="mdi-eraser",
+                text=True,
+                small=True,
+                on_click=reset_form,
+            )
 
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])

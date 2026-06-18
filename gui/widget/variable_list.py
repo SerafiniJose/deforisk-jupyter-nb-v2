@@ -8,7 +8,7 @@ import solara
 
 logger = logging.getLogger("spatial_risk")
 
-_GRID = "display:grid;grid-template-columns:1fr 90px 90px 116px;align-items:center;width:100%;"
+_GRID = "display:grid;grid-template-columns:1fr 90px 70px 116px;align-items:center;width:100%;column-gap:16px;"
 _HEADER_EXTRA = (
     "padding:4px 8px 6px;"
     "border-bottom:2px solid rgba(0,0,0,0.15);"
@@ -44,18 +44,13 @@ def SourceVariableList(
         with rv.Html(tag="div", style_=_GRID + _HEADER_EXTRA):
             rv.Html(tag="span", children=["Name"])
             rv.Html(tag="span", children=["Type"])
-            rv.Html(tag="span", children=["Status"])
+            rv.Html(tag="span", children=["Year"])
             rv.Html(tag="span", children=[""])
 
         # Data rows
         for key, var in p.raw_variables.items():
             is_base = p.base_raster is not None and p.base_raster.name == var.name
-            processed_vars = p.processed_variables
-            derived = [k for k, pv in processed_vars.items() if pv.name.startswith(var.name)]
-            is_processed = key in processed_vars or bool(derived)
             data_type_label = var.data_type if isinstance(var.data_type, str) else var.data_type.value
-            status_label = "ready" if is_processed else "pending"
-            status_color = "success" if is_processed else "warning"
 
             with rv.Html(tag="div", style_=_GRID + _ROW_EXTRA):
                 # Name
@@ -66,11 +61,9 @@ def SourceVariableList(
                 # Type
                 with rv.Html(tag="div", style_=_CELL_FLEX):
                     rv.Chip(children=[data_type_label], x_small=True, outlined=True, color="primary")
-                # Status
+                # Year
                 with rv.Html(tag="div", style_=_CELL_FLEX):
-                    rv.Chip(children=[status_label], color=status_color, x_small=True, outlined=True)
-                    if derived:
-                        rv.Chip(children=[f"+{len(derived)}"], x_small=True, outlined=True)
+                    solara.Text(str(var.year) if var.year else "—", style="color:grey;")
                 # Actions — right-aligned
                 with rv.Html(tag="div", style_=_CELL_RIGHT):
                     # Map toggle — only for GEE-backed variables (have ee images).
