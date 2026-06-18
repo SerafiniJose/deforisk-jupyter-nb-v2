@@ -24,6 +24,11 @@ class AppState:
         # AOI (pysepal AoiResult | None)
         self.aoi_result = solara.reactive(None)
 
+        # Bumped each time a project is loaded from disk. The map view subscribes
+        # to this so it can zoom to the AOI on load (a plain project-reference
+        # watch would also fire on every in-place mutation).
+        self.project_loaded_signal = solara.reactive(0)
+
         # Variable processing
         self.processing = solara.reactive(False)
         self.process_error = solara.reactive(None)
@@ -58,6 +63,7 @@ class AppState:
             self._suppress_dirty = False
         self.project_dirty.set(False)
         self.last_saved.set(when)
+        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
     def new_project_state(self, project) -> None:
         """Install a freshly created project (dirty, never saved) and reset the

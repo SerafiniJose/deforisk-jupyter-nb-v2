@@ -36,6 +36,8 @@ from gui.scripts.project_ui_helpers import (
     overwrite_needed,
     validate_project_name,
 )
+from gui.scripts.map_helpers import show_aoi_on_map
+from gui.scripts.aoi_io import load_aoi, write_aoi
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
@@ -102,6 +104,10 @@ def ProjectPanel():
             when = next(
                 (i.modified for i in infos if i.name == selected), None
             )
+            # Restore the saved AOI (sidecar geometry + metadata) so the map can
+            # frame it and the downstream tabs unlock. Set before installing the
+            # project so the load-zoom effect sees it on the same render.
+            app_state.aoi_result.set(load_aoi(DATA_DIR / loaded.project_name, loaded.aoi))
             app_state.load_project_state(loaded, when)
             app_state.status_message.set(f"Project '{selected}' loaded.")
             app_state.error_message.set(None)
@@ -156,6 +162,9 @@ def ProjectPanel():
     def _really_save():
         set_overwrite_open(False)
         try:
+            # Persist the AOI alongside the project: geometry → aoi.geojson
+            # sidecar, light metadata → project.aoi (saved into the manifest).
+            p.aoi = write_aoi(DATA_DIR / p.project_name, app_state.aoi_result.value)
             path = save_project(p)
             app_state.mark_saved(datetime.now())
             note = ""
@@ -408,7 +417,7 @@ def WorkflowTabs(map_, gee_interface):
             TrainTile(project=app_state.project)
 
         with rv.TabItem():
-            InferenceTile(project=app_state.project)
+            InferenceTile(project=app_state.project, map_=map_)
 
         with rv.TabItem():
             EvaluationTile(project=app_state.project)
@@ -447,6 +456,7 @@ def Page():
     sepal_map = solara.use_memo(
         lambda: sm.SepalMap(
             zoom=3,
+            min_zoom=3,
             center=[0, 0],
             gee=True,
             gee_interface=gee_interface,
@@ -465,6 +475,17 @@ def Page():
         app_state.project.set(Project(project_name=aoi.name))
 
     solara.use_effect(sync_project_from_aoi, [app_state.aoi_result.value])
+
+    # When a project is loaded, draw its restored AOI and frame it using
+    # pysepal's built-in zoom — the same rendering AoiView uses on selection.
+    # Read the signal here so Page re-renders (and the effect re-runs) on load;
+    # a no-op when no AOI (or no geometry) is present.
+    project_loaded_signal = app_state.project_loaded_signal.value
+
+    def show_aoi_on_load():
+        show_aoi_on_map(sepal_map, app_state.aoi_result.value)
+
+    solara.use_effect(show_aoi_on_load, [project_loaded_signal])
 
     def _seed_test_aoi():
         import os
