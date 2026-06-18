@@ -1,9 +1,10 @@
 from typing import TYPE_CHECKING, List
+
 import numpy as np
-from osgeo import gdal
 import rasterio
 import rioxarray
 import xarray as xr
+from osgeo import gdal
 
 from spatialrisk.variables.models import RasterType
 
@@ -109,12 +110,11 @@ def xr_rasterize(
         A set of keyword arguments to ``rasterio.features.rasterize``.
         Can include: 'all_touched', 'merge_alg', 'dtype'.
 
-    Returns
+    Returns:
     -------
     da_rasterized : xarray.DataArray
         The rasterized vector data.
     """
-
     import geopandas as gpd
     import rasterio
     from odc.geo import xr
@@ -197,8 +197,8 @@ def distance_to_edge_gdal_no_mask(
     verbose=False,
 ):
     """Computes the shortest distance to given pixel values in a raster,
-    while preserving the original nodata mask in the output."""
-
+    while preserving the original nodata mask in the output.
+    """
     # Read input file
     src_ds = gdal.Open(input_file)
     srcband = src_ds.GetRasterBand(1)
@@ -246,6 +246,37 @@ def distance_to_edge_gdal_no_mask(
     del src_ds, dst_ds
 
 
+def compute_forest_loss(forest_t1, forest_t2, nodata1, nodata2, where=np.where):
+    """Compute a deforestation raster from two forest masks (pure, backend-agnostic).
+
+    Encodes the canonical training-target convention used across the pipeline:
+
+    * ``1``   -> deforestation:   forest at ``t1`` (``== 1``) and non-forest at ``t2`` (``== 0``)
+    * ``0``   -> remaining forest: forest at both ``t1`` and ``t2`` (``== 1``)
+    * ``255`` -> nodata:          either input is nodata, or any other combination
+
+    Parameters
+    ----------
+    forest_t1, forest_t2 : array-like
+        Forest masks at two dates where ``1`` marks forest and ``0`` non-forest.
+        Works element-wise on numpy ``ndarray`` or (dask-backed) xarray ``DataArray``.
+    nodata1, nodata2 : scalar
+        Nodata sentinels for ``forest_t1`` / ``forest_t2``.
+    where : callable, optional
+        ``numpy.where`` (default) for in-memory arrays, or ``xarray.where`` to
+        preserve lazy/dask evaluation in the raster pipeline.
+
+    Returns:
+    -------
+    array-like of uint8
+        The deforestation raster using the encoding above.
+    """
+    valid = (forest_t1 != nodata1) & (forest_t2 != nodata2)
+    deforested = valid & (forest_t1 == 1) & (forest_t2 == 0)
+    remaining = valid & (forest_t1 == 1) & (forest_t2 == 1)
+    return where(deforested, 1, where(remaining, 0, 255)).astype("uint8")
+
+
 def process_forest_loss_xarray(input1_path, input2_path, output_path):
     # Open the input rasters
     input1 = rioxarray.open_rasterio(
@@ -275,23 +306,12 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
             "The bounds of input1 must be equal to or larger than those of input2."
         )
 
-    # Create masks for valid data
+    # Compute the deforestation truth-table (1 = deforested, 0 = remaining
+    # forest, 255 = nodata). Passing where=xr.where keeps the computation
+    # lazy/dask-backed instead of materialising the arrays in memory.
     nodata1 = input1.rio.nodata
     nodata2 = input2.rio.nodata
-    valid_mask = (input1 != nodata1) & (input2 != nodata2)
-
-    # Create output based on conditions using xarray operations
-    # Convention: 1 = deforestation (event of interest), 0 = forest remaining,
-    # 255 = nodata. `input1`/`input2` are forest masks (1 = forest) at t1/t2.
-    output = xr.where(
-        valid_mask & (input1 == 1) & (input2 == 0),
-        1,  # forest(t1) -> non-forest(t2): DEFORESTED -> 1
-        xr.where(
-            valid_mask & (input1 == 1) & (input2 == 1),
-            0,  # forest(t1) -> forest(t2): remaining forest -> 0
-            255,  # nodata for all other cases
-        ),
-    ).astype("uint8")
+    output = compute_forest_loss(input1, input2, nodata1, nodata2, where=xr.where)
 
     # Set proper metadata
     output.rio.write_nodata(255, inplace=True)
@@ -394,14 +414,15 @@ def get_forest_loss_calculated(
         List of exactly 3 forest raster layers, each with a year attribute.
         Years are automatically extracted from the layers.
 
-    Returns
+    Returns:
     -------
     List[LocalRasterVar]
         Three LocalRasterVar objects for the generated forest loss rasters
     """
     # Import here to avoid circular dependency
-    from spatialrisk.variables import LocalRasterVar
     from pathlib import Path
+
+    from spatialrisk.variables import LocalRasterVar
 
     # Validate input - must have exactly 3 layers
     if len(forest_layers) != 3:
@@ -495,15 +516,15 @@ def display_raster(
         Maximum dimension for display (default: 1024). Rasters larger than this
         will be downsampled for faster visualization.
 
-    Returns
+    Returns:
     -------
     tuple or None
         If return_fig=True, returns (fig, ax) tuple. Otherwise returns None.
     """
     import matplotlib.pyplot as plt
+    import numpy as np
     import rasterio
     from rasterio.enums import Resampling
-    import numpy as np
 
     # Open the raster file using rasterio
     with rasterio.open(path) as src:

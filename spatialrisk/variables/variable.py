@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import List, Union, Optional, Any, Dict
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from spatialrisk.variables.models import DataType
-import ee
 
 
 class Variable(BaseModel):
@@ -12,10 +12,6 @@ class Variable(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         use_enum_values=True,
-        # Exclude non-serializable fields by default
-        json_encoders={
-            Path: str,
-        },
     )
 
     name: str  # Clean variable identifier: "towns", "forest_gfc", "altitude"
@@ -26,7 +22,7 @@ class Variable(BaseModel):
     project: Optional["Project"] = Field(
         default=None, repr=False, exclude=True, validate_default=False
     )  # Excluded from JSON serialization and __repr__
-    aoi: Union[ee.Feature, ee.Geometry, ee.FeatureCollection] = Field(
+    aoi: Optional[Any] = Field(
         default=None, repr=False, exclude=True  # Excluded from JSON serialization
     )
 
@@ -55,6 +51,10 @@ class Variable(BaseModel):
 
         return super().model_dump(mode=mode, include=include, exclude=exclude, **kwargs)
 
+    @field_serializer("*", when_used="json", check_fields=False)
+    def _serialize_paths(self, value):
+        return str(value) if isinstance(value, Path) else value
+
     def activate(self, auto_save: bool = True) -> "Variable":
         """
         Activate this variable for processing.
@@ -67,12 +67,12 @@ class Variable(BaseModel):
         auto_save : bool, optional
             If True (default), automatically saves the project after activation.
 
-        Returns
+        Returns:
         -------
         Variable
             Returns self for method chaining.
 
-        Examples
+        Examples:
         --------
         >>> var.activate()
         >>> var.deactivate().activate()  # Toggle state
@@ -97,12 +97,12 @@ class Variable(BaseModel):
         auto_save : bool, optional
             If True (default), automatically saves the project after deactivation.
 
-        Returns
+        Returns:
         -------
         Variable
             Returns self for method chaining.
 
-        Examples
+        Examples:
         --------
         >>> var.deactivate()
         >>> var.deactivate(auto_save=False)  # Skip auto-save

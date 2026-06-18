@@ -7,11 +7,15 @@ Provides a generic Pydantic-based foundation for ML models that:
 - Serialize to/from JSON for project persistence
 """
 
-import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
+import pandas as pd
+import rasterio
+from patsy import dmatrices
+from patsy.highlevel import build_design_matrices
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from spatialrisk.sampling import Sampling
@@ -125,7 +129,7 @@ class BaseRiskModel(BaseModel):
             If provided, saves the full training DataFrame to this CSV path
             and sets self.samples_path.
 
-        Returns
+        Returns:
         -------
         df : pd.DataFrame
             Sampled training data from dataset.to_dataframe().
@@ -217,7 +221,7 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Folder for saving the model pickle.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -248,12 +252,173 @@ class BaseRiskModel(BaseModel):
             Value(s) in the mask raster that identify pixels to suppress.
             Defaults to 0. Ignored when ``mask`` is None.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written GeoTIFF.
         """
-        raise NotImplementedError("Subclasses must implement apply()")
+        # forestatrisk is an optional heavy dependency -- keep it lazy so the
+        # package imports (and models construct/serialize) without it installed.
+        import forestatrisk as far
+
+        if self._ml_model is None:
+            self.load_model()
+
+        self._check_apply_preconditions()
+
+        active_dataset = self._resolve_dataset(dataset)
+
+        if self._x_design_info is None:
+            if self.samples_path is not None and Path(self.samples_path).exists():
+                _df = pd.read_csv(self.samples_path).dropna()
+                _, x_ref = dmatrices(self.formula, _df, NA_action="drop")
+                self._x_design_info = x_ref.design_info
+            else:
+                raise RuntimeError(
+                    "Cannot reconstruct design info: samples_path not set or "
+                    "file missing. Re-run fit() to regenerate samples."
+                )
+
+        output_file = Path(output_file)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        feature_paths = {var.name: var.path for var in active_dataset.features}
+        label = self.model_type.upper() or type(self).__name__
+        print(f"\n🗺  Predicting {label} raster → {output_file}")
+
+        with rasterio.open(active_dataset.target.path) as ref:
+            profile = ref.profile.copy()
+            target_transform = ref.transform
+        profile.update(dtype="uint16", count=1, nodata=0)
+
+        _mask_values = (
+            (mask_value if isinstance(mask_value, (list, tuple)) else [mask_value])
+            if mask is not None
+            else None
+        )
+
+        with rasterio.open(output_file, "w", **profile) as dst:
+            blockinfo = far.misc.makeblock(str(active_dataset.target.path))
+            nblock, nblock_x = blockinfo[0], blockinfo[1]
+            x_off, y_off, nx, ny = blockinfo[3], blockinfo[4], blockinfo[5], blockinfo[6]
+
+            for b in range(nblock):
+                px = b % nblock_x
+                py = b // nblock_x
+                col_start, row_start = x_off[px], y_off[py]
+                n_cols, n_rows = nx[px], ny[py]
+                window = rasterio.windows.Window(col_start, row_start, n_cols, n_rows)
+                block_bounds = rasterio.windows.bounds(window, target_transform)
+
+                # Mask block (read by geographic bounds so a differently-gridded
+                # mask is resampled onto the target grid before suppression).
+                mask_invalid = np.zeros(n_rows * n_cols, dtype=bool)
+                if mask is not None:
+                    with rasterio.open(mask) as mask_src:
+                        mask_win = rasterio.windows.from_bounds(
+                            *block_bounds, mask_src.transform
+                        )
+                        mask_block = mask_src.read(
+                            1,
+                            window=mask_win,
+                            out_shape=(n_rows, n_cols),
+                            resampling=rasterio.enums.Resampling.nearest,
+                        )
+                        mask_nodata = mask_src.nodata
+                    mask_invalid = np.isin(mask_block.ravel(), _mask_values)
+                    if mask_nodata is not None:
+                        mask_invalid |= mask_block.ravel() == mask_nodata
+
+                # Read feature data for this block, replacing nodata with NaN.
+                block_dict = {}
+                for name, path in feature_paths.items():
+                    with rasterio.open(path) as src:
+                        arr = src.read(1, window=window).astype(float)
+                        if src.nodata is not None:
+                            arr[arr == src.nodata] = np.nan
+                    block_dict[name] = arr.ravel()
+
+                block_df_full = pd.DataFrame(block_dict)
+                valid_mask = (
+                    ~block_df_full.isnull().any(axis=1).to_numpy() & ~mask_invalid
+                )
+                block_df = block_df_full[valid_mask]
+
+                out_arr = np.zeros(n_rows * n_cols, dtype=np.uint16)
+                if not block_df.empty:
+                    (x_block,) = build_design_matrices(
+                        [self._x_design_info], block_df, NA_action="drop"
+                    )
+                    x_arr = np.asarray(x_block)
+                    proba = self._predict_block(
+                        x_arr, valid_mask, window, block_bounds, n_rows, n_cols
+                    )
+                    out_arr[valid_mask] = far.misc.rescale(
+                        np.asarray(proba, dtype=float)
+                    ).astype(np.uint16)
+
+                dst.write(out_arr.reshape(n_rows, n_cols), 1, window=window)
+
+        print(f"✓ {label} raster written: {output_file}")
+        self._register_prediction(output_file, dataset=active_dataset)
+        return output_file
+
+    def _predict_block(self, x_arr, valid_mask, window, block_bounds, n_rows, n_cols):
+        """Return P(event) for the valid rows of one block. Override per model.
+
+        Default: a supervised classifier exposing ``predict_proba`` (GLM, RF).
+        """
+        return self._ml_model.predict_proba(x_arr)[:, 1]
+
+    def _check_apply_preconditions(self) -> None:
+        """Hook for model-specific apply() preconditions (default: none)."""
+        return None
+
+    def _model_key(self) -> str:
+        """Return this model's key in ``project.models``.
+
+        Prefers an identity reverse-lookup (honors custom keys passed to
+        ``register``/``add_model``); falls back to the default key formula.
+        """
+        if self.project is not None:
+            for key, model in self.project.models.items():
+                if model is self:
+                    return key
+        return f"{self.model_type}_{self.name}" if self.name else self.model_type
+
+    def _register_prediction(
+        self,
+        path: Union[str, Path],
+        dataset: Optional[Any] = None,
+        year: Optional[int] = None,
+        window: Optional[int] = None,
+        auto_save: bool = True,
+    ) -> Optional[Any]:
+        """Build and register a Prediction for an output raster.
+
+        No-ops (returns None) when the model has no project reference, so direct
+        ``apply()`` calls outside a project context keep working unchanged.
+        """
+        if self.project is None:
+            return None
+
+        from spatialrisk.predictions.prediction import (
+            Prediction,
+            build_dataset_snapshot,
+        )
+
+        ds = dataset if dataset is not None else self.dataset
+        prediction = Prediction(
+            path=Path(path),
+            model_key=self._model_key(),
+            dataset_name=(getattr(ds, "name", None) or self.dataset_name or "unknown"),
+            year=year if year is not None else self.year,
+            window=window,
+            model_snapshot=self.model_dump(mode="json"),
+            dataset_snapshot=build_dataset_snapshot(ds),
+        )
+        prediction.add_to_project(self.project, auto_save=auto_save)
+        return prediction
 
     # ------------------------------------------------------------------
     # Persistence
@@ -267,57 +432,20 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Target folder. Falls back to the project model folder, then cwd.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written pickle file.
         """
-        if self._ml_model is None:
-            raise RuntimeError("Model has not been trained. Call fit() first.")
+        from spatialrisk.persistence import ModelStore
 
-        # Resolve output folder
-        if folder is not None:
-            out_dir = Path(folder)
-        else:
-            default = self._default_folder()
-            if default is None:
-                raise RuntimeError(
-                    "Cannot determine output folder: no project is attached. "
-                    "Set model.project first or pass folder= explicitly."
-                )
-            out_dir = default
-
-        out_dir.mkdir(parents=True, exist_ok=True)
-        filename = self._pickle_filename()
-        out_path = out_dir / filename
-
-        payload = {
-            "ml_model": self._ml_model,
-            "design_sample": self._design_sample,
-            "formula": self.formula,
-            "samples_path": self.samples_path,
-        }
-        with open(out_path, "wb") as fh:
-            pickle.dump(payload, fh)
-
-        self.model_path = out_path
-        print(f"  Model saved to: {out_path}")
-        return out_path
+        return ModelStore.save(self, folder)
 
     def load_model(self) -> None:
         """Load the ML object from self.model_path into memory."""
-        if self.model_path is None:
-            raise RuntimeError("model_path is not set. Train and save first.")
-        if not Path(self.model_path).exists():
-            raise FileNotFoundError(f"Pickle not found: {self.model_path}")
-        with open(self.model_path, "rb") as fh:
-            payload = pickle.load(fh)
-        self._ml_model = payload["ml_model"]
-        self._design_sample = payload.get("design_sample")
-        if payload.get("formula") is not None:
-            self.formula = payload["formula"]
-        if payload.get("samples_path") is not None:
-            self.samples_path = payload["samples_path"]
+        from spatialrisk.persistence import ModelStore
+
+        ModelStore.load(self)
 
     # ------------------------------------------------------------------
     # Project registration

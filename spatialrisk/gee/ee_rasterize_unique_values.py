@@ -1,5 +1,5 @@
+
 import ee
-from typing import Any
 
 
 def gee_rasterize_unique_values(

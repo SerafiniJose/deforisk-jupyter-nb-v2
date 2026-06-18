@@ -1,10 +1,9 @@
 import warnings
 from pathlib import Path
 from typing import List, Optional
-import ee
-from pydantic import Field, field_validator
+
 import rioxarray
-import odc.geo.xr  # do not delete this
+from pydantic import Field, field_validator
 
 from spatialrisk.geo_utils import xr_reproject
 from spatialrisk.processing import (
@@ -61,7 +60,7 @@ class LocalRasterVar(Variable):
             Maximum dimension for display (default: 1024). Larger rasters will be
             downsampled for faster visualization.
 
-        Returns
+        Returns:
         -------
         tuple or None
             If return_fig=True, returns (fig, ax). Otherwise returns None.
@@ -87,17 +86,17 @@ class LocalRasterVar(Variable):
         auto_save : bool, optional
             If True (default), automatically saves the project after adding the variable.
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             Returns self for method chaining.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the variable is not associated with a project.
 
-        Examples
+        Examples:
         --------
         >>> var = LocalRasterVar(name="dem", ..., project=project)
         >>> var.add_as_raw()  # Auto-saves by default
@@ -131,17 +130,17 @@ class LocalRasterVar(Variable):
         auto_save : bool, optional
             If True (default), automatically saves the project after adding the variable.
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             Returns self for method chaining.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the variable is not associated with a project.
 
-        Examples
+        Examples:
         --------
         >>> reprojected = raw_var.reproject(...).add_as_processed()  # Auto-saves
         >>> reprojected = raw_var.reproject(...).add_as_processed(auto_save=False)
@@ -170,7 +169,7 @@ class LocalRasterVar(Variable):
         """
         Get the geobox from this raster file to use as a spatial reference.
 
-        Returns
+        Returns:
         -------
         odc.geo.geobox.GeoBox
             The geobox defining spatial properties of this raster.
@@ -212,7 +211,7 @@ class LocalRasterVar(Variable):
         **kwargs
             Additional keyword arguments to pass to reproject_raster_gdal_warp.
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             A new LocalRasterVar instance with the reprojected data.
@@ -301,12 +300,12 @@ class LocalRasterVar(Variable):
         **kwargs
             Additional keyword arguments (currently unused, for future expansion).
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             A new LocalRasterVar instance with the reprojected data.
 
-        Raises
+        Raises:
         ------
         FileNotFoundError
             If the input raster file doesn't exist.
@@ -377,7 +376,7 @@ class LocalRasterVar(Variable):
         post_process : PostProcessing
             Post-processing step to apply ('edge' or 'dist').
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             A new LocalRasterVar with the post-processing applied.
@@ -402,7 +401,7 @@ class LocalRasterVar(Variable):
         Create new LocalRasterVars for each post-processing step defined in self.post_processing.
         These are registered automatically via model_post_init.
 
-        Returns
+        Returns:
         -------
         List[LocalRasterVar]
             List of new LocalRasterVar instances for post-processing outputs.
@@ -440,7 +439,7 @@ class LocalRasterVar(Variable):
             Desired output raster type. If not provided, it will be derived from
             the post-processing step (edge → continuous, dist → continuous).
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             A new LocalRasterVar instance.
@@ -515,25 +514,6 @@ class LocalRasterVar(Variable):
 
         return post_var
 
-    def to_gee_var(self) -> ee.Image:
-        """
-        Convert a local raster to a Google Earth Engine Image.
-
-        Note: This requires uploading to GEE assets first.
-
-        Raises
-        ------
-        NotImplementedError
-            Raster upload to GEE requires manual asset upload.
-        """
-        if not self.path.exists():
-            raise FileNotFoundError(f"Local file not found: {self.path}")
-
-        raise NotImplementedError(
-            "Converting local raster to GEE Image requires uploading to GEE assets. "
-            "Please use GEE's asset upload tools or geemap.upload_to_gee() manually."
-        )
-
     def use_as_base_raster(self, auto_save: bool = True) -> "LocalRasterVar":
         """
         Set this raster as the base raster for the project.
@@ -546,19 +526,19 @@ class LocalRasterVar(Variable):
         auto_save : bool, optional
             If True (default), automatically saves the project after setting the base raster.
 
-        Returns
+        Returns:
         -------
         LocalRasterVar
             Returns self for method chaining.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the variable is not associated with a project.
         FileNotFoundError
             If the raster file doesn't exist.
 
-        Examples
+        Examples:
         --------
         >>> dem.use_as_base_raster()  # Auto-saves by default
         >>> dem.use_as_base_raster(auto_save=False)  # Skip auto-save

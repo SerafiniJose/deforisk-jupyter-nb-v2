@@ -1,23 +1,30 @@
 # Script package init file
 
-from spatialrisk.project import Project
-from spatialrisk.dataset import Dataset
-from spatialrisk.sampling import Sampling, SamplingStrategy
-from spatialrisk.mlmodels import BaseRiskModel, GLMModel, RFModel, ICARModel, MWModel, JNRBenchmarkModel
-from spatialrisk.predictions import Prediction
 from spatialrisk import rmj
+from spatialrisk.dataset import Dataset
+from spatialrisk.mlmodels import (
+    BaseRiskModel,
+    GLMModel,
+    ICARModel,
+    JNRBenchmarkModel,
+    MWModel,
+    RFModel,
+)
+from spatialrisk.predictions import Prediction
+from spatialrisk.project import Project
+from spatialrisk.sampling import Sampling, SamplingStrategy
 
 __all__ = [
-    "Project",
+    "BaseRiskModel",
     "Dataset",
+    "GLMModel",
+    "ICARModel",
+    "JNRBenchmarkModel",
+    "MWModel",
+    "Prediction",
+    "Project",
+    "RFModel",
     "Sampling",
     "SamplingStrategy",
-    "BaseRiskModel",
-    "GLMModel",
-    "RFModel",
-    "ICARModel",
-    "MWModel",
-    "JNRBenchmarkModel",
-    "Prediction",
     "rmj",
 ]

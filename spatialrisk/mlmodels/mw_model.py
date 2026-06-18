@@ -52,7 +52,7 @@ class MWModel(BaseRiskModel):
     be used by overriding ``forest_edge_var``, ``forest_var``,
     ``forest_value``, and ``defor_value``.
 
-    Attributes
+    Attributes:
     ----------
     win_size_list : list of int
         Moving window sizes in pixels (default: [5, 11, 21]).
@@ -127,11 +127,11 @@ class MWModel(BaseRiskModel):
         var_name : str
             Exact name to look for in ``dataset.features``.
 
-        Returns
+        Returns:
         -------
         Path
 
-        Raises
+        Raises:
         ------
         ValueError
             If the feature is not found, listing available names.
@@ -185,7 +185,7 @@ class MWModel(BaseRiskModel):
             Root output folder.  Defaults to the project ``rmj_mw`` folder,
             then the current working directory.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -328,12 +328,12 @@ class MWModel(BaseRiskModel):
         mask_value : optional
             Unused; kept for API consistency.
 
-        Returns
+        Returns:
         -------
         dict
             ``{win_size_str: Path}`` for each probability raster produced.
         """
-        from spatialrisk.rmj import set_defor_cat_zero, deforrate
+        from spatialrisk.rmj import deforrate, set_defor_cat_zero
 
         if not self.ldefrate_files:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
@@ -441,7 +441,7 @@ class MWModel(BaseRiskModel):
         ]
         if missing:
             raise FileNotFoundError(
-                f"ldefrate raster(s) not found:\n" + "\n".join(missing)
+                "ldefrate raster(s) not found:\n" + "\n".join(missing)
             )
         print(
             f"  MW model OK — {len(self.ldefrate_files)} ldefrate files verified."

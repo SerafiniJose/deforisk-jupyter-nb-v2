@@ -28,7 +28,7 @@ check in the single-layer migration plan).
 from __future__ import annotations
 
 import os
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -84,7 +84,7 @@ def dist_edge_threshold(
     fig_file_dist : path or None
         PNG plot output. Skipped if ``None``.
 
-    Returns
+    Returns:
     -------
     dict
         ``{"tot_def", "dist_thresh", "perc_thresh"}`` (matches rmj).
@@ -298,7 +298,7 @@ def defrate_per_cat(
     time_interval : float
         Period length in years.
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         Per-category table (cat, nfor, ndefor, rate_obs, rate_mod, rate_abs, ...),
@@ -410,7 +410,7 @@ def defrate_per_class(
         Highest vulnerability-class code (default 30999 = 30 classes × ~1000
         subjurisdiction ids).
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         Per-class table (cat, nfor, ndefor, rate_obs, rate_mod, rate_abs, ...),

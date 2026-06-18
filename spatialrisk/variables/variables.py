@@ -16,18 +16,18 @@ from spatialrisk.variables.local_vector_var import LocalVectorVar
 from spatialrisk.variables.models import (
     DataType,
     PostProcessing,
-    RasterType,
     RasterizationMethod,
+    RasterType,
 )
 from spatialrisk.variables.variable import Variable
 
 __all__ = [
-    "Variable",
     "DataType",
-    "RasterizationMethod",
-    "RasterType",
-    "PostProcessing",
-    "LocalVectorVar",
-    "LocalRasterVar",
     "GEEVar",
+    "LocalRasterVar",
+    "LocalVectorVar",
+    "PostProcessing",
+    "RasterType",
+    "RasterizationMethod",
+    "Variable",
 ]

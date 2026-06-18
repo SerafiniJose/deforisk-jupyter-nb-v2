@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from spatialrisk.utilities.file_filter import filter_files_by_keywords
 
 project_name = "test"
@@ -208,6 +209,7 @@ def filter_files(input_files, filter_words, exclude_words=None, include_all=True
         filter_words (list): Words that must be present in the filenames for inclusion.
         exclude_words (list, optional): Words that must not be present in the filenames for exclusion. Defaults to None.
         include_all (bool, optional): If True, all filter words must be present in the filename. If False, at least one of the filter words must be present. Defaults to False.
+
     Returns:
         list: Filtered list of files.
     """

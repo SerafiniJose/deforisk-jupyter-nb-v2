@@ -301,7 +301,6 @@ def filter_files_by_keywords_strict(
     Returns:
         List of Path objects that match the criteria.
     """
-
     # Normalize keywords to lowercase for case-insensitive matching
     normalized_include_keywords = (
         [kw.lower() for kw in include_keywords] if include_keywords else []

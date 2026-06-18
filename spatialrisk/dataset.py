@@ -7,12 +7,12 @@ Works exclusively with LocalRasterVar instances.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.warp import calculate_default_transform, reproject, Resampling
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .sampling import Sampling
 
@@ -24,7 +24,7 @@ class Dataset(BaseModel):
     Provides data in different formats for different model types.
     Works exclusively with LocalRasterVar instances (raster variables only).
 
-    Attributes
+    Attributes:
     ----------
     project : Project
         Project instance with all variables
@@ -72,7 +72,7 @@ class Dataset(BaseModel):
         year : int, optional
             Year for temporal variables. Required if target is multitemporal.
 
-        Returns
+        Returns:
         -------
         List[str] or None
             If name is None, returns list of available target variables.
@@ -145,13 +145,13 @@ class Dataset(BaseModel):
         names : List[str], optional
             Feature variable names. If None, returns available features.
 
-        Returns
+        Returns:
         -------
         List[str] or None
             If names is None, returns list of available features.
             If names is provided, sets features and returns None.
 
-        Notes
+        Notes:
         -----
         If any feature is temporal, a year must be set (either via set_target with year parameter,
         or by calling set_year() before or after set_features).
@@ -256,12 +256,12 @@ class Dataset(BaseModel):
 
         self.year = year
         print(f"✓ Year set: {year}")
-        print(f"✓ All temporal variables available for this year")
+        print("✓ All temporal variables available for this year")
 
     def get_available_years(self) -> List[int]:
         """Get years available for all configured variables.
 
-        Returns
+        Returns:
         -------
         List[int]
             Sorted list of years available for all temporal variables
@@ -290,12 +290,12 @@ class Dataset(BaseModel):
         - All variables exist and are processed
         - All variables have matching spatial properties
 
-        Returns
+        Returns:
         -------
         bool
             True if validation passes
 
-        Raises
+        Raises:
         ------
         ValueError
             If validation fails
@@ -324,7 +324,7 @@ class Dataset(BaseModel):
         print("✓ Checking variable existence...")
         for var in all_vars:
             if var is None:
-                raise ValueError(f"Variable instance is None")
+                raise ValueError("Variable instance is None")
             if not var.path or not var.path.exists():
                 raise ValueError(
                     f"Variable '{var.name}' has no valid file path: {var.path}"
@@ -360,7 +360,7 @@ class Dataset(BaseModel):
             Maximum dimension for display (default: 1024). Larger rasters will be
             downsampled for faster visualization.
 
-        Examples
+        Examples:
         --------
         >>> dataset.show()  # Show all variables in 3-column grid
         >>> dataset.show(ncols=2)  # Show in 2-column grid
@@ -469,12 +469,12 @@ class Dataset(BaseModel):
             Sampling parameters for on-the-fly Sampling creation (strategy, n_samples, seed).
             Only used if `sampling` is None.
 
-        Returns
+        Returns:
         -------
         pd.DataFrame
             DataFrame with columns: [target, feature1, feature2, ..., cell_id, trial]
 
-        Examples
+        Examples:
         --------
         # Use default sampling (random, 10k samples)
         df = dataset.to_dataframe()
@@ -560,7 +560,7 @@ class Dataset(BaseModel):
     def get_file_paths(self) -> Dict[str, Path]:
         """Get file paths for all configured variables.
 
-        Returns
+        Returns:
         -------
         Dict[str, Path]
             Dictionary mapping variable names to file paths
@@ -586,7 +586,7 @@ class Dataset(BaseModel):
         format : str, optional
             Output format: 'VRT' (default) or 'GTiff'
 
-        Returns
+        Returns:
         -------
         Path
             Path to stacked raster file
@@ -601,7 +601,6 @@ class Dataset(BaseModel):
 
         if format == "VRT":
             # Create VRT file
-            from rasterio.vrt import WarpedVRT
 
             # TODO: Implement VRT stacking
             raise NotImplementedError("VRT stacking not yet implemented")
@@ -624,7 +623,7 @@ class Dataset(BaseModel):
         suffix : str, optional
             Suffix for output filenames
 
-        Returns
+        Returns:
         -------
         Dict[str, Path]
             Dictionary mapping variable names to exported file paths
@@ -651,7 +650,7 @@ class Dataset(BaseModel):
     def get_spatial_info(self) -> Dict[str, Any]:
         """Get spatial properties of the dataset.
 
-        Returns
+        Returns:
         -------
         Dict[str, Any]
             Dictionary with spatial metadata
@@ -676,7 +675,7 @@ class Dataset(BaseModel):
     def describe(self) -> Dict[str, Any]:
         """Get summary statistics for all variables.
 
-        Returns
+        Returns:
         -------
         Dict[str, Any]
             Dictionary with variable statistics
