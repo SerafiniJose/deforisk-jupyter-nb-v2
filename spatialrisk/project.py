@@ -229,6 +229,21 @@ class Project(BaseModel):
         if storage_key in variables:
             return variables[storage_key]
 
+        # Slow path: resolve by the variable's .name. A single-year variable is
+        # keyed "name_year" yet reported non-temporal (is_temporal needs 2+
+        # years), so callers look it up with year=None and miss the fast path
+        # above. Match on .name to recover it.
+        matches = [var for var in variables.values() if var.name == name]
+        if year is not None:
+            for var in matches:
+                if var.year == year:
+                    return var
+            return None
+        # No year requested: return the sole instance if unambiguous; a
+        # genuinely temporal variable (multiple instances) stays None so the
+        # caller is forced to specify a year.
+        if len(matches) == 1:
+            return matches[0]
         return None
 
     def get_all_instances(

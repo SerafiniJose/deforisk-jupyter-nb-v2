@@ -219,6 +219,12 @@ class Dataset(BaseModel):
                 is_temporal = self.project.is_temporal(name)
                 year_param = self.year if is_temporal else None
                 var = self.project.get_variable(name, year=year_param)
+                if var is None:
+                    raise ValueError(
+                        f"Could not resolve feature variable '{name}'"
+                        + (f" for year {year_param}" if year_param else "")
+                        + ". It is not available in the processed variables."
+                    )
                 feature_instances.append(var)
 
             self.features = feature_instances
