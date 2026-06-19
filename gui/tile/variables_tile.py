@@ -1,7 +1,7 @@
 """Step 2 — Variables tile."""
 
+import asyncio
 import logging
-from pathlib import Path
 
 import ee
 import reacton.ipyvuetify as rv
@@ -9,7 +9,8 @@ import solara
 
 logger = logging.getLogger("spatial_risk")
 
-from gui.widget.variable_list import DerivedVariableList, SourceVariableList
+from gui.scripts.map_helpers import add_vector_on_map, is_mappable
+from gui.widget.variable_list import SourceVariableList
 from gui.widget.variable_modal import VariableModal
 from spatialrisk.project import Project
 from spatialrisk.variables.gee_var import GEEVar
@@ -62,7 +63,7 @@ async def _grayscale_vis(image, var, gee_interface):
 async def _styled_layer(image, var, gee_interface):
     """Choose visualization by raster type.
 
-    categorical (incl. binary masks) -> ``ee.Image.randomVisualizer()`` (random RGB);
+    categorical (incl. binary masks) -> black/white palette (0=black, 1=white);
     continuous -> grayscale stretched to the image's min/max.
 
     Returns (image_to_add, vis_params).
@@ -70,7 +71,7 @@ async def _styled_layer(image, var, gee_interface):
     rt = getattr(var, "raster_type", None)
     rt = rt.value if hasattr(rt, "value") else (str(rt) if rt is not None else "")
     if rt == "categorical":
-        return image.randomVisualizer(), {}
+        return image, {"palette": ["000000", "ffffff"], "min": 0, "max": 1}
     return image, await _grayscale_vis(image, var, gee_interface)
 
 
@@ -202,28 +203,46 @@ def VariablesTile(project, process_error, map_=None):
 
     @solara.lab.use_task(dependencies=None, raise_error=False)
     async def _apply_map_toggle():
-        """Add or remove a GEE-backed variable's layer using the async map API.
+        """Add or remove a variable's layer on the map.
 
-        The async path is required: the sync ``add_ee_layer`` blocks on the GEE
-        interface's private event loop and hangs when called from a Solara handler.
+        GEE-backed layers go through the async map API — the sync ``add_ee_layer``
+        blocks on the GEE interface's private event loop and hangs when called
+        from a Solara handler. Local raster/vector layers use the blocking
+        ``add_raster`` / ``add_vector_on_map`` helpers, offloaded to a thread.
         """
         key = pending_toggle.value
         if key is None or map_ is None:
             return
         p = project.value
         var = p.raw_variables.get(key) if p is not None else None
-        images = getattr(var, "gee_images", None) if var is not None else None
-        if not images:
+        if var is None or not is_mappable(var):
             return
         try:
             if key in vars_on_map.value:
                 _drop_from_map(key, map_)
-            else:
+                return
+
+            images = getattr(var, "gee_images", None)
+            layer_key = _map_layer_key(key)
+            if images:
                 image, vis = await _styled_layer(images[0], var, map_.gee_interface)
                 await map_.add_ee_layer_async(
-                    image, vis, name=key, key=_map_layer_key(key), use_map_vis=False
+                    image, vis, name=key, key=layer_key, use_map_vis=False
                 )
-                vars_on_map.set(set(vars_on_map.value) | {key})
+            elif type(var).__name__ == "LocalVectorVar":
+                await asyncio.to_thread(
+                    add_vector_on_map, map_, str(var.path), key, layer_key
+                )
+            else:  # LocalRasterVar — grayscale ramp: 0=black, 1=white
+                await asyncio.to_thread(
+                    map_.add_raster,
+                    str(var.path),
+                    colormap="gray",
+                    layer_name=key,
+                    key=layer_key,
+                    fit_bounds=False,
+                )
+            vars_on_map.set(set(vars_on_map.value) | {key})
         except Exception as exc:
             logger.exception("map toggle failed for %s", key)
             process_error.set(f"Could not toggle '{key}' on map: {exc}")
@@ -292,24 +311,6 @@ def VariablesTile(project, process_error, map_=None):
                 "was removed — re-set it in Step 3 — Process."
             )
         _drop_from_map(key, map_)
-        project.set(p.model_copy())
-
-    def on_remove_derived(key: str):
-        """Remove a derived (processed) variable and delete its raster from disk."""
-        p = project.value
-        if p is None:
-            return
-        removed = p.processed_variables.pop(key, None)
-        path = getattr(removed, "path", None) if removed is not None else None
-        if path:
-            try:
-                fp = Path(path)
-                if fp.is_file():
-                    fp.unlink()
-                    logger.debug("Deleted derived raster file: %s", fp)
-            except OSError as exc:
-                logger.exception("Could not delete file for derived var '%s'", key)
-                process_error.set(f"Removed '{key}' but could not delete its file: {exc}")
         project.set(p.model_copy())
 
     fl_var, set_fl_var = solara.use_state("")
@@ -406,10 +407,6 @@ def VariablesTile(project, process_error, map_=None):
                         "", icon_name="mdi-delete-outline", icon=True, text=True, x_small=True,
                         on_click=lambda *_, n=spec.name: on_remove_forest_loss(n),
                     )
-
-        # Derived variable list
-        if p and p.processed_variables:
-            DerivedVariableList(project=project, on_remove=on_remove_derived)
 
     editing_entry = (
         _variable_to_entry(editing_key, p.raw_variables[editing_key], p)

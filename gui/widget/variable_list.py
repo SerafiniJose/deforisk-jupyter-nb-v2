@@ -6,6 +6,8 @@ from typing import Callable, Optional
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.scripts.map_helpers import is_mappable
+
 logger = logging.getLogger("spatial_risk")
 
 _GRID = "display:grid;grid-template-columns:1fr 90px 70px 116px;align-items:center;width:100%;column-gap:16px;"
@@ -66,9 +68,8 @@ def SourceVariableList(
                     solara.Text(str(var.year) if var.year else "—", style="color:grey;")
                 # Actions — right-aligned
                 with rv.Html(tag="div", style_=_CELL_RIGHT):
-                    # Map toggle — only for GEE-backed variables (have ee images).
-                    gee_images = getattr(var, "gee_images", None)
-                    if on_toggle_map is not None and gee_images:
+                    # Map toggle — GEE-backed images and local raster/vector files.
+                    if on_toggle_map is not None and is_mappable(var):
                         on_map = vars_on_map.value if vars_on_map is not None else set()
                         is_on = key in on_map
                         solara.Button(
