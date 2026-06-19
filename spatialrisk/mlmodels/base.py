@@ -73,6 +73,7 @@ class BaseRiskModel(BaseModel):
     # Dataset metadata (serializable)
     project_name: Optional[str] = None
     dataset_name: Optional[str] = None
+    sample_set_name: Optional[str] = None
     target_name: Optional[str] = None
     feature_names: List[str] = Field(default_factory=list)
     year: Optional[int] = None
@@ -95,6 +96,7 @@ class BaseRiskModel(BaseModel):
     # Live references — excluded from serialization
     project: Optional[Any] = Field(default=None, exclude=True, repr=False)
     dataset: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    sample_set: Optional[Any] = Field(default=None, exclude=True, repr=False)
 
     # In-memory ML objects — not serialized
     _ml_model: Any = PrivateAttr(default=None)
@@ -132,6 +134,29 @@ class BaseRiskModel(BaseModel):
         resolved_formula : str
             The formula to use for training.
         """
+        # Materialized-sample path: load the pre-computed table, no re-sampling.
+        if self.sample_set is not None:
+            df = self.sample_set.load_table()
+            self.samples_path = self.sample_set.table_path
+            self.target_name = self.sample_set.target_name
+            self.feature_names = list(self.sample_set.feature_names)
+            if self.sample_set.year is not None:
+                self.year = self.sample_set.year
+
+            resolved = formula or self.formula
+            if not resolved:
+                if self.dataset is not None:
+                    from spatialrisk.far_helpers import generate_patsy_formula
+                    resolved = generate_patsy_formula(self.dataset)
+                else:
+                    resolved = (
+                        f"{self.target_name} ~ "
+                        + " + ".join(self.feature_names)
+                    )
+            self.formula = resolved
+            return df, resolved
+
+        # Legacy inline-sampling path (back-compat for pre-existing models).
         from spatialrisk.far_helpers import generate_patsy_formula
 
         if self.dataset is None:
@@ -143,13 +168,11 @@ class BaseRiskModel(BaseModel):
         if output_csv is not None:
             self.samples_path = Path(output_csv)
 
-        # Populate serializable metadata from dataset
         self.target_name = self.dataset.target.name
         self.feature_names = [v.name for v in self.dataset.features]
         if self.dataset.year is not None:
             self.year = self.dataset.year
 
-        # Resolve formula: argument > self.formula > auto-generate
         resolved = formula or self.formula or generate_patsy_formula(self.dataset)
         self.formula = resolved
         return df, resolved
@@ -422,8 +445,8 @@ class BaseRiskModel(BaseModel):
     # ------------------------------------------------------------------
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
-        """Exclude live references (project, dataset) from serialization."""
+        """Exclude live references (project, dataset, sample_set) from serialization."""
         kwargs.setdefault("exclude", set())
         if isinstance(kwargs["exclude"], set):
-            kwargs["exclude"] = kwargs["exclude"] | {"project", "dataset"}
+            kwargs["exclude"] = kwargs["exclude"] | {"project", "dataset", "sample_set"}
         return super().model_dump(**kwargs)
