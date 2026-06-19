@@ -119,3 +119,61 @@ def show_aoi_on_map(map_, aoi) -> bool:
     drew = draw_aoi_on_map(map_, aoi)
     zoomed = zoom_map_to_aoi(map_, aoi)
     return drew or zoomed
+
+
+def sample_layer_keys(key: str):
+    """Return the (event, forest) layer keys for a sample-set base ``key``."""
+    return (f"{key}__event", f"{key}__forest")
+
+
+def _split_by_target(gdf, target_col: str = "target"):
+    """Split a points GeoDataFrame into (event, forest) by target class.
+
+    Pure (no map/pysepal). ``event`` is target == 1 (deforestation),
+    ``forest`` is everything else.
+    """
+    event = gdf[gdf[target_col] == 1]
+    forest = gdf[gdf[target_col] != 1]
+    return event, forest
+
+
+def add_sample_points_on_map(map_, points_path, name: str, key: str):
+    """Draw a sample set's points as two colored GeoJSON layers.
+
+    Red points = event (target == 1), green = forest (target == 0). Reprojects
+    to WGS84 (ipyleaflet requirement) and replaces any existing layers under the
+    derived keys so re-toggling doesn't stack duplicates.
+    """
+    import geopandas as gpd
+    from pysepal.mapping import get_ipygeojson
+
+    gdf = gpd.read_file(points_path)
+    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+
+    event, forest = _split_by_target(gdf)
+    event_key, forest_key = sample_layer_keys(key)
+
+    def _point_style(color):
+        return {
+            "radius": 4, "color": color, "fillColor": color,
+            "fillOpacity": 0.7, "weight": 1,
+        }
+
+    for subset, layer_key, color, suffix in (
+        (event, event_key, "#d62728", "event"),
+        (forest, forest_key, "#2ca02c", "forest"),
+    ):
+        map_.remove_layer(layer_key, none_ok=True)
+        if len(subset) == 0:
+            continue
+        layer = get_ipygeojson(
+            subset, f"{name} ({suffix})", {}, point_style=_point_style(color)
+        )
+        map_.add_layer(layer, key=layer_key)
+
+
+def remove_sample_points_from_map(map_, key: str):
+    """Remove both layers a sample set placed on the map."""
+    for layer_key in sample_layer_keys(key):
+        map_.remove_layer(layer_key, none_ok=True)
