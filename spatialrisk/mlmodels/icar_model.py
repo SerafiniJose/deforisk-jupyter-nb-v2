@@ -111,6 +111,13 @@ class ICARModel(BaseRiskModel):
     rho_path: Optional[Path] = None
     csize_interpolate: float = 0.1
 
+    def output_files(self) -> list:
+        """iCAR also owns its spatial random-effect (rho) raster."""
+        files = super().output_files()
+        if self.rho_path:
+            files.append(Path(self.rho_path))
+        return files
+
     def fit(
         self,
         formula: Optional[str] = None,

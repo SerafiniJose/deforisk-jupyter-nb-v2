@@ -105,6 +105,12 @@ class MWModel(BaseRiskModel):
     forest_edge_var: str = "forest_edge"
     forest_var: str = "forest"
 
+    def output_files(self) -> List[Path]:
+        """MW persists one deforestation-rate raster per window size."""
+        files = super().output_files()
+        files.extend(Path(p) for p in self.ldefrate_files.values() if p)
+        return files
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import Dict, List, Optional, Union, Any
 from collections.abc import Iterable
@@ -30,6 +31,8 @@ DATA_DIR: Path = _resolve_data_dir()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Backward-compatible alias: save()/load()/initialize_folders() read this name.
 downloads_folder = DATA_DIR
+
+logger = logging.getLogger("spatial_risk")
 
 
 def _stringify_paths(obj: Any) -> Any:
@@ -382,6 +385,27 @@ class Project(BaseModel):
         if auto_save:
             self.save()
 
+    def delete_model(
+        self, key: str, *, delete_files: bool = True, auto_save: bool = False
+    ) -> bool:
+        """Remove a registered model and (optionally) its on-disk artifacts.
+
+        Predictions produced by the model are left in place — delete them
+        separately via :meth:`delete_prediction` if desired.
+
+        Returns True if a model was found and removed.
+        """
+        model = self.models.pop(key, None)
+        if model is None:
+            return False
+        if delete_files:
+            for path in model.output_files():
+                self._safe_unlink(path)
+        logger.info("Model deleted: project.models['%s']", key)
+        if auto_save:
+            self.save()
+        return True
+
     def get_model(self, key: str) -> Optional[Any]:
         """Return the model stored under *key*, or None if not found.
 
@@ -452,6 +476,51 @@ class Project(BaseModel):
         print(f"  Prediction registered as project.predictions['{storage_key}']")
         if auto_save:
             self.save()
+
+    def delete_prediction(
+        self, key: str, *, delete_file: bool = True, auto_save: bool = False
+    ) -> bool:
+        """Remove a registered prediction and (optionally) its output raster.
+
+        Returns True if a prediction was found and removed.
+        """
+        prediction = self.predictions.pop(key, None)
+        if prediction is None:
+            return False
+        if delete_file and getattr(prediction, "path", None):
+            self._safe_unlink(prediction.path)
+        logger.info("Prediction deleted: project.predictions['%s']", key)
+        if auto_save:
+            self.save()
+        return True
+
+    def _project_dir(self) -> Path:
+        """Folder holding this project's files (manifest, rasters, model artifacts)."""
+        return downloads_folder / self.project_name
+
+    def _safe_unlink(self, path: Union[str, Path]) -> bool:
+        """Delete *path*, but only if it exists and lives inside the project folder.
+
+        The within-project guard prevents a malformed or unexpected absolute path
+        from removing files elsewhere on disk. Returns True if a file was removed;
+        missing/out-of-scope/locked files are skipped with a warning, never raised.
+        """
+        try:
+            target = Path(path).resolve()
+        except (OSError, RuntimeError):
+            return False
+        project_dir = self._project_dir().resolve()
+        if project_dir not in target.parents:
+            logger.warning("Refusing to delete %s — outside project folder %s", target, project_dir)
+            return False
+        if not target.exists():
+            return False
+        try:
+            target.unlink()
+            return True
+        except OSError as exc:
+            logger.warning("Could not delete %s: %s", target, exc)
+            return False
 
     def get_prediction(self, key: str) -> Optional[Any]:
         """Return the prediction stored under *key*, or None if not found."""

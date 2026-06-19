@@ -364,6 +364,15 @@ class BaseRiskModel(BaseModel):
                     return key
         return f"{self.model_type}_{self.name}" if self.name else self.model_type
 
+    def output_files(self) -> List[Path]:
+        """On-disk artifacts this model owns (for cleanup when it is deleted).
+
+        Base models persist a pickle (``model_path``) and an optional training
+        sample CSV (``samples_path``). Model types that write extra rasters
+        (iCAR's rho raster, MW's deforestation-rate maps) extend this list.
+        """
+        return [Path(p) for p in (self.model_path, self.samples_path) if p]
+
     def _register_prediction(
         self,
         path: Union[str, Path],
