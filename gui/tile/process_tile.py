@@ -24,6 +24,23 @@ def _raw_raster_keys(p):
     ]
 
 
+def base_raster_key(p) -> str:
+    """Raw-variable key backing the current base raster ('' if none/unmatched).
+
+    The base raster is a reprojected copy that keeps the source variable's
+    ``name``, while the Process-tile Select is keyed by raw-variable key. We map
+    name -> key so the Select can be restored after a project is loaded (the
+    base lives in the model, but the Select's state is transient ``use_state``).
+    """
+    if p is None or getattr(p, "base_raster", None) is None:
+        return ""
+    name = p.base_raster.name
+    for k, v in p.raw_variables.items():
+        if getattr(v, "name", None) == name:
+            return k
+    return ""
+
+
 @solara.component
 def ProcessTile(project, processing, process_error):
     """Download → base/projection → run processing → post-processing."""
@@ -41,6 +58,26 @@ def ProcessTile(project, processing, process_error):
         [k for k, v in p.raw_variables.items() if type(v).__name__ == "GEEVar"]
         if p else []
     )
+
+    # Restore the form from a loaded project. The base raster is stored in the
+    # model, but base_key / epsg / resolution are transient use_state that
+    # default empty, so after a load the "Base raster" Select looked unset. Keyed
+    # on the stored base's key, so it fires when a project is loaded (or the base
+    # changes) but not on an in-progress dropdown selection. We restore the
+    # stored CRS / resolution too — recomputing them (see autofill_base) could
+    # diverge for a non-UTM base CRS.
+    restored_key = base_raster_key(p)
+
+    def _restore_base_form():
+        if not restored_key:
+            return
+        set_base_key(restored_key)
+        if p.base_raster.default_crs:
+            set_epsg(str(p.base_raster.default_crs))
+        if p.base_raster.default_resolution:
+            set_resolution(str(round(p.base_raster.default_resolution)))
+
+    solara.use_effect(_restore_base_form, [restored_key])
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
     async def download_task():
@@ -63,6 +100,12 @@ def ProcessTile(project, processing, process_error):
             return
         var = p.raw_variables.get(base_key)
         if var is None:
+            return
+        # The selection already backs the current base raster (e.g. restored
+        # after a project load): keep its stored CRS / resolution rather than
+        # recomputing them from the source file, which could differ (e.g. a
+        # non-UTM base CRS).
+        if p.base_raster is not None and getattr(var, "name", None) == p.base_raster.name:
             return
         res = await asyncio.to_thread(process_actions.base_raster_resolution, var)
         if res:
@@ -209,7 +252,7 @@ def ProcessTile(project, processing, process_error):
                     v_model=pp_step, on_v_model=set_pp_step, dense=True, outlined=True,
                 )
                 solara.Button(
-                    "Apply", icon_name="mdi-auto-fix", color="primary", small=True,
+                    "Generate", icon_name="mdi-auto-fix", color="primary", small=True,
                     on_click=on_apply_pp, disabled=not pp_key,
                 )
             DerivedVariableList(project=project)
