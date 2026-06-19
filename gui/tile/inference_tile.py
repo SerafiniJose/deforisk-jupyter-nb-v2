@@ -1,4 +1,4 @@
-"""Step 5 — Inference tile."""
+"""Step 6 — Inference tile."""
 
 import logging
 import uuid
@@ -7,6 +7,7 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.scripts.solara_threads import spawn_in_context, update_job
+from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
 
 logger = logging.getLogger("spatial_risk")
@@ -142,14 +143,25 @@ def InferenceTile(project, map_=None):
             logger.exception("prediction map toggle failed for job %s", job_id)
             set_form_error(f"Could not toggle prediction on map: {exc}")
 
-    def on_remove(job_id):
+    pending_remove, set_pending_remove = solara.use_state(None)
+
+    def _do_remove(job_id):
+        job = next((j for j in inference_jobs.value if j["id"] == job_id), None)
         # Drop any prediction layers this job placed on the map before forgetting it.
         if map_ is not None and job_id in preds_on_map.value:
-            job = next((j for j in inference_jobs.value if j["id"] == job_id), None)
             if job is not None:
                 for sk in _matching_predictions(job):
                     map_.remove_layer(_pred_layer_key(sk), none_ok=True)
             _forget_on_map(job_id)
+        # Delete the registered predictions (registry + output rasters).
+        cur = project.value
+        if cur is not None and job is not None:
+            keys = list(_matching_predictions(job).keys())
+            for k in keys:
+                cur.delete_prediction(k, auto_save=False)
+            if keys:
+                cur.save()
+                project.set(cur.model_copy())
         inference_jobs.set(
             [j for j in inference_jobs.value if j["id"] != job_id]
         )
@@ -168,7 +180,7 @@ def InferenceTile(project, map_=None):
             on_v_model=set_selected_model,
             dense=True,
             outlined=True,
-            no_data_text="No trained models available. Train one in Step 4.",
+            no_data_text="No trained models available. Train one in Step 5.",
         )
 
         # Dataset selector
@@ -179,7 +191,7 @@ def InferenceTile(project, map_=None):
             on_v_model=set_selected_dataset,
             dense=True,
             outlined=True,
-            no_data_text="No datasets registered. Create one in Step 3.",
+            no_data_text="No datasets registered. Create one in Step 4.",
         )
 
         # Run button
@@ -198,8 +210,28 @@ def InferenceTile(project, map_=None):
         # Outputs list
         InferenceOutputList(
             inference_jobs=inference_jobs,
-            on_remove=on_remove,
+            on_remove=set_pending_remove,
             on_toggle_map=on_toggle_map if map_ is not None else None,
             preds_on_map=preds_on_map,
             predictions_for=predictions_for,
+        )
+
+        _pending_job = (
+            next((j for j in inference_jobs.value if j["id"] == pending_remove), None)
+            if pending_remove
+            else None
+        )
+        _pending_pred_count = len(_matching_predictions(_pending_job)) if _pending_job else 0
+        ConfirmDialog(
+            open=pending_remove is not None,
+            on_cancel=lambda: set_pending_remove(None),
+            on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
+            title="Delete predictions?" if _pending_pred_count else "Remove job?",
+            message=(
+                f"Delete {_pending_pred_count} prediction raster(s) from this run? This "
+                "removes them from the project and deletes the files. This cannot be undone."
+                if _pending_pred_count
+                else "Remove this inference job from the list?"
+            ),
+            confirm_label="Delete" if _pending_pred_count else "Remove",
         )

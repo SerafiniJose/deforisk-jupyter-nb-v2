@@ -1,4 +1,4 @@
-"""Step 3 — Dataset tile."""
+"""Step 4 — Dataset tile."""
 
 import logging
 
@@ -6,6 +6,7 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.store.state_manager import app_state
+from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.dataset_list import DatasetList
 from spatialrisk.dataset import Dataset
 
@@ -76,7 +77,9 @@ def DatasetTile(project):
         set_form_error(None)
         set_form_success(None)
 
-    def on_remove(key):
+    pending_remove, set_pending_remove = solara.use_state(None)
+
+    def _do_remove(key):
         if p is None or key not in p.datasets:
             return
         del p.datasets[key]
@@ -162,7 +165,7 @@ def DatasetTile(project):
         # Existing datasets
         if p and p.datasets:
             solara.Markdown(f"**DATASETS** ({len(p.datasets)})")
-            DatasetList(project=project, on_edit=on_edit, on_remove=on_remove)
+            DatasetList(project=project, on_edit=on_edit, on_remove=set_pending_remove)
 
         # Create / Edit form
         solara.Markdown("**NEW DATASET**" if not editing_key else f"**EDIT — {editing_key}**")
@@ -249,3 +252,12 @@ def DatasetTile(project):
             rv.Alert(type_="error", dense=True, children=[form_error])
         if form_success:
             rv.Alert(type_="success", dense=True, children=[form_success])
+
+        ConfirmDialog(
+            open=pending_remove is not None,
+            on_cancel=lambda: set_pending_remove(None),
+            on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
+            title="Remove dataset?",
+            message=f"Remove dataset '{pending_remove}' from this project? This cannot be undone.",
+            confirm_label="Remove",
+        )

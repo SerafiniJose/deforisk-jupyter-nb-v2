@@ -10,6 +10,7 @@ import solara
 logger = logging.getLogger("spatial_risk")
 
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
+from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.variable_list import SourceVariableList
 from gui.widget.variable_modal import VariableModal
 from spatialrisk.project import Project
@@ -299,7 +300,9 @@ def VariablesTile(project, process_error, map_=None):
             logger.exception("on_save failed")
             process_error.set(f"Could not save variable: {exc}")
 
-    def on_remove(key: str):
+    pending_remove, set_pending_remove = solara.use_state(None)
+
+    def _do_remove(key: str):
         p = project.value
         if p is None:
             return
@@ -357,7 +360,7 @@ def VariablesTile(project, process_error, map_=None):
         solara.Markdown("**SOURCE VARIABLES**" + (f" ({len(p.raw_variables)})" if p else " (0)"))
         SourceVariableList(
             project=project,
-            on_remove=on_remove,
+            on_remove=set_pending_remove,
             on_edit=on_edit_open,
             on_toggle_map=on_toggle_map if map_ is not None else None,
             vars_on_map=vars_on_map,
@@ -419,4 +422,24 @@ def VariablesTile(project, process_error, map_=None):
         on_save=on_save,
         editing_key=editing_key,
         initial_entry=editing_entry,
+    )
+
+    _pending_var = p.raw_variables.get(pending_remove) if (p and pending_remove) else None
+    _pending_is_base = bool(
+        _pending_var and p.base_raster and p.base_raster.name == _pending_var.name
+    )
+    ConfirmDialog(
+        open=pending_remove is not None,
+        on_cancel=lambda: set_pending_remove(None),
+        on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
+        title="Remove variable?",
+        message=(
+            f"Remove '{pending_remove}' from this project? This cannot be undone."
+            + (
+                " It is the base raster's source, so the base raster will also be cleared."
+                if _pending_is_base
+                else ""
+            )
+        ),
+        confirm_label="Remove",
     )

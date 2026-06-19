@@ -1,4 +1,4 @@
-"""Step 4 — Train tile."""
+"""Step 5 — Train tile."""
 
 import logging
 import uuid
@@ -17,6 +17,7 @@ from spatialrisk.evaluation import interval_from_target
 from spatialrisk.sampling import Sampling
 
 from gui.scripts.solara_threads import spawn_in_context, update_job
+from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.train_model_list import TrainModelList
 
 logger = logging.getLogger("spatial_risk")
@@ -306,8 +307,10 @@ def _run_training(job_id, model_key, param_values, dataset, sampling_cfg, projec
             n_samples=model.n_samples,
         )
 
-        # Auto-register in project
+        # Auto-register in project; record its registry key on the job so the
+        # list "remove" action can delete the right model.
         model.register(project, auto_save=True)
+        _update_job(job_id, model_storage_key=model._model_key())
         logger.info("Model %s trained and registered.", model_key)
 
     except Exception as exc:
@@ -487,7 +490,19 @@ def TrainTile(project):
     def on_cancel(job_id):
         _update_job(job_id, skip_if_cancelled=False, status="cancelled")
 
-    def on_remove(job_id):
+    pending_remove, set_pending_remove = solara.use_state(None)
+
+    def _do_remove(job_id):
+        # Completed jobs carry the registered model's key; delete it (registry +
+        # on-disk artifacts) from the current project. Failed/cancelled jobs have
+        # no model, so this is just a list dismissal.
+        job = next((j for j in train_jobs.value if j["id"] == job_id), None)
+        key = job.get("model_storage_key") if job else None
+        if key:
+            cur = project.value
+            if cur is not None and key in cur.models:
+                cur.delete_model(key, auto_save=True)
+                project.set(cur.model_copy())
         train_jobs.set([j for j in train_jobs.value if j["id"] != job_id])
 
     with solara.Column(style="gap: 16px;"):
@@ -545,7 +560,7 @@ def TrainTile(project):
             on_v_model=set_selected_dataset,
             dense=True,
             outlined=True,
-            no_data_text="No datasets registered. Create one in Step 3.",
+            no_data_text="No datasets registered. Create one in Step 4.",
         )
 
         # Variables — for Benchmark/MW these name layers within the dataset, so
@@ -588,5 +603,25 @@ def TrainTile(project):
         TrainModelList(
             train_jobs=train_jobs,
             on_cancel=on_cancel,
-            on_remove=on_remove,
+            on_remove=set_pending_remove,
+        )
+
+        _pending_job = (
+            next((j for j in train_jobs.value if j["id"] == pending_remove), None)
+            if pending_remove
+            else None
+        )
+        _pending_model_key = _pending_job.get("model_storage_key") if _pending_job else None
+        ConfirmDialog(
+            open=pending_remove is not None,
+            on_cancel=lambda: set_pending_remove(None),
+            on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
+            title="Delete model?" if _pending_model_key else "Remove job?",
+            message=(
+                f"Delete model '{_pending_model_key}'? This removes it from the project "
+                "and deletes its files. This cannot be undone."
+                if _pending_model_key
+                else "Remove this training job from the list?"
+            ),
+            confirm_label="Delete" if _pending_model_key else "Remove",
         )
