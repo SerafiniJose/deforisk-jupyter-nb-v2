@@ -861,17 +861,11 @@ class Project(BaseModel):
                     # already restored via the constructor above. Only pass it to
                     # set_target when the target itself is temporal, since set_target
                     # rejects a year argument for static targets.
-                    if project.get_all_instances(target_name):
-                        target_is_temporal = project.is_temporal(target_name)
-                        ds.set_target(
-                            target_name,
-                            year=ds_data.get("year") if target_is_temporal else None,
-                        )
-                    else:
-                        print(
-                            f"  ⚠ Dataset '{key}': target '{target_name}' not found "
-                            f"in processed variables; skipped."
-                        )
+                    target_is_temporal = project.is_temporal(target_name)
+                    ds.set_target(
+                        target_name,
+                        year=ds_data.get("year") if target_is_temporal else None,
+                    )
                 if feature_names:
                     missing = [n for n in feature_names if not project.get_all_instances(n)]
                     valid_names = [n for n in feature_names if project.get_all_instances(n)]

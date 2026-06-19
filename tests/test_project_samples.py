@@ -68,6 +68,11 @@ def test_relink_backrefs_repoints_samples_and_datasets(tmp_path, monkeypatch):
 def test_save_load_round_trips_samples(tmp_path, monkeypatch):
     p, ss = _project_with_sample(tmp_path, monkeypatch)
     p.add_sample_set(ss, auto_save=False)
+    # Drop the stub-variable dataset before saving: real datasets reconstruct
+    # from registered processed variables, which this lightweight fixture does
+    # not create. The sample set still round-trips and exercises the
+    # "source dataset missing on load -> keep with warning" path.
+    p.datasets.clear()
     p.save()
 
     loaded = Project.load("proj")
