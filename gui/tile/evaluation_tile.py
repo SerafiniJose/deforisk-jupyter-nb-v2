@@ -1,5 +1,5 @@
 # gui/tile/evaluation_tile.py
-"""Step 7 — Evaluation tile.
+"""Step 8 — Evaluation tile.
 
 Score user-selected maps against ONE explicitly-chosen truth (deforestation
 raster + forest-at-start variable + interval), so maps from different datasets
@@ -86,7 +86,7 @@ def EvaluationTile(project):
         )
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 7 — Evaluation")
+        solara.Markdown("### Step 8 — Evaluation")
         solara.Text(
             "Score selected maps against one chosen truth (observed deforestation "
             "+ forest-at-start + interval) so maps from different datasets are "
@@ -119,7 +119,7 @@ def EvaluationTile(project):
             items=pred_items, item_text="text", item_value="value",
             v_model=selected_maps, on_v_model=set_selected_maps,
             multiple=True, chips=True, dense=True, outlined=True,
-            no_data_text="No predictions registered. Run inference in Step 6.",
+            no_data_text="No predictions registered. Run inference in Step 7.",
         )
         rv.Switch(label="Recompute defrate", v_model=recompute,
                   on_v_model=set_recompute)

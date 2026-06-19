@@ -42,6 +42,7 @@ from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile
 from gui.tile.process_tile import ProcessTile
+from gui.tile.sampling_tile import SamplingTile
 from gui.tile.train_tile import TrainTile
 from gui.tile.inference_tile import InferenceTile
 from gui.tile.evaluation_tile import EvaluationTile
@@ -381,6 +382,7 @@ def WorkflowTabs(map_, gee_interface):
     has_raw = p is not None and bool(p.raw_variables)
     has_processed = p is not None and bool(p.processed_variables)
     has_datasets = p is not None and bool(p.datasets)
+    has_samples = p is not None and bool(p.samples)
     has_models = p is not None and bool(p.models)
     has_predictions = p is not None and bool(p.predictions)
 
@@ -389,7 +391,8 @@ def WorkflowTabs(map_, gee_interface):
         rv.Tab(children=["Variables"], disabled=not aoi_complete)
         rv.Tab(children=["Process"], disabled=not has_raw)
         rv.Tab(children=["Dataset"], disabled=not has_processed)
-        rv.Tab(children=["Train"], disabled=not has_datasets)
+        rv.Tab(children=["Sampling"], disabled=not has_datasets)
+        rv.Tab(children=["Train"], disabled=not has_samples)
         rv.Tab(children=["Inference"], disabled=not has_models)
         rv.Tab(children=["Evaluation"], disabled=not has_predictions)
 
@@ -415,6 +418,9 @@ def WorkflowTabs(map_, gee_interface):
             )
         with rv.TabItem():
             DatasetTile(project=app_state.project)
+
+        with rv.TabItem():
+            SamplingTile(project=app_state.project, map_=map_)
 
         with rv.TabItem():
             TrainTile(project=app_state.project)

@@ -1,4 +1,4 @@
-"""Step 6 — Inference tile."""
+"""Step 7 — Inference tile."""
 
 import logging
 import uuid
@@ -169,7 +169,7 @@ def InferenceTile(project, map_=None):
     can_run = bool(selected_model and selected_dataset)
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 6 — Inference")
+        solara.Markdown("### Step 7 — Inference")
         solara.Text("Select a trained model and a dataset, then run inference.")
 
         # Trained model selector
@@ -180,7 +180,7 @@ def InferenceTile(project, map_=None):
             on_v_model=set_selected_model,
             dense=True,
             outlined=True,
-            no_data_text="No trained models available. Train one in Step 5.",
+            no_data_text="No trained models available. Train one in Step 6.",
         )
 
         # Dataset selector

@@ -31,17 +31,24 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
             count = len(project.datasets)
             return (f"{count} dataset(s) registered.", "success")
 
-    elif tab == 4:  # Train
+    elif tab == 4:  # Sampling
         if project is not None and not project.datasets:
-            return ("Register at least one dataset (Step 4) before training.", "warning")
+            return ("Register a dataset (Step 4) before sampling.", "warning")
+        if project is not None and project.samples:
+            count = len(project.samples)
+            return (f"{count} sample set(s) generated.", "success")
 
-    elif tab == 5:  # Inference
+    elif tab == 5:  # Train
+        if project is not None and not project.samples:
+            return ("Generate at least one sample set (Step 5) before training.", "warning")
+
+    elif tab == 6:  # Inference
         if project is not None and not project.models:
-            return ("Train at least one model (Step 5) before inference.", "warning")
+            return ("Train at least one model (Step 6) before inference.", "warning")
 
-    elif tab == 6:  # Evaluation
+    elif tab == 7:  # Evaluation
         if project is not None and not project.predictions:
-            return ("Run inference (Step 6) to produce predictions before evaluation.", "warning")
+            return ("Run inference (Step 7) to produce predictions before evaluation.", "warning")
 
     # Global status (project load/save) visible on any step
     if status_message:
