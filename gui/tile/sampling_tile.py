@@ -41,6 +41,8 @@ def _run_sampling(job_id, name, dataset_name, strategy, n_samples, seed, project
     try:
         from spatialrisk.sampleset import SampleSet
 
+        # Snapshot the project; concurrent sampling of the same project is not
+        # supported (last model_copy() wins for the in-memory registry).
         p = project_reactive.value
         folder = p.folders.samples_folder
         sample_set = SampleSet(
@@ -70,19 +72,26 @@ def _run_sampling(job_id, name, dataset_name, strategy, n_samples, seed, project
 def SamplingTile(project, map_=None):
     """Sampling tab: generate persistent sample sets and add them to the map."""
     p = project.value
-    if p is None:
-        return
-    if not p.datasets:
-        solara.Info("Create a dataset first (Step 4 — Dataset).")
-        return
+    dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
 
-    dataset_keys = sorted(p.datasets.keys())
-    selected_dataset, set_selected_dataset = solara.use_state(dataset_keys[0])
+    # All hooks are called unconditionally before any early return so the hook
+    # count is stable across renders (this tile is gated, so it renders before
+    # datasets exist and then again once they do). Matches InferenceTile/TrainTile.
+    selected_dataset, set_selected_dataset = solara.use_state(
+        dataset_keys[0] if dataset_keys else ""
+    )
     name, set_name = solara.use_state("")
     strategy, set_strategy = solara.use_state("random")
     n_samples, set_n_samples = solara.use_state(10000)
     seed, set_seed = solara.use_state(1234)
     form_error, set_form_error = solara.use_state(None)
+    pending_remove, set_pending_remove = solara.use_state(None)
+
+    if p is None:
+        return
+    if not p.datasets:
+        solara.Info("Create a dataset first (Step 4 — Dataset).")
+        return
 
     def on_generate():
         set_form_error(None)
@@ -128,8 +137,6 @@ def SamplingTile(project, map_=None):
         except Exception as exc:
             logger.exception("sample map toggle failed for %s", key)
             set_form_error(f"Could not toggle sample set on map: {exc}")
-
-    pending_remove, set_pending_remove = solara.use_state(None)
 
     def _do_remove(key):
         if map_ is not None and key in samples_on_map.value:
