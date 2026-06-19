@@ -71,6 +71,7 @@ class Project(BaseModel):
     base_raster: Optional["LocalRasterVar"] = None
     models: Dict[str, Any] = Field(default_factory=dict)
     datasets: Dict[str, Any] = Field(default_factory=dict)
+    samples: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
     forest_loss_specs: List[ForestLossSpec] = Field(default_factory=list)
     # AOI descriptor (GUI-populated, library-agnostic): light metadata only
@@ -102,6 +103,12 @@ class Project(BaseModel):
         for prediction in self.predictions.values():
             if hasattr(prediction, "project"):
                 prediction.project = self
+        for dataset in self.datasets.values():
+            if hasattr(dataset, "project"):
+                dataset.project = self
+        for sample_set in self.samples.values():
+            if hasattr(sample_set, "project"):
+                sample_set.project = self
 
     def model_copy(self, *, update=None, deep=False) -> "Project":
         """Copy the project and re-link all child ``.project`` back-references.
@@ -464,6 +471,40 @@ class Project(BaseModel):
         """Return sorted list of registered dataset keys."""
         return sorted(self.datasets.keys())
 
+    def add_sample_set(self, sample_set: Any, key: Optional[str] = None,
+                       auto_save: bool = True) -> None:
+        """Register a SampleSet under ``key`` (defaults to sample_set.name)."""
+        storage_key = key or sample_set.name
+        if not storage_key:
+            raise ValueError("SampleSet must have a name or provide a key.")
+        sample_set.project = self
+        self.samples[storage_key] = sample_set
+        print(f"  Sample set registered as project.samples['{storage_key}']")
+        if auto_save:
+            self.save()
+
+    def get_sample_set(self, key: str) -> Optional[Any]:
+        """Return the sample set stored under *key*, or None."""
+        return self.samples.get(key)
+
+    def list_sample_sets(self) -> List[str]:
+        """Return sorted list of registered sample-set keys."""
+        return sorted(self.samples.keys())
+
+    def delete_sample_set(self, key: str, auto_save: bool = True) -> None:
+        """Remove a sample set from the registry and delete its files."""
+        sample_set = self.samples.pop(key, None)
+        if sample_set is None:
+            return
+        for path in (sample_set.table_path, sample_set.points_path):
+            try:
+                if path is not None and Path(path).exists():
+                    Path(path).unlink()
+            except OSError:
+                print(f"  ⚠ Could not delete sample file: {path}")
+        if auto_save:
+            self.save()
+
     # ------------------------------------------------------------------
     # Prediction registry
     # ------------------------------------------------------------------
@@ -640,6 +681,28 @@ class Project(BaseModel):
                     "feature_names": [f.name for f in dataset.features],
                 }
 
+        # Serialize registered sample sets (metadata + paths + stats only;
+        # the materialized CSV/GPKG on disk are the source of truth).
+        if self.samples:
+            data["samples"] = {}
+            for key, ss in self.samples.items():
+                data["samples"][key] = {
+                    "name": ss.name,
+                    "dataset_name": ss.dataset_name,
+                    "target_name": ss.target_name,
+                    "feature_names": list(ss.feature_names),
+                    "year": ss.year,
+                    "strategy": ss.strategy,
+                    "n_samples": ss.n_samples,
+                    "seed": ss.seed,
+                    "table_path": str(ss.table_path) if ss.table_path else None,
+                    "points_path": str(ss.points_path) if ss.points_path else None,
+                    "n_total": ss.n_total,
+                    "n_event": ss.n_event,
+                    "n_forest": ss.n_forest,
+                    "created_at": ss.created_at,
+                }
+
         # Serialize registered predictions
         if self.predictions:
             data["predictions"] = {}
@@ -798,11 +861,17 @@ class Project(BaseModel):
                     # already restored via the constructor above. Only pass it to
                     # set_target when the target itself is temporal, since set_target
                     # rejects a year argument for static targets.
-                    target_is_temporal = project.is_temporal(target_name)
-                    ds.set_target(
-                        target_name,
-                        year=ds_data.get("year") if target_is_temporal else None,
-                    )
+                    if project.get_all_instances(target_name):
+                        target_is_temporal = project.is_temporal(target_name)
+                        ds.set_target(
+                            target_name,
+                            year=ds_data.get("year") if target_is_temporal else None,
+                        )
+                    else:
+                        print(
+                            f"  ⚠ Dataset '{key}': target '{target_name}' not found "
+                            f"in processed variables; skipped."
+                        )
                 if feature_names:
                     missing = [n for n in feature_names if not project.get_all_instances(n)]
                     valid_names = [n for n in feature_names if project.get_all_instances(n)]
@@ -814,6 +883,36 @@ class Project(BaseModel):
                         ds.set_features(valid_names)
                 project.datasets[key] = ds
             print(f"Loaded {len(project.datasets)} dataset(s)")
+
+        # Reconstruct registered sample sets (no regeneration).
+        if "samples" in data and data["samples"]:
+            from spatialrisk.sampleset import SampleSet
+            from pathlib import Path as _Path
+            for key, ss_data in data["samples"].items():
+                ss = SampleSet(
+                    name=ss_data.get("name", key),
+                    dataset_name=ss_data.get("dataset_name", ""),
+                    target_name=ss_data.get("target_name"),
+                    feature_names=ss_data.get("feature_names", []),
+                    year=ss_data.get("year"),
+                    strategy=ss_data.get("strategy", "random"),
+                    n_samples=ss_data.get("n_samples"),
+                    seed=ss_data.get("seed"),
+                    table_path=_Path(ss_data["table_path"]) if ss_data.get("table_path") else None,
+                    points_path=_Path(ss_data["points_path"]) if ss_data.get("points_path") else None,
+                    n_total=ss_data.get("n_total", 0),
+                    n_event=ss_data.get("n_event", 0),
+                    n_forest=ss_data.get("n_forest", 0),
+                    created_at=ss_data.get("created_at"),
+                )
+                ss.project = project
+                if ss.dataset_name and ss.dataset_name not in project.datasets:
+                    print(
+                        f"  ⚠ Sample set '{key}': source dataset "
+                        f"'{ss.dataset_name}' not found; kept for training only."
+                    )
+                project.samples[key] = ss
+            print(f"Loaded {len(project.samples)} sample set(s)")
 
         # Reconstruct registered predictions
         if "predictions" in data and data["predictions"]:
@@ -1387,6 +1486,7 @@ class Project(BaseModel):
             "data_raw_folder": project_folder / "data_raw",
             "processed_data_folder": project_folder / "data",
             "sampling_folder": project_folder / "far_samples",
+            "samples_folder": project_folder / "samples",
             "rmj_mw": project_folder / "rmj_mw",
             "plots_folder": project_folder / "plots",
             "rmj_bm": project_folder / f"{it_name}rmj_bm",
