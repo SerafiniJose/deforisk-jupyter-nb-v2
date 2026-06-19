@@ -48,10 +48,13 @@ class SampleSet(BaseModel):
     created_at: Optional[str] = None
 
     def model_dump(self, **kwargs):
-        # Force-exclude the live back-reference even if a caller forgets to.
-        kwargs.setdefault("exclude", set())
-        if isinstance(kwargs["exclude"], set):
-            kwargs["exclude"] = kwargs["exclude"] | {"project"}
+        # Force-exclude the live back-reference. Field(exclude=True) is the
+        # primary guard; this also covers callers that pass a set exclude.
+        exclude = kwargs.get("exclude")
+        if exclude is None:
+            kwargs["exclude"] = {"project"}
+        elif isinstance(exclude, set):
+            kwargs["exclude"] = exclude | {"project"}
         return super().model_dump(**kwargs)
 
     def _resolve_dataset(self) -> Any:
@@ -110,7 +113,8 @@ class SampleSet(BaseModel):
             Path(self.points_path).parent.mkdir(parents=True, exist_ok=True)
             gdf.to_file(self.points_path, driver="GPKG")
 
-        # Summary stats.
+        # Summary stats. The target is binary by design (1 = event /
+        # deforestation, 0 = forest), so n_event + n_forest == n_total.
         self.n_total = int(len(df))
         self.n_event = int((df[target_col] == 1).sum())
         self.n_forest = int((df[target_col] == 0).sum())
@@ -127,5 +131,8 @@ class SampleSet(BaseModel):
 
     def register(self, project: Any, key: Optional[str] = None,
                  auto_save: bool = True) -> None:
-        """Register this sample set with a project."""
+        """Register this sample set with a project.
+
+        Forward stub: relies on ``Project.add_sample_set`` (added in a later task).
+        """
         project.add_sample_set(self, key=key, auto_save=auto_save)

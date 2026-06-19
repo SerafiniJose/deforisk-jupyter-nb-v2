@@ -80,6 +80,7 @@ def test_generate_writes_table_and_points(tmp_path):
     assert len(df) == ss.n_total
     assert ss.n_event + ss.n_forest == ss.n_total
     assert ss.n_event == int((df["forest_loss"] == 1).sum())
+    assert ss.n_forest == int((df["forest_loss"] == 0).sum())
 
     # Points layer has one geometry per sampled row and a canonical target column
     import geopandas as gpd
