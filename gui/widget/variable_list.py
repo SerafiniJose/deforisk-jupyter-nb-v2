@@ -10,7 +10,10 @@ from gui.scripts.map_helpers import is_mappable
 
 logger = logging.getLogger("spatial_risk")
 
-_GRID = "display:grid;grid-template-columns:1fr 90px 70px 116px;align-items:center;width:100%;column-gap:16px;"
+# First column is minmax(0,1fr) — NOT 1fr — so a long, unbreakable variable
+# name can shrink (and ellipsize) instead of widening the grid past 100% and
+# pushing the right-hand action column off-screen.
+_GRID = "display:grid;grid-template-columns:minmax(0,1fr) 90px 70px 116px;align-items:center;width:100%;column-gap:16px;"
 _HEADER_EXTRA = (
     "padding:4px 8px 6px;"
     "border-bottom:2px solid rgba(0,0,0,0.15);"
@@ -20,6 +23,9 @@ _HEADER_EXTRA = (
 _ROW_EXTRA = "padding:5px 8px;border-bottom:1px solid rgba(0,0,0,0.08);"
 _CELL_FLEX = "display:flex;align-items:center;gap:4px;"
 _CELL_RIGHT = "display:flex;align-items:center;justify-content:flex-end;gap:0;"
+# Name cell: allow shrinking + truncate long names with an ellipsis.
+_NAME_CELL = "display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;"
+_NAME_TEXT = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
 
 
 @solara.component
@@ -56,8 +62,8 @@ def SourceVariableList(
 
             with rv.Html(tag="div", style_=_GRID + _ROW_EXTRA):
                 # Name
-                with rv.Html(tag="div", style_=_CELL_FLEX):
-                    solara.Text(var.name)
+                with rv.Html(tag="div", style_=_NAME_CELL):
+                    solara.Text(var.name, style=_NAME_TEXT)
                     if is_base:
                         rv.Chip(children=["base"], x_small=True, color="info")
                 # Type
@@ -110,7 +116,7 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
         return
 
     count = len(p.processed_variables)
-    _DGRID = "display:grid;grid-template-columns:1fr 120px 80px 56px;align-items:center;width:100%;"
+    _DGRID = "display:grid;grid-template-columns:minmax(0,1fr) 120px 80px 56px;align-items:center;width:100%;"
 
     with solara.Column(style="gap:0;width:100%;"):
         with solara.Row(style="align-items:center;gap:8px;padding:4px 0;"):
@@ -140,8 +146,8 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
                     "unknown",
                 )
                 with rv.Html(tag="div", style_=_DGRID + _ROW_EXTRA):
-                    with rv.Html(tag="div"):
-                        solara.Text(var.name, style="font-size:0.9rem;")
+                    with rv.Html(tag="div", style_="min-width:0;overflow:hidden;"):
+                        solara.Text(var.name, style="font-size:0.9rem;" + _NAME_TEXT)
                     with rv.Html(tag="div", style_=_CELL_FLEX):
                         rv.Chip(children=[source_name], x_small=True, outlined=True)
                     with rv.Html(tag="div", style_=_CELL_FLEX):

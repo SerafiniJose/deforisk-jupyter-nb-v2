@@ -403,9 +403,16 @@ def VariablesTile(project, process_error, map_=None):
                         disabled=not (fl_var and fl_start and fl_end),
                     )
             for spec in (p.forest_loss_specs if p else []):
+                # The target is materialized during Process as a raw variable
+                # keyed by spec.name (see generate_forest_loss_targets). Once it
+                # exists the target is done — otherwise it's still pending.
+                generated = bool(p and spec.name in p.raw_variables)
                 with solara.Row(style="gap:8px;align-items:center;"):
                     rv.Chip(children=[spec.name], x_small=True, outlined=True)
-                    rv.Chip(children=["pending"], color="amber", x_small=True)
+                    if generated:
+                        rv.Chip(children=["ready"], color="success", x_small=True)
+                    else:
+                        rv.Chip(children=["pending"], color="amber", x_small=True)
                     solara.Button(
                         "", icon_name="mdi-delete-outline", icon=True, text=True, x_small=True,
                         on_click=lambda *_, n=spec.name: on_remove_forest_loss(n),
