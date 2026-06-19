@@ -121,7 +121,7 @@ def show_aoi_on_map(map_, aoi) -> bool:
     return drew or zoomed
 
 
-def sample_layer_keys(key: str):
+def sample_layer_keys(key: str) -> tuple:
     """Return the (event, forest) layer keys for a sample-set base ``key``."""
     return (f"{key}__event", f"{key}__forest")
 
@@ -148,7 +148,14 @@ def add_sample_points_on_map(map_, points_path, name: str, key: str):
     from pysepal.mapping import get_ipygeojson
 
     gdf = gpd.read_file(points_path)
-    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+    if gdf.crs is None:
+        import warnings
+        warnings.warn(
+            f"Sample points '{key}' have no CRS; drawing as-is without "
+            "reprojection to WGS84.",
+            stacklevel=2,
+        )
+    elif gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(epsg=4326)
 
     event, forest = _split_by_target(gdf)
@@ -167,9 +174,7 @@ def add_sample_points_on_map(map_, points_path, name: str, key: str):
         map_.remove_layer(layer_key, none_ok=True)
         if len(subset) == 0:
             continue
-        layer = get_ipygeojson(
-            subset, f"{name} ({suffix})", {}, point_style=_point_style(color)
-        )
+        layer = get_ipygeojson(subset, f"{name} ({suffix})", _point_style(color))
         map_.add_layer(layer, key=layer_key)
 
 

@@ -8,7 +8,7 @@ from gui.scripts.map_helpers import _split_by_target, sample_layer_keys
 
 def test_split_by_target_separates_event_and_forest():
     gdf = gpd.GeoDataFrame(
-        {"target": [1, 0, 1, 0, 0]},
+        {"target": [1, 0, 1, 0, 2]},
         geometry=[Point(i, i) for i in range(5)],
         crs="EPSG:4326",
     )
@@ -16,7 +16,7 @@ def test_split_by_target_separates_event_and_forest():
     assert len(event) == 2
     assert len(forest) == 3
     assert set(event["target"]) == {1}
-    assert set(forest["target"]) == {0}
+    assert set(forest["target"]) == {0, 2}  # every non-event value lands in forest
 
 
 def test_sample_layer_keys_are_distinct():
