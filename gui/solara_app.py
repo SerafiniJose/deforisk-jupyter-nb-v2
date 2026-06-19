@@ -380,15 +380,18 @@ def WorkflowTabs(map_, gee_interface):
     p = app_state.project.value
     has_raw = p is not None and bool(p.raw_variables)
     has_processed = p is not None and bool(p.processed_variables)
+    has_datasets = p is not None and bool(p.datasets)
+    has_models = p is not None and bool(p.models)
+    has_predictions = p is not None and bool(p.predictions)
 
     with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=True):
         rv.Tab(children=["Area of Interest"])
         rv.Tab(children=["Variables"], disabled=not aoi_complete)
         rv.Tab(children=["Process"], disabled=not has_raw)
         rv.Tab(children=["Dataset"], disabled=not has_processed)
-        rv.Tab(children=["Train"])
-        rv.Tab(children=["Inference"])
-        rv.Tab(children=["Evaluation"])
+        rv.Tab(children=["Train"], disabled=not has_datasets)
+        rv.Tab(children=["Inference"], disabled=not has_models)
+        rv.Tab(children=["Evaluation"], disabled=not has_predictions)
 
     with rv.TabsItems(v_model=active_tab):
         with rv.TabItem():
