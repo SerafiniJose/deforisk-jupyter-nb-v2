@@ -137,7 +137,17 @@ class BaseRiskModel(BaseModel):
         # Materialized-sample path: load the pre-computed table, no re-sampling.
         if self.sample_set is not None:
             df = self.sample_set.load_table()
-            self.samples_path = self.sample_set.table_path
+            # Write a model-private copy of the table (mirrors the legacy path)
+            # so the model does NOT share a file with the SampleSet: otherwise
+            # delete_sample_set would break this model's apply(), and
+            # delete_model would delete the SampleSet's table out from under it.
+            if output_csv is not None:
+                output_csv = Path(output_csv)
+                output_csv.parent.mkdir(parents=True, exist_ok=True)
+                df.to_csv(output_csv, index=False)
+                self.samples_path = output_csv
+            elif self.samples_path is None:
+                self.samples_path = self.sample_set.table_path
             self.target_name = self.sample_set.target_name
             self.feature_names = list(self.sample_set.feature_names)
             if self.sample_set.year is not None:

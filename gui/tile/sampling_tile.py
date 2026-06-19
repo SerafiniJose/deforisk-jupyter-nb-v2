@@ -122,7 +122,10 @@ def SamplingTile(project, map_=None):
     def on_toggle_map(key):
         if map_ is None:
             return
-        ss = p.samples.get(key)
+        cur = project.value
+        if cur is None:
+            return
+        ss = cur.samples.get(key)
         if ss is None or ss.points_path is None:
             return
         try:

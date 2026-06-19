@@ -43,3 +43,24 @@ def test_prepare_samples_without_sample_set_requires_dataset():
         assert False, "expected ValueError when neither sample_set nor dataset set"
     except ValueError:
         pass
+
+
+def test_prepare_samples_writes_private_copy_not_shared_table(tmp_path):
+    """A SampleSet-trained model must own a private CSV, not the shared table,
+    so deleting the SampleSet (or the model) can't corrupt the other."""
+    import pandas as pd
+
+    m = BaseRiskModel()
+    ss = _FakeSampleSet()
+    m.sample_set = ss
+    m.dataset = None
+
+    private = tmp_path / "model_folder" / "samples_glm_x.csv"
+    df, _ = m._prepare_samples(output_csv=private)
+
+    # samples_path points at the model-private copy, NOT the shared table
+    assert m.samples_path == private
+    assert m.samples_path != ss.table_path
+    assert private.exists()
+    # the private copy faithfully mirrors the loaded table
+    pd.testing.assert_frame_equal(pd.read_csv(private), ss.load_table())
