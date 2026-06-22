@@ -37,17 +37,18 @@ from gui.scripts.project_ui_helpers import (
     project_count_chips,
     validate_project_name,
 )
-from gui.scripts.map_helpers import show_aoi_on_map
+from gui.scripts.map_helpers import show_aoi_on_map, clear_project_overlays
 from gui.scripts.aoi_io import load_aoi, write_aoi
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
-from gui.tile.variables_tile import VariablesTile
+from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.tile.process_tile import ProcessTile
-from gui.tile.sampling_tile import SamplingTile
-from gui.tile.train_tile import TrainTile
-from gui.tile.inference_tile import InferenceTile
+from gui.tile.sampling_tile import SamplingTile, samples_on_map
+from gui.tile.train_tile import TrainTile, train_jobs, MODEL_REGISTRY
+from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile
 from gui.widget.notification_area import NotificationArea
+from gui.scripts.job_restore import build_train_jobs, build_inference_jobs
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
@@ -55,6 +56,15 @@ logger.debug("Spatial Risk app initialized")
 logger.debug("Solara version: %s", solara.__version__)
 
 setup_solara_server(extra_asset_locations=[])
+
+# model_type -> human label, derived from the Train tile's registry. Used to
+# label training jobs reconstructed from a loaded project (build_train_jobs) so
+# they read the same as in-session ones (the registry is keyed by UI key, e.g.
+# "benchmark", while models store their model_type, e.g. "jnr").
+_MODEL_TYPE_LABELS = {
+    spec["class"].model_fields["model_type"].default: spec["label"]
+    for spec in MODEL_REGISTRY.values()
+}
 
 
 @solara.lab.on_kernel_start
@@ -136,6 +146,9 @@ def ProjectPanel():
         if not validation.valid:
             return  # Create button is disabled in this state; no-op guard
         app_state.new_project_state(Project(project_name=validation.cleaned))
+        # new_project_state bumps project_loaded_signal, so the shell's
+        # on-switch effects clear the previous project's map overlays/tracking
+        # and reset the (empty) Train/Inference job lists — no manual reset here.
         app_state.status_message.set(f"Project '{validation.cleaned}' created.")
         set_new_open(False)
 
@@ -500,16 +513,34 @@ def Page():
 
     solara.use_effect(sync_project_from_aoi, [app_state.aoi_result.value])
 
-    # When a project is loaded, draw its restored AOI and frame it using
-    # pysepal's built-in zoom — the same rendering AoiView uses on selection.
-    # Read the signal here so Page re-renders (and the effect re-runs) on load;
-    # a no-op when no AOI (or no geometry) is present.
+    # On every project switch (load OR new), the signal below bumps so these
+    # effects re-run. Read it here so Page re-renders (and the effects re-run).
     project_loaded_signal = app_state.project_loaded_signal.value
 
-    def show_aoi_on_load():
+    # View reset. The SepalMap is shared across switches, so first drop the
+    # previous project's overlay layers (variables, sample points, predictions,
+    # old AOI; basemaps kept) and forget each tile's "on map" tracking, THEN
+    # draw this project's AOI and frame it. Clearing MUST precede the redraw, so
+    # this effect runs before the job-rebuild effect below.
+    def render_map_on_switch():
+        clear_project_overlays(sepal_map)
+        vars_on_map.set(set())
+        samples_on_map.set(set())
+        preds_on_map.set(set())
         show_aoi_on_map(sepal_map, app_state.aoi_result.value)
 
-    solara.use_effect(show_aoi_on_load, [project_loaded_signal])
+    solara.use_effect(render_map_on_switch, [project_loaded_signal])
+
+    # List reset. The Train/Inference lists are module-level session reactives
+    # only appended to by in-session jobs, so without this a loaded project's
+    # saved models/predictions never appear (and a new project would still show
+    # the previous one's). Rebuilding from the active project handles both.
+    def restore_jobs_on_load():
+        loaded = app_state.project.value
+        train_jobs.set(build_train_jobs(loaded, _MODEL_TYPE_LABELS))
+        inference_jobs.set(build_inference_jobs(loaded))
+
+    solara.use_effect(restore_jobs_on_load, [project_loaded_signal])
 
     def _seed_test_aoi():
         import os

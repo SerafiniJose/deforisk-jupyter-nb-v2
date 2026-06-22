@@ -1,7 +1,11 @@
 import sys
 import types
 
-from gui.scripts.map_helpers import draw_aoi_on_map, zoom_map_to_aoi
+from gui.scripts.map_helpers import (
+    clear_project_overlays,
+    draw_aoi_on_map,
+    zoom_map_to_aoi,
+)
 
 
 class FakeMap:
@@ -12,6 +16,10 @@ class FakeMap:
         self.zoom_ee_object_calls = []
         self.added_layers = []          # list of (layer, key)
         self.removed_layer_keys = []
+        self.remove_all_calls = []      # list of {"base": ..., "keep_names": ...}
+
+    def remove_all(self, base=False, keep_names=None):
+        self.remove_all_calls.append({"base": base, "keep_names": keep_names})
 
     def zoom_bounds(self, bounds):
         self.zoom_bounds_calls.append(bounds)
@@ -129,3 +137,15 @@ def test_draw_without_geometry_is_noop(monkeypatch):
 def test_draw_none_inputs_are_noop():
     assert draw_aoi_on_map(None, FakeAoi(gdf=FakeGdf((0, 0, 1, 1)))) is False
     assert draw_aoi_on_map(FakeMap(), None) is False
+
+
+def test_clear_project_overlays_removes_non_base_layers():
+    """Project switch must drop every app overlay (variables, samples,
+    predictions, old AOI) while keeping basemaps (base layers)."""
+    m = FakeMap()
+    clear_project_overlays(m)
+    assert m.remove_all_calls == [{"base": False, "keep_names": None}]
+
+
+def test_clear_project_overlays_noop_without_map():
+    clear_project_overlays(None)  # must not raise

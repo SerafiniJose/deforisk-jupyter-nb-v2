@@ -48,3 +48,12 @@ def test_new_project_resets_context_and_marks_dirty():
     assert s.last_saved.value is None
     assert s.aoi_result.value is None
     assert s.process_error.value is None
+
+
+def test_new_project_bumps_loaded_signal():
+    """New project must fire the same on-switch effects as a load (map/overlay
+    reset, job-list rebuild), all driven by project_loaded_signal."""
+    s = AppState()
+    before = s.project_loaded_signal.value
+    s.new_project_state(_P("fresh"))
+    assert s.project_loaded_signal.value == before + 1

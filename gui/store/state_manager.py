@@ -74,6 +74,11 @@ class AppState:
         self.process_error.set(None)
         self.status_message.set(None)
         self.error_message.set(None)
+        # Bump the same signal a load does so the shell's on-switch effects run
+        # (clear the previous project's map overlays + tracking, rebuild the
+        # empty Train/Inference job lists). The signal means "a project was
+        # installed" — loaded from disk OR newly created.
+        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
     @property
     def aoi_complete(self) -> bool:

@@ -45,6 +45,20 @@ def add_vector_on_map(map_, path, name: str, key: str, style: dict = None):
     return layer
 
 
+def clear_project_overlays(map_) -> None:
+    """Remove every app-added overlay layer from the shared map, keeping basemaps.
+
+    The ``SepalMap`` instance is memoized for the session and reused across
+    project switches, so a previously open project's variable / sample-point /
+    prediction / AOI layers linger when another project is loaded or created.
+    ``remove_all(base=False)`` drops all overlays while preserving the base
+    layers (basemaps). No-op when there is no map.
+    """
+    if map_ is None:
+        return
+    map_.remove_all(base=False)
+
+
 def zoom_map_to_aoi(map_, aoi) -> bool:
     """Zoom ``map_`` to ``aoi`` using pysepal's built-in SepalMap zoom methods.
 
