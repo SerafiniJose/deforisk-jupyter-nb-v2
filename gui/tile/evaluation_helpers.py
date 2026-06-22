@@ -7,6 +7,9 @@ and resolve user selections into kwargs for
 logic is unit-testable without a running GUI.
 """
 
+import json
+from pathlib import Path
+
 from spatialrisk.evaluation import interval_from_target, label_for
 
 
@@ -83,3 +86,34 @@ def build_truth_spec(project, truth_key, forest_key, interval):
         "time_interval": ti,
         "truth_tag": tag,
     }, None
+
+
+def build_evaluation_record(project, df, spec, resolved_keys, run_id,
+                            created_at, csizes=(300,)):
+    """Build an EvaluationRecord from a result DataFrame and the run's truth spec.
+
+    ``indices`` is materialized via ``df.to_json`` so values are JSON-native
+    (numpy scalars/NaN become float/None), keeping ``Project.save()``'s
+    ``json.dumps`` happy.
+    """
+    from spatialrisk.evaluations import EvaluationRecord
+
+    truth_tag = spec["truth_tag"]
+    indices = json.loads(df.to_json(orient="records"))
+    csv_path = str(
+        Path(project.folders.project_folder) / "evaluation" / truth_tag
+        / "indices_all.csv"
+    )
+    return EvaluationRecord(
+        name=truth_tag,
+        truth_tag=truth_tag,
+        truth_defor=str(spec["defor_file"]),
+        truth_forest=str(spec["forest_file"]),
+        time_interval=int(spec["time_interval"]),
+        prediction_keys=list(resolved_keys),
+        csizes=list(csizes),
+        created_at=created_at,
+        indices=indices,
+        csv_path=csv_path,
+        run_id=run_id,
+    )

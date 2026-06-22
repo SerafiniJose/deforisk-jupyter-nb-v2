@@ -1,6 +1,11 @@
+import types
 import types as _types
+from pathlib import Path
+
+import pandas as pd
 
 from gui.tile import evaluation_helpers as h
+from gui.tile.evaluation_helpers import build_evaluation_record
 
 
 def _var(name, year=None, path=None):
@@ -106,3 +111,36 @@ def test_build_truth_spec_rejects_nonnumeric_interval():
     spec, err = h.build_truth_spec(
         _project(), "forest_loss_2015_2020", "forest_gfc", "abc")
     assert spec is None and "whole number" in err.lower()
+
+
+def _fake_project(tmp):
+    return types.SimpleNamespace(
+        folders=types.SimpleNamespace(project_folder=Path(tmp))
+    )
+
+
+def test_build_evaluation_record_maps_df_and_paths(tmp_path):
+    df = pd.DataFrame([
+        {"model": "GLM", "period": "ds_A", "MedAE": 12.3, "R2": 0.81},
+        {"model": "RF", "period": "ds_A", "MedAE": 9.1, "R2": 0.88},
+    ])
+    spec = {
+        "defor_file": "/x/forest_loss_2015_2020.tif",
+        "forest_file": "/x/forest_gfc.tif",
+        "time_interval": 5,
+        "truth_tag": "forest_loss_2015_2020",
+    }
+    rec = build_evaluation_record(
+        _fake_project(tmp_path), df, spec,
+        resolved_keys=["glm__ds_A", "rf__ds_A"],
+        run_id="abcd1234", created_at="2026-06-22T14:05:33",
+    )
+    assert rec.truth_tag == "forest_loss_2015_2020"
+    assert rec.name == "forest_loss_2015_2020"
+    assert rec.time_interval == 5
+    assert rec.prediction_keys == ["glm__ds_A", "rf__ds_A"]
+    assert rec.indices[0]["MedAE"] == 12.3       # JSON-native float, not str
+    assert rec.indices[1]["model"] == "RF"
+    assert rec.csv_path.endswith(
+        "evaluation/forest_loss_2015_2020/indices_all.csv")
+    assert rec.run_id == "abcd1234"
