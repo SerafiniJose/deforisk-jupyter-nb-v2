@@ -155,7 +155,7 @@ def InferenceTile(project, map_=None):
                         fit_bounds=True,
                         build_overviews=gen_overviews.value,
                     )
-                preds_on_map.set(set(preds_on_map.value) | {job_id})
+                    preds_on_map.set(set(preds_on_map.value) | {job_id})
         except Exception as exc:
             logger.exception("prediction map toggle failed for job %s", job_id)
             set_form_error(f"Could not toggle prediction on map: {exc}")

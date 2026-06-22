@@ -104,3 +104,5 @@ def test_inference_tile_uses_palette_helper_and_overview_option():
     assert "Generate overviews" in src             # checkbox label
     assert "build_overviews=" in src               # flag forwarded to helper
     assert "to_thread" in src                       # add offloaded to a thread
+    assert "use_task" in src                        # threaded via solara.lab.use_task
+    assert "pending_toggle" in src                  # toggle routed through the reactive
