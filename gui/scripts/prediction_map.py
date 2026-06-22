@@ -1,0 +1,74 @@
+"""Draw model predictions on the map with their QGIS-faithful colour ramps.
+
+Kept separate from ``map_helpers`` so this feature's commits stay confined to
+new files. Pins ``vmin/vmax`` to the qml classification range via
+``localtileserver.get_leaflet_tile_layer`` (which, unlike ``SepalMap.add_raster``,
+accepts ``colormap/vmin/vmax/nodata``), and optionally builds overviews first.
+"""
+
+import logging
+
+logger = logging.getLogger("spatial_risk")
+
+
+def add_prediction_on_map(
+    map_,
+    path,
+    *,
+    model_key,
+    layer_name,
+    key,
+    fit_bounds=True,
+    build_overviews=False,
+    opacity=1.0,
+):
+    """Draw a prediction raster with its QGIS-faithful, value-pinned palette.
+
+    Unlike ``SepalMap.add_raster`` (which auto-stretches the palette to the
+    raster's actual min/max), this pins ``vmin/vmax`` to the qml classification
+    range via ``localtileserver.get_leaflet_tile_layer`` so colours land on the
+    same data values as in QGIS. Replaces any layer already registered under
+    ``key``.
+
+    When ``build_overviews`` is set, external ``.ovr`` overviews are built first
+    (idempotent, best-effort: a failure is logged and display proceeds).
+
+    ``map_`` is the first positional arg (not a keyword) so callers read
+    naturally; everything after ``path`` is keyword-only.
+    """
+    from localtileserver import TileClient, get_leaflet_tile_layer
+
+    from gui.scripts.prediction_styles import resolve_prediction_style
+
+    path = str(path)
+
+    if build_overviews:
+        try:
+            from spatialrisk.overviews import ensure_overviews
+
+            ensure_overviews(path)
+        except Exception:
+            logger.exception("overview build failed for %s; adding un-optimised", path)
+
+    style = resolve_prediction_style(model_key)
+    client = TileClient(path)
+    layer = get_leaflet_tile_layer(
+        client,
+        colormap=style["colormap"],
+        vmin=style["vmin"],
+        vmax=style["vmax"],
+        nodata=style["nodata"],
+        name=layer_name,
+        opacity=opacity,
+        max_zoom=20,
+        max_native_zoom=20,
+    )
+
+    map_.remove_layer(key, none_ok=True)
+    map_.add_layer(layer, key=key)
+
+    if fit_bounds:
+        map_.center = client.center()
+        map_.zoom = client.default_zoom
+
+    return layer
