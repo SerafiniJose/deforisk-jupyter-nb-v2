@@ -73,6 +73,7 @@ class Project(BaseModel):
     datasets: Dict[str, Any] = Field(default_factory=dict)
     samples: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
+    evaluations: Dict[str, Any] = Field(default_factory=dict)
     forest_loss_specs: List[ForestLossSpec] = Field(default_factory=list)
     # AOI descriptor (GUI-populated, library-agnostic): light metadata only
     # (method, name, gee, admin, geometry_file). The geometry itself lives in a
@@ -586,6 +587,41 @@ class Project(BaseModel):
         """Return registered prediction keys in insertion order."""
         return list(self.predictions.keys())
 
+    # ------------------------------------------------------------------
+    # Evaluation registry
+    # ------------------------------------------------------------------
+
+    def add_evaluation(
+        self,
+        record: Any,
+        key: Optional[str] = None,
+        auto_save: bool = True,
+    ) -> None:
+        """Register a saved evaluation run. Defaults the key to record.storage_key()."""
+        storage_key = key or record.storage_key()
+        self.evaluations[storage_key] = record
+        print(f"  Evaluation registered as project.evaluations['{storage_key}']")
+        if auto_save:
+            self.save()
+
+    def get_evaluation(self, key: str) -> Optional[Any]:
+        """Return the evaluation record under *key*, or None."""
+        return self.evaluations.get(key)
+
+    def list_evaluations(self) -> List[str]:
+        """Return registered evaluation keys in insertion order."""
+        return list(self.evaluations.keys())
+
+    def delete_evaluation(self, key: str, auto_save: bool = False) -> bool:
+        """Remove a saved evaluation record (registry only; leaves on-disk artifacts)."""
+        removed = self.evaluations.pop(key, None)
+        if removed is None:
+            return False
+        logger.info("Evaluation deleted: project.evaluations['%s']", key)
+        if auto_save:
+            self.save()
+        return True
+
     def filter_predictions(
         self,
         model_key: Optional[str] = None,
@@ -708,6 +744,12 @@ class Project(BaseModel):
             data["predictions"] = {}
             for key, prediction in self.predictions.items():
                 data["predictions"][key] = prediction.model_dump(mode="json")
+
+        # Serialize saved evaluation runs
+        if self.evaluations:
+            data["evaluations"] = {}
+            for key, record in self.evaluations.items():
+                data["evaluations"][key] = record.model_dump(mode="json")
 
         # Serialize deferred forest-loss target specs
         if self.forest_loss_specs:
@@ -919,6 +961,14 @@ class Project(BaseModel):
                 prediction.project = project
                 project.predictions[key] = prediction
             print(f"Loaded {len(project.predictions)} prediction(s)")
+
+        # Reconstruct saved evaluation runs
+        if "evaluations" in data and data["evaluations"]:
+            from spatialrisk.evaluations import EvaluationRecord
+
+            for key, ev_data in data["evaluations"].items():
+                project.evaluations[key] = EvaluationRecord(**ev_data)
+            print(f"Loaded {len(project.evaluations)} evaluation(s)")
 
         # Reconstruct deferred forest-loss target specs
         for spec_data in data.get("forest_loss_specs", []):
