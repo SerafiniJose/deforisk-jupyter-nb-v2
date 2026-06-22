@@ -62,7 +62,9 @@ def test_prediction_added_with_pinned_far_palette(monkeypatch, tmp_path):
     assert layer == "FAKE_LAYER"
     assert captured["vmin"] == 1 and captured["vmax"] == 65535
     assert captured["nodata"] == 0
-    assert captured["colormap"][0][:3] == (34, 139, 34)   # FAR green
+    from matplotlib.colors import Colormap
+    assert isinstance(captured["colormap"], Colormap)
+    assert tuple(round(x * 255) for x in captured["colormap"](0.0)[:3]) == (34, 139, 34)  # FAR green
     assert fake_map.removed == ["pred_glm_m1__d"]          # replaced existing
     assert fake_map.added[0][1] == "pred_glm_m1__d"
 
