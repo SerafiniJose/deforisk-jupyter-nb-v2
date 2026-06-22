@@ -99,11 +99,11 @@ def EvaluationTile(project):
         )
 
     def on_delete(key):
-        if p is None:
+        cur = project.value
+        if cur is None:
             return
-        p.delete_evaluation(key)
-        p.save()
-        project.set(p.model_copy())
+        cur.delete_evaluation(key, auto_save=True)
+        project.set(cur.model_copy())
         if selected_eval == key:
             set_selected_eval(None)
 
