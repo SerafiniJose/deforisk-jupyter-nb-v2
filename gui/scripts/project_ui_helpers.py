@@ -41,6 +41,34 @@ def format_last_saved(when: Optional[datetime], now: datetime) -> str:
 
 
 @dataclass
+class CountChip:
+    """One count chip for the load list: a label plus whether it's accented
+    (colored) rather than neutral grey."""
+
+    label: str
+    accent: bool
+
+
+def project_count_chips(info) -> list[CountChip]:
+    """Chip specs summarising one saved project's contents, in display order:
+    raw, processed, models, predictions.
+
+    Raw/processed are always neutral. The models chip appends ``(K trained)``
+    when any models exist and is accented when at least one is trained. The
+    predictions chip is accented when there is at least one prediction.
+    """
+    models_label = f"{info.model_count} models"
+    if info.model_count:
+        models_label += f" ({info.trained_model_count} trained)"
+    return [
+        CountChip(f"{info.raw_count} raw", False),
+        CountChip(f"{info.processed_count} processed", False),
+        CountChip(models_label, info.trained_model_count >= 1),
+        CountChip(f"{info.prediction_count} predictions", info.prediction_count > 0),
+    ]
+
+
+@dataclass
 class NameValidation:
     valid: bool
     cleaned: str

@@ -37,6 +37,8 @@ class ProjectInfo:
     model_count: int
     modified: Optional[datetime]
     readable: bool
+    trained_model_count: int = 0
+    prediction_count: int = 0
     error: Optional[str] = None
 
 
@@ -60,14 +62,20 @@ def list_project_infos(data_dir: Path) -> list[ProjectInfo]:
         try:
             data = json.loads(json_path.read_text(encoding="utf-8"))
             modified = datetime.fromtimestamp(json_path.stat().st_mtime)
+            models = data.get("models", {})
+            trained_model_count = sum(
+                1 for m in models.values() if isinstance(m, dict) and m.get("trained")
+            )
             infos.append(
                 ProjectInfo(
                     name=child.name,
                     raw_count=len(data.get("raw_variables", {})),
                     processed_count=len(data.get("processed_variables", {})),
-                    model_count=len(data.get("models", {})),
+                    model_count=len(models),
                     modified=modified,
                     readable=True,
+                    trained_model_count=trained_model_count,
+                    prediction_count=len(data.get("predictions", {})),
                 )
             )
         except Exception as exc:  # corrupt JSON, permissions, etc.

@@ -34,6 +34,7 @@ from gui.scripts.project_ui_helpers import (
     format_last_saved,
     format_relative,
     overwrite_needed,
+    project_count_chips,
     validate_project_name,
 )
 from gui.scripts.map_helpers import show_aoi_on_map
@@ -336,7 +337,7 @@ def ProjectPanel():
                     solara.Info("No saved projects found.")
                 else:
                     now = datetime.now()
-                    with rv.List(dense=True):
+                    with rv.List(three_line=True):
                         with rv.ListItemGroup(
                             v_model=selected, on_v_model=set_selected
                         ):
@@ -347,14 +348,28 @@ def ProjectPanel():
                                     with rv.ListItemContent():
                                         rv.ListItemTitle(children=[info.name])
                                         if info.readable:
-                                            sub = (
-                                                f"{info.raw_count} raw · "
-                                                f"{info.processed_count} processed · "
-                                                f"modified {format_relative(info.modified, now)}"
+                                            with rv.Row(
+                                                style_="flex-wrap: wrap; gap: 4px; "
+                                                "margin: 2px 0;"
+                                            ):
+                                                for chip in project_count_chips(info):
+                                                    rv.Chip(
+                                                        children=[chip.label],
+                                                        x_small=True,
+                                                        color="green" if chip.accent else None,
+                                                        text_color="white" if chip.accent else None,
+                                                    )
+                                            rv.ListItemSubtitle(
+                                                children=[
+                                                    f"modified {format_relative(info.modified, now)}"
+                                                ]
                                             )
                                         else:
-                                            sub = info.error or "unreadable project file"
-                                        rv.ListItemSubtitle(children=[sub])
+                                            rv.ListItemSubtitle(
+                                                children=[
+                                                    info.error or "unreadable project file"
+                                                ]
+                                            )
                 if load_busy:
                     rv.ProgressLinear(indeterminate=True)
                 if load_error:

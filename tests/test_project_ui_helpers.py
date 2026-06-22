@@ -1,11 +1,13 @@
 from datetime import datetime
 
+from gui.scripts.project_io import ProjectInfo
 from gui.scripts.project_ui_helpers import (
     NameValidation,
     compute_app_title,
     format_last_saved,
     format_relative,
     overwrite_needed,
+    project_count_chips,
     validate_project_name,
 )
 
@@ -13,6 +15,57 @@ from gui.scripts.project_ui_helpers import (
 class _P:
     def __init__(self, name):
         self.project_name = name
+
+
+def _info(**kw):
+    base = dict(
+        name="p",
+        raw_count=0,
+        processed_count=0,
+        model_count=0,
+        modified=None,
+        readable=True,
+        trained_model_count=0,
+        prediction_count=0,
+    )
+    base.update(kw)
+    return ProjectInfo(**base)
+
+
+def test_chips_order_and_basic_labels():
+    chips = project_count_chips(_info(raw_count=9, processed_count=13))
+    labels = [c.label for c in chips]
+    assert labels[0] == "9 raw"
+    assert labels[1] == "13 processed"
+    assert labels[2].endswith("models")  # "0 models"
+    assert labels[3] == "0 predictions"
+    # raw / processed are never accented
+    assert chips[0].accent is False and chips[1].accent is False
+
+
+def test_models_chip_no_trained_suffix_when_zero_models():
+    models_chip = project_count_chips(_info(model_count=0))[2]
+    assert models_chip.label == "0 models"
+    assert models_chip.accent is False
+
+
+def test_models_chip_shows_trained_count_and_accents():
+    models_chip = project_count_chips(_info(model_count=2, trained_model_count=1))[2]
+    assert models_chip.label == "2 models (1 trained)"
+    assert models_chip.accent is True
+
+
+def test_models_present_but_none_trained_is_not_accented():
+    models_chip = project_count_chips(_info(model_count=2, trained_model_count=0))[2]
+    assert models_chip.label == "2 models (0 trained)"
+    assert models_chip.accent is False
+
+
+def test_predictions_chip_accent_toggles_on_count():
+    none = project_count_chips(_info(prediction_count=0))[3]
+    some = project_count_chips(_info(prediction_count=2))[3]
+    assert none.label == "0 predictions" and none.accent is False
+    assert some.label == "2 predictions" and some.accent is True
 
 
 def test_app_title_no_project():
