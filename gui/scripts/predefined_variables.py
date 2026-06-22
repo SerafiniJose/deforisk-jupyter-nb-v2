@@ -56,23 +56,26 @@ def _get_slope(aoi, year=None):
 
 
 def _get_protected_area(aoi, year=None):
-    """WDPA protected areas — binary mask."""
+    """WDPA protected areas — binary mask (1 = inside a designated protected area).
+
+    Rasterized by painting the status-filtered polygons onto a 0 background, so it
+    depends on no feature attribute. The previous implementation reduced on a
+    ``WDPAID`` property that the current ``WCMC/WDPA/current/polygons`` schema no
+    longer exposes (it was renamed to ``SITE_ID`` / ``SITE_PID``), which silently
+    produced an all-zero raster. ``aoi`` may be a Geometry, Feature, or
+    FeatureCollection; ``filterBounds`` requires a Geometry.
+    """
+    geom = aoi if isinstance(aoi, ee.Geometry) else aoi.geometry()
     wdpa = (
         ee.FeatureCollection("WCMC/WDPA/current/polygons")
-        .filterBounds(aoi)
+        .filterBounds(geom)
         .filter(
             ee.Filter.inList(
                 "STATUS", ["Designated", "Inscribed", "Established", "Proposed"]
             )
         )
     )
-    return (
-        wdpa.reduceToImage(["WDPAID"], ee.Reducer.first())
-        .gt(0)
-        .unmask()
-        .clip(aoi)
-        .toByte()
-    )
+    return ee.Image(0).paint(wdpa, 1).clip(geom).toByte()
 
 
 def _get_rivers(aoi, year=None):
@@ -139,6 +142,14 @@ def _get_subj(aoi, year=None):
 # Catalogue
 # ---------------------------------------------------------------------------
 
+# Map visualization for predefined layers. Consumed by ``_styled_layer`` in
+# gui/tile/variables_tile.py:
+#   * ``vis_params`` — a GEE visualization dict. A palette with no ``min``/``max``
+#     is stretched dynamically to the image's min/max over the AOI. Binary masks
+#     render filled solid: ``0`` -> first colour (white), ``1`` -> feature colour.
+#   * ``random_visualizer`` — render via ``image.randomVisualizer()`` (one random
+#     RGB colour per distinct value); used for multi-class categorical rasters
+#     whose value range is arbitrary. Takes precedence over ``vis_params``.
 PREDEFINED_CATALOGUE = {
     "altitude": {
         "label": "Altitude (SRTM)",
@@ -146,6 +157,10 @@ PREDEFINED_CATALOGUE = {
         "raster_type": "continuous",
         "temporal": False,
         "get_image": _get_altitude,
+        # Terrain ramp (green lowlands -> brown -> white peaks), stretched to AOI.
+        "vis_params": {
+            "palette": ["006633", "E5FFCC", "662A00", "D8D8D8", "F5F5F5"],
+        },
     },
     "slope": {
         "label": "Slope (SRTM)",
@@ -153,6 +168,12 @@ PREDEFINED_CATALOGUE = {
         "raster_type": "continuous",
         "temporal": False,
         "get_image": _get_slope,
+        # Degrees: green (flat) -> yellow -> red (steep).
+        "vis_params": {
+            "palette": ["1a9850", "ffffbf", "d73027"],
+            "min": 0,
+            "max": 60,
+        },
     },
     "protected_area": {
         "label": "Protected areas (WDPA)",
@@ -160,6 +181,7 @@ PREDEFINED_CATALOGUE = {
         "raster_type": "categorical",
         "temporal": False,
         "get_image": _get_protected_area,
+        "vis_params": {"palette": ["ffffff", "4caf50"], "min": 0, "max": 1},
     },
     "rivers": {
         "label": "Rivers (OSM)",
@@ -167,6 +189,7 @@ PREDEFINED_CATALOGUE = {
         "raster_type": "categorical",
         "temporal": False,
         "get_image": _get_rivers,
+        "vis_params": {"palette": ["ffffff", "2196f3"], "min": 0, "max": 1},
     },
     "roads": {
         "label": "Roads (OSM)",
@@ -174,6 +197,7 @@ PREDEFINED_CATALOGUE = {
         "raster_type": "categorical",
         "temporal": False,
         "get_image": _get_roads,
+        "vis_params": {"palette": ["ffffff", "ff9800"], "min": 0, "max": 1},
     },
     "forest_gfc": {
         "label": "Forest cover (Hansen GFC)",
@@ -182,6 +206,7 @@ PREDEFINED_CATALOGUE = {
         "temporal": True,
         "years": list(range(2001, 2025)),
         "get_image": _get_forest_gfc,
+        "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
     },
     "towns": {
         "label": "Towns / urban areas (JRC GHSL)",
@@ -190,6 +215,7 @@ PREDEFINED_CATALOGUE = {
         "temporal": True,
         "years": list(range(1975, 2021, 5)),
         "get_image": _get_towns,
+        "vis_params": {"palette": ["ffffff", "e91e63"], "min": 0, "max": 1},
     },
     "subj": {
         "label": "Subjurisdiction (FAO GAUL)",
@@ -197,6 +223,8 @@ PREDEFINED_CATALOGUE = {
         "raster_type": "categorical",
         "temporal": False,
         "get_image": _get_subj,
+        # Many subjurisdictions with arbitrary rasterized values -> random RGB.
+        "random_visualizer": True,
     },
 }
 

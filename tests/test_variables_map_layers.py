@@ -1,7 +1,7 @@
-"""Tests for displaying local variable layers on the map and the black/white
-visualization that replaced randomVisualizer."""
+"""Tests for displaying variable layers on the map: predefined-catalogue
+visualization (palettes / randomVisualizer), the black/white fallback, and the
+threaded GEE-layer add that avoids the cross-event-loop crash."""
 
-import asyncio
 import inspect
 
 
@@ -34,12 +34,80 @@ def test_styled_layer_categorical_is_black_white_not_random():
     var = _named("LocalRasterVar", raster_type=_named("RT", value="categorical"))
     image = FakeImage()
 
-    out_image, vis = asyncio.run(_styled_layer(image, var, None))
+    out_image, vis = _styled_layer(image, var, None)
 
     assert out_image is image
     assert vis.get("palette") == ["000000", "ffffff"]
     assert vis.get("min") == 0
     assert vis.get("max") == 1
+
+
+def test_styled_layer_predefined_binary_uses_catalogue_palette():
+    """A predefined binary mask (e.g. rivers) renders with its catalogue palette
+    (white background, feature colour) — not the generic black/white default."""
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui.tile.variables_tile import _styled_layer
+
+    var = _named("GEEVar", raster_type=_named("RT", value="categorical"))
+    var.name = "rivers"
+    image = object()
+
+    out_image, vis = _styled_layer(image, var, None)
+
+    assert out_image is image
+    assert vis["palette"] == PREDEFINED_CATALOGUE["rivers"]["vis_params"]["palette"]
+    assert vis["palette"][0] == "ffffff"
+    assert vis["min"] == 0 and vis["max"] == 1
+
+
+def test_styled_layer_predefined_continuous_stretches_palette():
+    """A predefined continuous var (altitude) keeps its terrain palette and omits
+    min/max when the AOI stretch can't be computed (no gee_interface)."""
+    from gui.tile.variables_tile import _styled_layer
+
+    var = _named("GEEVar", raster_type=_named("RT", value="continuous"))
+    var.name = "altitude"
+
+    out_image, vis = _styled_layer(object(), var, None)
+
+    assert vis["palette"][0] == "006633"  # terrain ramp, not grayscale
+    assert "min" not in vis and "max" not in vis
+
+
+def test_styled_layer_subj_uses_random_visualizer():
+    """The multi-class subjurisdiction layer routes through randomVisualizer()
+    (random RGB per class) and is added with empty vis params."""
+    from gui.tile.variables_tile import _styled_layer
+
+    class FakeImage:
+        def randomVisualizer(self):
+            return "RGB_IMAGE"
+
+    var = _named("GEEVar", raster_type=_named("RT", value="categorical"))
+    var.name = "subj"
+
+    out_image, vis = _styled_layer(FakeImage(), var, None)
+
+    assert out_image == "RGB_IMAGE"
+    assert vis == {}
+
+
+def test_gee_layer_add_uses_sync_api_off_the_solara_loop():
+    """GEE layers must be added via the blocking interface offloaded to a thread,
+    never the async map API. ``add_ee_layer_async`` awaited on Solara's loop
+    touches eeclient session locks bound to the GEE interface's private loop and
+    crashes with "bound to a different event loop"."""
+    from gui.tile import variables_tile
+    from gui.tile.variables_tile import _add_gee_layer
+
+    toggle_src = inspect.getsource(variables_tile.VariablesTile)
+    assert "add_ee_layer_async(" not in toggle_src  # not called on Solara's loop
+    assert "_add_gee_layer" in toggle_src
+    assert "to_thread" in toggle_src
+
+    add_src = inspect.getsource(_add_gee_layer)
+    assert "add_ee_layer_async(" not in add_src  # uses the blocking API, not async
+    assert "add_ee_layer(" in add_src
 
 
 def test_add_vector_on_map_registers_layer_under_key(tmp_path):

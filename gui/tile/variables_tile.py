@@ -31,19 +31,19 @@ def _map_layer_key(key: str) -> str:
     return f"var_{key}"
 
 
-async def _grayscale_vis(image, var, gee_interface):
-    """Grayscale palette stretched to the image's min/max over its AOI.
+def _minmax(image, var, gee_interface):
+    """Compute (min, max) of the image over its AOI, or None if unavailable.
 
-    Falls back to a bare grayscale palette (GEE's default 0–1 stretch) if the
-    min/max can't be computed.
+    Uses the *blocking* ``gee_interface.get_info`` so the session call is
+    scheduled onto the GEE interface's own event loop (see ``_add_gee_layer``).
+    Must therefore run off the Solara loop — i.e. inside a worker thread.
     """
-    vis = {"palette": ["000000", "ffffff"]}
     aoi = getattr(var, "aoi", None)
     if aoi is None or gee_interface is None:
-        return vis
+        return None
     try:
         geom = aoi if isinstance(aoi, ee.Geometry) else aoi.geometry()
-        stats = await gee_interface.get_info_async(
+        stats = gee_interface.get_info(
             image.reduceRegion(
                 reducer=ee.Reducer.minMax(),
                 geometry=geom,
@@ -55,25 +55,75 @@ async def _grayscale_vis(image, var, gee_interface):
         mins = [v for k, v in stats.items() if k.endswith("_min") and v is not None]
         maxs = [v for k, v in stats.items() if k.endswith("_max") and v is not None]
         if mins and maxs:
-            vis["min"], vis["max"] = min(mins), max(maxs)
+            return min(mins), max(maxs)
     except Exception:
-        logger.debug("grayscale min/max failed; using default stretch", exc_info=True)
+        logger.debug("min/max over AOI failed", exc_info=True)
+    return None
+
+
+def _grayscale_vis(image, var, gee_interface):
+    """Grayscale palette stretched to the image's min/max over its AOI.
+
+    Falls back to a bare grayscale palette (GEE's default 0–1 stretch) if the
+    min/max can't be computed.
+    """
+    vis = {"palette": ["000000", "ffffff"]}
+    mm = _minmax(image, var, gee_interface)
+    if mm:
+        vis["min"], vis["max"] = mm
     return vis
 
 
-async def _styled_layer(image, var, gee_interface):
-    """Choose visualization by raster type.
+def _styled_layer(image, var, gee_interface):
+    """Choose visualization for a source variable.
 
-    categorical (incl. binary masks) -> black/white palette (0=black, 1=white);
-    continuous -> grayscale stretched to the image's min/max.
+    Predefined catalogue variables carry their own visualization spec (keyed by
+    name): a ``random_visualizer`` flag (random RGB per class) or a ``vis_params``
+    dict whose palette is stretched dynamically when no min/max is given.
 
-    Returns (image_to_add, vis_params).
+    Everything else falls back to by-``raster_type`` defaults: categorical (incl.
+    binary masks) -> black/white palette (0=black, 1=white); continuous ->
+    grayscale stretched to the image's min/max.
+
+    Returns (image_to_add, vis_params). Synchronous — any GEE stretch it computes
+    goes through the blocking interface, so call it from a worker thread.
     """
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+
+    cat = PREDEFINED_CATALOGUE.get(getattr(var, "name", "") or "")
+    if cat:
+        if cat.get("random_visualizer"):
+            return image.randomVisualizer(), {}
+        vis = cat.get("vis_params")
+        if vis:
+            vis = dict(vis)
+            if "min" not in vis or "max" not in vis:
+                mm = _minmax(image, var, gee_interface)
+                if mm:
+                    vis.setdefault("min", mm[0])
+                    vis.setdefault("max", mm[1])
+            return image, vis
+
     rt = getattr(var, "raster_type", None)
     rt = rt.value if hasattr(rt, "value") else (str(rt) if rt is not None else "")
     if rt == "categorical":
         return image, {"palette": ["000000", "ffffff"], "min": 0, "max": 1}
-    return image, await _grayscale_vis(image, var, gee_interface)
+    return image, _grayscale_vis(image, var, gee_interface)
+
+
+def _add_gee_layer(map_, image, var, name: str, layer_key: str):
+    """Style and add a GEE image layer to ``map_`` (blocking; run in a thread).
+
+    Uses the GEE interface's *synchronous* API (``add_ee_layer`` / ``get_info``),
+    which schedules the underlying eeclient session calls onto the interface's
+    own private event loop. The async map API (``add_ee_layer_async``) cannot be
+    used here: awaited on Solara's event loop it touches session locks bound to
+    the interface's loop and raises "bound to a different event loop". Offloading
+    this blocking call with ``asyncio.to_thread`` keeps Solara's loop free, the
+    same pattern the local raster/vector branches use.
+    """
+    styled_image, vis = _styled_layer(image, var, map_.gee_interface)
+    map_.add_ee_layer(styled_image, vis, name=name, key=layer_key, use_map_vis=False)
 
 
 def _variable_to_entry(key: str, var, project) -> dict:
@@ -206,10 +256,12 @@ def VariablesTile(project, process_error, map_=None):
     async def _apply_map_toggle():
         """Add or remove a variable's layer on the map.
 
-        GEE-backed layers go through the async map API — the sync ``add_ee_layer``
-        blocks on the GEE interface's private event loop and hangs when called
-        from a Solara handler. Local raster/vector layers use the blocking
-        ``add_raster`` / ``add_vector_on_map`` helpers, offloaded to a thread.
+        Every layer-add is offloaded to a worker thread. GEE-backed layers use
+        the GEE interface's blocking API (via ``_add_gee_layer``) so the session
+        calls run on the interface's own event loop; the async map API crashes
+        with "bound to a different event loop" when awaited on Solara's loop.
+        Local raster/vector layers use the blocking ``add_raster`` /
+        ``add_vector_on_map`` helpers the same way.
         """
         key = pending_toggle.value
         if key is None or map_ is None:
@@ -226,9 +278,8 @@ def VariablesTile(project, process_error, map_=None):
             images = getattr(var, "gee_images", None)
             layer_key = _map_layer_key(key)
             if images:
-                image, vis = await _styled_layer(images[0], var, map_.gee_interface)
-                await map_.add_ee_layer_async(
-                    image, vis, name=key, key=layer_key, use_map_vis=False
+                await asyncio.to_thread(
+                    _add_gee_layer, map_, images[0], var, key, layer_key
                 )
             elif type(var).__name__ == "LocalVectorVar":
                 await asyncio.to_thread(
