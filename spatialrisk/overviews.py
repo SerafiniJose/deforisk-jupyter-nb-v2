@@ -41,4 +41,6 @@ def ensure_overviews(path, resampling="average", levels=(2, 4, 8, 16, 32)) -> bo
         ds.BuildOverviews(resampling, list(levels))
         return True
     finally:
-        ds = None  # flush + close
+        if ds is not None:
+            ds.FlushCache()
+            ds = None  # explicit flush then close
