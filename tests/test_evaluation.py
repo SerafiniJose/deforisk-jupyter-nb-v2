@@ -294,3 +294,18 @@ def test_evaluation_results_widget_exports_list_and_dialog():
     assert "evaluations" in src
     assert "on_open" in src and "on_delete" in src
     assert "solara.DataFrame" in src
+
+
+def test_evaluation_tile_wires_record_and_dialog():
+    import inspect
+    import gui.tile.evaluation_tile as et
+
+    src = inspect.getsource(et)
+    assert "build_evaluation_record" in src
+    assert "add_evaluation" in src
+    assert "EvaluationTableDialog" in src
+    assert "delete_evaluation" in src
+    # background job does the mutate-then-replace re-render
+    assert "model_copy()" in src
+    # eval_indices transient table is gone
+    assert "eval_indices" not in src
