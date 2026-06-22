@@ -47,11 +47,17 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete):
 
 @solara.component
 def EvaluationRow(rec_key, record, on_open, on_delete):
-    """One saved-evaluation row: clickable title + delete button."""
+    """One saved-evaluation row: clicking the content opens the popup; × deletes.
+
+    The open handler lives on ListItemContent (not the whole ListItem) so a click
+    on the delete Btn in ListItemAction does not also bubble to an open handler —
+    they are separate, non-nested click targets.
+    """
     n_maps = len(record.prediction_keys)
-    with rv.ListItem(dense=True, ripple=True,
-                     on_click=lambda *_: on_open(rec_key)):
-        with rv.ListItemContent():
+    with rv.ListItem(dense=True):
+        with rv.ListItemContent(
+                style_="cursor: pointer;",
+                on_click=lambda *_: on_open(rec_key)):
             rv.ListItemTitle(
                 children=[f"{record.truth_tag} · {n_maps} maps"],
                 style_="font-size: 0.875rem;",
