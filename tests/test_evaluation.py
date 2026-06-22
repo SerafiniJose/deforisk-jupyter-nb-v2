@@ -281,3 +281,16 @@ def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys)
     assert len(df) == 0
     assert "skipped nope" in capsys.readouterr().out
     assert (tmp_path / "evaluation" / "t" / "indices_all.csv").exists()
+
+
+def test_evaluation_results_widget_exports_list_and_dialog():
+    import inspect
+    import gui.widget.evaluation_results as er
+
+    assert hasattr(er, "EvaluationResults")
+    assert hasattr(er, "EvaluationTableDialog")
+    src = inspect.getsource(er)
+    # list reads the persisted registry; dialog renders the saved table
+    assert "evaluations" in src
+    assert "on_open" in src and "on_delete" in src
+    assert "solara.DataFrame" in src
