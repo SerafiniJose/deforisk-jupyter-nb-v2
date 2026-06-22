@@ -1,5 +1,6 @@
 """Step 7 — Inference tile."""
 
+import asyncio
 import logging
 import uuid
 
@@ -117,9 +118,19 @@ def InferenceTile(project, map_=None):
         remaining.discard(job_id)
         preds_on_map.set(remaining)
 
-    def on_toggle_map(job):
-        """Add or remove a completed job's prediction raster(s) on the map."""
-        if map_ is None:
+    gen_overviews = solara.use_reactive(False)
+    pending_toggle = solara.use_reactive(None)
+
+    @solara.lab.use_task(dependencies=None, raise_error=False)
+    async def _apply_pred_toggle():
+        """Add/remove a completed job's prediction raster(s) on the map.
+
+        The layer-add is offloaded to a worker thread (it builds overviews and a
+        localtileserver tile client, both blocking) so Solara's event loop stays
+        responsive. Removal is cheap and stays inline.
+        """
+        job = pending_toggle.value
+        if job is None or map_ is None:
             return
         matches = predictions_for(job)
         if not matches:
@@ -131,17 +142,30 @@ def InferenceTile(project, map_=None):
                     map_.remove_layer(_pred_layer_key(sk), none_ok=True)
                 _forget_on_map(job_id)
             else:
+                from gui.scripts.prediction_map import add_prediction_on_map
+
                 for sk, pred in matches.items():
-                    map_.add_raster(
+                    await asyncio.to_thread(
+                        add_prediction_on_map,
+                        map_,
                         str(pred.path),
+                        model_key=job["model_key"],
                         layer_name=sk,
                         key=_pred_layer_key(sk),
                         fit_bounds=True,
+                        build_overviews=gen_overviews.value,
                     )
                 preds_on_map.set(set(preds_on_map.value) | {job_id})
         except Exception as exc:
             logger.exception("prediction map toggle failed for job %s", job_id)
             set_form_error(f"Could not toggle prediction on map: {exc}")
+
+    def on_toggle_map(job):
+        """Trigger the threaded add/remove task for a completed job."""
+        if map_ is None:
+            return
+        pending_toggle.set(job)
+        _apply_pred_toggle()
 
     pending_remove, set_pending_remove = solara.use_state(None)
 
@@ -206,6 +230,15 @@ def InferenceTile(project, map_=None):
 
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
+
+        # Optional raster optimisation before predictions hit the map.
+        solara.Checkbox(
+            label="Generate overviews before display",
+            value=gen_overviews.value,
+            on_value=gen_overviews.set,
+        )
+        if _apply_pred_toggle.pending:
+            rv.ProgressLinear(indeterminate=True, color="primary")
 
         # Outputs list
         InferenceOutputList(
