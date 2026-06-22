@@ -144,18 +144,26 @@ def InferenceTile(project, map_=None):
             else:
                 from gui.scripts.prediction_map import add_prediction_on_map
 
-                for sk, pred in matches.items():
-                    await asyncio.to_thread(
-                        add_prediction_on_map,
-                        map_,
-                        str(pred.path),
-                        model_key=job["model_key"],
-                        layer_name=sk,
-                        key=_pred_layer_key(sk),
-                        fit_bounds=True,
-                        build_overviews=gen_overviews.value,
-                    )
-                    preds_on_map.set(set(preds_on_map.value) | {job_id})
+                added_any = False
+                try:
+                    for sk, pred in matches.items():
+                        await asyncio.to_thread(
+                            add_prediction_on_map,
+                            map_,
+                            str(pred.path),
+                            model_key=job["model_key"],
+                            layer_name=sk,
+                            key=_pred_layer_key(sk),
+                            fit_bounds=True,
+                            build_overviews=gen_overviews.value,
+                        )
+                        added_any = True
+                finally:
+                    # Mark the job on-map if ANY layer landed (even on partial
+                    # failure) so toggle-off can remove all its keys; fire the
+                    # reactive once, not per-iteration.
+                    if added_any:
+                        preds_on_map.set(set(preds_on_map.value) | {job_id})
         except Exception as exc:
             logger.exception("prediction map toggle failed for job %s", job_id)
             set_form_error(f"Could not toggle prediction on map: {exc}")

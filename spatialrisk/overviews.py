@@ -36,9 +36,9 @@ def ensure_overviews(path, resampling="average", levels=(2, 4, 8, 16, 32)) -> bo
     try:
         if ds.GetRasterBand(1).GetOverviewCount() > 0:
             return False
-        # COMPRESS_OVERVIEW keeps the .ovr sidecar small; read-only open => external.
-        gdal.SetConfigOption("COMPRESS_OVERVIEW", "DEFLATE")
-        ds.BuildOverviews(resampling, list(levels))
+        # Per-call option (not the process-global config) keeps the .ovr small
+        # without leaking COMPRESS_OVERVIEW to later BuildOverviews calls.
+        ds.BuildOverviews(resampling, list(levels), options=["COMPRESS_OVERVIEW=DEFLATE"])
         return True
     finally:
         if ds is not None:

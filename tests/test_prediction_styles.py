@@ -2,8 +2,6 @@
 value range translated verbatim from qgis_layer_style/prob*.qml, with an
 unknown-family fallback to the FAR (prob.qml) palette."""
 
-import pytest
-
 from gui.scripts.prediction_styles import resolve_prediction_style
 
 
