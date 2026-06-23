@@ -134,6 +134,7 @@ def ProjectPanel():
             # frame it and the downstream tabs unlock. Set before installing the
             # project so the load-zoom effect sees it on the same render.
             app_state.aoi_result.set(load_aoi(DATA_DIR / loaded.project_name, loaded.aoi))
+            app_state.aoi_asset.set((loaded.aoi or {}).get("asset"))
             app_state.load_project_state(loaded, when)
             app_state.status_message.set(f"Project '{selected}' loaded.")
             app_state.error_message.set(None)
@@ -193,7 +194,11 @@ def ProjectPanel():
         try:
             # Persist the AOI alongside the project: geometry → aoi.geojson
             # sidecar, light metadata → project.aoi (saved into the manifest).
-            p.aoi = write_aoi(DATA_DIR / p.project_name, app_state.aoi_result.value)
+            p.aoi = write_aoi(
+                DATA_DIR / p.project_name,
+                app_state.aoi_result.value,
+                asset=app_state.aoi_asset.value,
+            )
             path = save_project(p)
             app_state.mark_saved(datetime.now())
             note = ""
@@ -534,6 +539,9 @@ def WorkflowTabs(map_, gee_interface):
                 map_=map_,
                 gee_interface=gee_interface,
                 aoi_result=app_state.aoi_result,
+                aoi_asset=app_state.aoi_asset,
+                on_selection=app_state.aoi_asset.set,
+                restore_signal=app_state.project_loaded_signal.value,
                 loading=app_state.loading,
             )
         with rv.TabItem():

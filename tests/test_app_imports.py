@@ -70,3 +70,18 @@ def test_page_wires_project_summary_step():
     assert "ProjectSummaryTile(" in src
     # Left-drawer step opens as a modal dialog.
     assert '"display": "dialog"' in src
+
+
+def test_workflow_tabs_wires_aoi_asset():
+    import inspect
+    import gui.solara_app as solara_app
+    src = inspect.getsource(solara_app.WorkflowTabs)
+    assert "aoi_asset=app_state.aoi_asset" in src
+    assert "on_selection=app_state.aoi_asset.set" in src
+    assert "restore_signal=app_state.project_loaded_signal.value" in src
+
+
+def test_aoi_tile_imports_vendored_view():
+    import inspect
+    import gui.tile.aoi_tile as aoi_tile
+    assert "gui.widget.aoi_view" in inspect.getsource(aoi_tile)
