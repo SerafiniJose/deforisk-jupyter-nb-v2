@@ -57,3 +57,13 @@ def test_new_project_bumps_loaded_signal():
     before = s.project_loaded_signal.value
     s.new_project_state(_P("fresh"))
     assert s.project_loaded_signal.value == before + 1
+
+
+def test_new_project_resets_aoi_asset():
+    from gui.store.state_manager import AppState
+    from spatialrisk.project import Project
+
+    s = AppState()
+    s.aoi_asset.set({"asset_id": "users/me/x", "type": "TABLE", "column": "ALL", "value": None})
+    s.new_project_state(Project(project_name="p"))
+    assert s.aoi_asset.value is None

@@ -24,6 +24,11 @@ class AppState:
         # AOI (pysepal AoiResult | None)
         self.aoi_result = solara.reactive(None)
 
+        # Captured/loaded ASSET descriptor ({asset_id,type,column,value}). The only
+        # AOI selection input not recoverable from the AoiResult, so it is tracked
+        # and persisted separately. See gui/scripts/aoi_io.py.
+        self.aoi_asset = solara.reactive(None)
+
         # Bumped each time a project is loaded from disk. The map view subscribes
         # to this so it can zoom to the AOI on load (a plain project-reference
         # watch would also fire on every in-place mutation).
@@ -71,6 +76,7 @@ class AppState:
         self.project.set(project)  # subscription marks dirty=True
         self.last_saved.set(None)
         self.aoi_result.set(None)
+        self.aoi_asset.set(None)
         self.process_error.set(None)
         self.status_message.set(None)
         self.error_message.set(None)
