@@ -167,6 +167,19 @@ def test_project_persists_aoi_metadata(tmp_path, monkeypatch):
     assert loaded.aoi == p.aoi
 
 
+def test_project_persists_asset_aoi_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+
+    p = proj.Project(project_name="proj_asset_aoi")
+    p.aoi = {"method": "ASSET", "name": "aoi", "gee": True, "admin": None,
+             "asset": {"asset_id": "users/me/aoi", "type": "TABLE",
+                       "column": "ALL", "value": None}}
+    p.save()
+
+    loaded = proj.Project.load("proj_asset_aoi")
+    assert loaded.aoi == p.aoi
+
+
 def test_project_without_aoi_loads_none(tmp_path, monkeypatch):
     monkeypatch.setattr(proj, "downloads_folder", tmp_path)
 
@@ -174,3 +187,45 @@ def test_project_without_aoi_loads_none(tmp_path, monkeypatch):
 
     loaded = proj.Project.load("proj_no_aoi")
     assert loaded.aoi is None
+
+
+# --- ASSET AOI persist + rebuild --------------------------------------------
+
+def test_write_includes_asset_for_asset_method(tmp_path):
+    asset = {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}
+    meta = write_aoi(tmp_path, _aoi(method="ASSET", name="aoi", gdf=None), asset=asset)
+    assert meta["asset"] == asset
+
+
+def test_write_omits_asset_for_non_asset_method(tmp_path):
+    asset = {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}
+    meta = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197", gdf=None), asset=asset)
+    assert "asset" not in meta
+
+
+def test_load_asset_rebuilds_feature_collection(tmp_path, monkeypatch):
+    import gui.scripts.aoi_io as aoi_io
+    import ee
+
+    sentinel = object()
+    captured = {}
+    monkeypatch.setattr(ee, "FeatureCollection", lambda aid: captured.update({"aid": aid}) or sentinel)
+
+    meta = {"method": "ASSET", "name": "aoi", "gee": True,
+            "asset": {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}}
+    restored = aoi_io.load_aoi(tmp_path, meta)
+
+    assert restored.gdf is None
+    assert restored.feature_collection is sentinel
+    assert captured["aid"] == "users/me/aoi"
+
+
+def test_load_asset_degrades_when_rebuild_fails(tmp_path, monkeypatch):
+    import gui.scripts.aoi_io as aoi_io
+    import ee
+    monkeypatch.setattr(ee, "FeatureCollection", lambda aid: (_ for _ in ()).throw(RuntimeError("no ee")))
+    meta = {"method": "ASSET", "name": "aoi", "gee": True,
+            "asset": {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}}
+    restored = aoi_io.load_aoi(tmp_path, meta)
+    assert restored is not None
+    assert restored.feature_collection is None

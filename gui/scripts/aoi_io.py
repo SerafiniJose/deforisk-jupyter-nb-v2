@@ -57,6 +57,33 @@ def _rebuild_admin_feature_collection(admin_code: str) -> Optional[Any]:
         return None
 
 
+def _rebuild_asset_feature_collection(asset: Dict[str, Any]) -> Optional[Any]:
+    """Rebuild the EE object for a persisted ASSET AOI (mirrors process_asset).
+
+    Returns None (metadata-only fallback) if EE isn't ready or the asset is
+    unavailable, so loading never crashes.
+    """
+    try:
+        import ee
+
+        aid = asset["asset_id"]
+        atype = asset.get("type", "TABLE")
+        if atype == "TABLE":
+            obj = ee.FeatureCollection(aid)
+            col, val = asset.get("column", "ALL"), asset.get("value")
+            if col not in (None, "ALL") and val is not None:
+                obj = obj.filter(ee.Filter.eq(col, val))
+            return obj
+        if atype == "IMAGE":
+            return ee.Image(aid)
+        if atype == "IMAGE_COLLECTION":
+            return ee.ImageCollection(aid)
+        logger.debug("Unknown asset type %r; loading metadata-only.", atype)
+    except Exception:  # pragma: no cover - exercised via degrade test (patched)
+        logger.debug("Could not rebuild ASSET FeatureCollection; metadata-only.", exc_info=True)
+    return None
+
+
 def _aoi_metadata(aoi: Any, geometry_file: Optional[str]) -> Dict[str, Any]:
     """Build the serializable metadata dict for an AoiResult-like object."""
     meta: Dict[str, Any] = {
@@ -70,7 +97,7 @@ def _aoi_metadata(aoi: Any, geometry_file: Optional[str]) -> Dict[str, Any]:
     return meta
 
 
-def write_aoi(project_dir: Path, aoi: Any) -> Optional[Dict[str, Any]]:
+def write_aoi(project_dir: Path, aoi: Any, asset: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Persist ``aoi`` for a project and return the metadata dict to store.
 
     Writes the geometry to ``<project_dir>/aoi.geojson`` (WGS84) when the AOI
@@ -99,7 +126,10 @@ def write_aoi(project_dir: Path, aoi: Any) -> Optional[Dict[str, Any]]:
     if gdf is None:
         # Metadata-only AOI (e.g. GEE admin/asset): drop any stale geometry.
         sidecar.unlink(missing_ok=True)
-        return _aoi_metadata(aoi, geometry_file=None)
+        meta = _aoi_metadata(aoi, geometry_file=None)
+        if asset and getattr(aoi, "method", None) == "ASSET":
+            meta["asset"] = asset
+        return meta
 
     # Normalize to WGS84 so the sidecar matches what zoom_bounds expects.
     if getattr(gdf, "crs", None) is not None and gdf.crs.to_epsg() != 4326:
@@ -147,6 +177,8 @@ def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[
     feature_collection = None
     if gdf is None and gee and admin and method in _ADMIN_METHODS:
         feature_collection = _rebuild_admin_feature_collection(admin)
+    elif gee and method == "ASSET" and metadata.get("asset"):
+        feature_collection = _rebuild_asset_feature_collection(metadata["asset"])
 
     return AoiResult(
         method=method,
