@@ -49,6 +49,7 @@ from gui.tile.sampling_tile import SamplingTile, samples_on_map
 from gui.tile.train_tile import TrainTile, train_jobs, MODEL_REGISTRY
 from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile
+from gui.tile.summary_tile import ProjectSummaryTile
 from gui.widget.notification_area import NotificationArea
 from gui.scripts.job_restore import build_train_jobs, build_inference_jobs
 
@@ -703,7 +704,7 @@ def Page():
 
     solara.use_effect(_seed_test_model_and_prediction, [])
 
-    # Left drawer: only the Project step (opens as a dialog for load/save)
+    # Left drawer: Project controls + read-only Project Summary (both open as dialogs)
     steps_data = [
         {
             "id": 1,
@@ -711,6 +712,18 @@ def Page():
             "icon": "mdi-folder-outline",
             "display": "dialog",
             "content": ProjectPanel(),
+        },
+        {
+            "id": 2,
+            "name": "Project Summary",
+            "icon": "mdi-clipboard-text-outline",
+            "display": "dialog",
+            "content": ProjectSummaryTile(
+                project=app_state.project,
+                project_dirty=app_state.project_dirty,
+                last_saved=app_state.last_saved,
+            ),
+            "width": 760,
         },
     ]
 

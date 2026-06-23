@@ -55,3 +55,18 @@ def test_page_clears_map_overlays_on_switch():
     assert "samples_on_map.set(set())" in src
     assert "preds_on_map.set(set())" in src
     assert "solara.use_effect(render_map_on_switch, [project_loaded_signal])" in src
+
+
+def test_solara_app_imports_summary_tile():
+    import gui.solara_app as app
+    assert hasattr(app, "ProjectSummaryTile")
+
+
+def test_page_wires_project_summary_step():
+    import inspect
+    import gui.solara_app as app
+    src = inspect.getsource(app.Page)
+    assert '"name": "Project Summary"' in src
+    assert "ProjectSummaryTile(" in src
+    # Left-drawer step opens as a modal dialog.
+    assert '"display": "dialog"' in src
