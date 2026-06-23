@@ -13,12 +13,11 @@ _NAME_RE = re.compile(r"[A-Za-z0-9 _-]+")
 
 
 def compute_app_title(project, dirty: bool, base: str = "Spatial Risk") -> str:
-    """Header title: '<base>' with no project, else '<base> — <name>' plus a
-    '●' when there are unsaved changes. Plain text (header cannot host a widget)."""
-    if project is None:
-        return base
-    suffix = " ●" if dirty else ""
-    return f"{base} — {project.project_name}{suffix}"
+    """Header title: always '<base>', plus a '●' when there are unsaved changes.
+    The project name is shown elsewhere, not in the header. Plain text (header
+    cannot host a widget)."""
+    suffix = " ●" if dirty and project is not None else ""
+    return f"{base}{suffix}"
 
 
 def format_relative(when: datetime, now: datetime) -> str:

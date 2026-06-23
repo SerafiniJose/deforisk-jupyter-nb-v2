@@ -75,11 +75,11 @@ def test_app_title_no_project():
 
 
 def test_app_title_clean():
-    assert compute_app_title(_P("mtq"), False) == "Spatial Risk — mtq"
+    assert compute_app_title(_P("mtq"), False) == "Spatial Risk"
 
 
 def test_app_title_dirty():
-    assert compute_app_title(_P("mtq"), True) == "Spatial Risk — mtq ●"
+    assert compute_app_title(_P("mtq"), True) == "Spatial Risk ●"
 
 
 def test_format_relative_buckets():
