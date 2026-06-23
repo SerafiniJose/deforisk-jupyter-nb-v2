@@ -157,6 +157,8 @@ def test_evaluation_rows():
     )
     stats, rows = evaluation_rows(p)
     assert stats == {"total": 1}
+    assert rows[0]["name"] == "gfc"        # name falls back to truth_tag when unset
+    assert rows[0]["truth_tag"] == "gfc"
     assert rows[0]["n_predictions"] == 2
     assert rows[0]["csizes"] == "10, 20"
     assert rows[0]["metrics"] == "wRMSE"
