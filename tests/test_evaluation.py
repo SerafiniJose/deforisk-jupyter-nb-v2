@@ -294,6 +294,10 @@ def test_evaluation_results_widget_exports_list_and_dialog():
     assert "evaluations" in src
     assert "on_open" in src and "on_delete" in src
     assert "solara.DataFrame" in src
+    # Regression: the open action must be an explicit clickable Button — on_click
+    # on ListItem/ListItemContent does NOT fire in this reacton.ipyvuetify setup,
+    # so the row needs a real "view table" Button to open the popup.
+    assert "mdi-table-eye" in src
 
 
 def test_evaluation_tile_wires_record_and_dialog():
