@@ -450,7 +450,56 @@ def WorkflowTabs(map_, gee_interface):
     has_models = p is not None and bool(p.models)
     has_predictions = p is not None and bool(p.predictions)
 
-    with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=True):
+    # Per-tab disabled flags (same gating as the rv.Tab calls below). Used both
+    # to render the tab strip and to drive the Back/Next navigation buttons.
+    disabled_flags = [
+        False,  # Area of Interest — always reachable
+        not aoi_complete,  # Variables
+        not has_raw,  # Process
+        not has_processed,  # Dataset
+        not has_datasets,  # Sampling
+        not has_samples,  # Train
+        not has_models,  # Inference
+        not has_predictions,  # Evaluation
+    ]
+
+    # The arrows Vuetify shows on an overflowing tab strip only *scroll* it; they
+    # do not change the active step. These explicit buttons do — each skips over
+    # any locked (disabled) steps to the nearest reachable one.
+    prev_target = next(
+        (i for i in range(active_tab - 1, -1, -1) if not disabled_flags[i]), None
+    )
+    next_target = next(
+        (
+            i
+            for i in range(active_tab + 1, len(disabled_flags))
+            if not disabled_flags[i]
+        ),
+        None,
+    )
+
+    def go_prev():
+        if prev_target is not None:
+            set_active_tab(prev_target)
+
+    def go_next():
+        if next_target is not None:
+            set_active_tab(next_target)
+
+    # Hide Vuetify's built-in scroll arrows on the overflowing tab strip — the
+    # Back/Next buttons below are the sole step navigation. Vuetify still
+    # auto-scrolls the selected tab into view when active_tab changes.
+    solara.Style(
+        ".workflow-tabs .v-slide-group__prev,"
+        " .workflow-tabs .v-slide-group__next { display: none !important; }"
+    )
+
+    with rv.Tabs(
+        v_model=active_tab,
+        on_v_model=set_active_tab,
+        grow=True,
+        class_="workflow-tabs",
+    ):
         rv.Tab(children=["Area of Interest"])
         rv.Tab(children=["Variables"], disabled=not aoi_complete)
         rv.Tab(children=["Process"], disabled=not has_raw)
@@ -459,6 +508,25 @@ def WorkflowTabs(map_, gee_interface):
         rv.Tab(children=["Train"], disabled=not has_samples)
         rv.Tab(children=["Inference"], disabled=not has_models)
         rv.Tab(children=["Evaluation"], disabled=not has_predictions)
+
+    with solara.Row(justify="space-between", style="padding: 4px 8px; align-items: center;"):
+        solara.Button(
+            "Back",
+            icon_name="mdi-chevron-left",
+            text=True,
+            small=True,
+            disabled=prev_target is None,
+            on_click=go_prev,
+        )
+        solara.Button(
+            "Next",
+            icon_name="mdi-chevron-right",
+            text=True,
+            small=True,
+            color="primary",
+            disabled=next_target is None,
+            on_click=go_next,
+        )
 
     with rv.TabsItems(v_model=active_tab):
         with rv.TabItem():
