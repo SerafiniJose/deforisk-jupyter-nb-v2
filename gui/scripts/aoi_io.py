@@ -11,17 +11,50 @@ The AOI is session state (``app_state.aoi_result``), not part of the library
 Only AOIs that already carry a resolved ``gdf`` (DRAW / SHAPE / POINTS, and
 admin selections whose geometry has been fetched) get a geometry sidecar.
 GEE-lazy AOIs (admin / asset under GEE expose ``gdf=None``) are persisted as
-metadata only: enough to mark the AOI present, but without geometry to redraw
-or zoom to. See ``write_aoi`` for the boundary.
+metadata only. For admin AOIs that metadata (the GAUL ``admin`` code) is enough
+to rebuild the lazy EE ``feature_collection`` on load (see ``load_aoi``), so the
+AOI stays usable downstream without re-selection; asset AOIs remain
+geometry-less on load. See ``write_aoi`` for the boundary.
 
 Kept free of Solara/ipyvuetify so it can be unit-tested without a render
 harness; pysepal/geopandas are imported lazily inside the functions.
 """
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+logger = logging.getLogger("spatial_risk")
+
 AOI_GEOMETRY_FILENAME = "aoi.geojson"
+_ADMIN_METHODS = ("ADMIN0", "ADMIN1", "ADMIN2")
+
+
+def _rebuild_admin_feature_collection(admin_code: str) -> Optional[Any]:
+    """Rebuild the lazy GEE FeatureCollection for a persisted admin AOI.
+
+    Admin selections persist only their GAUL ``admin`` code, not geometry.
+    This mirrors what pysepal's ``process_admin`` does on selection — the
+    FeatureCollection is ``pygaul.Items(admin=<code>)`` — so a loaded admin AOI
+    is usable downstream (``resolve_aoi_ee``) and can frame the map without the
+    user re-selecting it.
+
+    Earth Engine must already be initialized (the GUI does this when the AOI
+    panel mounts). Returns None if the rebuild fails (EE not ready, offline,
+    bad code) so loading degrades to a metadata-only AOI instead of erroring.
+    """
+    try:
+        import pygaul
+
+        return pygaul.Items(admin=admin_code)
+    except Exception:  # pragma: no cover - exercised via degrade test (patched)
+        logger.debug(
+            "Could not rebuild AOI FeatureCollection for admin=%s; "
+            "loading as metadata-only.",
+            admin_code,
+            exc_info=True,
+        )
+        return None
 
 
 def _aoi_metadata(aoi: Any, geometry_file: Optional[str]) -> Dict[str, Any]:
@@ -83,15 +116,21 @@ def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[
         metadata: The ``project.aoi`` dict (or None).
 
     Returns:
-        A reconstructed ``AoiResult`` (``feature_collection`` left None — the app
-        derives EE features from the gdf), or None when there is nothing to
-        restore. ``gdf`` is None for metadata-only AOIs.
+        A reconstructed ``AoiResult``, or None when there is nothing to restore.
+        Vector AOIs carry their ``gdf`` (from the sidecar). GEE admin AOIs carry
+        no sidecar — their lazy EE ``feature_collection`` is rebuilt from the
+        persisted ``admin`` code (``gdf`` stays None). ``feature_collection`` is
+        None only when neither applies or the rebuild fails.
     """
     if not metadata:
         return None
 
     import geopandas as gpd
     from pysepal.solara.components.aoi import AoiResult
+
+    method = metadata.get("method")
+    admin = metadata.get("admin")
+    gee = bool(metadata.get("gee", False))
 
     gdf = None
     geometry_file = metadata.get("geometry_file")
@@ -100,11 +139,20 @@ def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[
         if path.exists():
             gdf = gpd.read_file(path)
 
+    # GEE admin selections (ADMIN0/1/2) carry no geometry sidecar — only the
+    # GAUL ``admin`` code is persisted. Rebuild the lazy EE FeatureCollection so
+    # the restored AOI has usable geometry; otherwise it loads "present" but
+    # empty and the Variables step fails with "no usable geometry — re-select
+    # the area", forcing the user to reselect just to continue.
+    feature_collection = None
+    if gdf is None and gee and admin and method in _ADMIN_METHODS:
+        feature_collection = _rebuild_admin_feature_collection(admin)
+
     return AoiResult(
-        method=metadata.get("method"),
+        method=method,
         name=metadata.get("name"),
         gdf=gdf,
-        feature_collection=None,
-        admin=metadata.get("admin"),
-        gee=bool(metadata.get("gee", False)),
+        feature_collection=feature_collection,
+        admin=admin,
+        gee=gee,
     )

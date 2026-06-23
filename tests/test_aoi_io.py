@@ -96,6 +96,50 @@ def test_load_metadata_only_aoi_has_no_geometry(tmp_path):
     assert restored.gdf is None
 
 
+def test_load_gee_admin_rebuilds_feature_collection(tmp_path, monkeypatch):
+    """A GEE admin AOI persists only its GAUL ``admin`` code (no sidecar).
+
+    Loading must rebuild the lazy EE FeatureCollection that selection produced
+    (``pygaul.Items(admin=...)``) so the restored AOI is usable downstream
+    (``resolve_aoi_ee``) without the user re-selecting the area.
+    """
+    import pygaul
+
+    sentinel = object()
+    captured = {}
+
+    def fake_items(admin):
+        captured["admin"] = admin
+        return sentinel
+
+    monkeypatch.setattr(pygaul, "Items", fake_items)
+
+    meta = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197", gdf=None))
+    restored = load_aoi(tmp_path, meta)
+
+    assert restored.gdf is None
+    assert restored.feature_collection is sentinel
+    assert captured["admin"] == "197"
+
+
+def test_load_gee_admin_degrades_when_rebuild_fails(tmp_path, monkeypatch):
+    """If the FeatureCollection rebuild fails (EE not ready, offline), loading
+    degrades to a metadata-only AOI instead of raising."""
+    import pygaul
+
+    def boom(admin):
+        raise RuntimeError("Earth Engine not initialized")
+
+    monkeypatch.setattr(pygaul, "Items", boom)
+
+    meta = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197", gdf=None))
+    restored = load_aoi(tmp_path, meta)
+
+    assert restored is not None
+    assert restored.admin == "197"
+    assert restored.feature_collection is None
+
+
 def test_load_none_metadata_returns_none(tmp_path):
     assert load_aoi(tmp_path, None) is None
 
