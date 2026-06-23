@@ -17,8 +17,8 @@ import solara
 
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.tile.evaluation_helpers import (
-    build_evaluation_record, build_truth_spec, default_forest_key, map_items,
-    parse_interval, variable_items)
+    ALL_METRICS, build_evaluation_record, build_truth_spec, default_forest_key,
+    map_items, metric_items, parse_csizes, parse_interval, variable_items)
 from gui.widget.evaluation_results import (
     EvaluationResults, EvaluationTableDialog)
 
@@ -28,7 +28,8 @@ logger = logging.getLogger("spatial_risk")
 eval_jobs = solara.reactive([])
 
 
-def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_at):
+def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_at,
+                    csizes, metrics):
     """Background job: evaluate, build + register a record, re-render the list."""
     try:
         from spatialrisk.evaluation import evaluate_against_truth
@@ -41,14 +42,14 @@ def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_a
             forest_file=spec["forest_file"],
             time_interval=spec["time_interval"],
             truth_tag=spec["truth_tag"],
-            csizes=(300,),
+            csizes=tuple(csizes),
             recompute_defrate=recompute,
             auto_save=False,
         )
         resolved = list(prediction_keys) or list(p.predictions.keys())
         record = build_evaluation_record(
             p, df, spec, resolved_keys=resolved, run_id=job_id,
-            created_at=created_at, csizes=(300,))
+            created_at=created_at, csizes=tuple(csizes), metrics=metrics)
         p.add_evaluation(record, auto_save=False)
         p.save()
         project.set(p.model_copy())
@@ -72,6 +73,8 @@ def EvaluationTile(project):
     forest_key, set_forest_key = solara.use_state(default_forest_key(p) or "")
     interval, set_interval = solara.use_state("")
     selected_maps, set_selected_maps = solara.use_state([])
+    csizes_text, set_csizes_text = solara.use_state("300")
+    selected_metrics, set_selected_metrics = solara.use_state(list(ALL_METRICS))
     recompute, set_recompute = solara.use_state(True)
     form_error, set_form_error = solara.use_state(None)
     selected_eval, set_selected_eval = solara.use_state(None)
@@ -88,6 +91,13 @@ def EvaluationTile(project):
         if err:
             set_form_error(err)
             return
+        csizes, err = parse_csizes(csizes_text)
+        if err:
+            set_form_error(err)
+            return
+        if not selected_metrics:
+            set_form_error("Select at least one metric to show.")
+            return
         set_form_error(None)
         job_id = str(uuid.uuid4())[:8]
         created_at = datetime.now().isoformat(timespec="seconds")
@@ -95,7 +105,8 @@ def EvaluationTile(project):
             {"id": job_id, "status": "running", "error": None}])
         spawn_in_context(
             _run_evaluation,
-            (job_id, project, list(selected_maps), spec, recompute, created_at),
+            (job_id, project, list(selected_maps), spec, recompute, created_at,
+             csizes, list(selected_metrics)),
         )
 
     def on_delete(key):
@@ -143,6 +154,20 @@ def EvaluationTile(project):
             v_model=selected_maps, on_v_model=set_selected_maps,
             multiple=True, chips=True, dense=True, outlined=True,
             no_data_text="No predictions registered. Run inference in Step 7.",
+        )
+        rv.TextField(
+            label="Cell size(s) — coarse grid (pixels)",
+            v_model=csizes_text, on_v_model=set_csizes_text,
+            dense=True, outlined=True,
+            hint="One or more sizes, comma-separated (e.g. 100, 300, 1000). "
+                 "Each adds a row per map.",
+            persistent_hint=True,
+        )
+        rv.Select(
+            label="Metrics to show",
+            items=metric_items(), item_text="text", item_value="value",
+            v_model=selected_metrics, on_v_model=set_selected_metrics,
+            multiple=True, chips=True, dense=True, outlined=True,
         )
         rv.Switch(label="Recompute defrate", v_model=recompute,
                   on_v_model=set_recompute)

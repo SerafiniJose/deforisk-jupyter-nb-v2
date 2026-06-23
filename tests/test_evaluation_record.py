@@ -36,3 +36,14 @@ def test_model_dump_round_trip_preserves_indices():
     rebuilt = EvaluationRecord(**dumped)
     assert rebuilt.indices == [{"model": "GLM", "MedAE": 12.3}]
     assert rebuilt.prediction_keys == ["glm_m__ds_2020"]
+
+
+def test_metrics_defaults_empty_for_legacy_records():
+    rec = _record()
+    assert rec.metrics == []
+
+
+def test_metrics_round_trips():
+    rec = _record(metrics=["MedAE", "R2"])
+    rebuilt = EvaluationRecord(**rec.model_dump(mode="json"))
+    assert rebuilt.metrics == ["MedAE", "R2"]

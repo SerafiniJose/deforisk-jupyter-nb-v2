@@ -8,9 +8,68 @@ logic is unit-testable without a running GUI.
 """
 
 import json
+import re
 from pathlib import Path
 
 from spatialrisk.evaluation import interval_from_target, label_for
+
+# Accuracy indices produced by validate_two_layer; value = column key in the
+# stored ``indices`` table, text = display label. All four are always computed.
+ALL_METRICS = ["MedAE", "R2", "RMSE", "wRMSE"]
+_METRIC_LABELS = {"R2": "R²"}
+
+
+def metric_items():
+    """[{text, value}] for the metric selector — one per accuracy index."""
+    return [{"text": _METRIC_LABELS.get(m, m), "value": m} for m in ALL_METRICS]
+
+
+def parse_csizes(text):
+    """Parse a cell-size field into a list of positive ints.
+
+    Accepts comma- and/or space-separated values (e.g. "100, 300 1000").
+    Duplicates are dropped, preserving first-seen order. Returns
+    (sizes, error): on success error is None; on failure sizes is None and
+    error is a user-facing message.
+    """
+    tokens = [t for t in re.split(r"[,\s]+", (text or "").strip()) if t]
+    if not tokens:
+        return None, "Enter at least one cell size (pixels)."
+    sizes = []
+    for tok in tokens:
+        try:
+            val = int(tok)
+        except (TypeError, ValueError):
+            return None, "Cell size(s) must be whole numbers."
+        if val <= 0:
+            return None, "Cell size(s) must be positive."
+        if val not in sizes:
+            sizes.append(val)
+    return sizes, None
+
+
+def rows_for_record(record):
+    """Display rows for an EvaluationRecord, tolerant of legacy/stale instances.
+
+    Reads ``indices``/``metrics`` defensively so records created before the
+    ``metrics`` field existed (or stale in-memory instances after a hot-reload)
+    fall back to showing all columns instead of raising AttributeError.
+    """
+    indices = getattr(record, "indices", None) or []
+    return displayed_indices(indices, getattr(record, "metrics", None))
+
+
+def displayed_indices(indices, metrics):
+    """Drop unselected metric columns from stored index rows for display.
+
+    ``metrics`` is the list of metric keys to keep; an empty/falsy list keeps
+    every column (legacy runs predate metric selection). Non-metric context
+    columns (model, period, ncell, cell-size, …) are always kept.
+    """
+    if not metrics:
+        return indices
+    drop = {m for m in ALL_METRICS if m not in metrics}
+    return [{k: v for k, v in row.items() if k not in drop} for row in indices]
 
 
 def variable_items(project):
@@ -89,12 +148,13 @@ def build_truth_spec(project, truth_key, forest_key, interval):
 
 
 def build_evaluation_record(project, df, spec, resolved_keys, run_id,
-                            created_at, csizes=(300,)):
+                            created_at, csizes=(300,), metrics=None):
     """Build an EvaluationRecord from a result DataFrame and the run's truth spec.
 
     ``indices`` is materialized via ``df.to_json`` so values are JSON-native
     (numpy scalars/NaN become float/None), keeping ``Project.save()``'s
-    ``json.dumps`` happy.
+    ``json.dumps`` happy. ``metrics`` records which accuracy-index columns the
+    user chose to show (empty = all).
     """
     from spatialrisk.evaluations import EvaluationRecord
 
@@ -112,6 +172,7 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
         time_interval=int(spec["time_interval"]),
         prediction_keys=list(resolved_keys),
         csizes=list(csizes),
+        metrics=list(metrics) if metrics else [],
         created_at=created_at,
         indices=indices,
         csv_path=csv_path,

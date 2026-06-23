@@ -11,6 +11,8 @@ import pandas as pd
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.tile.evaluation_helpers import rows_for_record
+
 
 @solara.component
 def EvaluationResults(eval_jobs, project, on_open, on_delete):
@@ -47,39 +49,51 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete):
 
 @solara.component
 def EvaluationRow(rec_key, record, on_open, on_delete):
-    """One saved-evaluation row: clicking the content opens the popup; × deletes.
+    """One saved-evaluation row: a 'view table' button opens the popup; × deletes.
 
-    The open handler lives on ListItemContent (not the whole ListItem) so a click
-    on the delete Btn in ListItemAction does not also bubble to an open handler —
-    they are separate, non-nested click targets.
+    Both actions are explicit icon Buttons in ListItemAction — the codebase's
+    proven click pattern (matches variable_list / inference_output_list). NOTE:
+    ``on_click`` on ``rv.ListItem``/``rv.ListItemContent`` does NOT reliably fire
+    in this reacton.ipyvuetify setup, so the row container is intentionally not
+    clickable; opening goes through the dedicated Button instead.
     """
     n_maps = len(record.prediction_keys)
     with rv.ListItem(dense=True):
-        with rv.ListItemContent(
-                style_="cursor: pointer;",
-                on_click=lambda *_: on_open(rec_key)):
+        with rv.ListItemContent():
             rv.ListItemTitle(
                 children=[f"{record.truth_tag} · {n_maps} maps"],
                 style_="font-size: 0.875rem;",
             )
             rv.ListItemSubtitle(children=[record.created_at])
         with rv.ListItemAction():
-            rv.Btn(
-                children=[rv.Icon(children=["mdi-close"], small=True)],
-                icon=True, x_small=True,
-                on_click=lambda *_: on_delete(rec_key),
-            )
+            with solara.Row(style="gap:0;align-items:center;flex-direction:row;"):
+                solara.Button(
+                    "",
+                    icon_name="mdi-table-eye",
+                    on_click=lambda *_: on_open(rec_key),
+                    icon=True, text=True, x_small=True, color="primary",
+                )
+                rv.Btn(
+                    children=[rv.Icon(children=["mdi-close"], small=True)],
+                    icon=True, x_small=True,
+                    on_click=lambda *_: on_delete(rec_key),
+                )
 
 
 @solara.component
 def EvaluationTableDialog(project, eval_key, on_close):
-    """Single popup showing the selected saved run's indices table."""
+    """Single popup showing the selected saved run's indices table.
+
+    The dialog is sized to fit the table without scrolling: only the metric
+    columns the run selected are shown (``displayed_indices``), the dialog is
+    wide, and pagination is raised high enough that every row fits on one page.
+    """
     p = project.value
     record = p.evaluations.get(eval_key) if (p is not None and eval_key) else None
     with rv.Dialog(
         v_model=eval_key is not None,
         on_v_model=lambda v: None if v else on_close(),
-        max_width="900px",
+        max_width="1400px",
         eager=True,
     ):
         with rv.Card():
@@ -88,7 +102,8 @@ def EvaluationTableDialog(project, eval_key, on_close):
                     f"Evaluation — {record.truth_tag}" if record else "Evaluation")
             with rv.CardText():
                 if record is not None and record.indices:
-                    solara.DataFrame(pd.DataFrame(record.indices))
+                    rows = rows_for_record(record)
+                    solara.DataFrame(pd.DataFrame(rows), items_per_page=max(len(rows), 1))
                 elif record is not None:
                     solara.Info("No indices stored for this run.")
             with rv.CardActions(style_="justify-content: flex-end;"):

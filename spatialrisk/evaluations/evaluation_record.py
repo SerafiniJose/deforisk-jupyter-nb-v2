@@ -20,6 +20,7 @@ class EvaluationRecord(BaseModel):
     time_interval: int
     prediction_keys: List[str] = Field(default_factory=list)
     csizes: List[int] = Field(default_factory=list)
+    metrics: List[str] = Field(default_factory=list)  # shown index columns; [] = all
     created_at: str
     indices: List[Dict[str, Any]] = Field(default_factory=list)
     csv_path: Optional[str] = None

@@ -144,3 +144,102 @@ def test_build_evaluation_record_maps_df_and_paths(tmp_path):
     assert rec.csv_path.endswith(
         "evaluation/forest_loss_2015_2020/indices_all.csv")
     assert rec.run_id == "abcd1234"
+
+
+# --- cell-size parsing -------------------------------------------------------
+
+def test_parse_csizes_single_value():
+    sizes, err = h.parse_csizes("300")
+    assert err is None and sizes == [300]
+
+
+def test_parse_csizes_comma_separated():
+    sizes, err = h.parse_csizes("100, 300, 1000")
+    assert err is None and sizes == [100, 300, 1000]
+
+
+def test_parse_csizes_space_separated():
+    sizes, err = h.parse_csizes("100 300")
+    assert err is None and sizes == [100, 300]
+
+
+def test_parse_csizes_dedupes_preserving_order():
+    sizes, err = h.parse_csizes("300, 100, 300")
+    assert err is None and sizes == [300, 100]
+
+
+def test_parse_csizes_rejects_empty():
+    sizes, err = h.parse_csizes("   ")
+    assert sizes is None and "cell size" in err.lower()
+
+
+def test_parse_csizes_rejects_noninteger():
+    sizes, err = h.parse_csizes("100, abc")
+    assert sizes is None and "whole number" in err.lower()
+
+
+def test_parse_csizes_rejects_nonpositive():
+    sizes, err = h.parse_csizes("100, 0")
+    assert sizes is None and "positive" in err.lower()
+
+
+# --- metric options + display filtering --------------------------------------
+
+def test_metric_items_lists_four_indices():
+    items = h.metric_items()
+    assert [i["value"] for i in items] == ["MedAE", "R2", "RMSE", "wRMSE"]
+    # display label uses the squared glyph for R2
+    assert next(i["text"] for i in items if i["value"] == "R2") == "R²"
+
+
+def test_displayed_indices_drops_unselected_metric_columns():
+    indices = [
+        {"model": "GLM", "period": "ds_A", "MedAE": 12.3, "R2": 0.81,
+         "RMSE": 5.0, "wRMSE": 4.0},
+    ]
+    out = h.displayed_indices(indices, ["MedAE", "R2"])
+    assert out == [{"model": "GLM", "period": "ds_A", "MedAE": 12.3, "R2": 0.81}]
+
+
+def test_displayed_indices_empty_metrics_keeps_all_columns():
+    indices = [{"model": "GLM", "MedAE": 12.3, "RMSE": 5.0}]
+    assert h.displayed_indices(indices, []) == indices
+
+
+def test_displayed_indices_keeps_context_columns():
+    indices = [{"model": "GLM", "period": "ds_A", "ncell": 42,
+                "csize_coarse_grid_ha": 81.0, "MedAE": 12.3, "RMSE": 5.0}]
+    out = h.displayed_indices(indices, ["MedAE"])
+    assert out == [{"model": "GLM", "period": "ds_A", "ncell": 42,
+                    "csize_coarse_grid_ha": 81.0, "MedAE": 12.3}]
+
+
+def test_rows_for_record_handles_record_without_metrics_attr():
+    # Records created before the 'metrics' field existed lack the attribute
+    # entirely (stale in-memory instance after hot-reload). Must not crash.
+    legacy = _types.SimpleNamespace(
+        indices=[{"model": "GLM", "MedAE": 12.3, "R2": 0.81, "RMSE": 5.0}])
+    assert not hasattr(legacy, "metrics")
+    assert h.rows_for_record(legacy) == legacy.indices  # all columns kept
+
+
+def test_rows_for_record_applies_selected_metrics():
+    rec = _types.SimpleNamespace(
+        indices=[{"model": "GLM", "MedAE": 12.3, "R2": 0.81, "RMSE": 5.0}],
+        metrics=["MedAE"])
+    assert h.rows_for_record(rec) == [{"model": "GLM", "MedAE": 12.3}]
+
+
+def test_build_evaluation_record_stores_metrics_and_csizes(tmp_path):
+    df = pd.DataFrame([{"model": "GLM", "period": "ds_A", "MedAE": 12.3}])
+    spec = {
+        "defor_file": "/x/d.tif", "forest_file": "/x/f.tif",
+        "time_interval": 5, "truth_tag": "forest_loss_2015_2020",
+    }
+    rec = build_evaluation_record(
+        _fake_project(tmp_path), df, spec, resolved_keys=["glm__ds_A"],
+        run_id="abcd1234", created_at="2026-06-22T14:05:33",
+        csizes=(100, 300), metrics=["MedAE", "R2"],
+    )
+    assert rec.csizes == [100, 300]
+    assert rec.metrics == ["MedAE", "R2"]
