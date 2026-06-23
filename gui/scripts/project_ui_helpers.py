@@ -98,3 +98,22 @@ def overwrite_needed(
     """True only when this is a new/never-saved-this-session project whose name
     already exists on disk — i.e. saving would clobber a different project."""
     return last_saved is None and name in existing_names
+
+
+def open_saved_label(count: Optional[int]) -> str:
+    """Label for the empty-state 'open saved' button.
+
+    ``count`` is the number of saved projects on disk; ``None`` when the scan
+    failed. 0 or None → a neutral invite to create one instead; otherwise the
+    count is surfaced so the button is worth a click before opening the dialog.
+    """
+    if not count:  # 0 or None
+        return "No saved projects yet"
+    return f"Open saved… ({count})"
+
+
+def aoi_project_name(aoi_name: str, when: datetime) -> str:
+    """Auto-name for a project created from an AOI selection: ``<aoi>_<yyyymmdd>``
+    (e.g. ``San Marino_20260623``). The date is the creation moment, so the same
+    AOI picked on different days yields distinct, non-colliding project names."""
+    return f"{aoi_name}_{when:%Y%m%d}"

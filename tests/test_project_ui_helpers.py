@@ -3,9 +3,11 @@ from datetime import datetime
 from gui.scripts.project_io import ProjectInfo
 from gui.scripts.project_ui_helpers import (
     NameValidation,
+    aoi_project_name,
     compute_app_title,
     format_last_saved,
     format_relative,
+    open_saved_label,
     overwrite_needed,
     project_count_chips,
     validate_project_name,
@@ -129,3 +131,24 @@ def test_overwrite_needed():
     assert overwrite_needed("mtq", None, ["mtq"]) is True
     assert overwrite_needed("mtq", datetime(2026, 1, 1), ["mtq"]) is False
     assert overwrite_needed("fresh", None, ["mtq"]) is False
+
+
+def test_open_saved_label_with_projects():
+    assert open_saved_label(3) == "Open saved… (3)"
+    assert open_saved_label(1) == "Open saved… (1)"
+
+
+def test_open_saved_label_zero_or_unknown():
+    # 0 saved → invite to create; None (scan failed) → same neutral copy.
+    assert open_saved_label(0) == "No saved projects yet"
+    assert open_saved_label(None) == "No saved projects yet"
+
+
+def test_aoi_project_name_appends_yyyymmdd():
+    when = datetime(2026, 6, 23, 14, 30, 0)
+    assert aoi_project_name("San Marino", when) == "San Marino_20260623"
+
+
+def test_aoi_project_name_pads_month_and_day():
+    when = datetime(2026, 1, 5, 0, 0, 0)
+    assert aoi_project_name("amazon", when) == "amazon_20260105"

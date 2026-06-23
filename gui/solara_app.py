@@ -30,9 +30,11 @@ from gui.scripts.project_io import (
     save_project,
 )
 from gui.scripts.project_ui_helpers import (
+    aoi_project_name,
     compute_app_title,
     format_last_saved,
     format_relative,
+    open_saved_label,
     overwrite_needed,
     project_count_chips,
     validate_project_name,
@@ -91,6 +93,17 @@ def ProjectPanel():
     load_busy, set_load_busy = solara.use_state(False)
 
     new_name, set_new_name = solara.use_state("")
+
+    # Saved-project count for the empty-state "Open saved" button. The empty
+    # state is only reachable at session start (nothing sets project back to
+    # None), so a single filesystem scan per mount is enough; None = scan failed.
+    def _count_saved():
+        try:
+            return len(list_project_infos(DATA_DIR))
+        except Exception:  # pragma: no cover - defensive
+            return None
+
+    saved_count = solara.use_memo(_count_saved, [])
 
     def existing_names() -> list:
         return [i.name for i in list_project_infos(DATA_DIR)]
@@ -195,9 +208,33 @@ def ProjectPanel():
     # ---- Status block ---------------------------------------------------
     with solara.Column(style="gap: 8px; padding: 8px;"):
         if p is None:
+            # Empty state: one primary action (New), Load secondary, no Save —
+            # a disabled Save here can never become useful, so it's omitted.
+            rv.Icon(
+                children=["mdi-map-marker-plus-outline"],
+                style_="font-size: 40px; opacity: 0.5;",
+            )
+            solara.Text("No project open", style="font-weight: 600;")
             solara.Text(
-                "No project open — select an AOI or click New to start.",
-                style="color: var(--md-grey-500); font-style: italic;",
+                "Create a project, then set its area of interest in the "
+                "Area of Interest tab — or open a saved one.",
+                classes=["text--secondary"],
+            )
+            solara.Button(
+                "New project",
+                icon_name="mdi-plus",
+                color="primary",
+                on_click=open_new,
+                style="width: 100%;",
+            )
+            solara.Button(
+                open_saved_label(saved_count),
+                icon_name="mdi-folder-open-outline",
+                color="primary",
+                outlined=True,
+                disabled=saved_count == 0,
+                on_click=open_load,
+                style="width: 100%;",
             )
         else:
             with solara.Row(style="gap: 8px; align-items: center;"):
@@ -218,33 +255,31 @@ def ProjectPanel():
                 format_last_saved(last_saved, datetime.now()),
                 style="font-size: 12px; color: var(--md-grey-500);",
             )
-
-        with solara.Row(style="gap: 8px;"):
-            solara.Button(
-                "New",
-                icon_name="mdi-plus",
-                color="primary",
-                outlined=True,
-                small=True,
-                on_click=open_new,
-            )
-            solara.Button(
-                "Load",
-                icon_name="mdi-folder-open-outline",
-                color="primary",
-                outlined=True,
-                small=True,
-                on_click=open_load,
-            )
-            solara.Button(
-                "Save",
-                icon_name="mdi-content-save-outline",
-                color="primary",
-                outlined=True,
-                small=True,
-                disabled=p is None,
-                on_click=do_save,
-            )
+            with solara.Row(style="gap: 8px;"):
+                solara.Button(
+                    "New",
+                    icon_name="mdi-plus",
+                    color="primary",
+                    outlined=True,
+                    small=True,
+                    on_click=open_new,
+                )
+                solara.Button(
+                    "Load",
+                    icon_name="mdi-folder-open-outline",
+                    color="primary",
+                    outlined=True,
+                    small=True,
+                    on_click=open_load,
+                )
+                solara.Button(
+                    "Save",
+                    icon_name="mdi-content-save-outline",
+                    color="primary",
+                    outlined=True,
+                    small=True,
+                    on_click=do_save,
+                )
 
     # ---- New dialog -----------------------------------------------------
     validation = validate_project_name(new_name, existing_names()) if new_open else None
@@ -509,7 +544,8 @@ def Page():
             return
         from spatialrisk.project import Project
 
-        app_state.project.set(Project(project_name=aoi.name))
+        name = aoi_project_name(aoi.name, datetime.now())
+        app_state.project.set(Project(project_name=name))
 
     solara.use_effect(sync_project_from_aoi, [app_state.aoi_result.value])
 
@@ -694,6 +730,12 @@ def Page():
 
     solara.Title("Spatial Risk")
 
+    # pysepal's step-dialog content area sets `overflow-y: auto` with no
+    # `overflow-x`, which CSS resolves to `overflow-x: auto` — producing a
+    # spurious horizontal scrollbar even when the panel fits. The dialog card
+    # already clips with `overflow: hidden`, so pin the content's x-axis hidden.
+    solara.Style(".dialog-content { overflow-x: hidden !important; }")
+
     app_title = compute_app_title(
         app_state.project.value, app_state.project_dirty.value
     )
@@ -703,13 +745,13 @@ def Page():
         app_icon="mdi-tree",
         main_map=[sepal_map],
         steps_data=steps_data,
-        initial_step=None,
+        initial_step=1,  # auto-open the Project dialog (step id 1) at startup
         theme_toggle=[theme_toggle],
         right_panel_config=right_panel_config,
         right_panel_content=right_panel_content,
         right_panel_open=True,
         is_pinned=False,
-        dialog_width=420,
+        dialog_width=560,  # roomier Project dialog (scroll fix is the .dialog-content style above)
         repo_url="https://github.com/openforis/spatial-risk",
     )
 
