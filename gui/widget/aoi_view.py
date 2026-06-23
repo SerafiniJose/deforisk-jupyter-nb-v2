@@ -232,6 +232,19 @@ def AoiView(
     # doesn't wipe the loaded AOI. Cleared on the first genuine user change.
     restored_method = solara.use_ref(None)
 
+    # When True, the next process_aoi run is an auto-select of the just-restored
+    # AOI: it reuses the already-loaded AoiResult (geometry rebuilt by load_aoi)
+    # instead of re-running the live picker, so it can't race the still-settling
+    # admin cascade / asset validation. It renders the map layer + shows the
+    # confirmation, exactly as ending a manual "Select AOI" press would.
+    restore_pending = solara.use_ref(False)
+
+    # The AoiResult captured synchronously at restore time. The auto-select uses
+    # this rather than the shared value reactive, which can be transiently None
+    # when the previous AoiView instance's unmount cleanup fires during the
+    # load-triggered remount. process_aoi re-publishes it via reactive_value.set.
+    restore_result = solara.use_ref(None)
+
     # Notification system (replaces embedded alert). When no
     # NotificationProvider is mounted, `notifications` is a NoopNotifier
     # and user feedback is published inline instead.
@@ -329,6 +342,8 @@ def AoiView(
             return
         method = result.method
         restored_method.current = method  # set BEFORE selected_method so the guard sees it
+        restore_result.current = result  # capture now; the shared reactive may churn on remount
+        restore_pending.current = True  # auto-select this restored AOI (see _autoselect_restored)
         selected_method.set(method)
         if method in ("ADMIN0", "ADMIN1", "ADMIN2"):
             admin_code.set(result.admin)
@@ -355,7 +370,19 @@ def AoiView(
         try:
             tracker.step("Validating input...")
 
-            if method in ["ADMIN0", "ADMIN1", "ADMIN2"]:
+            # Auto-select on load: reuse the already-loaded AoiResult (its geometry
+            # / feature_collection was rebuilt by load_aoi) instead of re-running
+            # the live picker, which would race the still-settling admin cascade /
+            # asset validation. Just render it on the map + confirm below.
+            is_restore = restore_pending.current
+            if is_restore:
+                restore_pending.current = False
+                result = restore_result.current
+                if result is None:
+                    raise ValueError("No AOI to restore")
+                method = result.method
+
+            elif method in ["ADMIN0", "ADMIN1", "ADMIN2"]:
                 if not admin_code.value:
                     raise ValueError(f"Please select a {method} region")
 
@@ -445,8 +472,10 @@ def AoiView(
             reactive_value.set(result)
 
             # Surface the selection inputs the AoiResult can't carry (asset id),
-            # so the app can persist them. None for non-asset methods.
-            if on_selection is not None:
+            # so the app can persist them. None for non-asset methods. Skipped on a
+            # restore auto-select: aoi_asset is already set from the manifest, and
+            # asset_data may not be seeded yet — emitting would wipe it.
+            if on_selection is not None and not is_restore:
                 on_selection(asset_data.value if method == "ASSET" else None)
 
             tracker.complete()
@@ -508,6 +537,16 @@ def AoiView(
         fallback_message.set("")
         fallback_level.set("info")
         task()
+
+    def _autoselect_restored():
+        # Mirror a "Select AOI" press for the just-restored AOI so the panel lands
+        # in the confirmed state (map layer drawn + success message) rather than a
+        # filled-but-unsubmitted form. Runs once per (re)mount; _apply_restore set
+        # restore_pending when it found a loaded AoiResult.
+        if restore_pending.current and reactive_value.value is not None:
+            start_process()
+
+    solara.use_effect(_autoselect_restored, [])
 
     # Handle method changes
     def on_method_change():
