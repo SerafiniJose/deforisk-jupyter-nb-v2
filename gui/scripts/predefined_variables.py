@@ -116,6 +116,27 @@ def _get_forest_gfc(aoi, year, tree_cover_threshold=10):
     return forest2000_thr.where(loss.lt(year - 2000), 0).rename("B1")
 
 
+def _get_forest_tmf(aoi, year):
+    """JRC Tropical Moist Forest — forest cover at a given year.
+
+    Reads the AnnualChanges ``Dec{year-1}`` band and reduces it to a binary
+    forest mask (1 = forest, 0 = non-forest), matching the temporal forest_gfc
+    structure. The TMF AnnualChange classes are 1 = undisturbed, 2 = degraded,
+    3 = deforested, 4 = regrowth, 5 = water, 6 = other. This expression keeps
+    class 1 as forest: ``where(eq(2), 1)`` is overwritten by the subsequent
+    ``where(neq(1), 0)`` (which references the original band), so degraded
+    pixels resolve to 0 — preserving the behaviour of notebooks/
+    1.variables_factory.ipynb verbatim.
+    """
+    tmf = (
+        ee.ImageCollection("projects/JRC/TMF/v1_2024/AnnualChanges")
+        .filterBounds(aoi)
+        .mosaic()
+    )
+    band = tmf.select("Dec" + str(year - 1))
+    return band.where(band.eq(2), 1).where(band.neq(1), 0).clip(aoi).rename("B1")
+
+
 def _get_towns(aoi, year):
     """JRC GHSL population + built surface — urban area binary mask."""
     epochs = list(range(1975, 2021, 5))
@@ -206,6 +227,15 @@ PREDEFINED_CATALOGUE = {
         "temporal": True,
         "years": list(range(2001, 2025)),
         "get_image": _get_forest_gfc,
+        "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
+    },
+    "forest_tmf": {
+        "label": "Forest cover (JRC TMF)",
+        "var_type": "GEEVar",
+        "raster_type": "categorical",
+        "temporal": True,
+        "years": list(range(2001, 2025)),
+        "get_image": _get_forest_tmf,
         "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
     },
     "towns": {
