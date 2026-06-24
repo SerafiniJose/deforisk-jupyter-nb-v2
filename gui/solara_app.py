@@ -53,11 +53,17 @@ from gui.tile.evaluation_tile import EvaluationTile
 from gui.tile.summary_tile import ProjectSummaryTile
 from gui.widget.notification_area import NotificationArea
 from gui.scripts.job_restore import build_train_jobs, build_inference_jobs
+from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
+from gui.widget.log_console import LogConsole
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
 logger.debug("Spatial Risk app initialized")
 logger.debug("Solara version: %s", solara.__version__)
+
+# Surface INFO+ milestones in the on-map LogConsole (the LogConsole component
+# binds this session's kernel context on mount; see gui/scripts/log_bridge.py).
+install_log_console_handler()
 
 setup_solara_server(extra_asset_locations=[])
 
@@ -658,6 +664,13 @@ def Page():
 
     solara.use_effect(restore_jobs_on_load, [project_loaded_signal])
 
+    # Each project starts with a fresh process log (consistent with the map /
+    # job-list resets above, keyed on the same project-switch signal).
+    def reset_log_on_switch():
+        clear_log_records()
+
+    solara.use_effect(reset_log_on_switch, [project_loaded_signal])
+
     def _seed_test_aoi():
         import os
         if os.getenv("SOLARA_TEST", "false").lower() != "true":
@@ -846,6 +859,9 @@ def Page():
         dialog_width=560,  # roomier Project dialog (scroll fix is the .dialog-content style above)
         repo_url="https://github.com/openforis/spatial-risk",
     )
+
+    # Floating, collapsible process-log panel (lower-right, over the map).
+    LogConsole()
 
 
 routes = [

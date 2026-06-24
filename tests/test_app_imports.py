@@ -85,3 +85,23 @@ def test_aoi_tile_imports_vendored_view():
     import inspect
     import gui.tile.aoi_tile as aoi_tile
     assert "gui.widget.aoi_view" in inspect.getsource(aoi_tile)
+
+
+def test_solara_app_installs_log_console_handler():
+    import inspect
+    import gui.solara_app as app
+    assert "install_log_console_handler()" in inspect.getsource(app)
+
+
+def test_page_renders_log_console():
+    import inspect
+    import gui.solara_app as app
+    assert "LogConsole()" in inspect.getsource(app.Page)
+
+
+def test_page_clears_log_on_switch():
+    import inspect
+    import gui.solara_app as app
+    src = inspect.getsource(app.Page)
+    assert "clear_log_records()" in src
+    assert "solara.use_effect(reset_log_on_switch, [project_loaded_signal])" in src
