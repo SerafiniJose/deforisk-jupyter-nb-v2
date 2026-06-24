@@ -40,11 +40,24 @@ def LogConsole():
 
     solara.use_effect(_bind_context, [])
 
+    # Pin to the MAP's bottom-right, not the viewport's. pysepal syncs the right
+    # panel's live width and the narrow-mode bottom-panel height to CSS vars on
+    # the document root precisely for floating components that track the map
+    # edges, so offsetting by them keeps the console clear of the right panel
+    # (and the bottom sheet on narrow screens) as it opens/closes.
+    # Width is driven by Vuetify's own active-panel class via :has() — narrow
+    # when collapsed, wider when expanded — so there is still no Python state.
+    solara.Style(
+        ".log-console-wrap { width: 210px; transition: width 0.25s ease; }"
+        ".log-console-wrap:has(.v-expansion-panel--active) { width: 360px; }"
+    )
     with solara.Column(
+        classes=["log-console-wrap"],
         style=(
-            "position: fixed; right: 16px; bottom: 16px; z-index: 1000; "
-            "width: 380px; max-width: 90vw;"
-        )
+            "position: fixed; z-index: 1000; max-width: 90vw; "
+            "right: calc(var(--sepal-notification-right-offset, 0px) + 16px); "
+            "bottom: calc(var(--sepal-bottom-reserved, 0px) + 16px);"
+        ),
     ):
         # No v_model -> Vuetify owns open/close; panels start collapsed.
         with rv.ExpansionPanels(flat=True, hover=True):
@@ -52,7 +65,10 @@ def LogConsole():
                 with rv.ExpansionPanelHeader():
                     with solara.Row(style="align-items: center; gap: 8px;"):
                         rv.Icon(children=["mdi-text-box-outline"], small=True)
-                        solara.Text("Process log", style="font-weight: 600;")
+                        solara.Text(
+                            "Process log",
+                            style="font-weight: 600; white-space: nowrap;",
+                        )
                         rv.Chip(children=[str(len(records))], x_small=True)
                 with rv.ExpansionPanelContent():
                     with solara.Column(
