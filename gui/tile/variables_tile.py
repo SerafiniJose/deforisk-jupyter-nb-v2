@@ -131,7 +131,6 @@ def _variable_to_entry(key: str, var, project) -> dict:
     from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 
     vtype = type(var).__name__
-    pp = [p.value if hasattr(p, "value") else str(p) for p in (var.post_processing or [])]
 
     # Predefined GEE variables hold an ee.Image (in gee_images) and carry no
     # local path / asset id — they are rebuilt from the catalogue by key. Round-
@@ -152,7 +151,6 @@ def _variable_to_entry(key: str, var, project) -> dict:
         "type": vtype,
         "name": var.name,
         "year": str(var.year) if var.year else "",
-        "post_processing": pp,
     }
     if vtype == "LocalRasterVar":
         entry["path"] = str(var.path)
@@ -174,7 +172,6 @@ def _build_variable(entry: dict, project):
     common = dict(
         name=entry["name"],
         year=entry.get("year"),
-        post_processing=entry.get("post_processing", []),
         project=project,
     )
     vtype = entry["type"]

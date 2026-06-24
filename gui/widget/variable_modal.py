@@ -9,7 +9,6 @@ import solara
 from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 from spatialrisk.variables.models import (
     DataType,
-    PostProcessing,
     RasterType,
     RasterizationMethod,
 )
@@ -45,7 +44,6 @@ def VariableModal(
     rasterization_method, set_rasterization_method = solara.use_state(
         RasterizationMethod.binary.value
     )
-    post_processing, set_post_processing = solara.use_state([])
     error, set_error = solara.use_state(None)
 
     is_edit = editing_key is not None
@@ -64,7 +62,6 @@ def VariableModal(
         set_scale("")
         set_raster_type(RasterType.continuous.value)
         set_rasterization_method(RasterizationMethod.binary.value)
-        set_post_processing([])
         set_error(None)
 
     def prefill_from_initial():
@@ -82,7 +79,6 @@ def VariableModal(
         set_rasterization_method(
             initial_entry.get("rasterization_method", RasterizationMethod.binary.value)
         )
-        set_post_processing(initial_entry.get("post_processing", []))
         set_error(None)
 
     solara.use_effect(prefill_from_initial, [open_.value])
@@ -121,13 +117,11 @@ def VariableModal(
             set_error("Variable name is required.")
             return
         yr = int(year) if year and str(year).strip() else None
-        pp = [PostProcessing(p) for p in post_processing]
         entry = {
             "source": "custom",
             "type": var_type,
             "name": name.strip(),
             "year": yr,
-            "post_processing": pp,
         }
         if var_type == "LocalRasterVar":
             entry["path"] = (
@@ -203,7 +197,6 @@ def VariableModal(
                         scale, set_scale,
                         raster_type, set_raster_type,
                         rasterization_method, set_rasterization_method,
-                        post_processing, set_post_processing,
                     )
 
                 if error:
@@ -273,7 +266,6 @@ def _render_custom_fields(
     scale, set_scale,
     raster_type, set_raster_type,
     rasterization_method, set_rasterization_method,
-    post_processing, set_post_processing,
 ):
     """Fields shown when source == 'custom' (original behaviour)."""
     rv.TextField(
@@ -331,15 +323,6 @@ def _render_custom_fields(
             items=[r.value for r in RasterType],
             v_model=raster_type,
             on_v_model=set_raster_type,
-            dense=True,
-            outlined=True,
-        )
-        rv.Select(
-            label="Post-processing (optional)",
-            items=[p.value for p in PostProcessing],
-            v_model=post_processing,
-            on_v_model=set_post_processing,
-            multiple=True,
             dense=True,
             outlined=True,
         )
