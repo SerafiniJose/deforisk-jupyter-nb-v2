@@ -28,6 +28,10 @@ def materialize_raw_layers(project) -> List[str]:
     """
     from spatialrisk.variables.models import DataType
 
+    pending = [k for k, v in project.raw_variables.items() if _is_geevar(v)]
+    if pending:
+        logger.info("Downloading %d GEE layer(s)…", len(pending))
+
     materialized: List[str] = []
     # Snapshot keys: to_local_*().add_as_raw() mutates raw_variables in place.
     for key, var in list(project.raw_variables.items()):
@@ -42,6 +46,9 @@ def materialize_raw_layers(project) -> List[str]:
         for lv in locals_:
             lv.add_as_raw(auto_save=False)
         materialized.append(key)
+
+    if materialized:
+        logger.info("Downloaded %d layer(s).", len(materialized))
     return materialized
 
 
@@ -109,16 +116,21 @@ def run_processing(project) -> None:
         raise ValueError("Set a base raster before running processing.")
     materialize_raw_layers(project)
     generate_forest_loss_targets(project)
+    logger.info("Reprojecting & matching all raw variables…")
     project.reproject_and_match_all(source="raw")
+    logger.info("Rasterizing all raw variables…")
     project.rasterize_all(source="raw")
     project.save()
+    logger.info("Processing complete.")
 
 
 def apply_post_processing(project, processed_key: str, step: str):
     """Apply edge/dist to a processed variable and register the result."""
+    logger.info("Applying %s to %s…", step, processed_key)
     var = project.processed_variables[processed_key]
     derived = var.apply_post_processing(step)
     derived.add_as_processed()
+    logger.info("%s complete for %s.", step, processed_key)
     return derived
 
 

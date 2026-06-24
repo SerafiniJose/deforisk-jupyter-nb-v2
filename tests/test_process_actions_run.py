@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 from gui.scripts import process_actions
@@ -114,3 +115,28 @@ def test_generate_forest_loss_targets_skips_missing_key():
         out = process_actions.generate_forest_loss_targets(p)
     m.assert_not_called()
     assert out == []
+
+
+def test_run_processing_logs_reproject_and_rasterize(caplog):
+    p = _Proj()
+    p.base_raster = MagicMock(name="base")
+    with caplog.at_level(logging.INFO, logger="spatial_risk"):
+        with patch("gui.scripts.process_actions.materialize_raw_layers"), patch(
+            "gui.scripts.process_actions.generate_forest_loss_targets"
+        ):
+            process_actions.run_processing(p)
+    text = caplog.text.lower()
+    assert "reproject" in text
+    assert "rasteriz" in text
+
+
+def test_apply_post_processing_logs_step(caplog):
+    p = _Proj()
+    var = MagicMock(name="processed")
+    derived = MagicMock(name="derived")
+    var.apply_post_processing.return_value = derived
+    p.processed_variables["rivers"] = var
+    with caplog.at_level(logging.INFO, logger="spatial_risk"):
+        process_actions.apply_post_processing(p, "rivers", "dist")
+    assert "dist" in caplog.text.lower()
+    assert "rivers" in caplog.text.lower()
