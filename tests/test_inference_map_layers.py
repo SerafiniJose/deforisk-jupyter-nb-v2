@@ -69,6 +69,36 @@ def test_prediction_added_with_pinned_far_palette(monkeypatch, tmp_path):
     assert fake_map.added[0][1] == "pred_glm_m1__d"
 
 
+def test_stretch_palette_omits_vmin_vmax_for_autostretch(monkeypatch, tmp_path):
+    """display_palette='stretch' lets localtileserver auto-stretch the ramp to the
+    file's range: no pinned vmin/vmax are passed to the tile layer."""
+    captured = _patch_localtileserver(monkeypatch)
+    tif = tmp_path / "p.tif"
+    tif.write_bytes(b"")
+
+    pm.add_prediction_on_map(
+        FakeMap(), str(tif), model_key="imported-map",
+        layer_name="n", key="k", display_palette="stretch",
+    )
+    from matplotlib.colors import Colormap
+    assert isinstance(captured["colormap"], Colormap)   # still a ramp, just unpinned
+    assert captured["vmin"] is None and captured["vmax"] is None
+
+
+def test_far_palette_pins_range_regardless_of_model_key(monkeypatch, tmp_path):
+    """display_palette='far' pins the 1..65535 FAR ramp even when the model_key
+    is an imported name that wouldn't resolve to the far family on its own."""
+    captured = _patch_localtileserver(monkeypatch)
+    tif = tmp_path / "p.tif"
+    tif.write_bytes(b"")
+
+    pm.add_prediction_on_map(
+        FakeMap(), str(tif), model_key="imported-map",
+        layer_name="n", key="k", display_palette="far",
+    )
+    assert captured["vmin"] == 1 and captured["vmax"] == 65535
+
+
 def test_overviews_built_only_when_flag_set(monkeypatch, tmp_path):
     _patch_localtileserver(monkeypatch)
     calls = []
@@ -111,3 +141,20 @@ def test_inference_tile_uses_palette_helper_and_overview_option():
     # Adding a prediction must NOT recenter/rezoom the map — keep the user's view.
     assert "fit_bounds=False" in src
     assert "fit_bounds=True" not in src
+    # Each prediction's stored palette drives its map display (imports vs computed).
+    assert "display_palette" in src
+
+
+def test_inference_tile_supports_local_prediction_import():
+    """Step 7 lets the user import a local raster as a prediction: a file picker,
+    a palette choice, and the import script wired to the registry + reactive."""
+    import inspect
+
+    from gui.tile import inference_tile
+
+    src = inspect.getsource(inference_tile)
+    assert "import_prediction" in src           # routes through the import adapter
+    assert "FileInputComponent" in src          # local raster file picker
+    assert "sepal_client" in src                # picker needs the SEPAL client
+    # New prediction is published so the outputs list + Evaluation maps update.
+    assert "project.set(" in src or "project_reactive.set(" in src

@@ -104,3 +104,32 @@ def resolve_prediction_style(model_key: str) -> dict:
         "vmax": palette["vmax"],
         "nodata": palette["nodata"],
     }
+
+
+def resolve_display_style(model_key: str, display_palette: str = None) -> dict:
+    """Tile-layer styling honouring an explicit ``display_palette`` override.
+
+    Used by imported predictions, whose ``model_key`` does not map to a model
+    family. Modes:
+
+    * ``None``      — resolve by model family (``resolve_prediction_style``).
+    * ``"stretch"`` — the FAR ramp with ``vmin``/``vmax`` left ``None`` so
+      localtileserver auto-stretches it across the file's actual value range.
+    * ``"far"``/``"jnr"``/``"mw"`` — that named palette, pinned to its range.
+    """
+    if display_palette is None:
+        return resolve_prediction_style(model_key)
+    if display_palette == "stretch":
+        return {
+            "colormap": _build_colormap(PREDICTION_PALETTES["far"]),
+            "vmin": None,
+            "vmax": None,
+            "nodata": PREDICTION_PALETTES["far"]["nodata"],
+        }
+    palette = PREDICTION_PALETTES.get(display_palette, PREDICTION_PALETTES[_FALLBACK_GROUP])
+    return {
+        "colormap": _build_colormap(palette),
+        "vmin": palette["vmin"],
+        "vmax": palette["vmax"],
+        "nodata": palette["nodata"],
+    }

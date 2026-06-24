@@ -574,7 +574,7 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
             TrainTile(project=app_state.project)
 
         with rv.TabItem():
-            InferenceTile(project=app_state.project, map_=map_)
+            InferenceTile(project=app_state.project, map_=map_, sepal_client=sepal_client)
 
         with rv.TabItem():
             EvaluationTile(project=app_state.project)

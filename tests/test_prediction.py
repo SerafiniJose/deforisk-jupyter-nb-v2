@@ -32,6 +32,22 @@ def test_prediction_round_trips_path_as_string():
     assert restored.model_key == "rf_m"
 
 
+def test_prediction_display_palette_defaults_none_and_round_trips():
+    """Imported predictions persist their chosen display palette through the
+    model_dump/Prediction(**data) cycle that Project.save()/load() rely on."""
+    default = Prediction(path=Path("/tmp/a.tif"), model_key="glm_m", dataset_name="ds")
+    assert default.display_palette is None  # computed predictions resolve by family
+
+    pred = Prediction(
+        path=Path("/tmp/import.tif"),
+        model_key="my-import",
+        dataset_name="imported",
+        display_palette="stretch",
+    )
+    restored = Prediction(**{**pred.model_dump(mode="json"), "path": Path("/tmp/import.tif")})
+    assert restored.display_palette == "stretch"
+
+
 class _FakeVar:
     def __init__(self, name, year=None):
         self.name = name

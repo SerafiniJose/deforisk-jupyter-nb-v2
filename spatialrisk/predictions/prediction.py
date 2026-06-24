@@ -46,6 +46,11 @@ class Prediction(BaseModel):
     tags: List[str] = Field(default_factory=list)
     created_at: Optional[str] = None
 
+    # Map display palette. None = resolve by model family (computed predictions);
+    # "far"/"jnr"/"mw" = that named ramp pinned; "stretch" = ramp auto-stretched to
+    # the file's value range. Set by the local-raster import flow (Step 7).
+    display_palette: Optional[str] = None
+
     # Full-config provenance, frozen at prediction time.
     model_snapshot: Dict[str, Any] = Field(default_factory=dict)
     dataset_snapshot: Dict[str, Any] = Field(default_factory=dict)

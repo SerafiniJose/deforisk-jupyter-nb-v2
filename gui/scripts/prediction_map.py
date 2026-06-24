@@ -21,6 +21,7 @@ def add_prediction_on_map(
     fit_bounds=True,
     build_overviews=False,
     opacity=1.0,
+    display_palette=None,
 ):
     """Draw a prediction raster with its QGIS-faithful, value-pinned palette.
 
@@ -38,7 +39,7 @@ def add_prediction_on_map(
     """
     from localtileserver import TileClient, get_leaflet_tile_layer
 
-    from gui.scripts.prediction_styles import resolve_prediction_style
+    from gui.scripts.prediction_styles import resolve_display_style
 
     path = str(path)
 
@@ -50,7 +51,7 @@ def add_prediction_on_map(
         except Exception:
             logger.exception("overview build failed for %s; adding un-optimised", path)
 
-    style = resolve_prediction_style(model_key)
+    style = resolve_display_style(model_key, display_palette)
     client = TileClient(path)
     layer = get_leaflet_tile_layer(
         client,
