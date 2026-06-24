@@ -411,7 +411,7 @@ def ProjectPanel():
                                                     rv.Chip(
                                                         children=[chip.label],
                                                         x_small=True,
-                                                        color="green" if chip.accent else None,
+                                                        color="primary" if chip.accent else None,
                                                         text_color="white" if chip.accent else None,
                                                     )
                                             rv.ListItemSubtitle(
