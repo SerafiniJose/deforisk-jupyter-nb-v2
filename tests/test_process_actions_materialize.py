@@ -44,3 +44,31 @@ def test_materialize_skips_non_geevar():
     p = _Proj()
     p.raw_variables["x"] = MagicMock(name="LocalRasterVar")  # already local
     assert process_actions.materialize_raw_layers(p) == []
+
+
+def test_materialize_logs_download_milestones(monkeypatch, caplog):
+    import logging
+
+    p = _Proj()
+    gv = GEEVar(
+        name="altitude",
+        data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        gee_images=["img"],
+    )
+    p.raw_variables["altitude"] = gv
+
+    local = MagicMock(name="LocalRasterVar")
+
+    def fake_to_local_raster(*a, **k):
+        p.raw_variables["altitude"] = local
+        return local
+
+    monkeypatch.setattr(GEEVar, "to_local_raster", fake_to_local_raster, raising=True)
+
+    with caplog.at_level(logging.INFO, logger="spatial_risk"):
+        process_actions.materialize_raw_layers(p)
+
+    text = caplog.text.lower()
+    assert "downloading" in text
+    assert "downloaded" in text

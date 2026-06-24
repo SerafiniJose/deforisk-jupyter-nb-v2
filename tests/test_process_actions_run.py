@@ -128,6 +128,7 @@ def test_run_processing_logs_reproject_and_rasterize(caplog):
     text = caplog.text.lower()
     assert "reproject" in text
     assert "rasteriz" in text
+    assert "complete" in text
 
 
 def test_apply_post_processing_logs_step(caplog):

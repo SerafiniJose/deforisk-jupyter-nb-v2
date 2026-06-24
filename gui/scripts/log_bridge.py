@@ -46,6 +46,10 @@ class ReactiveLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             item = _record_to_dict(record)
+            # Hold the lock across _publish, not just the buffer build: the
+            # read-modify-publish must be atomic, or two concurrent emits could
+            # each snapshot the same buffer and publish one missing the other's
+            # record. Do NOT narrow this back to only the buffer build.
             with self._lock:
                 buf = (log_records.value + (item,))[-MAX_RECORDS:]
                 self._publish(buf)
