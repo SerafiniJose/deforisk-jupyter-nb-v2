@@ -108,3 +108,6 @@ def test_inference_tile_uses_palette_helper_and_overview_option():
     assert "to_thread" in src                       # add offloaded to a thread
     assert "use_task" in src                        # threaded via solara.lab.use_task
     assert "pending_toggle" in src                  # toggle routed through the reactive
+    # Adding a prediction must NOT recenter/rezoom the map — keep the user's view.
+    assert "fit_bounds=False" in src
+    assert "fit_bounds=True" not in src

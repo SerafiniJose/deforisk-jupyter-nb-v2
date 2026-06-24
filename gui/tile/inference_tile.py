@@ -154,7 +154,7 @@ def InferenceTile(project, map_=None):
                             model_key=job["model_key"],
                             layer_name=sk,
                             key=_pred_layer_key(sk),
-                            fit_bounds=True,
+                            fit_bounds=False,
                             build_overviews=gen_overviews.value,
                         )
                         added_any = True
