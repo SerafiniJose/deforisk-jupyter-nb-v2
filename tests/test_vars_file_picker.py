@@ -9,9 +9,10 @@ import gui.widget.variable_modal as vm
 
 
 def test_modal_uses_file_input_component():
-    src = inspect.getsource(vm)
-    assert "FileInputComponent" in src
-    assert 'label="File path"' not in src, "plain text file-path field must be gone"
+    src = inspect.getsource(vm._render_custom_fields)
+    assert "FileInputComponent" in src, "the picker must be rendered in the custom fields"
+    assert 'root=""' in src, "the picker must be rooted at the SEPAL/user home"
+    assert 'label="File path"' not in inspect.getsource(vm), "plain text file-path field must be gone"
 
 
 def test_modal_accepts_sepal_client():

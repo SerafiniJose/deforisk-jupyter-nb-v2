@@ -202,7 +202,7 @@ def VariableModal(
                         scale, set_scale,
                         raster_type, set_raster_type,
                         rasterization_method, set_rasterization_method,
-                        sepal_client,
+                        sepal_client=sepal_client,
                     )
 
                 if error:
@@ -274,7 +274,7 @@ def _render_custom_fields(
     rasterization_method, set_rasterization_method,
     sepal_client,
 ):
-    """Fields shown when source == 'custom' (original behaviour)."""
+    """Fields shown when source == 'custom'."""
     rv.TextField(
         label="Name",
         v_model=name,
