@@ -237,7 +237,7 @@ def _drop_from_map(key: str, map_):
 
 
 @solara.component
-def VariablesTile(project, process_error, map_=None):
+def VariablesTile(project, process_error, map_=None, sepal_client=None):
     """Variables step: add, inspect, and process variables.
 
     Args:
@@ -477,6 +477,7 @@ def VariablesTile(project, process_error, map_=None):
         on_save=on_save,
         editing_key=editing_key,
         initial_entry=editing_entry,
+        sepal_client=sepal_client,
     )
 
     _pending_var = p.raw_variables.get(pending_remove) if (p and pending_remove) else None

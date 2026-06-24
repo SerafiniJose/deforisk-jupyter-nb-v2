@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 import reacton.ipyvuetify as rv
 import solara
+from pysepal.solara.components.inputs import FileInputComponent
 
 from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 from spatialrisk.variables.models import (
@@ -15,6 +16,9 @@ from spatialrisk.variables.models import (
 
 VAR_TYPES = ["LocalRasterVar", "GEEVar", "LocalVectorVar"]
 SOURCES = ["predefined", "custom"]
+
+_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
+_VECTOR_EXTENSIONS = [".geojson", ".gpkg", ".shp", ".json"]
 
 # Build dropdown items: [{"text": label, "value": key}, ...]
 _PREDEFINED_ITEMS = [
@@ -29,6 +33,7 @@ def VariableModal(
     on_save: Optional[Callable[[str, dict], None]] = None,
     editing_key: Optional[str] = None,
     initial_entry: Optional[dict] = None,
+    sepal_client=None,
 ):
     """Modal dialog for adding or editing a variable."""
     # --- state ---
@@ -197,6 +202,7 @@ def VariableModal(
                         scale, set_scale,
                         raster_type, set_raster_type,
                         rasterization_method, set_rasterization_method,
+                        sepal_client,
                     )
 
                 if error:
@@ -266,6 +272,7 @@ def _render_custom_fields(
     scale, set_scale,
     raster_type, set_raster_type,
     rasterization_method, set_rasterization_method,
+    sepal_client,
 ):
     """Fields shown when source == 'custom' (original behaviour)."""
     rv.TextField(
@@ -292,13 +299,18 @@ def _render_custom_fields(
         type="number",
     )
     if var_type in ("LocalRasterVar", "LocalVectorVar"):
-        rv.TextField(
-            label="File path",
-            v_model=file_path,
-            on_v_model=set_file_path,
-            dense=True,
-            outlined=True,
-            placeholder="/path/to/file.tif",
+        FileInputComponent(
+            label="Select file",
+            value=file_path,
+            on_value=set_file_path,
+            sepal_client=sepal_client,
+            root="",
+            extensions=(
+                _RASTER_EXTENSIONS
+                if var_type == "LocalRasterVar"
+                else _VECTOR_EXTENSIONS
+            ),
+            clearable=True,
         )
     if var_type == "GEEVar":
         rv.TextField(

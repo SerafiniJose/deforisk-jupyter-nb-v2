@@ -16,6 +16,7 @@ from pysepal.logger import setup_logging
 from pysepal.sepalwidgets.vue_app import MapApp, ThemeToggle
 from pysepal.solara import (
     get_current_gee_interface,
+    get_current_sepal_client,
     setup_sessions,
     setup_solara_server,
     setup_theme_colors,
@@ -442,7 +443,7 @@ def ProjectPanel():
 
 
 @solara.component
-def WorkflowTabs(map_, gee_interface):
+def WorkflowTabs(map_, gee_interface, sepal_client=None):
     """Three-tab workflow panel rendered in the right side panel."""
     active_tab, set_active_tab = solara.use_state(0)
 
@@ -549,6 +550,7 @@ def WorkflowTabs(map_, gee_interface):
                 project=app_state.project,
                 process_error=app_state.process_error,
                 map_=map_,
+                sepal_client=sepal_client,
             )
         with rv.TabItem():
             ProcessTile(
@@ -593,6 +595,7 @@ def Page():
     setup_theme_colors()
 
     gee_interface = get_current_gee_interface()
+    sepal_client = get_current_sepal_client()
     theme_toggle = solara.use_memo(lambda: ThemeToggle(), [])
 
     def _observe_theme():
@@ -813,7 +816,7 @@ def Page():
 
     right_panel_content = [
         {
-            "content": [WorkflowTabs(map_=sepal_map, gee_interface=gee_interface)],
+            "content": [WorkflowTabs(map_=sepal_map, gee_interface=gee_interface, sepal_client=sepal_client)],
         },
     ]
 
