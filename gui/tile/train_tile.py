@@ -271,7 +271,8 @@ def build_fit_kwargs(model_key, dataset, project):
     return {}
 
 
-def _run_training(job_id, model_key, param_values, dataset, sample_set, project):
+def _run_training(job_id, model_key, param_values, dataset, sample_set, project,
+                  project_reactive=None):
     """Run model training in a background thread."""
     registry = MODEL_REGISTRY[model_key]
     model_cls = registry["class"]
@@ -308,6 +309,13 @@ def _run_training(job_id, model_key, param_values, dataset, sample_set, project)
         # list "remove" action can delete the right model.
         model.register(project, auto_save=True)
         _update_job(job_id, model_storage_key=model._model_key())
+
+        # register() mutates project.models in place; publish a fresh copy on the
+        # reactive so dependent tiles (Step 7 — Inference) re-render and list the
+        # newly trained model. Without this set() the identity-equality reactive
+        # never fires and the Inference model dropdown stays empty.
+        if project_reactive is not None:
+            project_reactive.set(project.model_copy())
         logger.info("Model %s trained and registered.", model_key)
 
     except Exception as exc:
@@ -443,7 +451,7 @@ def TrainTile(project):
         spawn_in_context(
             _run_training,
             (job_id, selected_key, all_params.get(selected_key, {}),
-             dataset, sample_set, p),
+             dataset, sample_set, p, project),
         )
         logger.info("Training started: %s on sample set %s (job=%s)",
                     selected_key, selected_sample, job_id)

@@ -89,6 +89,74 @@ def test_job_status_update_skips_cancelled_job():
         train_jobs.set([])
 
 
+def test_training_publishes_project_for_rerender(monkeypatch):
+    """Regression: a finished training run must publish the mutated project on the
+    reactive so dependent tiles (Step 7 — Inference) re-render and list the new model.
+
+    register() mutates project.models in place; without project.set(p.model_copy())
+    the identity-equality reactive never fires, so the Inference model dropdown stays
+    empty until an unrelated project edit forces a re-render.
+    """
+    import copy
+
+    import solara
+
+    solara.settings.main.allow_global_context = True
+    from gui.tile import train_tile
+
+    class _DummyModel:
+        def __init__(self, **kwargs):
+            self.deviance = 1.0
+            self.n_samples = 7
+            self.project = None
+
+        def fit(self, **kwargs):
+            return self
+
+        def register(self, project, auto_save=True):
+            project.models["dummy_glm"] = self
+
+        def _model_key(self):
+            return "dummy_glm"
+
+    class _FakeProject:
+        def __init__(self):
+            self.models = {}
+            self.project_name = "t"
+
+        def model_copy(self):
+            return copy.copy(self)
+
+    monkeypatch.setitem(
+        train_tile.MODEL_REGISTRY,
+        "glm",
+        {**train_tile.MODEL_REGISTRY["glm"], "class": _DummyModel},
+    )
+
+    fake = _FakeProject()
+    project_reactive = solara.reactive(fake, equals=lambda a, b: a is b)
+    train_tile.train_jobs.set(
+        [{"id": "jobA", "status": "running", "deviance": None, "n_samples": None}]
+    )
+
+    fires = []
+    unsub = project_reactive.subscribe_change(lambda *a: fires.append(a))
+    try:
+        train_tile._run_training(
+            "jobA", "glm", {}, None, None, fake, project_reactive
+        )
+
+        # The reactive MUST fire so the Inference tile re-renders.
+        assert len(fires) == 1, "project.set() never fired — Step 7 won't re-render"
+        # The published project carries the newly registered model.
+        assert "dummy_glm" in project_reactive.value.models
+        assert project_reactive.value is not fake, "must publish a fresh copy"
+    finally:
+        if callable(unsub):
+            unsub()
+        train_tile.train_jobs.set([])
+
+
 def test_spawn_in_context_runs_target_without_active_context():
     """spawn_in_context falls back to a plain thread when no Solara context
     is active (e.g. unit tests) and still executes the target."""
