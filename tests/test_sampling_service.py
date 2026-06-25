@@ -49,3 +49,21 @@ def test_generate_points_stratified_deforisk(tmp_path):
     )
     assert (gdf["strata"] == 1).sum() == 100
     assert (gdf["strata"] == 0).sum() == 100
+
+
+def test_generate_points_systematic_spacing(tmp_path):
+    from spatialrisk.sampling.service import generate_points
+
+    strata = np.zeros((40, 40), dtype="uint8")
+    mask = np.ones((40, 40), dtype="uint8")
+    rpath, mpath = tmp_path / "s.tif", tmp_path / "m.tif"
+    _write_raster(rpath, strata)
+    _write_raster(mpath, mask)
+
+    # 1 m pixels, spacing 10 m -> step 10 px -> rows/cols at 0,10,20,30 (4x4).
+    gdf = generate_points(
+        rpath, mpath, strategy="systematic", n_samples=None, spacing_m=10.0,
+    )
+    assert sorted(gdf["row"].unique().tolist()) == [0, 10, 20, 30]
+    assert sorted(gdf["col"].unique().tolist()) == [0, 10, 20, 30]
+    assert len(gdf) == 16

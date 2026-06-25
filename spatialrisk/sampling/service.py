@@ -23,6 +23,7 @@ def generate_points(
     allocation: Optional[str] = None,
     seed: Optional[int] = None,
     adapt: bool = False,
+    spacing_m: Optional[float] = None,
 ):
     """Draw sample locations and return a GeoDataFrame of point centres."""
     import numpy as np
@@ -59,6 +60,8 @@ def generate_points(
 
     # pixel area in hectares from a projected transform (m^2 -> ha)
     pixel_area_ha = abs(transform.a * transform.e) / 10_000.0
+    # pixel size (row, col) in metres for distance-based spacing
+    res_m = (abs(transform.e), abs(transform.a))
 
     strat = SamplingStrategy(strategy)
     impl = _STRATEGIES[strat]()
@@ -71,6 +74,8 @@ def generate_points(
         allocation=allocation,
         adapt=adapt,
         pixel_area_ha=pixel_area_ha,
+        spacing_m=spacing_m,
+        res_m=res_m,
     )
 
     xs, ys = rasterio.transform.xy(transform, list(rows), list(cols), offset="center")
