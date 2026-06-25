@@ -101,6 +101,10 @@ class BaseRiskModel(BaseModel):
     _x_design_info: Any = PrivateAttr(default=None)
     # Small training sample used to reconstruct DesignInfo after loading
     _design_sample: Any = PrivateAttr(default=None)
+    # Transient: a user-chosen name for the NEXT apply()'s prediction(s). Set by
+    # the inference runner just before apply(); consumed by _register_prediction
+    # to key/name the output(s). None → fall back to the provenance-derived key.
+    _pending_pred_name: Optional[str] = PrivateAttr(default=None)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -388,7 +392,14 @@ class BaseRiskModel(BaseModel):
         from spatialrisk.predictions.prediction import Prediction, build_dataset_snapshot
 
         ds = dataset if dataset is not None else self.dataset
+        # A pending name (set by the inference runner) makes the prediction's key
+        # and label user-chosen instead of provenance-derived, so distinct runs no
+        # longer overwrite each other. Multi-output runs (MW windows) stay distinct
+        # via the window suffix; model_key/dataset_name fields are kept intact so
+        # evaluation labelling (which reads those fields) is unaffected.
+        pending_name = self._pending_pred_name
         prediction = Prediction(
+            name=pending_name,
             path=Path(path),
             model_key=self._model_key(),
             dataset_name=(getattr(ds, "name", None) or self.dataset_name or "unknown"),
@@ -397,7 +408,10 @@ class BaseRiskModel(BaseModel):
             model_snapshot=self.model_dump(mode="json"),
             dataset_snapshot=build_dataset_snapshot(ds),
         )
-        prediction.add_to_project(self.project, auto_save=auto_save)
+        key = None
+        if pending_name:
+            key = pending_name + (f"_w{window}" if window is not None else "")
+        prediction.add_to_project(self.project, key=key, auto_save=auto_save)
         return prediction
 
     # ------------------------------------------------------------------

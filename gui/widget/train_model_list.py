@@ -30,13 +30,22 @@ def TrainJobItem(job: dict, on_cancel, on_remove):
     icon = STATUS_ICONS.get(status, "mdi-help-circle")
     model_label = job.get("model_label", job["model_type"])
     dataset_name = job.get("dataset_name", "—")
+    model_name = job.get("model_name")
+
+    # Lead with the user-chosen name so distinct models are told apart at a
+    # glance; fall back to the old "label — dataset" form for legacy jobs.
+    title = (
+        f"{model_name} ({model_label}) — {dataset_name}"
+        if model_name
+        else f"{model_label} — {dataset_name}"
+    )
 
     with rv.ListItem(dense=True):
         with rv.ListItemIcon():
             rv.Icon(children=[icon], color=color, small=True)
         with rv.ListItemContent():
             rv.ListItemTitle(
-                children=[f"{model_label} — {dataset_name}"],
+                children=[title],
                 style_="font-size: 0.875rem;",
             )
             if status == "completed":

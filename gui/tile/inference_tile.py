@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import uuid
 
 import reacton.ipyvuetify as rv
@@ -13,6 +14,37 @@ from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
 
 logger = logging.getLogger("spatial_risk")
+
+
+def _sanitize_pred_name(name: str) -> str:
+    """Normalise a user-typed prediction name to a key/path-safe token.
+
+    Keeps alphanumerics, dash and underscore (so the default ``model__dataset``
+    token survives intact); collapses any other run into one underscore. The
+    result is used as the prediction's registry key, output subfolder and the
+    ``Prediction.name`` the outputs list matches on, so it must be path-safe.
+    """
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "").strip()).strip("_")
+
+
+def _default_pred_name(model_key: str, dataset_name: str) -> str:
+    """Prefilled prediction name for a (model, dataset) selection."""
+    if not model_key or not dataset_name:
+        return ""
+    return _sanitize_pred_name(f"{model_key}__{dataset_name}")
+
+
+def _prediction_name_exists(project, name: str) -> bool:
+    """True if a prediction already uses *name* (as its key or its name field).
+
+    Covers both new name-keyed predictions (``Prediction.name == name``) and the
+    legacy provenance key (``{model}__{dataset}`` matches the default token).
+    """
+    if project is None or not name:
+        return False
+    if name in getattr(project, "predictions", {}):
+        return True
+    return bool(project.filter_predictions(name=name))
 
 # Map display palette choices offered when importing a local prediction raster.
 _IMPORT_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
@@ -33,12 +65,12 @@ def _pred_layer_key(storage_key: str) -> str:
     return f"pred_{storage_key}"
 
 
-def _run_inference(job_id, model_key, dataset_key, project):
+def _run_inference(job_id, model_key, dataset_key, project, name=None):
     """Run model inference in a background thread."""
     try:
         from gui.scripts.inference_runner import run_inference
 
-        run_inference(project, model_key, dataset_key)
+        run_inference(project, model_key, dataset_key, name=name)
 
         update_job(
             inference_jobs,
@@ -46,7 +78,7 @@ def _run_inference(job_id, model_key, dataset_key, project):
             status="completed",
             output_path="see project predictions",
         )
-        logger.info("Inference completed: %s on %s", model_key, dataset_key)
+        logger.info("Inference completed: %s on %s (name=%s)", model_key, dataset_key, name)
 
     except Exception as exc:
         logger.exception("Inference failed for %s on %s", model_key, dataset_key)
@@ -102,6 +134,21 @@ def InferenceTile(project, map_=None, sepal_client=None):
     dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
     selected_dataset, set_selected_dataset = solara.use_state("")
 
+    # Prediction name — names the output so re-runs don't silently overwrite.
+    # Prefilled with the model+dataset default; until the user edits it, the
+    # field tracks the current selection (touched flag freezes their choice).
+    pred_name, set_pred_name = solara.use_state("")
+    pred_name_touched, set_pred_name_touched = solara.use_state(False)
+    default_pred_name = _default_pred_name(selected_model, selected_dataset)
+    effective_pred_name = (
+        _sanitize_pred_name(pred_name) if pred_name_touched else default_pred_name
+    )
+    pred_name_field = pred_name if pred_name_touched else default_pred_name
+
+    def set_pred_name_input(v):
+        set_pred_name_touched(True)
+        set_pred_name(v)
+
     # Form messages
     form_error, set_form_error = solara.use_state(None)
 
@@ -142,6 +189,34 @@ def InferenceTile(project, map_=None, sepal_client=None):
         set_import_file("")
         logger.info("Import started: '%s' (job=%s)", import_name.strip(), job_id)
 
+    pending_overwrite, set_pending_overwrite = solara.use_state(None)
+
+    def _launch_inference(name):
+        """Create the output job row and spawn the worker. Inputs pre-validated."""
+        job_id = str(uuid.uuid4())[:8]
+        job = {
+            "id": job_id,
+            "model_key": selected_model,
+            "dataset_name": selected_dataset,
+            "pred_name": name,
+            "status": "running",
+            "error": None,
+            "output_path": None,
+        }
+        inference_jobs.set(list(inference_jobs.value) + [job])
+
+        spawn_in_context(
+            _run_inference,
+            (job_id, selected_model, selected_dataset, p, name),
+        )
+        logger.info(
+            "Inference started: %s on %s as '%s' (job=%s)",
+            selected_model,
+            selected_dataset,
+            name,
+            job_id,
+        )
+
     def on_run():
         set_form_error(None)
         if p is None:
@@ -153,33 +228,27 @@ def InferenceTile(project, map_=None, sepal_client=None):
         if not selected_dataset or selected_dataset not in p.datasets:
             set_form_error("Select a valid dataset.")
             return
+        name = effective_pred_name
+        if not name:
+            set_form_error("Enter a prediction name (letters, numbers, - or _).")
+            return
 
-        job_id = str(uuid.uuid4())[:8]
-        job = {
-            "id": job_id,
-            "model_key": selected_model,
-            "dataset_name": selected_dataset,
-            "status": "running",
-            "error": None,
-            "output_path": None,
-        }
-        inference_jobs.set(list(inference_jobs.value) + [job])
+        # An existing prediction with this name would be replaced — confirm first.
+        if _prediction_name_exists(p, name):
+            set_pending_overwrite({"name": name})
+            return
 
-        spawn_in_context(
-            _run_inference,
-            (job_id, selected_model, selected_dataset, p),
-        )
-        logger.info(
-            "Inference started: %s on %s (job=%s)",
-            selected_model,
-            selected_dataset,
-            job_id,
-        )
+        _launch_inference(name)
 
     def _matching_predictions(job):
         """Predictions registered for *job*, keyed by storage_key (empty if none)."""
         if p is None:
             return {}
+        # Named runs (the current path) group their output(s) by the chosen name,
+        # so two runs of the same model+dataset under different names stay
+        # separate. Legacy/imported jobs (no pred_name) fall back to provenance.
+        if job.get("pred_name"):
+            return p.filter_predictions(name=job["pred_name"])
         return p.filter_predictions(
             model_key=job["model_key"], dataset_name=job["dataset_name"]
         )
@@ -276,7 +345,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             [j for j in inference_jobs.value if j["id"] != job_id]
         )
 
-    can_run = bool(selected_model and selected_dataset)
+    can_run = bool(selected_model and selected_dataset and effective_pred_name)
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown("### Step 7 — Inference")
@@ -302,6 +371,28 @@ def InferenceTile(project, map_=None, sepal_client=None):
             dense=True,
             outlined=True,
             no_data_text="No datasets registered. Create one in Step 4.",
+        )
+
+        # Prediction name — required; names the output so re-runs don't silently
+        # overwrite. The hint shows the resulting registry key and flags when that
+        # name is already taken (running will overwrite it).
+        pred_exists = _prediction_name_exists(p, effective_pred_name)
+        rv.TextField(
+            label="Prediction name",
+            v_model=pred_name_field,
+            on_v_model=set_pred_name_input,
+            dense=True,
+            outlined=True,
+            messages=(
+                f"⚠ A prediction named '{effective_pred_name}' already exists — running overwrites it."
+                if pred_exists
+                else (
+                    f"Saved as '{effective_pred_name}'."
+                    if effective_pred_name
+                    else "Required."
+                )
+            ),
+            error=not effective_pred_name,
         )
 
         # Run button
@@ -402,4 +493,25 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 else "Remove this inference job from the list?"
             ),
             confirm_label="Delete" if _pending_pred_count else "Remove",
+        )
+
+        # Overwrite confirmation — shown when the chosen prediction name exists.
+        def _confirm_overwrite():
+            ov = pending_overwrite
+            set_pending_overwrite(None)
+            if ov:
+                _launch_inference(ov["name"])
+
+        ConfirmDialog(
+            open=pending_overwrite is not None,
+            on_cancel=lambda: set_pending_overwrite(None),
+            on_confirm=_confirm_overwrite,
+            title="Overwrite existing prediction?",
+            message=(
+                f"A prediction named '{pending_overwrite['name']}' already exists. "
+                "Running will overwrite its raster(s) and registry entry. This cannot be undone."
+                if pending_overwrite
+                else ""
+            ),
+            confirm_label="Overwrite",
         )

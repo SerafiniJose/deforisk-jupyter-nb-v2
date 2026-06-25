@@ -1,6 +1,7 @@
 """Step 6 — Train tile."""
 
 import logging
+import re
 import uuid
 
 import reacton.ipyvuetify as rv
@@ -243,6 +244,22 @@ def _default_params(model_key: str) -> dict:
     }
 
 
+def _sanitize_name(name: str) -> str:
+    """Normalise a user-typed model name for use as a storage key / filename.
+
+    Keeps alphanumerics, dash and underscore; collapses any other run of
+    characters into a single underscore and trims leading/trailing ones. The
+    result feeds both the ``project.models`` key (``{model_type}_{name}``) and
+    the on-disk pickle filename, so it must be path-safe.
+    """
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "").strip()).strip("_")
+
+
+def _storage_key(model_key: str, name: str) -> str:
+    """Project.models key for a model — mirrors BaseRiskModel's key formula."""
+    return f"{model_key}_{name}" if name else model_key
+
+
 def _update_job(job_id, *, skip_if_cancelled=True, **changes):
     """Immutably update a train job by id so the UI re-renders (see update_job)."""
     update_job(train_jobs, job_id, skip_if_cancelled=skip_if_cancelled, **changes)
@@ -272,7 +289,7 @@ def build_fit_kwargs(model_key, dataset, project):
 
 
 def _run_training(job_id, model_key, param_values, dataset, sample, project,
-                  project_reactive=None):
+                  project_reactive=None, model_name=None):
     """Run model training in a background thread."""
     registry = MODEL_REGISTRY[model_key]
     model_cls = registry["class"]
@@ -289,6 +306,9 @@ def _run_training(job_id, model_key, param_values, dataset, sample, project,
                 kwargs[key] = _parse_param(str(raw) if raw is not None else None, param_def["type"])
 
         model = model_cls(**kwargs)
+        # The user-chosen name drives both the project.models key and the pickle
+        # filename, so it MUST be set before fit() (fit() calls save()).
+        model.name = model_name or None
         model.dataset = dataset
         model.project = project
         if sample is not None:
@@ -305,9 +325,13 @@ def _run_training(job_id, model_key, param_values, dataset, sample, project,
             n_samples=model.n_samples,
         )
 
-        # Auto-register in project; record its registry key on the job so the
-        # list "remove" action can delete the right model.
-        model.register(project, auto_save=True)
+        # Register in the project under the name-derived key. The user already
+        # confirmed any overwrite in the UI, so if the key is taken we delete the
+        # superseded model (and its files) first to avoid orphaned pickles.
+        storage_key = _storage_key(model_key, model_name)
+        if storage_key in project.models:
+            project.delete_model(storage_key, auto_save=False)
+        model.register(project, key=storage_key, auto_save=True)
         _update_job(job_id, model_storage_key=model._model_key())
 
         # register() mutates project.models in place; publish a fresh copy on the
@@ -421,6 +445,13 @@ def TrainTile(project):
     selected_label, set_selected_label = solara.use_state(MODEL_LABELS[0])
     selected_key = MODEL_KEYS[MODEL_LABELS.index(selected_label)] if selected_label in MODEL_LABELS else MODEL_KEYS[0]
 
+    # Model name — user-chosen, drives the project.models key and pickle filename
+    # so models no longer overwrite each other. Prefilled with an editable default
+    # the user can keep or replace; reusing a name prompts an overwrite confirm.
+    model_name, set_model_name = solara.use_state("v1")
+    clean_name = _sanitize_name(model_name)
+    storage_key = _storage_key(selected_key, clean_name)
+
     # Parameters — one dict per model, all initialised up-front so widget
     # tree is always the same shape (avoids reacton reconciliation crashes).
     all_params, set_all_params = solara.use_state(
@@ -456,10 +487,41 @@ def TrainTile(project):
         [v.name for v in selected_ds_obj.features] if selected_ds_obj else []
     )
 
+    pending_overwrite, set_pending_overwrite = solara.use_state(None)
+
+    def _launch_training(name, dataset, sample):
+        """Create the job row and spawn the worker. Assumes inputs validated."""
+        job_id = str(uuid.uuid4())[:8]
+        job = {
+            "id": job_id,
+            "model_name": name,
+            "model_type": selected_key,
+            "model_label": registry["label"],
+            "dataset_name": selected_dataset,
+            "sample_name": selected_sample if needs_sample else None,
+            "status": "running",
+            "error": None,
+            "deviance": None,
+            "n_samples": None,
+        }
+        train_jobs.set(list(train_jobs.value) + [job])
+
+        spawn_in_context(
+            _run_training,
+            (job_id, selected_key, all_params.get(selected_key, {}),
+             dataset, sample, p, project, name),
+        )
+        logger.info("Training started: %s '%s' on dataset %s (job=%s)",
+                    selected_key, name, selected_dataset, job_id)
+
     def on_train():
         set_form_error(None)
         if p is None:
             set_form_error("No active project.")
+            return
+        name = _sanitize_name(model_name)
+        if not name:
+            set_form_error("Enter a model name (letters, numbers, - or _).")
             return
         if not selected_dataset or selected_dataset not in p.datasets:
             set_form_error("Select a valid dataset.")
@@ -492,27 +554,18 @@ def TrainTile(project):
                     )
                     return
 
-        job_id = str(uuid.uuid4())[:8]
-        job = {
-            "id": job_id,
-            "model_type": selected_key,
-            "model_label": registry["label"],
-            "dataset_name": selected_dataset,
-            "sample_name": selected_sample if needs_sample else None,
-            "status": "running",
-            "error": None,
-            "deviance": None,
-            "n_samples": None,
-        }
-        train_jobs.set(list(train_jobs.value) + [job])
+        # A model with this name+type already exists — confirm before replacing
+        # it (training would otherwise silently overwrite the registry entry).
+        if _storage_key(selected_key, name) in p.models:
+            set_pending_overwrite({
+                "name": name,
+                "dataset": dataset,
+                "sample": sample,
+                "storage_key": _storage_key(selected_key, name),
+            })
+            return
 
-        spawn_in_context(
-            _run_training,
-            (job_id, selected_key, all_params.get(selected_key, {}),
-             dataset, sample, p, project),
-        )
-        logger.info("Training started: %s on dataset %s (job=%s)",
-                    selected_key, selected_dataset, job_id)
+        _launch_training(name, dataset, sample)
 
     def on_cancel(job_id):
         _update_job(job_id, skip_if_cancelled=False, status="cancelled")
@@ -544,6 +597,24 @@ def TrainTile(project):
             on_v_model=set_selected_label,
             dense=True,
             outlined=True,
+        )
+
+        # Model name — required; gives each trained model a distinct key so it no
+        # longer overwrites the previous one. The hint shows the resulting storage
+        # key and flags when that key is already taken (training will overwrite).
+        name_exists = bool(p and clean_name and storage_key in p.models)
+        rv.TextField(
+            label="Model name",
+            v_model=model_name,
+            on_v_model=set_model_name,
+            dense=True,
+            outlined=True,
+            messages=(
+                f"⚠ A model named '{storage_key}' already exists — training overwrites it."
+                if name_exists
+                else (f"Saved as '{storage_key}'." if clean_name else "Required.")
+            ),
+            error=not clean_name,
         )
 
         # Collapsible model description — collapsed by default to save space.
@@ -615,8 +686,12 @@ def TrainTile(project):
                 feature_options=feature_options,
             )
 
-        # Train button — disabled when no dataset, or (needs_sample and no sample).
-        train_disabled = not selected_dataset or (needs_sample and not selected_sample)
+        # Train button — disabled when no name, no dataset, or (needs_sample and no sample).
+        train_disabled = (
+            not clean_name
+            or not selected_dataset
+            or (needs_sample and not selected_sample)
+        )
         solara.Button(
             "Train",
             icon_name="mdi-play",
@@ -654,4 +729,25 @@ def TrainTile(project):
                 else "Remove this training job from the list?"
             ),
             confirm_label="Delete" if _pending_model_key else "Remove",
+        )
+
+        # Overwrite confirmation — shown when the chosen name+type already exists.
+        def _confirm_overwrite():
+            ov = pending_overwrite
+            set_pending_overwrite(None)
+            if ov:
+                _launch_training(ov["name"], ov["dataset"], ov["sample"])
+
+        ConfirmDialog(
+            open=pending_overwrite is not None,
+            on_cancel=lambda: set_pending_overwrite(None),
+            on_confirm=_confirm_overwrite,
+            title="Overwrite existing model?",
+            message=(
+                f"A model named '{pending_overwrite['storage_key']}' already exists. "
+                "Training will replace it and delete its files. This cannot be undone."
+                if pending_overwrite
+                else ""
+            ),
+            confirm_label="Overwrite",
         )

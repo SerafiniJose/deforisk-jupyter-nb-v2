@@ -34,13 +34,22 @@ def InferenceOutputItem(job: dict, on_remove, on_toggle_map=None, is_on=False, h
     icon = STATUS_ICONS.get(status, "mdi-help-circle")
     model_key = job.get("model_key", "—")
     dataset_name = job.get("dataset_name", "—")
+    pred_name = job.get("pred_name")
+
+    # Lead with the user-chosen prediction name when present; fall back to the
+    # "model on dataset" form for imported/legacy jobs that have no pred_name.
+    title = (
+        f"{pred_name} ({model_key} on {dataset_name})"
+        if pred_name
+        else f"{model_key} on {dataset_name}"
+    )
 
     with rv.ListItem(dense=True):
         with rv.ListItemIcon():
             rv.Icon(children=[icon], color=color, small=True)
         with rv.ListItemContent():
             rv.ListItemTitle(
-                children=[f"{model_key} on {dataset_name}"],
+                children=[title],
                 style_="font-size: 0.875rem;",
             )
             if status == "completed":

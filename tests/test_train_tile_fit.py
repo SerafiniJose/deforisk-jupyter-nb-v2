@@ -109,15 +109,18 @@ def test_training_publishes_project_for_rerender(monkeypatch):
             self.deviance = 1.0
             self.n_samples = 7
             self.project = None
+            self.name = None
+            self._key = None
 
         def fit(self, **kwargs):
             return self
 
-        def register(self, project, auto_save=True):
-            project.models["dummy_glm"] = self
+        def register(self, project, key=None, auto_save=True):
+            self._key = key or "glm"
+            project.models[self._key] = self
 
         def _model_key(self):
-            return "dummy_glm"
+            return self._key or "glm"
 
     class _FakeProject:
         def __init__(self):
@@ -143,17 +146,126 @@ def test_training_publishes_project_for_rerender(monkeypatch):
     unsub = project_reactive.subscribe_change(lambda *a: fires.append(a))
     try:
         train_tile._run_training(
-            "jobA", "glm", {}, None, None, fake, project_reactive
+            "jobA", "glm", {}, None, None, fake, project_reactive, "v1"
         )
 
         # The reactive MUST fire so the Inference tile re-renders.
         assert len(fires) == 1, "project.set() never fired — Step 7 won't re-render"
-        # The published project carries the newly registered model.
-        assert "dummy_glm" in project_reactive.value.models
+        # The published project carries the newly registered model under its
+        # name-derived key.
+        assert "glm_v1" in project_reactive.value.models
         assert project_reactive.value is not fake, "must publish a fresh copy"
     finally:
         if callable(unsub):
             unsub()
+        train_tile.train_jobs.set([])
+
+
+def test_sanitize_name_is_path_safe():
+    """User-typed names must be normalised to a path/key-safe slug."""
+    from gui.tile.train_tile import _sanitize_name
+
+    assert _sanitize_name("My Model 1") == "My_Model_1"
+    assert _sanitize_name("  glm/v2  ") == "glm_v2"
+    assert _sanitize_name("a..b!!c") == "a_b_c"
+    assert _sanitize_name("keep-this_one") == "keep-this_one"
+    assert _sanitize_name("***") == ""        # nothing salvageable → empty
+    assert _sanitize_name("") == ""
+
+
+def test_storage_key_matches_base_formula():
+    """The tile's key must mirror BaseRiskModel's {model_type}_{name} formula."""
+    from gui.tile.train_tile import _storage_key
+
+    assert _storage_key("glm", "v1") == "glm_v1"
+    assert _storage_key("rf", "") == "rf"     # no name → bare model type
+
+
+def _name_test_harness(monkeypatch):
+    """Shared dummy model + project for the naming/overwrite tests."""
+    import copy
+    import solara
+
+    solara.settings.main.allow_global_context = True
+    from gui.tile import train_tile
+
+    class _DummyModel:
+        def __init__(self, **kwargs):
+            self.deviance = 1.0
+            self.n_samples = 7
+            self.project = None
+            self.name = None
+            self._key = None
+
+        def fit(self, **kwargs):
+            # name MUST be set before fit() so the pickle filename includes it.
+            assert self.name is not None, "model.name not set before fit()"
+            return self
+
+        def register(self, project, key=None, auto_save=True):
+            self._key = key
+            project.models[key] = self
+
+        def _model_key(self):
+            return self._key
+
+    class _FakeProject:
+        def __init__(self):
+            self.models = {}
+            self.project_name = "t"
+            self.deleted = []
+
+        def delete_model(self, key, auto_save=False):
+            self.deleted.append(key)
+            self.models.pop(key, None)
+
+        def model_copy(self):
+            return copy.copy(self)
+
+    monkeypatch.setitem(
+        train_tile.MODEL_REGISTRY,
+        "glm",
+        {**train_tile.MODEL_REGISTRY["glm"], "class": _DummyModel},
+    )
+    return train_tile, _FakeProject
+
+
+def test_distinct_names_do_not_overwrite(monkeypatch):
+    """Two models trained under different names coexist in the registry."""
+    train_tile, _FakeProject = _name_test_harness(monkeypatch)
+
+    fake = _FakeProject()
+    train_tile.train_jobs.set([
+        {"id": "j1", "status": "running"}, {"id": "j2", "status": "running"},
+    ])
+    try:
+        train_tile._run_training("j1", "glm", {}, None, None, fake, None, "v1")
+        train_tile._run_training("j2", "glm", {}, None, None, fake, None, "v2")
+
+        assert set(fake.models) == {"glm_v1", "glm_v2"}
+        assert fake.deleted == []   # nothing was overwritten
+    finally:
+        train_tile.train_jobs.set([])
+
+
+def test_same_name_overwrites_and_cleans_old_files(monkeypatch):
+    """Re-training under an existing name replaces it and deletes the old model
+    first (so its on-disk files are cleaned up, not orphaned)."""
+    train_tile, _FakeProject = _name_test_harness(monkeypatch)
+
+    fake = _FakeProject()
+    train_tile.train_jobs.set([
+        {"id": "j1", "status": "running"}, {"id": "j2", "status": "running"},
+    ])
+    try:
+        train_tile._run_training("j1", "glm", {}, None, None, fake, None, "v1")
+        first = fake.models["glm_v1"]
+        train_tile._run_training("j2", "glm", {}, None, None, fake, None, "v1")
+
+        assert fake.deleted == ["glm_v1"]          # old model removed first
+        assert set(fake.models) == {"glm_v1"}       # single entry, replaced
+        assert fake.models["glm_v1"] is not first   # by the new model
+    finally:
         train_tile.train_jobs.set([])
 
 

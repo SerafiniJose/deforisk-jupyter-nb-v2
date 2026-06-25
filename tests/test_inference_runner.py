@@ -92,3 +92,35 @@ def test_ml_model_missing_forest_feature_raises():
     proj = _project(m, "glm_glm_v1", with_forest=False)
     with pytest.raises(ValueError, match="forest_gfc"):
         run_inference(proj, "glm_glm_v1", "calibration")
+
+
+def test_named_run_uses_name_subfolder_and_sets_pending_name():
+    """A named ML run writes into a per-name subfolder and hands the name to the
+    model so _register_prediction keys the prediction by it."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1")
+    run_inference(proj, "glm_glm_v1", "calibration", name="run_a")
+    (args, _kwargs) = m.apply_calls[0]
+    out_path = Path(args[0])
+    assert out_path.parent == Path("/tmp/far_glm/run_a")   # name is the subfolder
+    assert out_path.name == "calibration.tif"
+    assert m._pending_pred_name == "run_a"
+
+
+def test_named_jnr_run_uses_name_subfolder():
+    m = _RecordingModel()
+    proj = _project(m, "jnr_calibration_jnr")
+    run_inference(proj, "jnr_calibration_jnr", "calibration", name="bench1")
+    (args, _kwargs) = m.apply_calls[0]
+    out_path = Path(args[0])
+    assert out_path.parent == Path("/tmp/rmj_bm/bench1")
+    assert out_path.name == "prob_bm_calibration.tif"
+
+
+def test_named_mw_run_uses_name_output_folder():
+    m = _RecordingMW()
+    proj = _project(m, "mw_calibration_mw")
+    run_inference(proj, "mw_calibration_mw", "calibration", name="mwrun")
+    (_args, kwargs) = m.apply_calls[0]
+    assert kwargs["output_folder"] == Path("/tmp/rmj_mw/mwrun")
+    assert m._pending_pred_name == "mwrun"
