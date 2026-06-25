@@ -563,6 +563,89 @@ class Dataset(BaseModel):
 
         return df
 
+    def extract_at_points(self, points, *, drop_nodata: bool = True):
+        """Extract target + feature values at the given sample points.
+
+        Points are mapped onto EACH raster's own grid (reprojected to that
+        raster's CRS as needed), so extraction stays correct when dataset
+        layers do not share a grid. cell_id is keyed on the TARGET grid (the
+        canonical location id) and is not meaningful for feature layers on a
+        different grid.
+
+        Parameters
+        ----------
+        points : geopandas.GeoDataFrame
+            Point geometries (any CRS).
+        drop_nodata : bool
+            Drop points that hit nodata/NaN or fall outside ANY layer (logged).
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns: [target_name, feature1…featureN, cell_id, trial].
+        """
+        import logging
+        import numpy as np
+        import pandas as pd
+        import rasterio
+
+        logger = logging.getLogger("spatial_risk")
+        if self.target is None or not self.features:
+            raise ValueError("Dataset target and features must be set.")
+
+        all_vars = [self.target] + self.features
+        n_pts = len(points)
+        df_data = {}
+        valid = np.ones(n_pts, dtype=bool)
+        target_ncols = None
+        target_cell = None
+
+        for i, var in enumerate(all_vars):
+            with rasterio.open(var.path) as src:
+                arr = src.read(1)
+                nodata = src.nodata
+                vcrs = src.crs
+                vtransform = src.transform
+                vheight, vwidth = src.height, src.width
+
+            vpts = points.to_crs(vcrs) if points.crs != vcrs else points
+            r, c = rasterio.transform.rowcol(
+                vtransform, vpts.geometry.x.to_numpy(), vpts.geometry.y.to_numpy()
+            )
+            r = np.asarray(r, dtype=int)
+            c = np.asarray(c, dtype=int)
+            in_bounds = (r >= 0) & (r < vheight) & (c >= 0) & (c < vwidth)
+
+            rc = np.clip(r, 0, vheight - 1)
+            cc = np.clip(c, 0, vwidth - 1)
+            vals = arr[rc, cc]
+
+            layer_valid = in_bounds.copy()
+            if np.issubdtype(vals.dtype, np.floating):
+                layer_valid &= ~np.isnan(vals)
+            if nodata is not None:
+                layer_valid &= vals != nodata
+            valid &= layer_valid
+            df_data[var.name] = vals
+
+            if i == 0:  # target raster defines cell_id
+                target_ncols = vwidth
+                target_cell = r * vwidth + c
+
+        df_data["cell_id"] = target_cell
+        df_data["trial"] = 1
+        df = pd.DataFrame(df_data)
+
+        if drop_nodata:
+            dropped = int((~valid).sum())
+            if dropped:
+                logger.info(
+                    "extract_at_points: dropped %d/%d points on nodata/out-of-bounds.",
+                    dropped, n_pts,
+                )
+            df = df[valid].reset_index(drop=True)
+        return df
+
     def get_file_paths(self) -> Dict[str, Path]:
         """Get file paths for all configured variables.
 
