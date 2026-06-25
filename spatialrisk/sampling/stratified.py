@@ -34,10 +34,14 @@ class StratifiedSampling(SamplingStrategyBase):
         classes = np.unique(strata_values)
         class_counts = {int(c): int((strata_values == c).sum()) for c in classes}
 
-        allocator = _ALLOCATORS.get(allocation or "equal")
-        if allocator is None:
-            raise ValueError(f"Unknown allocation method: {allocation}")
-        per_class = allocator(class_counts, n_samples, adapt, pixel_area_ha)
+        if n_samples is None:
+            # Uniform with random/systematic: None => draw all available per class.
+            per_class = dict(class_counts)
+        else:
+            allocator = _ALLOCATORS.get(allocation or "equal")
+            if allocator is None:
+                raise ValueError(f"Unknown allocation method: {allocation}")
+            per_class = allocator(class_counts, n_samples, adapt, pixel_area_ha)
 
         rng = np.random.default_rng(seed)
         # Event-first ordering: descending class value puts 1 (event) before 0.

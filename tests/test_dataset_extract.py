@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 rasterio = pytest.importorskip("rasterio")
@@ -98,3 +99,16 @@ def test_extract_drops_out_of_bounds_points(tmp_path):
     pts = gpd.GeoDataFrame(geometry=[Point(100.0, 100.0)], crs="EPSG:3857")
     df = ds.extract_at_points(pts)
     assert len(df) == 0
+
+
+def test_extract_reprojects_points_to_raster_crs(tmp_path):
+    # Points given in EPSG:4326 must extract the same values as the equivalent
+    # EPSG:3857 points (the dataset rasters are EPSG:3857).
+    ds = _make_dataset(tmp_path)
+    pts_3857 = gpd.GeoDataFrame(
+        geometry=[Point(5.5, 4.5), Point(3.5, 7.5)], crs="EPSG:3857"
+    )
+    df_native = ds.extract_at_points(pts_3857)
+    pts_4326 = pts_3857.to_crs("EPSG:4326")
+    df_reproj = ds.extract_at_points(pts_4326)
+    pd.testing.assert_frame_equal(df_native, df_reproj)

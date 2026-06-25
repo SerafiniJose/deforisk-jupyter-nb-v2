@@ -69,3 +69,15 @@ def test_systematic_spreads_over_grid_within_mask():
     assert 80 <= len(r[0]) <= 121
     # regular spacing: unique rows are multiples of the step
     assert len(set(np.diff(np.unique(r[0])))) == 1
+
+
+def test_stratified_none_draws_all_per_class():
+    rows = np.zeros(300, dtype=int)
+    cols = np.arange(300, dtype=int)
+    strata = np.concatenate([np.zeros(200, dtype=int), np.ones(100, dtype=int)])
+    r = StratifiedSampling().select(
+        (rows, cols), n_samples=None, strata_values=strata, allocation="equal"
+    )
+    drawn = strata[r[1]]
+    assert (drawn == 0).sum() == 200   # all class-0 pixels
+    assert (drawn == 1).sum() == 100   # all class-1 pixels
