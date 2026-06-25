@@ -47,11 +47,11 @@ MODEL_REGISTRY = {
                 "default": 99.5,
             },
             {"key": "forest_edge_var", "label": "Forest-edge variable",
-             "type": "text", "default": "forest_gfc_edge", "group": "variables"},
+             "type": "select", "default": "", "group": "variables"},
             {"key": "forest_var", "label": "Forest variable",
-             "type": "text", "default": "forest_gfc", "group": "variables"},
+             "type": "select", "default": "", "group": "variables"},
             {"key": "subj_var", "label": "Subjurisdiction variable",
-             "type": "text", "default": "subj", "group": "variables"},
+             "type": "select", "default": "", "group": "variables"},
         ],
         "has_sampling": False,
     },
@@ -82,9 +82,9 @@ MODEL_REGISTRY = {
                 "default": 99.5,
             },
             {"key": "forest_edge_var", "label": "Forest-edge variable",
-             "type": "text", "default": "forest_gfc_edge", "group": "variables"},
+             "type": "select", "default": "", "group": "variables"},
             {"key": "forest_var", "label": "Forest variable",
-             "type": "text", "default": "forest_gfc", "group": "variables"},
+             "type": "select", "default": "", "group": "variables"},
         ],
         "has_sampling": False,
     },
@@ -341,9 +341,10 @@ def _make_param_component(model_key: str, group: str):
         p for p in MODEL_REGISTRY[model_key]["params"]
         if p.get("group", "params") == group
     ]
+    is_variables = group == "variables"
 
     @solara.component
-    def _Params(params: dict, set_params):
+    def _Params(params: dict, set_params, feature_options=None):
         def _update(param_key, value):
             set_params({**params, param_key: value})
 
@@ -352,7 +353,22 @@ def _make_param_component(model_key: str, group: str):
             current = params.get(pkey, param_def["default"])
             ptype = param_def["type"]
 
-            if ptype == "select":
+            if is_variables:
+                # Dataset-layer reference: the options are the feature names of
+                # the dataset selected above, not a hardcoded default. The field
+                # starts empty so the user must pick a layer that actually
+                # exists in their data (the model looks it up by exact name).
+                rv.Select(
+                    label=param_def["label"],
+                    items=feature_options or [],
+                    v_model=current or None,
+                    on_v_model=lambda v, k=pkey: _update(k, v),
+                    dense=True,
+                    outlined=True,
+                    clearable=True,
+                    no_data_text="No features in the selected dataset.",
+                )
+            elif ptype == "select":
                 rv.Select(
                     label=param_def["label"],
                     items=param_def.get("items", []),
@@ -429,6 +445,17 @@ def TrainTile(project):
     registry = MODEL_REGISTRY[selected_key]
     needs_sample = registry.get("has_sampling", False)
 
+    # Feature names available in the selected dataset — these are the options
+    # for the Benchmark/MW "Variables" selects (each names a dataset layer).
+    selected_ds_obj = (
+        p.datasets.get(selected_dataset)
+        if p and p.datasets and selected_dataset
+        else None
+    )
+    feature_options = (
+        [v.name for v in selected_ds_obj.features] if selected_ds_obj else []
+    )
+
     def on_train():
         set_form_error(None)
         if p is None:
@@ -444,6 +471,26 @@ def TrainTile(project):
                 return
             sample = p.samples[selected_sample]
         dataset = p.datasets[selected_dataset]
+
+        # Benchmark/MW reference dataset layers by name. The user must pick each
+        # one from the dataset's features (no hardcoded default), and the chosen
+        # name must exist — otherwise fit() fails deep in the worker thread.
+        if MODEL_HAS_VARIABLES[selected_key]:
+            model_params = all_params.get(selected_key, {})
+            available = [v.name for v in dataset.features]
+            for pdef in registry["params"]:
+                if pdef.get("group") != "variables":
+                    continue
+                val = model_params.get(pdef["key"])
+                if not val:
+                    set_form_error(f"Select a layer for '{pdef['label']}'.")
+                    return
+                if val not in available:
+                    set_form_error(
+                        f"'{pdef['label']}' = '{val}' is not a feature in "
+                        f"dataset '{selected_dataset}'."
+                    )
+                    return
 
         job_id = str(uuid.uuid4())[:8]
         job = {
@@ -551,12 +598,21 @@ def TrainTile(project):
             )
 
         # Variables — for Benchmark/MW these name layers within the dataset.
+        # The selects are populated from the chosen dataset's features and start
+        # empty; the user picks which layer plays each role.
         if MODEL_HAS_VARIABLES[selected_key]:
             solara.Markdown("**Variables**")
+            if not selected_dataset:
+                solara.Info("Select a dataset above to list its features.")
+            elif not feature_options:
+                solara.Info(
+                    f"Dataset '{selected_dataset}' has no features to choose from."
+                )
             VarComponent = VARIABLE_COMPONENTS[selected_key]
             VarComponent(
                 params=all_params.get(selected_key, {}),
                 set_params=_set_model_params,
+                feature_options=feature_options,
             )
 
         # Train button — disabled when no dataset, or (needs_sample and no sample).
