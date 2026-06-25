@@ -172,7 +172,7 @@ def add_sample_points_on_map(map_, points_path, name: str, key: str):
     elif gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(epsg=4326)
 
-    event, forest = _split_by_target(gdf)
+    event, forest = _split_by_target(gdf, "strata")
     event_key, forest_key = sample_layer_keys(key)
 
     def _point_style(color):

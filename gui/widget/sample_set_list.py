@@ -35,23 +35,25 @@ def SampleSetList(
     with solara.Column(style="gap:0;width:100%;"):
         with rv.Html(tag="div", style_=_GRID + _HEADER_EXTRA):
             rv.Html(tag="span", children=["Name"])
-            rv.Html(tag="span", children=["Dataset"])
-            rv.Html(tag="span", children=["Strategy / N"])
+            rv.Html(tag="span", children=["Strategy"])
+            rv.Html(tag="span", children=["Points"])
             rv.Html(tag="span", children=["Map"])
             rv.Html(tag="span", children=[""])
 
-        for key, ss in p.samples.items():
-            counts = f"{ss.n_total} ({ss.n_event}/{ss.n_forest})"
-            strat = f"{ss.strategy} · {counts}"
+        for key, s in p.samples.items():
+            alloc = f" / {s.allocation}" if s.allocation else ""
+            strat = f"{s.strategy}{alloc}"
+            counts = ", ".join(f"{k}:{v}" for k, v in sorted(s.class_counts.items()))
+            points = f"{s.n_total} ({counts})" if counts else str(s.n_total)
             is_on = key in on_map
 
             with rv.Html(tag="div", style_=_GRID + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_CELL_FLEX):
                     solara.Text(key)
                 with rv.Html(tag="div", style_=_CELL_FLEX):
-                    rv.Chip(children=[ss.dataset_name or "—"], x_small=True, outlined=True)
-                with rv.Html(tag="div", style_=_CELL_FLEX):
                     solara.Text(strat, style="font-size:0.8rem;")
+                with rv.Html(tag="div", style_=_CELL_FLEX):
+                    solara.Text(points, style="font-size:0.8rem;")
                 with rv.Html(tag="div", style_=_CELL_FLEX):
                     if on_toggle_map is not None:
                         solara.Button(

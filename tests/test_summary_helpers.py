@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from spatialrisk import Project
 from spatialrisk.predictions.prediction import Prediction
 from spatialrisk.evaluations import EvaluationRecord
-from spatialrisk.sampleset import SampleSet
+from spatialrisk.sample import Sample
 from gui.scripts.summary_helpers import (
     project_overview,
     raw_variable_rows,
@@ -103,15 +103,16 @@ def test_dataset_rows():
 
 def test_sample_rows():
     p = Project(project_name="demo")
-    p.samples["s1"] = SampleSet(
-        name="s1", dataset_name="calib_2020", strategy="random",
-        n_total=100, n_event=30, n_forest=70, seed=42,
+    p.samples["s1"] = Sample(
+        name="s1", raster_var_name="target", strategy="random",
+        n_total=100, class_counts={"0": 70, "1": 30}, seed=42,
     )
     stats, rows = sample_rows(p)
     assert stats == {"total": 1, "points": 100}
-    assert rows[0]["n_event"] == 30
+    assert rows[0]["n_total"] == 100
+    assert rows[0]["class_counts"] == {"0": 70, "1": 30}
     assert rows[0]["seed"] == 42
-    assert rows[0]["dataset_name"] == "calib_2020"
+    assert rows[0]["strategy"] == "random"
 
 
 def test_model_rows_trained_and_missing_attr_safe():
