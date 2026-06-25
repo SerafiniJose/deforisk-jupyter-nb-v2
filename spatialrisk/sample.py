@@ -25,6 +25,7 @@ class Sample(BaseModel):
     allocation: Optional[str] = None
     adapt: bool = False
     seed: Optional[int] = None
+    spacing_m: Optional[float] = None
 
     points_path: Optional[Path] = None
     crs: Optional[str] = None
@@ -60,7 +61,7 @@ class Sample(BaseModel):
         gdf = generate_points(
             raster_path, mask_path, strategy=self.strategy,
             n_samples=self.n_samples, allocation=self.allocation,
-            seed=self.seed, adapt=self.adapt,
+            seed=self.seed, adapt=self.adapt, spacing_m=self.spacing_m,
         )
 
         if self.points_path is not None:

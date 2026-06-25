@@ -58,3 +58,26 @@ def test_sample_model_dump_excludes_project(tmp_path):
     from spatialrisk.sample import Sample
     s = Sample(project=object(), name="s", raster_var_name="t", strategy="random")
     assert "project" not in s.model_dump()
+
+
+def test_sample_spacing_generate(tmp_path):
+    from spatialrisk.sample import Sample
+
+    strata = np.zeros((40, 40), dtype="uint8")
+    mask = np.ones((40, 40), dtype="uint8")
+    rpath, mpath = tmp_path / "s.tif", tmp_path / "m.tif"
+    _write_raster(rpath, strata)
+    _write_raster(mpath, mask)
+
+    project = _StubProject({"target": _Var(rpath), "forest_mask": _Var(mpath)})
+    sample = Sample(
+        project=project, name="grid", raster_var_name="target",
+        mask_var_name="forest_mask", strategy="systematic", n_samples=None,
+        spacing_m=10.0, points_path=tmp_path / "grid.gpkg",
+    )
+    sample.generate()
+
+    # 1 m pixels, spacing 10 m on a 40x40 grid -> 4x4 = 16 points.
+    assert sample.spacing_m == 10.0
+    assert sample.n_total == 16
+    assert "project" not in sample.model_dump()
