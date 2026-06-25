@@ -24,6 +24,10 @@ logger = logging.getLogger("spatial_risk")
 
 SAMPLING_STRATEGIES = ["random", "stratified", "systematic"]
 ALLOCATION_METHODS = ["equal", "proportional", "deforisk"]
+SYSTEMATIC_MODES = [
+    {"text": "Number of samples", "value": "n_samples"},
+    {"text": "Distance between points (m)", "value": "spacing"},
+]
 
 # Module-level reactives shared across re-renders.
 sampling_jobs = solara.reactive([])
@@ -201,12 +205,11 @@ def SamplingTile(project, map_=None):
                 )
 
         if strategy == "systematic":
-            rv.RadioGroup(
-                v_model=sys_mode, on_v_model=set_sys_mode, row=True,
-                children=[
-                    rv.Radio(label="Number of samples", value="n_samples"),
-                    rv.Radio(label="Distance between points (m)", value="spacing"),
-                ],
+            rv.Select(
+                label="Define grid by", items=SYSTEMATIC_MODES,
+                item_text="text", item_value="value",
+                v_model=sys_mode, on_v_model=set_sys_mode,
+                dense=True, outlined=True,
             )
 
         if strategy == "systematic" and sys_mode == "spacing":
