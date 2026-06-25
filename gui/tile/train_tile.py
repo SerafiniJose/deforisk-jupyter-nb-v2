@@ -271,7 +271,7 @@ def build_fit_kwargs(model_key, dataset, project):
     return {}
 
 
-def _run_training(job_id, model_key, param_values, dataset, sample_set, project,
+def _run_training(job_id, model_key, param_values, dataset, sample, project,
                   project_reactive=None):
     """Run model training in a background thread."""
     registry = MODEL_REGISTRY[model_key]
@@ -291,9 +291,9 @@ def _run_training(job_id, model_key, param_values, dataset, sample_set, project,
         model = model_cls(**kwargs)
         model.dataset = dataset
         model.project = project
-        if sample_set is not None:
-            model.sample = sample_set
-            model.sample_name = sample_set.name
+        if sample is not None:
+            model.sample = sample
+            model.sample_name = sample.name
 
         model.fit(**build_fit_kwargs(model_key, dataset, project))
 
@@ -411,7 +411,13 @@ def TrainTile(project):
         {k: _default_params(k) for k in MODEL_KEYS}
     )
 
-    # Sample-set selection (replaces inline dataset + sampling config)
+    # Dataset selection — always required
+    dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
+    selected_dataset, set_selected_dataset = solara.use_state(
+        dataset_keys[0] if dataset_keys else ""
+    )
+
+    # Sample selection — only used by sampling-based models (GLM/RF/iCAR)
     sample_keys = sorted(p.samples.keys()) if p and p.samples else []
     selected_sample, set_selected_sample = solara.use_state(
         sample_keys[0] if sample_keys else ""
@@ -421,26 +427,31 @@ def TrainTile(project):
     form_error, set_form_error = solara.use_state(None)
 
     registry = MODEL_REGISTRY[selected_key]
+    needs_sample = registry.get("has_sampling", False)
 
     def on_train():
         set_form_error(None)
         if p is None:
             set_form_error("No active project.")
             return
-        if not selected_sample or selected_sample not in p.samples:
-            set_form_error("Select a valid sample set.")
+        if not selected_dataset or selected_dataset not in p.datasets:
+            set_form_error("Select a valid dataset.")
             return
-
-        sample_set = p.samples[selected_sample]
-        dataset = p.datasets.get(sample_set.dataset_name)
+        sample = None
+        if needs_sample:
+            if not selected_sample or selected_sample not in p.samples:
+                set_form_error("Select a valid sample.")
+                return
+            sample = p.samples[selected_sample]
+        dataset = p.datasets[selected_dataset]
 
         job_id = str(uuid.uuid4())[:8]
         job = {
             "id": job_id,
             "model_type": selected_key,
             "model_label": registry["label"],
-            "dataset_name": sample_set.dataset_name,
-            "sample_set_name": selected_sample,
+            "dataset_name": selected_dataset,
+            "sample_name": selected_sample if needs_sample else None,
             "status": "running",
             "error": None,
             "deviance": None,
@@ -451,10 +462,10 @@ def TrainTile(project):
         spawn_in_context(
             _run_training,
             (job_id, selected_key, all_params.get(selected_key, {}),
-             dataset, sample_set, p, project),
+             dataset, sample, p, project),
         )
-        logger.info("Training started: %s on sample set %s (job=%s)",
-                    selected_key, selected_sample, job_id)
+        logger.info("Training started: %s on dataset %s (job=%s)",
+                    selected_key, selected_dataset, job_id)
 
     def on_cancel(job_id):
         _update_job(job_id, skip_if_cancelled=False, status="cancelled")
@@ -517,17 +528,27 @@ def TrainTile(project):
                         set_params=_set_model_params,
                     )
 
-        # Training data — pick a persistent sample set generated in Step 5.
+        # Training data — dataset always required; sample only for sampling-based models.
         solara.Markdown("**Training data**")
         rv.Select(
-            label="Sample set",
-            items=sample_keys,
-            v_model=selected_sample,
-            on_v_model=set_selected_sample,
+            label="Dataset",
+            items=dataset_keys,
+            v_model=selected_dataset,
+            on_v_model=set_selected_dataset,
             dense=True,
             outlined=True,
-            no_data_text="No sample sets. Generate one in Step 5 — Sampling.",
+            no_data_text="No datasets. Process one in Step 2 — Process.",
         )
+        if needs_sample:
+            rv.Select(
+                label="Sample",
+                items=sample_keys,
+                v_model=selected_sample,
+                on_v_model=set_selected_sample,
+                dense=True,
+                outlined=True,
+                no_data_text="No samples. Generate one in Step 5 — Sampling.",
+            )
 
         # Variables — for Benchmark/MW these name layers within the dataset.
         if MODEL_HAS_VARIABLES[selected_key]:
@@ -538,15 +559,15 @@ def TrainTile(project):
                 set_params=_set_model_params,
             )
 
-        # Train button
-        has_sample = bool(selected_sample and sample_keys)
+        # Train button — disabled when no dataset, or (needs_sample and no sample).
+        train_disabled = not selected_dataset or (needs_sample and not selected_sample)
         solara.Button(
             "Train",
             icon_name="mdi-play",
             color="primary",
             small=True,
             on_click=on_train,
-            disabled=not has_sample,
+            disabled=train_disabled,
         )
 
         if form_error:

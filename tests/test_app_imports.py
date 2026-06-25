@@ -24,11 +24,15 @@ def test_workflow_tabs_gate_downstream_steps():
     assert 'rv.Tab(children=["Evaluation"], disabled=not has_predictions)' in src
 
 
-def test_train_tile_selects_sample_set():
+def test_train_tile_selects_dataset_and_sample():
     import inspect
-    import gui.tile.train_tile as t
-    src = inspect.getsource(t.TrainTile)
-    assert "p.samples" in src
+    from gui.tile import train_tile
+    src = inspect.getsource(train_tile)
+    assert "selected_dataset" in src
+    assert "has_sampling" in src
+    assert "p.datasets" in src and "p.samples" in src
+    # dataset no longer derived from the sample
+    assert "sample_set.dataset_name" not in src
 
 
 def test_page_restores_job_lists_on_load():
