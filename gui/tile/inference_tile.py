@@ -7,11 +7,11 @@ import uuid
 
 import reacton.ipyvuetify as rv
 import solara
-from pysepal.solara.components.inputs import FileInputComponent
 
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
+from gui.widget.prediction_import_modal import PredictionImportModal
 
 logger = logging.getLogger("spatial_risk")
 
@@ -46,13 +46,6 @@ def _prediction_name_exists(project, name: str) -> bool:
         return True
     return bool(project.filter_predictions(name=name))
 
-# Map display palette choices offered when importing a local prediction raster.
-_IMPORT_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
-_IMPORT_PALETTES = {
-    "FAR ramp (probability, pinned 1..65535)": "far",
-    "Auto-stretch ramp to file range": "stretch",
-}
-_IMPORT_PALETTE_LABELS = list(_IMPORT_PALETTES.keys())
 
 # Module-level reactives shared across re-renders
 inference_jobs = solara.reactive([])
@@ -152,30 +145,26 @@ def InferenceTile(project, map_=None, sepal_client=None):
     # Form messages
     form_error, set_form_error = solara.use_state(None)
 
-    # Local-raster import state
-    import_name, set_import_name = solara.use_state("")
-    import_file, set_import_file = solara.use_state("")
-    import_palette_label, set_import_palette_label = solara.use_state(_IMPORT_PALETTE_LABELS[0])
-    import_error, set_import_error = solara.use_state(None)
+    # Local-raster import — the form lives in PredictionImportModal; the tile only
+    # owns the dialog's open state and turns its entry into a background job.
+    import_modal_open = solara.use_reactive(False)
 
-    def on_import():
-        set_import_error(None)
+    def on_import(entry):
+        """Spawn a background copy for a raster the modal validated.
+
+        The modal already enforced the required fields; the project-level guard
+        stays here (surfaced via the tile's form error, as the dialog is closed
+        by the time this runs).
+        """
         if p is None:
-            set_import_error("No active project.")
+            set_form_error("No active project.")
             return
-        if not import_file or not str(import_file).strip():
-            set_import_error("Select a raster file to import.")
-            return
-        if not import_name.strip():
-            set_import_error("Enter a name for the imported prediction.")
-            return
-
-        palette = _IMPORT_PALETTES.get(import_palette_label, "far")
+        name = entry["name"]
         job_id = str(uuid.uuid4())[:8]
         # Placeholder job; _run_import fills in the real model_key on completion.
         inference_jobs.set(list(inference_jobs.value) + [{
             "id": job_id,
-            "model_key": import_name.strip(),
+            "model_key": name,
             "dataset_name": "imported",
             "status": "running",
             "error": None,
@@ -183,11 +172,9 @@ def InferenceTile(project, map_=None, sepal_client=None):
         }])
         spawn_in_context(
             _run_import,
-            (job_id, str(import_file), import_name.strip(), palette, p, project),
+            (job_id, entry["path"], name, entry["palette"], p, project),
         )
-        set_import_name("")
-        set_import_file("")
-        logger.info("Import started: '%s' (job=%s)", import_name.strip(), job_id)
+        logger.info("Import started: '%s' (job=%s)", name, job_id)
 
     pending_overwrite, set_pending_overwrite = solara.use_state(None)
 
@@ -405,57 +392,19 @@ def InferenceTile(project, map_=None, sepal_client=None):
             disabled=not can_run,
         )
 
+        # Import a prediction produced outside the app (e.g. a QGIS export). It is
+        # copied + reprojected into the project and registered like a computed
+        # prediction, so it shows in the outputs list and Step 8 — Evaluation.
+        solara.Button(
+            "Import prediction",
+            icon_name="mdi-plus",
+            color="primary",
+            small=True,
+            on_click=lambda: import_modal_open.set(True),
+        )
+
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
-
-        # Import a prediction produced outside the app (e.g. a QGIS export). The
-        # raster is copied into the project and registered like a computed
-        # prediction, so it shows below and is selectable in Step 8 — Evaluation.
-        # Collapsed by default to keep the run form compact.
-        with rv.ExpansionPanels(flat=True):
-            with rv.ExpansionPanel():
-                with rv.ExpansionPanelHeader():
-                    solara.Text("Import a local prediction raster")
-                with rv.ExpansionPanelContent():
-                    with solara.Column(style="gap: 12px;"):
-                        rv.TextField(
-                            label="Name",
-                            v_model=import_name,
-                            on_v_model=set_import_name,
-                            dense=True,
-                            outlined=True,
-                            placeholder="e.g. qgis-export-2020",
-                        )
-                        FileInputComponent(
-                            label="Select raster file",
-                            value=import_file,
-                            on_value=set_import_file,
-                            sepal_client=sepal_client,
-                            root="",
-                            extensions=_IMPORT_RASTER_EXTENSIONS,
-                            clearable=True,
-                        )
-                        rv.Select(
-                            label="Map palette",
-                            items=_IMPORT_PALETTE_LABELS,
-                            v_model=import_palette_label,
-                            on_v_model=set_import_palette_label,
-                            dense=True,
-                            outlined=True,
-                        )
-                        solara.Text(
-                            "The raster must be spatially comparable to the truth "
-                            "chosen in Step 8 to be evaluated."
-                        )
-                        solara.Button(
-                            "Import",
-                            icon_name="mdi-upload",
-                            color="primary",
-                            small=True,
-                            on_click=on_import,
-                        )
-                        if import_error:
-                            rv.Alert(type_="error", dense=True, children=[import_error])
 
         # Optional raster optimisation before predictions hit the map.
         solara.Checkbox(
@@ -514,4 +463,11 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 else ""
             ),
             confirm_label="Overwrite",
+        )
+
+        # Import-a-local-prediction modal (opened from the top action bar).
+        PredictionImportModal(
+            open_=import_modal_open,
+            on_import=on_import,
+            sepal_client=sepal_client,
         )
