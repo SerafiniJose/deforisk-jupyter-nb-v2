@@ -83,8 +83,12 @@ def on_kernel_start():
 
 
 @solara.component
-def ProjectPanel():
-    """Current-project status + New / Load / Save controls (left drawer)."""
+def ProjectPanel(on_close=None):
+    """Current-project status + New / Load / Save controls (left drawer).
+
+    ``on_close`` (optional) closes the hosting Project step-dialog; called once a
+    project finishes loading so the user lands back on the map.
+    """
     p = app_state.project.value
     dirty = app_state.project_dirty.value
     last_saved = app_state.last_saved.value
@@ -146,6 +150,10 @@ def ProjectPanel():
             app_state.status_message.set(f"Project '{selected}' loaded.")
             app_state.error_message.set(None)
             set_load_open(False)
+            # Dismiss the whole Project popup too, not just the inner Load
+            # dialog, so a successful load returns the user to the map.
+            if on_close is not None:
+                on_close()
         except Exception as exc:
             set_load_error(str(exc))
         finally:
@@ -800,6 +808,17 @@ def Page():
 
     solara.use_effect(_seed_test_model_and_prediction, [])
 
+    # Handle to the MapApp widget, captured after mount (see _capture_map_app
+    # below), so we can imperatively close its step-dialog from inside a tile.
+    map_app_ref = solara.use_ref(None)
+
+    def close_project_dialog():
+        """Close the Project step-dialog (mirrors MapApp's deactivate path)."""
+        widget = map_app_ref.current
+        if widget is not None:
+            widget.step_open = False
+            widget.current_step = None
+
     # Left drawer: Project controls + read-only Project Summary (both open as dialogs)
     steps_data = [
         {
@@ -807,7 +826,7 @@ def Page():
             "name": "Project",
             "icon": "mdi-folder-outline",
             "display": "dialog",
-            "content": ProjectPanel(),
+            "content": ProjectPanel(on_close=close_project_dialog),
         },
         {
             "id": 2,
@@ -849,7 +868,7 @@ def Page():
         app_state.project.value, app_state.project_dirty.value
     )
 
-    MapApp.element(
+    map_app_el = MapApp.element(
         app_title=app_title,
         app_icon="mdi-tree",
         main_map=[sepal_map],
@@ -863,6 +882,16 @@ def Page():
         dialog_width=560,  # roomier Project dialog (scroll fix is the .dialog-content style above)
         repo_url="https://github.com/openforis/spatial-risk",
     )
+
+    # Grab the realized MapApp widget so close_project_dialog() can drive its
+    # step-dialog traits. Recaptured each render (cheap, element is stable).
+    def _capture_map_app():
+        try:
+            map_app_ref.current = solara.get_widget(map_app_el)
+        except Exception:  # pragma: no cover - defensive (pre-mount)
+            pass
+
+    solara.use_effect(_capture_map_app, [map_app_el])
 
     # Floating, collapsible process-log panel (lower-right, over the map).
     LogConsole()
