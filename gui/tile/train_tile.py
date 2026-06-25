@@ -292,8 +292,8 @@ def _run_training(job_id, model_key, param_values, dataset, sample_set, project,
         model.dataset = dataset
         model.project = project
         if sample_set is not None:
-            model.sample_set = sample_set
-            model.sample_set_name = sample_set.name
+            model.sample = sample_set
+            model.sample_name = sample_set.name
 
         model.fit(**build_fit_kwargs(model_key, dataset, project))
 

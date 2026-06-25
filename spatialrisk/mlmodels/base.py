@@ -1,7 +1,7 @@
 """Base class for risk probability models.
 
 Provides a generic Pydantic-based foundation for ML models that:
-- Own a Dataset and Sampling object; generate training samples internally
+- Own a Dataset and Sample object; extract the training table at fit time
 - Store dataset metadata, formula, parameters, and training date
 - Generate raster predictions from a Dataset object
 - Serialize to/from JSON for project persistence
@@ -13,9 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
-
-from spatialrisk.sampling import Sampling
-
 
 class BaseRiskModel(BaseModel):
     """Generic base class for risk probability ML models.
@@ -34,6 +31,8 @@ class BaseRiskModel(BaseModel):
         Name of the parent project. Used for path reconstruction after load.
     dataset_name : str, optional
         Name of the dataset used for training, e.g. "calibration_2020".
+    sample_name : str, optional
+        Name of the Sample used for training.
     target_name : str, optional
         Name of the target variable, e.g. "forest_loss_2015_2020".
     feature_names : list of str
@@ -44,8 +43,6 @@ class BaseRiskModel(BaseModel):
         Patsy formula string used for training.
     parameters : dict
         Model-specific hyperparameters (solver, n_trees, mcmc iterations, …).
-    sampling : Sampling, optional
-        Sampling configuration used to generate the training samples.
     model_path : Path, optional
         Path to the saved pickle file.
     samples_path : Path, optional
@@ -62,6 +59,8 @@ class BaseRiskModel(BaseModel):
         Live Project reference. Excluded from serialization.
     dataset : any
         Live Dataset reference. Excluded from serialization.
+    sample : any
+        Live Sample reference. Excluded from serialization.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -73,7 +72,7 @@ class BaseRiskModel(BaseModel):
     # Dataset metadata (serializable)
     project_name: Optional[str] = None
     dataset_name: Optional[str] = None
-    sample_set_name: Optional[str] = None
+    sample_name: Optional[str] = None
     target_name: Optional[str] = None
     feature_names: List[str] = Field(default_factory=list)
     year: Optional[int] = None
@@ -81,7 +80,6 @@ class BaseRiskModel(BaseModel):
     # Formula and parameters
     formula: Optional[str] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
-    sampling: Optional[Sampling] = None
 
     # File paths
     model_path: Optional[Path] = None
@@ -96,7 +94,7 @@ class BaseRiskModel(BaseModel):
     # Live references — excluded from serialization
     project: Optional[Any] = Field(default=None, exclude=True, repr=False)
     dataset: Optional[Any] = Field(default=None, exclude=True, repr=False)
-    sample_set: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    sample: Optional[Any] = Field(default=None, exclude=True, repr=False)
 
     # In-memory ML objects — not serialized
     _ml_model: Any = PrivateAttr(default=None)
@@ -113,70 +111,22 @@ class BaseRiskModel(BaseModel):
         formula: Optional[str] = None,
         output_csv: Optional[Union[str, Path]] = None,
     ):
-        """Generate samples DataFrame and resolve formula.
-
-        Called internally by fit(). Populates target_name, feature_names,
-        year, and formula fields from the attached dataset.
-
-        Parameters
-        ----------
-        formula : str, optional
-            Override formula. Falls back to self.formula, then auto-generates
-            using generate_patsy_formula(self.dataset).
-        output_csv : str or Path, optional
-            If provided, saves the full training DataFrame to this CSV path
-            and sets self.samples_path.
-
-        Returns
-        -------
-        df : pd.DataFrame
-            Sampled training data from dataset.to_dataframe().
-        resolved_formula : str
-            The formula to use for training.
-        """
-        # Materialized-sample path: load the pre-computed table, no re-sampling.
-        if self.sample_set is not None:
-            df = self.sample_set.load_table()
-            # Write a model-private copy of the table (mirrors the legacy path)
-            # so the model does NOT share a file with the SampleSet: otherwise
-            # delete_sample_set would break this model's apply(), and
-            # delete_model would delete the SampleSet's table out from under it.
-            if output_csv is not None:
-                output_csv = Path(output_csv)
-                output_csv.parent.mkdir(parents=True, exist_ok=True)
-                df.to_csv(output_csv, index=False)
-                self.samples_path = output_csv
-            elif self.samples_path is None:
-                self.samples_path = self.sample_set.table_path
-            self.target_name = self.sample_set.target_name
-            self.feature_names = list(self.sample_set.feature_names)
-            if self.sample_set.year is not None:
-                self.year = self.sample_set.year
-
-            resolved = formula or self.formula
-            if not resolved:
-                if self.dataset is not None:
-                    from spatialrisk.far_helpers import generate_patsy_formula
-                    resolved = generate_patsy_formula(self.dataset)
-                else:
-                    resolved = (
-                        f"{self.target_name} ~ "
-                        + " + ".join(self.feature_names)
-                    )
-            self.formula = resolved
-            return df, resolved
-
-        # Legacy inline-sampling path (back-compat for pre-existing models).
+        """Extract the training table from (dataset, sample) and resolve formula."""
         from spatialrisk.far_helpers import generate_patsy_formula
 
         if self.dataset is None:
             raise ValueError("dataset must be set before calling fit().")
-        if self.sampling is None:
-            raise ValueError("sampling must be set before calling fit().")
+        if self.sample is None:
+            raise ValueError("sample must be set before calling fit().")
 
-        df = self.dataset.to_dataframe(sampling=self.sampling, output_csv=output_csv)
+        df = self.dataset.extract_at_points(self.sample.load_points())
+
         if output_csv is not None:
-            self.samples_path = Path(output_csv)
+            from pathlib import Path
+            output_csv = Path(output_csv)
+            output_csv.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_csv, index=False)
+            self.samples_path = output_csv
 
         self.target_name = self.dataset.target.name
         self.feature_names = [v.name for v in self.dataset.features]
@@ -455,8 +405,8 @@ class BaseRiskModel(BaseModel):
     # ------------------------------------------------------------------
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
-        """Exclude live references (project, dataset, sample_set) from serialization."""
+        """Exclude live references (project, dataset, sample) from serialization."""
         kwargs.setdefault("exclude", set())
         if isinstance(kwargs["exclude"], set):
-            kwargs["exclude"] = kwargs["exclude"] | {"project", "dataset", "sample_set"}
+            kwargs["exclude"] = kwargs["exclude"] | {"project", "dataset", "sample"}
         return super().model_dump(**kwargs)
