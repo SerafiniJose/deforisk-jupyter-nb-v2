@@ -85,34 +85,6 @@ def DatasetTile(project):
         del p.datasets[key]
         project.set(p.model_copy())
 
-    def on_validate():
-        set_form_error(None)
-        set_form_success(None)
-        if p is None:
-            set_form_error("No active project.")
-            return
-        if not ds_name.strip():
-            set_form_error("Dataset name is required.")
-            return
-        if not target_name:
-            set_form_error("Select a target variable.")
-            return
-        if not feature_names:
-            set_form_error("Select at least one feature variable.")
-            return
-        try:
-            # year is stored on the dataset for temporal feature alignment.
-            ds = Dataset(project=p, name=ds_name.strip(), year=year)
-            # Only pass the year to set_target when the target itself is temporal,
-            # since set_target rejects a year argument for static targets.
-            target_is_temporal = p.is_temporal(target_name)
-            ds.set_target(target_name, year=year if target_is_temporal else None)
-            ds.set_features(feature_names)
-            ds.validate()
-            set_form_success("Dataset is valid.")
-        except Exception as exc:
-            set_form_error(str(exc))
-
     def on_register():
         set_form_error(None)
         set_form_success(None)
@@ -129,12 +101,15 @@ def DatasetTile(project):
             set_form_error("Select at least one feature variable.")
             return
         try:
-            # See on_validate: store year for feature alignment, but only pass it
-            # to set_target for temporal targets.
+            # Store year for feature alignment, but only pass it to set_target for
+            # temporal targets (set_target rejects a year for static targets).
             ds = Dataset(project=p, name=ds_name.strip(), year=year)
             target_is_temporal = p.is_temporal(target_name)
             ds.set_target(target_name, year=year if target_is_temporal else None)
             ds.set_features(feature_names)
+            # Validate before registering — confirms variable rasters exist on disk
+            # and temporal years align. (Replaces the standalone Validate button.)
+            ds.validate()
 
             key = editing_key if editing_key else ds_name.strip()
             # Remove old key if renaming during edit
@@ -161,11 +136,6 @@ def DatasetTile(project):
         if not has_processed:
             solara.Info("Run Step 3 — Process first.")
             return
-
-        # Existing datasets
-        if p and p.datasets:
-            solara.Markdown(f"**DATASETS** ({len(p.datasets)})")
-            DatasetList(project=project, on_edit=on_edit, on_remove=set_pending_remove)
 
         # Create / Edit form
         solara.Markdown("**NEW DATASET**" if not editing_key else f"**EDIT — {editing_key}**")
@@ -217,14 +187,6 @@ def DatasetTile(project):
         # Action buttons
         with solara.Row(style="gap:8px;align-items:center;"):
             solara.Button(
-                "Validate",
-                icon_name="mdi-check-circle-outline",
-                color="primary",
-                outlined=True,
-                small=True,
-                on_click=on_validate,
-            )
-            solara.Button(
                 "Register",
                 icon_name="mdi-database-plus",
                 color="primary",
@@ -252,6 +214,12 @@ def DatasetTile(project):
             rv.Alert(type_="error", dense=True, children=[form_error])
         if form_success:
             rv.Alert(type_="success", dense=True, children=[form_success])
+
+        # Existing datasets — shown below the form, matching the other tabs
+        # (Train/Sampling/Inference all render their results list at the bottom).
+        if p and p.datasets:
+            solara.Markdown(f"**DATASETS** ({len(p.datasets)})")
+            DatasetList(project=project, on_edit=on_edit, on_remove=set_pending_remove)
 
         ConfirmDialog(
             open=pending_remove is not None,
