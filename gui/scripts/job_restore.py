@@ -45,7 +45,7 @@ def build_train_jobs(
                 "model_type": model_type,
                 "model_label": labels.get(model_type, model_type),
                 "dataset_name": getattr(model, "dataset_name", None) or "—",
-                "sample_set_name": getattr(model, "sample_set_name", None),
+                "sample_name": getattr(model, "sample_name", None),
                 "status": "completed",
                 "error": None,
                 "deviance": getattr(model, "deviance", None),

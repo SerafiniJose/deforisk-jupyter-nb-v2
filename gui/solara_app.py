@@ -457,6 +457,10 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
     p = app_state.project.value
     has_raw = p is not None and bool(p.raw_variables)
     has_processed = p is not None and bool(p.processed_variables)
+    has_processed_raster = p is not None and any(
+        getattr(v, "data_type", None) == "raster" or str(getattr(v, "data_type", "")) == "raster"
+        for v in p.processed_variables.values()
+    )
     has_datasets = p is not None and bool(p.datasets)
     has_samples = p is not None and bool(p.samples)
     has_models = p is not None and bool(p.models)
@@ -469,8 +473,8 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
         not aoi_complete,  # Variables
         not has_raw,  # Process
         not has_processed,  # Dataset
-        not has_datasets,  # Sampling
-        not has_samples,  # Train
+        not has_processed_raster,  # Sampling
+        not has_datasets,  # Train
         not has_models,  # Inference
         not has_predictions,  # Evaluation
     ]
@@ -516,8 +520,8 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
         rv.Tab(children=["Variables"], disabled=not aoi_complete)
         rv.Tab(children=["Process"], disabled=not has_raw)
         rv.Tab(children=["Dataset"], disabled=not has_processed)
-        rv.Tab(children=["Sampling"], disabled=not has_datasets)
-        rv.Tab(children=["Train"], disabled=not has_samples)
+        rv.Tab(children=["Sampling"], disabled=not has_processed_raster)
+        rv.Tab(children=["Train"], disabled=not has_datasets)
         rv.Tab(children=["Inference"], disabled=not has_models)
         rv.Tab(children=["Evaluation"], disabled=not has_predictions)
 

@@ -23,7 +23,7 @@ def compute_cell_indices(
 ) -> "np.ndarray":
     """Convert pixel-based cell_id values to spatial cell indices.
 
-    ``dataset.to_dataframe()`` stores ``cell_id = row * ncols + col`` (a flat
+    ``dataset.extract_at_points()`` stores ``cell_id = row * ncols + col`` (a flat
     pixel index).  forestatrisk's ``model_binomial_iCAR`` expects the ``cell``
     column to contain the index into the spatial-cell grid produced by
     ``cellneigh(raster, csize, rank=1)``, i.e. values in ``[0, ncell)``.
@@ -76,7 +76,7 @@ class ICARModel(BaseRiskModel):
     """Bayesian iCAR spatial risk model.
 
     Requires the ``cell_id`` column present in DataFrames produced by
-    ``dataset.to_dataframe()``, which encodes the raster cell index and
+    ``dataset.extract_at_points()``, which encodes the raster cell index and
     enables construction of the spatial neighbourhood graph.
 
     Attributes
@@ -162,7 +162,7 @@ class ICARModel(BaseRiskModel):
         if "cell_id" not in df.columns:
             raise ValueError(
                 "DataFrame must contain a 'cell_id' column. "
-                "Use dataset.to_dataframe() to generate samples."
+                "Use dataset.extract_at_points() to generate samples."
             )
 
         # Target raster path — available directly from self.dataset

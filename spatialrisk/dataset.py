@@ -14,8 +14,6 @@ import rasterio
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from pydantic import BaseModel, Field, ConfigDict
 
-from .sampling import Sampling
-
 
 class Dataset(BaseModel):
     """Dataset configuration for model data preparation.
@@ -451,116 +449,87 @@ class Dataset(BaseModel):
         """Register this dataset with a project. Mirrors model.register()."""
         project.add_dataset(self, key=key, auto_save=auto_save)
 
-    def to_dataframe(
-        self,
-        sampling: Optional[Sampling] = None,
-        output_csv: Optional[Union[str, Path]] = None,
-        **kwargs,
-    ) -> pd.DataFrame:
-        """Create DataFrame with sampled data.
+    def extract_at_points(self, points, *, drop_nodata: bool = True):
+        """Extract target + feature values at the given sample points.
+
+        Points are mapped onto EACH raster's own grid (reprojected to that
+        raster's CRS as needed), so extraction stays correct when dataset
+        layers do not share a grid. cell_id is keyed on the TARGET grid (the
+        canonical location id) and is not meaningful for feature layers on a
+        different grid.
 
         Parameters
         ----------
-        sampling : Sampling, optional
-            Sampling configuration. If None, creates default random sampling with 10k samples.
-            Can also pass sampling parameters as kwargs to create Sampling on-the-fly:
-            - strategy: str = 'random' ('random', 'stratified', or 'systematic')
-            - n_samples: int = 10000 (number of samples, None for all pixels)
-            - seed: int = None (random seed for reproducibility)
-        output_csv : str or Path, optional
-            If provided, saves the resulting DataFrame to this CSV path.
-            Parent directories are created automatically.
-
-        **kwargs
-            Sampling parameters for on-the-fly Sampling creation (strategy, n_samples, seed).
-            Only used if `sampling` is None.
+        points : geopandas.GeoDataFrame
+            Point geometries (any CRS).
+        drop_nodata : bool
+            Drop points that hit nodata/NaN or fall outside ANY layer (logged).
 
         Returns
         -------
-        pd.DataFrame
-            DataFrame with columns: [target, feature1, feature2, ..., cell_id, trial]
-
-        Examples
-        --------
-        # Use default sampling (random, 10k samples)
-        df = dataset.to_dataframe()
-
-        # Create Sampling on-the-fly with kwargs
-        df = dataset.to_dataframe(strategy='stratified', n_samples=5000, seed=42)
-
-        # Use pre-configured Sampling object and save to CSV
-        sampling = Sampling(strategy='systematic', n_samples=8000, seed=123)
-        df = dataset.to_dataframe(
-            sampling=sampling, output_csv="data/samples/calibration.csv"
-        )
+        pandas.DataFrame
+            Columns: [target_name, feature1…featureN, cell_id, trial].
         """
-        if not self.validate():
-            raise ValueError("Dataset validation failed")
+        import logging
+        import numpy as np
+        import pandas as pd
+        import rasterio
 
-        # Create Sampling object from kwargs if not provided
-        if sampling is None:
-            sampling = Sampling(**kwargs) if kwargs else Sampling()
+        logger = logging.getLogger("spatial_risk")
+        if self.target is None or not self.features:
+            raise ValueError("Dataset target and features must be set.")
 
-        print(f"\n📊 Creating DataFrame with {sampling.strategy} sampling...")
-
-        # Read all rasters
         all_vars = [self.target] + self.features
-        data_dict = {}
-        mask = None
+        n_pts = len(points)
+        df_data = {}
+        valid = np.ones(n_pts, dtype=bool)
+        target_ncols = None
+        target_cell = None
 
-        for var in all_vars:
+        for i, var in enumerate(all_vars):
             with rasterio.open(var.path) as src:
                 arr = src.read(1)
+                nodata = src.nodata
+                vcrs = src.crs
+                vtransform = src.transform
+                vheight, vwidth = src.height, src.width
 
-                # Create mask for valid pixels (exclude nodata)
-                if mask is None:
-                    mask = ~np.isnan(arr) & (arr != src.nodata if src.nodata else True)
-                else:
-                    mask &= ~np.isnan(arr) & (arr != src.nodata if src.nodata else True)
+            vpts = points.to_crs(vcrs) if points.crs != vcrs else points
+            r, c = rasterio.transform.rowcol(
+                vtransform, vpts.geometry.x.to_numpy(), vpts.geometry.y.to_numpy()
+            )
+            r = np.asarray(r, dtype=int)
+            c = np.asarray(c, dtype=int)
+            in_bounds = (r >= 0) & (r < vheight) & (c >= 0) & (c < vwidth)
 
-                data_dict[var.name] = arr
+            rc = np.clip(r, 0, vheight - 1)
+            cc = np.clip(c, 0, vwidth - 1)
+            vals = arr[rc, cc]
 
-        # Get valid pixel indices
-        valid_indices = np.where(mask)
-        n_valid = len(valid_indices[0])
+            layer_valid = in_bounds.copy()
+            if np.issubdtype(vals.dtype, np.floating):
+                layer_valid &= ~np.isnan(vals)
+            if nodata is not None:
+                layer_valid &= vals != nodata
+            valid &= layer_valid
+            df_data[var.name] = vals
 
-        print(f"  Valid pixels: {n_valid:,}")
+            if i == 0:  # target raster defines cell_id
+                target_ncols = vwidth
+                target_cell = r * vwidth + c
 
-        # Sample pixels using Sampling object
-        target_values = (
-            data_dict[self.target.name][valid_indices]
-            if sampling.strategy in ("stratified", "legacy")
-            else None
-        )
-        sample_indices = sampling.sample_indices(valid_indices, target_values)
-
-        # Create DataFrame
-        df_data = {}
-
-        # Add target with standardized name
-        target_arr = data_dict[self.target.name]
-        df_data[self.target.name] = target_arr[sample_indices]
-
-        # Add features with their original names
-        for var in self.features:
-            arr = data_dict[var.name]
-            df_data[var.name] = arr[sample_indices]
-
-        # Add cell_id (row * ncols + col)
-        with rasterio.open(self.target.path) as src:
-            ncols = src.width
-        df_data["cell_id"] = sample_indices[0] * ncols + sample_indices[1]
+        df_data["cell_id"] = target_cell
         df_data["trial"] = 1
         df = pd.DataFrame(df_data)
-        print(f"✓ DataFrame created: {df.shape[0]:,} rows × {df.shape[1]} columns")
-        print(f"  Target column: 'target' (from '{self.target.name}')")
 
-        if output_csv is not None:
-            output_csv = Path(output_csv)
-            output_csv.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(output_csv, index=False)
-            print(f"  Samples saved to: {output_csv}")
-
+        if drop_nodata:
+            dropped = int((~valid).sum())
+            if dropped:
+                logger.info(
+                    "extract_at_points: dropped %d/%d points on nodata/out-of-bounds.",
+                    dropped, n_pts,
+                )
+            df = df[valid].reset_index(drop=True)
         return df
 
     def get_file_paths(self) -> Dict[str, Path]:

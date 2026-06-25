@@ -1,8 +1,9 @@
 """Step 5 — Sampling tile.
 
-Generates persistent, selectable sample sets from a registered Dataset and
-lets the user draw them on the map. Each sample set materializes a training
-table (CSV) + a points GeoPackage; Step 6 (Train) selects one to fit on.
+Generates persistent, selectable samples from a processed raster
+variable (defines the grid and, for stratified sampling, the strata) and an
+optional mask variable (restricts valid pixels). Step 6 (Train) selects a
+sample and a dataset, then extracts features at the sample points.
 """
 
 import logging
@@ -21,7 +22,8 @@ from gui.widget.sample_set_list import SampleSetList
 
 logger = logging.getLogger("spatial_risk")
 
-SAMPLING_STRATEGIES = ["random", "stratified", "systematic", "legacy"]
+SAMPLING_STRATEGIES = ["random", "stratified", "systematic"]
+ALLOCATION_METHODS = ["equal", "proportional", "deforisk"]
 
 # Module-level reactives shared across re-renders.
 sampling_jobs = solara.reactive([])
@@ -36,33 +38,28 @@ def _update_job(job_id, *, skip_if_cancelled=True, **changes):
     update_job(sampling_jobs, job_id, skip_if_cancelled=skip_if_cancelled, **changes)
 
 
-def _run_sampling(job_id, name, dataset_name, strategy, n_samples, seed, project_reactive):
-    """Generate a SampleSet in the background and register it on the project."""
+def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
+                  adapt, n_samples, spacing_m, seed, project_reactive):
+    """Generate a Sample in the background and register it on the project."""
     try:
-        from spatialrisk.sampleset import SampleSet
+        from spatialrisk.sample import Sample
 
-        # Snapshot the project; concurrent sampling of the same project is not
-        # supported (last model_copy() wins for the in-memory registry).
         p = project_reactive.value
         folder = p.folders.samples_folder
-        sample_set = SampleSet(
-            project=p, name=name, dataset_name=dataset_name, strategy=strategy,
-            n_samples=n_samples, seed=seed,
-            table_path=folder / f"{name}.csv",
+        sample = Sample(
+            project=p, name=name, raster_var_name=raster_var,
+            mask_var_name=mask_var if mask_var else None,
+            strategy=strategy,
+            allocation=allocation if strategy == "stratified" else None,
+            adapt=adapt, n_samples=n_samples, spacing_m=spacing_m, seed=seed,
             points_path=folder / f"{name}.gpkg",
         )
-        sample_set.generate()
-
-        # Mutate-then-replace so the registry change re-renders the UI.
-        p.add_sample_set(sample_set, auto_save=True)
+        sample.generate()
+        p.add_sample(sample, auto_save=True)
         project_reactive.set(p.model_copy())
-
-        _update_job(
-            job_id, status="completed",
-            n_total=sample_set.n_total, n_event=sample_set.n_event,
-            n_forest=sample_set.n_forest,
-        )
-        logger.info("Sample set generated: %s (%d rows)", name, sample_set.n_total)
+        _update_job(job_id, status="completed", n_total=sample.n_total,
+                    class_counts=sample.class_counts)
+        logger.info("Sample generated: %s (%d points)", name, sample.n_total)
     except Exception as exc:
         logger.exception("Sampling failed for %s", name)
         _update_job(job_id, status="failed", error=str(exc))
@@ -70,54 +67,72 @@ def _run_sampling(job_id, name, dataset_name, strategy, n_samples, seed, project
 
 @solara.component
 def SamplingTile(project, map_=None):
-    """Sampling tab: generate persistent sample sets and add them to the map."""
+    """Sampling tab: generate persistent samples and add them to the map."""
     p = project.value
-    dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
+    raster_keys = sorted(
+        k for k, v in p.processed_variables.items()
+        if getattr(v, "data_type", None) == "raster"
+    ) if p else []
 
     # All hooks are called unconditionally before any early return so the hook
     # count is stable across renders (this tile is gated, so it renders before
-    # datasets exist and then again once they do). Matches InferenceTile/TrainTile.
-    selected_dataset, set_selected_dataset = solara.use_state(
-        dataset_keys[0] if dataset_keys else ""
-    )
+    # raster variables exist and then again once they do).
+    raster_var, set_raster_var = solara.use_state(raster_keys[0] if raster_keys else "")
+    mask_var, set_mask_var = solara.use_state("")
     name, set_name = solara.use_state("")
     strategy, set_strategy = solara.use_state("random")
+    allocation, set_allocation = solara.use_state("equal")
+    adapt, set_adapt = solara.use_state(False)
     n_samples, set_n_samples = solara.use_state(10000)
     seed, set_seed = solara.use_state(1234)
     form_error, set_form_error = solara.use_state(None)
+    sys_mode, set_sys_mode = solara.use_state("n_samples")
+    spacing_m, set_spacing_m = solara.use_state(1000.0)
     pending_remove, set_pending_remove = solara.use_state(None)
 
     if p is None:
         return
-    if not p.datasets:
-        solara.Info("Create a dataset first (Step 4 — Dataset).")
+    if not raster_keys:
+        solara.Info("Create raster variables first (Step 3 — Process).")
         return
 
     def on_generate():
         set_form_error(None)
         nm = (name or "").strip()
         if not nm:
-            set_form_error("Give the sample set a name.")
+            set_form_error("Give the sample a name.")
             return
         if nm in p.samples:
-            set_form_error(f"A sample set named '{nm}' already exists.")
+            set_form_error(f"A sample named '{nm}' already exists.")
             return
-        if selected_dataset not in p.datasets:
-            set_form_error("Select a valid dataset.")
+        if not raster_var or raster_var not in p.processed_variables:
+            set_form_error("Select a valid raster variable.")
             return
+        if mask_var and mask_var not in p.processed_variables:
+            set_form_error("Select a valid mask variable.")
+            return
+
+        use_spacing = strategy == "systematic" and sys_mode == "spacing"
+        if use_spacing and (spacing_m is None or spacing_m <= 0):
+            set_form_error("Enter a positive distance between points (m).")
+            return
+        spacing_arg = spacing_m if use_spacing else None
+        n_samples_arg = None if use_spacing else n_samples
 
         job_id = str(uuid.uuid4())[:8]
         sampling_jobs.set(list(sampling_jobs.value) + [{
-            "id": job_id, "name": nm, "dataset_name": selected_dataset,
+            "id": job_id, "name": nm, "raster_var_name": raster_var,
+            "mask_var_name": mask_var,
             "status": "running", "error": None,
-            "n_total": None, "n_event": None, "n_forest": None,
+            "n_total": None, "class_counts": None,
         }])
         spawn_in_context(
             _run_sampling,
-            (job_id, nm, selected_dataset, strategy, n_samples, seed, project),
+            (job_id, nm, raster_var, mask_var, strategy, allocation,
+             adapt, n_samples_arg, spacing_arg, seed, project),
         )
         set_name("")
-        logger.info("Sampling started: %s on %s (job=%s)", nm, selected_dataset, job_id)
+        logger.info("Sampling started: %s (raster=%s, job=%s)", nm, raster_var, job_id)
 
     def on_toggle_map(key):
         if map_ is None:
@@ -139,7 +154,7 @@ def SamplingTile(project, map_=None):
                 samples_on_map.set(samples_on_map.value | {key})
         except Exception as exc:
             logger.exception("sample map toggle failed for %s", key)
-            set_form_error(f"Could not toggle sample set on map: {exc}")
+            set_form_error(f"Could not toggle sample on map: {exc}")
 
     def _do_remove(key):
         if map_ is not None and key in samples_on_map.value:
@@ -147,34 +162,67 @@ def SamplingTile(project, map_=None):
             samples_on_map.set(samples_on_map.value - {key})
         cur = project.value
         if cur is not None and key in cur.samples:
-            cur.delete_sample_set(key, auto_save=True)
+            cur.delete_sample(key, auto_save=True)
             project.set(cur.model_copy())
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown("### Step 5 — Sampling")
         solara.Text(
-            "Draw a persistent, named sample set from a dataset. Sample sets are "
-            "selectable in Train and can be added to the map."
+            "Draw a persistent, named sample from a raster variable. Samples are "
+            "selectable in Train (Step 6) and can be added to the map."
         )
 
         rv.Select(
-            label="Dataset", items=dataset_keys, v_model=selected_dataset,
-            on_v_model=set_selected_dataset, dense=True, outlined=True,
+            label="Raster variable", items=raster_keys, v_model=raster_var,
+            on_v_model=set_raster_var, dense=True, outlined=True,
+        )
+        rv.Select(
+            label="Mask variable (optional)", items=[""] + raster_keys,
+            v_model=mask_var, on_v_model=set_mask_var, dense=True, outlined=True,
         )
         rv.TextField(
-            label="Sample set name", v_model=name,
+            label="Sample name", v_model=name,
             on_v_model=set_name, dense=True, outlined=True,
         )
         rv.Select(
             label="Strategy", items=SAMPLING_STRATEGIES, v_model=strategy,
             on_v_model=set_strategy, dense=True, outlined=True,
         )
-        rv.TextField(
-            label="Number of samples", type_="number",
-            v_model=str(n_samples) if n_samples is not None else "",
-            on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
-            dense=True, outlined=True,
-        )
+
+        if strategy == "stratified":
+            rv.Select(
+                label="Allocation", items=ALLOCATION_METHODS, v_model=allocation,
+                on_v_model=set_allocation, dense=True, outlined=True,
+            )
+            if allocation == "deforisk":
+                rv.Switch(
+                    label="Adapt allocation to observed deforestation rate",
+                    v_model=adapt, on_v_model=set_adapt,
+                )
+
+        if strategy == "systematic":
+            rv.RadioGroup(
+                v_model=sys_mode, on_v_model=set_sys_mode, row=True,
+                children=[
+                    rv.Radio(label="Number of samples", value="n_samples"),
+                    rv.Radio(label="Distance between points (m)", value="spacing"),
+                ],
+            )
+
+        if strategy == "systematic" and sys_mode == "spacing":
+            rv.TextField(
+                label="Distance between points (m)", type_="number",
+                v_model=str(spacing_m) if spacing_m is not None else "",
+                on_v_model=lambda v: set_spacing_m(float(v) if v and v.strip() else None),
+                dense=True, outlined=True,
+            )
+        else:
+            rv.TextField(
+                label="Number of samples", type_="number",
+                v_model=str(n_samples) if n_samples is not None else "",
+                on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
+                dense=True, outlined=True,
+            )
         rv.TextField(
             label="Random seed", type_="number",
             v_model=str(seed) if seed is not None else "",
@@ -209,9 +257,9 @@ def SamplingTile(project, map_=None):
             open=pending_remove is not None,
             on_cancel=lambda: set_pending_remove(None),
             on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-            title="Delete sample set?",
+            title="Delete sample?",
             message=(
-                f"Delete sample set '{pending_remove}'? This removes it from the "
+                f"Delete sample '{pending_remove}'? This removes it from the "
                 "project and deletes its files. This cannot be undone."
             ),
             confirm_label="Delete",

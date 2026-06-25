@@ -110,18 +110,19 @@ def dataset_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
 def sample_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     rows = []
     points = 0
-    for key, ss in getattr(p, "samples", {}).items():
-        n_total = getattr(ss, "n_total", 0) or 0
+    for key, s in getattr(p, "samples", {}).items():
+        n_total = getattr(s, "n_total", 0) or 0
         points += n_total
+        allocation = getattr(s, "allocation", None)
+        class_counts = getattr(s, "class_counts", {}) or {}
         rows.append({
             "key": key,
-            "name": getattr(ss, "name", None) or key,
-            "dataset_name": _fmt(getattr(ss, "dataset_name", None)),
-            "strategy": _fmt(getattr(ss, "strategy", None)),
+            "name": getattr(s, "name", None) or key,
+            "strategy": _fmt(getattr(s, "strategy", None)),
+            "allocation": _fmt(allocation),
             "n_total": n_total,
-            "n_event": getattr(ss, "n_event", 0) or 0,
-            "n_forest": getattr(ss, "n_forest", 0) or 0,
-            "seed": _fmt(getattr(ss, "seed", None)),
+            "class_counts": class_counts,
+            "seed": _fmt(getattr(s, "seed", None)),
         })
     return {"total": len(rows), "points": points}, rows
 

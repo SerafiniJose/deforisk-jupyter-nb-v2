@@ -11,24 +11,38 @@ def test_workflow_tabs_includes_sampling():
     import gui.solara_app as app
     src = inspect.getsource(app.WorkflowTabs)
     assert "SamplingTile" in src
-    assert 'rv.Tab(children=["Sampling"], disabled=not has_datasets)' in src
+    assert 'rv.Tab(children=["Sampling"], disabled=not has_processed_raster)' in src
 
 
 def test_workflow_tabs_gate_downstream_steps():
-    """Train is now gated on sample sets; Inference/Evaluation unchanged."""
+    """Train is now gated on datasets; Inference/Evaluation unchanged."""
     import inspect
     import gui.solara_app as app
     src = inspect.getsource(app.WorkflowTabs)
-    assert 'rv.Tab(children=["Train"], disabled=not has_samples)' in src
+    assert 'rv.Tab(children=["Train"], disabled=not has_datasets)' in src
     assert 'rv.Tab(children=["Inference"], disabled=not has_models)' in src
     assert 'rv.Tab(children=["Evaluation"], disabled=not has_predictions)' in src
 
 
-def test_train_tile_selects_sample_set():
+def test_tab_gating_sampling_on_raster_train_on_datasets():
     import inspect
-    import gui.tile.train_tile as t
-    src = inspect.getsource(t.TrainTile)
-    assert "p.samples" in src
+    from gui import solara_app
+    src = inspect.getsource(solara_app.WorkflowTabs)
+    assert "has_processed_raster" in src
+    # Sampling no longer gated on datasets; Train gated on datasets
+    assert 'rv.Tab(children=["Sampling"], disabled=not has_processed_raster)' in src
+    assert 'rv.Tab(children=["Train"], disabled=not has_datasets)' in src
+
+
+def test_train_tile_selects_dataset_and_sample():
+    import inspect
+    from gui.tile import train_tile
+    src = inspect.getsource(train_tile)
+    assert "selected_dataset" in src
+    assert "has_sampling" in src
+    assert "p.datasets" in src and "p.samples" in src
+    # dataset no longer derived from the sample
+    assert "sample_set.dataset_name" not in src
 
 
 def test_page_restores_job_lists_on_load():

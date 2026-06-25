@@ -1,20 +1,33 @@
-"""Smoke/wiring tests for the Sampling tile and list widget (no render)."""
-
+"""Wiring checks for the decoupled sampling tile."""
 import inspect
 
 
-def test_sampling_tile_module_exposes_component_and_reactives():
-    import gui.tile.sampling_tile as st
-    assert hasattr(st, "SamplingTile")
-    assert hasattr(st, "sampling_jobs")
-    assert hasattr(st, "samples_on_map")
-    # The runner builds a SampleSet and calls generate().
-    src = inspect.getsource(st._run_sampling)
-    assert "SampleSet" in src
-    assert ".generate()" in src
-    assert "add_sample_set" in src
+def test_sampling_tile_uses_raster_and_mask():
+    from gui.tile import sampling_tile
+    src = inspect.getsource(sampling_tile)
+    assert "raster_var_name" in src and "mask_var_name" in src
+    assert "add_sample(" in src
+    assert "allocation" in src
+    # old dataset-driven flow is gone
+    assert "dataset_name=" not in src
+    assert "add_sample_set(" not in src          # old registry call gone
+    assert "from spatialrisk.sampleset" not in src  # old SampleSet model import gone
 
 
 def test_sample_set_list_widget_importable():
     import gui.widget.sample_set_list as w
     assert hasattr(w, "SampleSetList")
+
+
+def test_sampling_tile_has_distance_mode():
+    from gui.tile import sampling_tile
+    src = inspect.getsource(sampling_tile)
+    # systematic-only spacing mode wired into the form
+    assert "spacing_m" in src
+    assert "Distance between points" in src
+    assert 'strategy == "systematic"' in src
+    # _run_sampling carries spacing_m between n_samples and seed (catches
+    # positional-arg reordering vs the spawn_in_context call site)
+    params = list(inspect.signature(sampling_tile._run_sampling).parameters)
+    assert params.index("spacing_m") == params.index("n_samples") + 1
+    assert params.index("spacing_m") == params.index("seed") - 1

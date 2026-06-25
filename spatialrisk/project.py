@@ -108,9 +108,9 @@ class Project(BaseModel):
         for dataset in self.datasets.values():
             if hasattr(dataset, "project"):
                 dataset.project = self
-        for sample_set in self.samples.values():
-            if hasattr(sample_set, "project"):
-                sample_set.project = self
+        for sample in self.samples.values():
+            if hasattr(sample, "project"):
+                sample.project = self
 
     def model_copy(self, *, update=None, deep=False) -> "Project":
         """Copy the project and re-link all child ``.project`` back-references.
@@ -473,35 +473,35 @@ class Project(BaseModel):
         """Return sorted list of registered dataset keys."""
         return sorted(self.datasets.keys())
 
-    def add_sample_set(self, sample_set: Any, key: Optional[str] = None,
-                       auto_save: bool = True) -> None:
-        """Register a SampleSet under ``key`` (defaults to sample_set.name)."""
-        storage_key = key or sample_set.name
+    def add_sample(self, sample: Any, key: Optional[str] = None,
+                   auto_save: bool = True) -> None:
+        """Register a Sample under ``key`` (defaults to sample.name)."""
+        storage_key = key or sample.name
         if not storage_key:
-            raise ValueError("SampleSet must have a name or provide a key.")
-        sample_set.project = self
-        self.samples[storage_key] = sample_set
-        print(f"  Sample set registered as project.samples['{storage_key}']")
+            raise ValueError("Sample must have a name or provide a key.")
+        sample.project = self
+        self.samples[storage_key] = sample
+        print(f"  Sample registered as project.samples['{storage_key}']")
         if auto_save:
             self.save()
 
-    def get_sample_set(self, key: str) -> Optional[Any]:
-        """Return the sample set stored under *key*, or None."""
+    def get_sample(self, key: str) -> Optional[Any]:
+        """Return the sample stored under *key*, or None."""
         return self.samples.get(key)
 
-    def list_sample_sets(self) -> List[str]:
-        """Return sorted list of registered sample-set keys."""
+    def list_samples(self) -> List[str]:
+        """Return sorted list of registered sample keys."""
         return sorted(self.samples.keys())
 
-    def delete_sample_set(self, key: str, auto_save: bool = True) -> None:
-        """Remove a sample set from the registry and delete its files."""
-        sample_set = self.samples.pop(key, None)
-        if sample_set is None:
+    def delete_sample(self, key: str, auto_save: bool = True) -> None:
+        """Remove a sample from the registry and delete its points file."""
+        sample = self.samples.pop(key, None)
+        if sample is None:
             return
-        for path in (sample_set.table_path, sample_set.points_path):
+        path = getattr(sample, "points_path", None)
+        if path is not None:
             try:
-                if path is not None and Path(path).exists():
-                    Path(path).unlink()
+                Path(path).unlink(missing_ok=True)
             except OSError:
                 print(f"  ⚠ Could not delete sample file: {path}")
         if auto_save:
@@ -718,26 +718,25 @@ class Project(BaseModel):
                     "feature_names": [f.name for f in dataset.features],
                 }
 
-        # Serialize registered sample sets (metadata + paths + stats only;
-        # the materialized CSV/GPKG on disk are the source of truth).
+        # Serialize registered samples (location-only; the GPKG is the truth).
         if self.samples:
             data["samples"] = {}
-            for key, ss in self.samples.items():
+            for key, s in self.samples.items():
                 data["samples"][key] = {
-                    "name": ss.name,
-                    "dataset_name": ss.dataset_name,
-                    "target_name": ss.target_name,
-                    "feature_names": list(ss.feature_names),
-                    "year": ss.year,
-                    "strategy": ss.strategy,
-                    "n_samples": ss.n_samples,
-                    "seed": ss.seed,
-                    "table_path": str(ss.table_path) if ss.table_path else None,
-                    "points_path": str(ss.points_path) if ss.points_path else None,
-                    "n_total": ss.n_total,
-                    "n_event": ss.n_event,
-                    "n_forest": ss.n_forest,
-                    "created_at": ss.created_at,
+                    "name": s.name,
+                    "raster_var_name": s.raster_var_name,
+                    "mask_var_name": s.mask_var_name,
+                    "strategy": s.strategy,
+                    "n_samples": s.n_samples,
+                    "spacing_m": s.spacing_m,
+                    "allocation": s.allocation,
+                    "adapt": s.adapt,
+                    "seed": s.seed,
+                    "points_path": str(s.points_path) if s.points_path else None,
+                    "crs": s.crs,
+                    "n_total": s.n_total,
+                    "class_counts": s.class_counts,
+                    "created_at": s.created_at,
                 }
 
         # Serialize registered predictions
@@ -921,35 +920,35 @@ class Project(BaseModel):
                 project.datasets[key] = ds
             print(f"Loaded {len(project.datasets)} dataset(s)")
 
-        # Reconstruct registered sample sets (no regeneration).
+        # Reconstruct registered samples (location-only; no regeneration).
         if "samples" in data and data["samples"]:
-            from spatialrisk.sampleset import SampleSet
+            from spatialrisk.sample import Sample
             from pathlib import Path as _Path
-            for key, ss_data in data["samples"].items():
-                ss = SampleSet(
-                    name=ss_data.get("name", key),
-                    dataset_name=ss_data.get("dataset_name", ""),
-                    target_name=ss_data.get("target_name"),
-                    feature_names=ss_data.get("feature_names", []),
-                    year=ss_data.get("year"),
-                    strategy=ss_data.get("strategy", "random"),
-                    n_samples=ss_data.get("n_samples"),
-                    seed=ss_data.get("seed"),
-                    table_path=_Path(ss_data["table_path"]) if ss_data.get("table_path") else None,
-                    points_path=_Path(ss_data["points_path"]) if ss_data.get("points_path") else None,
-                    n_total=ss_data.get("n_total", 0),
-                    n_event=ss_data.get("n_event", 0),
-                    n_forest=ss_data.get("n_forest", 0),
-                    created_at=ss_data.get("created_at"),
+            loaded = 0
+            for key, s_data in data["samples"].items():
+                if "raster_var_name" not in s_data:
+                    print(f"  ⚠ Sample '{key}' uses the old schema — skipped.")
+                    continue
+                s = Sample(
+                    name=s_data.get("name", key),
+                    raster_var_name=s_data["raster_var_name"],
+                    mask_var_name=s_data.get("mask_var_name"),
+                    strategy=s_data.get("strategy", "random"),
+                    n_samples=s_data.get("n_samples"),
+                    spacing_m=s_data.get("spacing_m"),
+                    allocation=s_data.get("allocation"),
+                    adapt=s_data.get("adapt", False),
+                    seed=s_data.get("seed"),
+                    points_path=_Path(s_data["points_path"]) if s_data.get("points_path") else None,
+                    crs=s_data.get("crs"),
+                    n_total=s_data.get("n_total", 0),
+                    class_counts=s_data.get("class_counts", {}),
+                    created_at=s_data.get("created_at"),
                 )
-                ss.project = project
-                if ss.dataset_name and ss.dataset_name not in project.datasets:
-                    print(
-                        f"  ⚠ Sample set '{key}': source dataset "
-                        f"'{ss.dataset_name}' not found; kept for training only."
-                    )
-                project.samples[key] = ss
-            print(f"Loaded {len(project.samples)} sample set(s)")
+                s.project = project
+                project.samples[key] = s
+                loaded += 1
+            print(f"Loaded {loaded} sample(s)")
 
         # Reconstruct registered predictions
         if "predictions" in data and data["predictions"]:

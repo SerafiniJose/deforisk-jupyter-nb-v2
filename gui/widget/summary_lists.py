@@ -121,20 +121,22 @@ def SamplesSummary(p):
     if not rows:
         _Empty("No sample sets generated yet.")
         return
-    grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) minmax(0,1fr) 90px 150px 60px;"
+    grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) minmax(0,1fr) 150px 60px;"
     with solara.Column(style="gap:0;width:100%;"):
         _Banner(f"{stats['total']} set(s) · {stats['points']} points")
-        _header(grid, ["Name", "Dataset", "Strategy", "N (event/forest)", "Seed"])
+        _header(grid, ["Name", "Strategy", "Points (class counts)", "Seed"])
         for r in rows:
+            alloc = f" / {r['allocation']}" if r["allocation"] and r["allocation"] != "—" else ""
+            strat = f"{r['strategy']}{alloc}"
+            counts = ", ".join(f"{k}:{v}" for k, v in sorted(r["class_counts"].items()))
+            points_str = f"{r['n_total']} ({counts})" if counts else str(r["n_total"])
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):
                     solara.Text(str(r["name"]), style=_NAME_TEXT)
                 with rv.Html(tag="div", style_=_CELL):
-                    rv.Chip(children=[str(r["dataset_name"])], x_small=True, outlined=True)
+                    solara.Text(strat, style="font-size:0.8rem;")
                 with rv.Html(tag="div", style_=_CELL):
-                    solara.Text(str(r["strategy"]), style="font-size:0.8rem;")
-                with rv.Html(tag="div", style_=_CELL):
-                    solara.Text(f"{r['n_total']} ({r['n_event']}/{r['n_forest']})", style="font-size:0.8rem;color:grey;")
+                    solara.Text(points_str, style="font-size:0.8rem;color:grey;")
                 with rv.Html(tag="div", style_=_CELL):
                     solara.Text(str(r["seed"]), style="color:grey;")
 
