@@ -8,6 +8,7 @@ from box import Box
 from pydantic import BaseModel, Field, ConfigDict
 from spatialrisk.variables import LocalVectorVar, LocalRasterVar
 from spatialrisk.variables.models import DataType, ForestLossSpec
+from spatialrisk.log_utils import log_progress
 
 root_folder: Path = Path.cwd().parent
 
@@ -1046,24 +1047,26 @@ class Project(BaseModel):
         reprojected_vars = {}
         skipped_count = 0
 
-        for var_key, var in source_vars.items():
-            # Check data_type instead of isinstance to handle module reloads
-            if var.data_type == DataType.raster:
-                print(f"\n📍 Reprojecting '{var_key}'...")
-                reprojected = var.reproject_and_match(
-                    geobox=self.base_raster.get_base_geobox(),
-                )
+        # Filter on data_type (not isinstance) so module reloads don't break it.
+        raster_pairs = [
+            (k, v) for k, v in source_vars.items() if v.data_type == DataType.raster
+        ]
+        for var_key, var in log_progress(
+            raster_pairs, "Reprojecting", label=lambda kv: kv[0]
+        ):
+            reprojected = var.reproject_and_match(
+                geobox=self.base_raster.get_base_geobox(),
+            )
 
-                if add_to_processed:
-                    reprojected.add_as_processed(auto_save=auto_save)
+            if add_to_processed:
+                reprojected.add_as_processed(auto_save=auto_save)
 
-                # Use storage key pattern (name_year or just name)
-                storage_key = (
-                    f"{reprojected.name}_{reprojected.year}"
-                    if reprojected.year
-                    else reprojected.name
-                )
-                reprojected_vars[storage_key] = reprojected
+            storage_key = (
+                f"{reprojected.name}_{reprojected.year}"
+                if reprojected.year
+                else reprojected.name
+            )
+            reprojected_vars[storage_key] = reprojected
 
         print(f"\n✅ Reprojected {len(reprojected_vars)} raster variables")
         if skipped_count > 0:
@@ -1132,27 +1135,30 @@ class Project(BaseModel):
         skipped_count = 0
 
         for var_key, var in source_vars.items():
-            # Skip inactive variables
             if not var.active:
                 print(f"⏭️  Skipping '{var_key}' (inactive)")
                 skipped_count += 1
-                continue
 
-            # Check data_type instead of isinstance to handle module reloads
-            if var.data_type == DataType.vector:
-                print(f"\n🗺️  Rasterizing '{var_key}'...")
-                rasterized = var.rasterize(base=self.base_raster, **rasterize_kwargs)
+        # Filter on data_type (not isinstance) so module reloads don't break it.
+        vector_pairs = [
+            (k, v)
+            for k, v in source_vars.items()
+            if v.active and v.data_type == DataType.vector
+        ]
+        for var_key, var in log_progress(
+            vector_pairs, "Rasterizing", label=lambda kv: kv[0]
+        ):
+            rasterized = var.rasterize(base=self.base_raster, **rasterize_kwargs)
 
-                if add_to_processed:
-                    rasterized.add_as_processed(auto_save=auto_save)
+            if add_to_processed:
+                rasterized.add_as_processed(auto_save=auto_save)
 
-                # Use storage key pattern (name_year or just name)
-                storage_key = (
-                    f"{rasterized.name}_{rasterized.year}"
-                    if rasterized.year
-                    else rasterized.name
-                )
-                rasterized_vars[storage_key] = rasterized
+            storage_key = (
+                f"{rasterized.name}_{rasterized.year}"
+                if rasterized.year
+                else rasterized.name
+            )
+            rasterized_vars[storage_key] = rasterized
 
         print(f"\n✅ Rasterized {len(rasterized_vars)} vector variables")
         if skipped_count > 0:
