@@ -154,7 +154,7 @@ def _split_by_target(gdf, target_col: str = "target"):
 def add_sample_points_on_map(map_, points_path, name: str, key: str):
     """Draw a sample set's points as two colored GeoJSON layers.
 
-    Red points = event (target == 1), green = forest (target == 0). Reprojects
+    Red points = event (strata == 1), green = forest (strata == 0). Reprojects
     to WGS84 (ipyleaflet requirement) and replaces any existing layers under the
     derived keys so re-toggling doesn't stack duplicates.
     """

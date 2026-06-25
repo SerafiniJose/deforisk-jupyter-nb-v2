@@ -107,9 +107,9 @@ class Project(BaseModel):
         for dataset in self.datasets.values():
             if hasattr(dataset, "project"):
                 dataset.project = self
-        for sample_set in self.samples.values():
-            if hasattr(sample_set, "project"):
-                sample_set.project = self
+        for sample in self.samples.values():
+            if hasattr(sample, "project"):
+                sample.project = self
 
     def model_copy(self, *, update=None, deep=False) -> "Project":
         """Copy the project and re-link all child ``.project`` back-references.
@@ -505,24 +505,6 @@ class Project(BaseModel):
                 print(f"  ⚠ Could not delete sample file: {path}")
         if auto_save:
             self.save()
-
-    # Legacy aliases — kept until the GUI tile is migrated (Task N+1).
-    def add_sample_set(self, sample_set: Any, key: Optional[str] = None,
-                       auto_save: bool = True) -> None:
-        """Deprecated: use add_sample()."""
-        return self.add_sample(sample_set, key=key, auto_save=auto_save)
-
-    def get_sample_set(self, key: str) -> Optional[Any]:
-        """Deprecated: use get_sample()."""
-        return self.get_sample(key)
-
-    def list_sample_sets(self) -> List[str]:
-        """Deprecated: use list_samples()."""
-        return self.list_samples()
-
-    def delete_sample_set(self, key: str, auto_save: bool = True) -> None:
-        """Deprecated: use delete_sample()."""
-        return self.delete_sample(key, auto_save=auto_save)
 
     # ------------------------------------------------------------------
     # Prediction registry
