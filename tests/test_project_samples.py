@@ -58,3 +58,18 @@ def test_load_skips_old_format_sample(tmp_path, monkeypatch):
 
     loaded = Project.load("t_samples_old")
     assert loaded.get_sample("old") is None    # skipped, project still loads
+
+
+def test_save_load_round_trips_spacing_m(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_mod, "downloads_folder", tmp_path)
+    p = Project(project_name="t_samples_spacing")
+    s = _sample(name="grid", strategy="systematic", n_samples=None,
+                spacing_m=250.0, n_total=16, class_counts={"0": 16},
+                points_path=tmp_path / "grid.gpkg")
+    p.add_sample(s, auto_save=False)
+    p.save()
+
+    loaded = Project.load("t_samples_spacing")
+    rs = loaded.get_sample("grid")
+    assert rs is not None
+    assert rs.spacing_m == 250.0
