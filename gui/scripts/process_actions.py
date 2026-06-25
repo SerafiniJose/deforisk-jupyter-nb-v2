@@ -28,15 +28,15 @@ def materialize_raw_layers(project) -> List[str]:
     """
     from spatialrisk.variables.models import DataType
 
-    pending = [k for k, v in project.raw_variables.items() if _is_geevar(v)]
+    from spatialrisk.log_utils import log_progress
+
+    # Snapshot pairs: to_local_*().add_as_raw() mutates raw_variables in place.
+    pending = [(k, v) for k, v in list(project.raw_variables.items()) if _is_geevar(v)]
     if pending:
         logger.info("Downloading %d GEE layer(s)…", len(pending))
 
     materialized: List[str] = []
-    # Snapshot keys: to_local_*().add_as_raw() mutates raw_variables in place.
-    for key, var in list(project.raw_variables.items()):
-        if not _is_geevar(var):
-            continue
+    for key, var in log_progress(pending, "Downloading layer", label=lambda kv: kv[0]):
         if var.data_type == DataType.vector:
             local = var.to_local_vector()
         else:
