@@ -81,3 +81,76 @@ def test_stratified_none_draws_all_per_class():
     drawn = strata[r[1]]
     assert (drawn == 0).sum() == 200   # all class-0 pixels
     assert (drawn == 1).sum() == 100   # all class-1 pixels
+
+
+def test_systematic_distance_uses_spacing_step():
+    # 100x100 fully-valid grid, 1 m pixels, spacing 10 m -> step 10 px.
+    H = W = 100
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    r = SystematicSampling().select(
+        vi, shape=(H, W), spacing_m=10.0, res_m=(1.0, 1.0)
+    )
+    assert sorted(set(r[0].tolist())) == list(range(0, 100, 10))
+    assert sorted(set(r[1].tolist())) == list(range(0, 100, 10))
+
+
+def test_systematic_distance_non_square_pixels_step_independently():
+    # 60x60 grid; rows 2 m tall (step 5), cols 5 m wide (step 2) at spacing 10 m.
+    H = W = 60
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    r = SystematicSampling().select(
+        vi, shape=(H, W), spacing_m=10.0, res_m=(2.0, 5.0)
+    )
+    assert sorted(set(r[0].tolist())) == list(range(0, 60, 5))
+    assert sorted(set(r[1].tolist())) == list(range(0, 60, 2))
+
+
+def test_systematic_spacing_takes_precedence_over_n_samples():
+    H = W = 50
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    # n_samples would imply step ~ round(sqrt(2500/2500)) = 1; spacing forces 5.
+    r = SystematicSampling().select(
+        vi, shape=(H, W), n_samples=2500, spacing_m=5.0, res_m=(1.0, 1.0)
+    )
+    assert sorted(set(r[0].tolist())) == list(range(0, 50, 5))
+
+
+def test_systematic_subpixel_spacing_clamps_to_step_one():
+    H = W = 8
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    r = SystematicSampling().select(
+        vi, shape=(H, W), spacing_m=0.4, res_m=(1.0, 1.0)
+    )
+    assert len(r[0]) == H * W  # every valid pixel kept
+
+
+def test_systematic_spacing_larger_than_extent_returns_origin():
+    # spacing >> extent -> only the (0,0) node; it is valid here -> 1 point.
+    H = W = 10
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    r = SystematicSampling().select(
+        vi, shape=(H, W), spacing_m=1000.0, res_m=(1.0, 1.0)
+    )
+    assert r[0].tolist() == [0] and r[1].tolist() == [0]
+
+
+@pytest.mark.parametrize("bad", [0.0, -5.0])
+def test_systematic_nonpositive_spacing_raises(bad):
+    H = W = 10
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    with pytest.raises(ValueError):
+        SystematicSampling().select(vi, shape=(H, W), spacing_m=bad, res_m=(1.0, 1.0))
+
+
+def test_systematic_distance_without_res_raises():
+    H = W = 10
+    rr, cc = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    vi = (rr.ravel(), cc.ravel())
+    with pytest.raises(ValueError):
+        SystematicSampling().select(vi, shape=(H, W), spacing_m=5.0, n_samples=None)

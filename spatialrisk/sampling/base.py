@@ -25,6 +25,8 @@ class SamplingStrategyBase(ABC):
         allocation: Optional[str] = None,
         adapt: bool = False,
         pixel_area_ha: Optional[float] = None,
+        spacing_m: Optional[float] = None,
+        res_m: Optional[Tuple[float, float]] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Return (row_indices, col_indices) of the selected pixels."""
         raise NotImplementedError
