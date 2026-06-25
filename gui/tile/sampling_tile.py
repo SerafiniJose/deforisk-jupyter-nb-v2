@@ -39,7 +39,7 @@ def _update_job(job_id, *, skip_if_cancelled=True, **changes):
 
 
 def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
-                  adapt, n_samples, seed, project_reactive):
+                  adapt, n_samples, spacing_m, seed, project_reactive):
     """Generate a Sample in the background and register it on the project."""
     try:
         from spatialrisk.sample import Sample
@@ -51,7 +51,7 @@ def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
             mask_var_name=mask_var if mask_var else None,
             strategy=strategy,
             allocation=allocation if strategy == "stratified" else None,
-            adapt=adapt, n_samples=n_samples, seed=seed,
+            adapt=adapt, n_samples=n_samples, spacing_m=spacing_m, seed=seed,
             points_path=folder / f"{name}.gpkg",
         )
         sample.generate()
@@ -86,6 +86,8 @@ def SamplingTile(project, map_=None):
     n_samples, set_n_samples = solara.use_state(10000)
     seed, set_seed = solara.use_state(1234)
     form_error, set_form_error = solara.use_state(None)
+    sys_mode, set_sys_mode = solara.use_state("n_samples")
+    spacing_m, set_spacing_m = solara.use_state(1000.0)
     pending_remove, set_pending_remove = solara.use_state(None)
 
     if p is None:
@@ -110,6 +112,13 @@ def SamplingTile(project, map_=None):
             set_form_error("Select a valid mask variable.")
             return
 
+        use_spacing = strategy == "systematic" and sys_mode == "spacing"
+        if use_spacing and (spacing_m is None or spacing_m <= 0):
+            set_form_error("Enter a positive distance between points (m).")
+            return
+        spacing_arg = spacing_m if use_spacing else None
+        n_samples_arg = None if use_spacing else n_samples
+
         job_id = str(uuid.uuid4())[:8]
         sampling_jobs.set(list(sampling_jobs.value) + [{
             "id": job_id, "name": nm, "raster_var_name": raster_var,
@@ -120,7 +129,7 @@ def SamplingTile(project, map_=None):
         spawn_in_context(
             _run_sampling,
             (job_id, nm, raster_var, mask_var, strategy, allocation,
-             adapt, n_samples, seed, project),
+             adapt, n_samples_arg, spacing_arg, seed, project),
         )
         set_name("")
         logger.info("Sampling started: %s (raster=%s, job=%s)", nm, raster_var, job_id)
@@ -191,12 +200,29 @@ def SamplingTile(project, map_=None):
                     v_model=adapt, on_v_model=set_adapt,
                 )
 
-        rv.TextField(
-            label="Number of samples", type_="number",
-            v_model=str(n_samples) if n_samples is not None else "",
-            on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
-            dense=True, outlined=True,
-        )
+        if strategy == "systematic":
+            rv.RadioGroup(
+                v_model=sys_mode, on_v_model=set_sys_mode, row=True,
+                children=[
+                    rv.Radio(label="Number of samples", value="n_samples"),
+                    rv.Radio(label="Distance between points (m)", value="spacing"),
+                ],
+            )
+
+        if strategy == "systematic" and sys_mode == "spacing":
+            rv.TextField(
+                label="Distance between points (m)", type_="number",
+                v_model=str(spacing_m) if spacing_m is not None else "",
+                on_v_model=lambda v: set_spacing_m(float(v) if v and v.strip() else None),
+                dense=True, outlined=True,
+            )
+        else:
+            rv.TextField(
+                label="Number of samples", type_="number",
+                v_model=str(n_samples) if n_samples is not None else "",
+                on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
+                dense=True, outlined=True,
+            )
         rv.TextField(
             label="Random seed", type_="number",
             v_model=str(seed) if seed is not None else "",

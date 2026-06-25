@@ -17,3 +17,17 @@ def test_sampling_tile_uses_raster_and_mask():
 def test_sample_set_list_widget_importable():
     import gui.widget.sample_set_list as w
     assert hasattr(w, "SampleSetList")
+
+
+def test_sampling_tile_has_distance_mode():
+    from gui.tile import sampling_tile
+    src = inspect.getsource(sampling_tile)
+    # systematic-only spacing mode wired into the form
+    assert "spacing_m" in src
+    assert "Distance between points" in src
+    assert 'strategy == "systematic"' in src
+    # _run_sampling carries spacing_m between n_samples and seed (catches
+    # positional-arg reordering vs the spawn_in_context call site)
+    params = list(inspect.signature(sampling_tile._run_sampling).parameters)
+    assert params.index("spacing_m") == params.index("n_samples") + 1
+    assert params.index("spacing_m") == params.index("seed") - 1
