@@ -9,6 +9,7 @@ from spatialrisk.sampling.legacy import Sampling  # TEMP back-compat
 from spatialrisk.sampling.random import RandomSampling
 from spatialrisk.sampling.stratified import StratifiedSampling
 from spatialrisk.sampling.systematic import SystematicSampling
+from spatialrisk.sampling.service import generate_points
 
 __all__ = [
     "SamplingStrategy",
@@ -18,4 +19,5 @@ __all__ = [
     "RandomSampling",
     "StratifiedSampling",
     "SystematicSampling",
+    "generate_points",
 ]
