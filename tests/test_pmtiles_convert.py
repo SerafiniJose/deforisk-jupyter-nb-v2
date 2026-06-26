@@ -15,9 +15,10 @@ def _tiny_gpkg(path):
 
 def test_available_false_raises(tmp_path, monkeypatch):
     from spatialrisk import pmtiles_convert
+    src = _tiny_gpkg(tmp_path / "a.gpkg")
     monkeypatch.setattr(pmtiles_convert.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError):
-        pmtiles_convert.gpkg_to_pmtiles(tmp_path / "a.gpkg", tmp_path / "a.pmtiles")
+        pmtiles_convert.gpkg_to_pmtiles(src, tmp_path / "a.pmtiles")
 
 
 def test_builds_expected_command(tmp_path, monkeypatch):
@@ -41,6 +42,8 @@ def test_builds_expected_command(tmp_path, monkeypatch):
     assert "-o" in cmd and str(out) in cmd
     assert "-l" in cmd and "points" in cmd
     assert "-z" in cmd and "12" in cmd
+    assert "-Z" in cmd and "0" in cmd
+    assert "--drop-densest-as-needed" in cmd
 
 
 @pytest.mark.skipif(
