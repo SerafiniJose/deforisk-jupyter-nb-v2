@@ -1,0 +1,31 @@
+{
+  "tiles": {
+    "aoi": {
+      "header": "### Step 1 — Area of Interest",
+      "description": "Select the area you want to analyse. All subsequent steps will be clipped to this boundary."
+    },
+    "variables": {
+      "header": "### Step 2 — Variables",
+      "description": "Add input variables and deforestation targets for the risk model.",
+      "add_variable_button": "Add Variable",
+      "source_variables_header": "**SOURCE VARIABLES** ({count})",
+      "forest_loss_targets_header": "**FOREST-LOSS TARGETS** (generated during Process)",
+      "forest_loss_help_text": "Add a temporal forest layer with at least two years (e.g. forest_gfc) to create a forest-loss target.",
+      "forest_layer_label": "Forest layer",
+      "from_year_label": "From year",
+      "to_year_label": "To year",
+      "add_target_button": "Add target",
+      "chip_ready": "ready",
+      "chip_pending": "pending",
+      "confirm_remove_title": "Remove variable?",
+      "confirm_remove_message": "Remove '{name}' from this project? This cannot be undone.",
+      "confirm_remove_base_warning": "It is the base raster's source, so the base raster will also be cleared.",
+      "error_no_project": "No active project — complete the AOI step first.",
+      "error_add_variable": "Could not add variable: {exc}",
+      "error_base_raster_reset": "Base raster was reset because its source layer '{name}' changed — re-set it in Step 3 — Process.",
+      "error_save_variable": "Could not save variable: {exc}",
+      "error_base_raster_removed": "Base raster was reset because its source layer '{name}' was removed — re-set it in Step 3 — Process.",
+      "error_toggle_map": "Could not toggle '{key}' on map: {exc}"
+    }
+  }
+}

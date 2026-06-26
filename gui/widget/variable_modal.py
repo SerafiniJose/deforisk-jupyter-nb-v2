@@ -7,6 +7,7 @@ import reacton.ipyvuetify as rv
 import solara
 from pysepal.solara.components.inputs import FileInputComponent
 
+from gui.i18n import t
 from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 from spatialrisk.variables.models import (
     DataType,
@@ -20,10 +21,13 @@ SOURCES = ["predefined", "custom"]
 _RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
 _VECTOR_EXTENSIONS = [".geojson", ".gpkg", ".shp", ".json"]
 
-# Build dropdown items: [{"text": label, "value": key}, ...]
-_PREDEFINED_ITEMS = [
-    {"text": v["label"], "value": k} for k, v in PREDEFINED_CATALOGUE.items()
-]
+
+def _predefined_items():
+    """Build dropdown items at render time so labels respect the active locale."""
+    return [
+        {"text": t(meta["label_key"]), "value": key}
+        for key, meta in PREDEFINED_CATALOGUE.items()
+    ]
 
 
 @solara.component
@@ -94,12 +98,12 @@ def VariableModal(
 
     def _submit_predefined():
         if not predefined_key:
-            set_error("Select a variable from the list.")
+            set_error(t("vars.modal.error_no_predefined_selected"))
             return
         cat_entry = PREDEFINED_CATALOGUE[predefined_key]
         yr = int(year) if year and str(year).strip() else None
         if cat_entry["temporal"] and yr is None:
-            set_error("Year is required for this variable.")
+            set_error(t("vars.modal.error_year_required"))
             return
         entry = {
             "source": "predefined",
@@ -119,7 +123,7 @@ def VariableModal(
 
     def _submit_custom():
         if not name.strip():
-            set_error("Variable name is required.")
+            set_error(t("vars.modal.error_name_required"))
             return
         yr = int(year) if year and str(year).strip() else None
         entry = {
@@ -165,8 +169,8 @@ def VariableModal(
         else:
             _submit_custom()
 
-    title = "Edit Variable" if is_edit else "Add Variable"
-    submit_label = "Save" if is_edit else "Add"
+    title = t("vars.modal.title_edit") if is_edit else t("vars.modal.title_add")
+    submit_label = t("vars.modal.submit_save") if is_edit else t("vars.modal.submit_add")
 
     with rv.Dialog(
         v_model=open_.value, on_v_model=open_.set, max_width="560px", eager=True
@@ -178,7 +182,7 @@ def VariableModal(
             with rv.CardText():
                 # ---- Source toggle (first field) ----
                 rv.Select(
-                    label="Source",
+                    label=t("vars.modal.source_label"),
                     items=SOURCES,
                     v_model=source,
                     on_v_model=set_source,
@@ -209,7 +213,7 @@ def VariableModal(
                     rv.Alert(type_="error", dense=True, children=[error])
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                solara.Button("Cancel", on_click=on_cancel, text=True, small=True)
+                solara.Button(t("common.cancel"), on_click=on_cancel, text=True, small=True)
                 solara.Button(submit_label, on_click=on_submit, color="primary", small=True)
 
 
@@ -225,8 +229,8 @@ def _render_predefined_fields(
 ):
     """Fields shown when source == 'predefined'."""
     rv.Select(
-        label="Variable",
-        items=_PREDEFINED_ITEMS,
+        label=t("vars.modal.predefined_variable_label"),
+        items=_predefined_items(),
         v_model=predefined_key,
         on_v_model=set_predefined_key,
         dense=True,
@@ -238,7 +242,7 @@ def _render_predefined_fields(
         if cat["temporal"]:
             available_years = cat.get("years", [])
             rv.Select(
-                label="Year",
+                label=t("vars.modal.predefined_year_label"),
                 items=available_years,
                 v_model=int(year) if year and str(year).strip() else None,
                 on_v_model=lambda v: set_year(str(v) if v else ""),
@@ -248,14 +252,14 @@ def _render_predefined_fields(
 
         # Read-only info fields
         rv.TextField(
-            label="Variable type",
+            label=t("vars.modal.predefined_var_type_label"),
             v_model=cat.get("var_type", "GEEVar"),
             dense=True,
             outlined=True,
             disabled=True,
         )
         rv.TextField(
-            label="Raster type",
+            label=t("vars.modal.predefined_raster_type_label"),
             v_model=cat["raster_type"],
             dense=True,
             outlined=True,
@@ -276,14 +280,14 @@ def _render_custom_fields(
 ):
     """Fields shown when source == 'custom'."""
     rv.TextField(
-        label="Name",
+        label=t("vars.modal.custom_name_label"),
         v_model=name,
         on_v_model=set_name,
         dense=True,
         outlined=True,
     )
     rv.Select(
-        label="Variable type",
+        label=t("vars.modal.custom_type_label"),
         items=VAR_TYPES,
         v_model=var_type,
         on_v_model=set_var_type,
@@ -291,7 +295,7 @@ def _render_custom_fields(
         outlined=True,
     )
     rv.TextField(
-        label="Year (optional)",
+        label=t("vars.modal.custom_year_label"),
         v_model=year,
         on_v_model=set_year,
         dense=True,
@@ -300,7 +304,7 @@ def _render_custom_fields(
     )
     if var_type in ("LocalRasterVar", "LocalVectorVar"):
         FileInputComponent(
-            label="Select file",
+            label=t("vars.modal.custom_file_label"),
             value=file_path,
             on_value=set_file_path,
             sepal_client=sepal_client,
@@ -314,15 +318,15 @@ def _render_custom_fields(
         )
     if var_type == "GEEVar":
         rv.TextField(
-            label="GEE asset ID",
+            label=t("vars.modal.custom_asset_id_label"),
             v_model=asset_id,
             on_v_model=set_asset_id,
             dense=True,
             outlined=True,
-            placeholder="projects/your-project/assets/name",
+            placeholder=t("vars.modal.custom_asset_id_placeholder"),
         )
         rv.TextField(
-            label="Scale (m, optional)",
+            label=t("vars.modal.custom_scale_label"),
             v_model=scale,
             on_v_model=set_scale,
             dense=True,
@@ -331,7 +335,7 @@ def _render_custom_fields(
         )
     if var_type in ("LocalRasterVar", "GEEVar"):
         rv.Select(
-            label="Raster type",
+            label=t("vars.modal.custom_raster_type_label"),
             items=[r.value for r in RasterType],
             v_model=raster_type,
             on_v_model=set_raster_type,
@@ -340,7 +344,7 @@ def _render_custom_fields(
         )
     if var_type == "LocalVectorVar":
         rv.Select(
-            label="Rasterization method",
+            label=t("vars.modal.custom_rasterization_method_label"),
             items=[r.value for r in RasterizationMethod],
             v_model=rasterization_method,
             on_v_model=set_rasterization_method,

@@ -9,6 +9,7 @@ import solara
 
 logger = logging.getLogger("spatial_risk")
 
+from gui.i18n import t
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.variable_list import SourceVariableList
@@ -294,7 +295,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             vars_on_map.set(set(vars_on_map.value) | {key})
         except Exception as exc:
             logger.exception("map toggle failed for %s", key)
-            process_error.set(f"Could not toggle '{key}' on map: {exc}")
+            process_error.set(t("tiles.variables.error_toggle_map", key=key, exc=exc))
 
     def on_toggle_map(key: str):
         """Trigger the async toggle task for one source variable."""
@@ -308,7 +309,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         p = project.value
         if p is None:
             logger.warning("on_add: project is None")
-            process_error.set("No active project — complete the AOI step first.")
+            process_error.set(t("tiles.variables.error_no_project"))
             return
         try:
             var = _build_variable(entry, p)
@@ -319,7 +320,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             logger.debug("project.set() called, project.value.raw_variables: %s", list(project.value.raw_variables.keys()))
         except Exception as exc:
             logger.exception("on_add failed")
-            process_error.set(f"Could not add variable: {exc}")
+            process_error.set(t("tiles.variables.error_add_variable", exc=exc))
 
     def on_edit_open(key: str):
         set_editing_key(key)
@@ -334,8 +335,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             if old_var and p.base_raster and p.base_raster.name == old_var.name:
                 p.base_raster = None
                 process_error.set(
-                    f"Base raster was reset because its source layer '{old_var.name}' "
-                    "changed — re-set it in Step 3 — Process."
+                    t("tiles.variables.error_base_raster_reset", name=old_var.name)
                 )
             # The key may change on edit — drop the stale layer so it doesn't linger.
             _drop_from_map(old_key, map_)
@@ -346,7 +346,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             project.set(p.model_copy())
         except Exception as exc:
             logger.exception("on_save failed")
-            process_error.set(f"Could not save variable: {exc}")
+            process_error.set(t("tiles.variables.error_save_variable", exc=exc))
 
     pending_remove, set_pending_remove = solara.use_state(None)
 
@@ -358,8 +358,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         if removed and p.base_raster and p.base_raster.name == removed.name:
             p.base_raster = None
             process_error.set(
-                f"Base raster was reset because its source layer '{removed.name}' "
-                "was removed — re-set it in Step 3 — Process."
+                t("tiles.variables.error_base_raster_removed", name=removed.name)
             )
         _drop_from_map(key, map_)
         project.set(p.model_copy())
@@ -391,13 +390,13 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     p = project.value
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 2 — Variables")
-        solara.Text("Add input variables and deforestation targets for the risk model.")
+        solara.Markdown(t("tiles.variables.header"))
+        solara.Text(t("tiles.variables.description"))
 
         # Action bar
         with solara.Row(style="gap: 8px; align-items: center;"):
             solara.Button(
-                "Add Variable",
+                t("tiles.variables.add_variable_button"),
                 icon_name="mdi-plus",
                 color="primary",
                 small=True,
@@ -405,7 +404,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             )
 
         # Source variable list
-        solara.Markdown("**SOURCE VARIABLES**" + (f" ({len(p.raw_variables)})" if p else " (0)"))
+        solara.Markdown(t("tiles.variables.source_variables_header", count=len(p.raw_variables) if p else 0))
         SourceVariableList(
             project=project,
             on_remove=set_pending_remove,
@@ -418,35 +417,34 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         from gui.scripts.process_actions import forest_loss_candidates
         candidates = forest_loss_candidates(p) if p else {}
         with solara.Column(style="gap:8px;"):
-            solara.Markdown("**FOREST-LOSS TARGETS** (generated during Process)")
+            solara.Markdown(t("tiles.variables.forest_loss_targets_header"))
             if not candidates:
                 solara.Text(
-                    "Add a temporal forest layer with at least two years "
-                    "(e.g. forest_gfc) to create a forest-loss target.",
+                    t("tiles.variables.forest_loss_help_text"),
                     style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
                 )
             else:
                 years = candidates.get(fl_var, [])
                 with solara.Row(style="gap:8px;align-items:center;"):
                     rv.Select(
-                        label="Forest layer",
+                        label=t("tiles.variables.forest_layer_label"),
                         items=list(candidates.keys()),
                         v_model=fl_var,
                         on_v_model=set_fl_var,
                         dense=True, outlined=True,
                     )
                     rv.Select(
-                        label="From year", items=years,
+                        label=t("tiles.variables.from_year_label"), items=years,
                         v_model=fl_start, on_v_model=set_fl_start,
                         dense=True, outlined=True,
                     )
                     rv.Select(
-                        label="To year", items=years,
+                        label=t("tiles.variables.to_year_label"), items=years,
                         v_model=fl_end, on_v_model=set_fl_end,
                         dense=True, outlined=True,
                     )
                     solara.Button(
-                        "Add target", icon_name="mdi-plus", small=True, color="primary",
+                        t("tiles.variables.add_target_button"), icon_name="mdi-plus", small=True, color="primary",
                         on_click=on_add_forest_loss,
                         disabled=not (fl_var and fl_start and fl_end),
                     )
@@ -458,9 +456,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
                 with solara.Row(style="gap:8px;align-items:center;"):
                     rv.Chip(children=[spec.name], x_small=True, outlined=True)
                     if generated:
-                        rv.Chip(children=["ready"], color="success", x_small=True)
+                        rv.Chip(children=[t("tiles.variables.chip_ready")], color="success", x_small=True)
                     else:
-                        rv.Chip(children=["pending"], color="amber", x_small=True)
+                        rv.Chip(children=[t("tiles.variables.chip_pending")], color="amber", x_small=True)
                     solara.Button(
                         "", icon_name="mdi-delete-outline", icon=True, text=True, x_small=True,
                         on_click=lambda *_, n=spec.name: on_remove_forest_loss(n),
@@ -484,18 +482,14 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     _pending_is_base = bool(
         _pending_var and p.base_raster and p.base_raster.name == _pending_var.name
     )
+    _confirm_msg = t("tiles.variables.confirm_remove_message", name=pending_remove or "")
+    if _pending_is_base:
+        _confirm_msg += " " + t("tiles.variables.confirm_remove_base_warning")
     ConfirmDialog(
         open=pending_remove is not None,
         on_cancel=lambda: set_pending_remove(None),
         on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-        title="Remove variable?",
-        message=(
-            f"Remove '{pending_remove}' from this project? This cannot be undone."
-            + (
-                " It is the base raster's source, so the base raster will also be cleared."
-                if _pending_is_base
-                else ""
-            )
-        ),
-        confirm_label="Remove",
+        title=t("tiles.variables.confirm_remove_title"),
+        message=_confirm_msg,
+        confirm_label=t("common.remove"),
     )

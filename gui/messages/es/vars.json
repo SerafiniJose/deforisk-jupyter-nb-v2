@@ -1,0 +1,39 @@
+{
+  "vars": {
+    "predefined": {
+      "altitude": "Altitud (SRTM)",
+      "slope": "Pendiente (SRTM)",
+      "protected_area": "Áreas protegidas (WDPA)",
+      "rivers": "Ríos (OSM)",
+      "roads": "Caminos (OSM)",
+      "forest_gfc": "Cobertura forestal (Hansen GFC)",
+      "forest_tmf": "Cobertura forestal (JRC TMF)",
+      "towns": "Pueblos / áreas urbanas (JRC GHSL)",
+      "subj": "Subjurisdicción (FAO GAUL)"
+    },
+    "modal": {
+      "title_add": "Añadir variable",
+      "title_edit": "Editar variable",
+      "submit_add": "Añadir",
+      "submit_save": "Guardar",
+      "source_label": "Fuente",
+      "predefined_variable_label": "Variable",
+      "predefined_year_label": "Año",
+      "predefined_var_type_label": "Tipo de variable",
+      "predefined_raster_type_label": "Tipo de ráster",
+      "custom_name_label": "Nombre",
+      "custom_type_label": "Tipo de variable",
+      "custom_year_label": "Año (opcional)",
+      "custom_file_label": "Seleccionar archivo",
+      "custom_asset_id_label": "ID de asset de GEE",
+      "custom_asset_id_placeholder": "projects/your-project/assets/name",
+      "custom_scale_label": "Escala (m, opcional)",
+      "custom_raster_type_label": "Tipo de ráster",
+      "custom_rasterization_method_label": "Método de rasterización",
+      "error_no_predefined_selected": "Selecioná una variable de la lista.",
+      "error_year_required": "El año es obligatorio para esta variable.",
+      "error_name_required": "El nombre de la variable es obligatorio.",
+      "button_cancel": "Cancelar"
+    }
+  }
+}

@@ -173,7 +173,7 @@ def _get_subj(aoi, year=None):
 #     whose value range is arbitrary. Takes precedence over ``vis_params``.
 PREDEFINED_CATALOGUE = {
     "altitude": {
-        "label": "Altitude (SRTM)",
+        "label_key": "vars.predefined.altitude",
         "var_type": "GEEVar",
         "raster_type": "continuous",
         "temporal": False,
@@ -184,7 +184,7 @@ PREDEFINED_CATALOGUE = {
         },
     },
     "slope": {
-        "label": "Slope (SRTM)",
+        "label_key": "vars.predefined.slope",
         "var_type": "GEEVar",
         "raster_type": "continuous",
         "temporal": False,
@@ -197,7 +197,7 @@ PREDEFINED_CATALOGUE = {
         },
     },
     "protected_area": {
-        "label": "Protected areas (WDPA)",
+        "label_key": "vars.predefined.protected_area",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,
@@ -205,7 +205,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {"palette": ["ffffff", "4caf50"], "min": 0, "max": 1},
     },
     "rivers": {
-        "label": "Rivers (OSM)",
+        "label_key": "vars.predefined.rivers",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,
@@ -213,7 +213,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {"palette": ["ffffff", "2196f3"], "min": 0, "max": 1},
     },
     "roads": {
-        "label": "Roads (OSM)",
+        "label_key": "vars.predefined.roads",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,
@@ -221,7 +221,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {"palette": ["ffffff", "ff9800"], "min": 0, "max": 1},
     },
     "forest_gfc": {
-        "label": "Forest cover (Hansen GFC)",
+        "label_key": "vars.predefined.forest_gfc",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
@@ -230,7 +230,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
     },
     "forest_tmf": {
-        "label": "Forest cover (JRC TMF)",
+        "label_key": "vars.predefined.forest_tmf",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
@@ -239,7 +239,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
     },
     "towns": {
-        "label": "Towns / urban areas (JRC GHSL)",
+        "label_key": "vars.predefined.towns",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
@@ -248,7 +248,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {"palette": ["ffffff", "e91e63"], "min": 0, "max": 1},
     },
     "subj": {
-        "label": "Subjurisdiction (FAO GAUL)",
+        "label_key": "vars.predefined.subj",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,

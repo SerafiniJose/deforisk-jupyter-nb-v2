@@ -1,0 +1,31 @@
+{
+  "tiles": {
+    "aoi": {
+      "header": "### Paso 1 — Área de interés",
+      "description": "Seleccioná el área que querés analizar. Todos los pasos siguientes se recortarán a este límite."
+    },
+    "variables": {
+      "header": "### Paso 2 — Variables",
+      "description": "Añadí variables de entrada y objetivos de deforestación para el modelo de riesgo.",
+      "add_variable_button": "Añadir variable",
+      "source_variables_header": "**VARIABLES DE FUENTE** ({count})",
+      "forest_loss_targets_header": "**OBJETIVOS DE PÉRDIDA FORESTAL** (generados durante el Proceso)",
+      "forest_loss_help_text": "Añadí una capa forestal temporal con al menos dos años (p. ej. forest_gfc) para crear un objetivo de pérdida forestal.",
+      "forest_layer_label": "Capa forestal",
+      "from_year_label": "Desde el año",
+      "to_year_label": "Hasta el año",
+      "add_target_button": "Añadir objetivo",
+      "chip_ready": "listo",
+      "chip_pending": "pendiente",
+      "confirm_remove_title": "¿Eliminar variable?",
+      "confirm_remove_message": "¿Eliminar '{name}' de este proyecto? Esta acción no se puede deshacer.",
+      "confirm_remove_base_warning": "Es la fuente del ráster base, por lo que el ráster base también se eliminará.",
+      "error_no_project": "No hay proyecto activo — completá el paso de AOI primero.",
+      "error_add_variable": "No se pudo añadir la variable: {exc}",
+      "error_base_raster_reset": "El ráster base se restableció porque su capa fuente '{name}' cambió — volvé a configurarlo en el Paso 3 — Proceso.",
+      "error_save_variable": "No se pudo guardar la variable: {exc}",
+      "error_base_raster_removed": "El ráster base se restableció porque su capa fuente '{name}' fue eliminada — volvé a configurarlo en el Paso 3 — Proceso.",
+      "error_toggle_map": "No se pudo alternar '{key}' en el mapa: {exc}"
+    }
+  }
+}
