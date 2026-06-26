@@ -62,7 +62,7 @@ def EvaluationRow(rec_key, record, on_open, on_delete):
     with rv.ListItem(dense=True):
         with rv.ListItemContent():
             rv.ListItemTitle(
-                children=[f"{record.truth_tag} · {n_maps} maps"],
+                children=[t("widgets.evaluation_results.row_title", truth_tag=record.truth_tag, n_maps=n_maps)],
                 style_="font-size: 0.875rem;",
             )
             rv.ListItemSubtitle(children=[record.created_at])
@@ -100,7 +100,7 @@ def EvaluationTableDialog(project, eval_key, on_close):
         with rv.Card():
             with rv.CardTitle():
                 solara.Text(
-                    t("widgets.evaluation_results.dialog_title", truth_tag=record.truth_tag) if record else "Evaluation")
+                    t("widgets.evaluation_results.dialog_title", truth_tag=record.truth_tag) if record else t("widgets.evaluation_results.dialog_title_fallback"))
             with rv.CardText():
                 if record is not None and record.indices:
                     rows = rows_for_record(record)

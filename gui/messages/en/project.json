@@ -4,7 +4,6 @@
     "empty_help": "Create a project, then set its area of interest in the Area of Interest tab — or open a saved one.",
     "button_new_project": "New project",
     "button_new": "New",
-    "button_load": "Load",
     "button_save": "Save",
     "chip_unsaved": "unsaved",
     "chip_saved": "saved",

@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -90,3 +91,39 @@ def test_every_model_label_and_description_key_resolves():
         assert i18n.t(spec["description_key"]) != spec["description_key"], key
         for p in spec.get("params", []) + spec.get("variables", []):
             assert i18n.t(p["label_key"]) != p["label_key"], (key, p.get("key"))
+
+
+def _code_keys():
+    """All literal keys passed to t("...") / plural(_, "one", "other") in gui/."""
+    gui_dir = i18n.MESSAGES_DIR.parent
+    t_pat = re.compile(r'\bt\(\s*["\']([\w.]+)["\']')
+    plural_pat = re.compile(r'\bplural\([^,]+,\s*["\']([\w.]+)["\']\s*,\s*["\']([\w.]+)["\']')
+    keys = set()
+    for f in gui_dir.rglob("*.py"):
+        if "messages" in f.parts:
+            continue
+        src = f.read_text()
+        keys.update(t_pat.findall(src))
+        for one, other in plural_pat.findall(src):
+            keys.update((one, other))
+    return keys
+
+
+def _en_keys():
+    merged, _ = _merged_for_lang("en")  # helper from earlier in this file
+    return set(merged)
+
+
+def test_every_referenced_key_exists_in_en():
+    referenced = _code_keys()
+    missing = sorted(k for k in referenced if k not in _en_keys()
+                     and not k.startswith("common._test"))
+    assert not missing, f"t()/plural() keys with no en catalog entry: {missing}"
+
+
+def test_unused_en_keys_are_reported_advisory():
+    unused = sorted(k for k in _en_keys()
+                    if k not in _code_keys() and not k.startswith("common._test"))
+    if unused:
+        print(f"[i18n] {len(unused)} en keys not referenced via t()/plural(): {unused[:30]}")
+    assert isinstance(unused, list)  # advisory: dynamic keys may be built at runtime

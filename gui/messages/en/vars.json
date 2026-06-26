@@ -32,8 +32,7 @@
       "custom_rasterization_method_label": "Rasterization method",
       "error_no_predefined_selected": "Select a variable from the list.",
       "error_year_required": "Year is required for this variable.",
-      "error_name_required": "Variable name is required.",
-      "button_cancel": "Cancel"
+      "error_name_required": "Variable name is required."
     }
   }
 }

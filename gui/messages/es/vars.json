@@ -30,10 +30,9 @@
       "custom_scale_label": "Escala (m, opcional)",
       "custom_raster_type_label": "Tipo de ráster",
       "custom_rasterization_method_label": "Método de rasterización",
-      "error_no_predefined_selected": "Selecioná una variable de la lista.",
+      "error_no_predefined_selected": "Seleccioná una variable de la lista.",
       "error_year_required": "El año es obligatorio para esta variable.",
-      "error_name_required": "El nombre de la variable es obligatorio.",
-      "button_cancel": "Cancelar"
+      "error_name_required": "El nombre de la variable es obligatorio."
     }
   }
 }

@@ -56,11 +56,11 @@ def InferenceOutputItem(job: dict, on_remove, on_toggle_map=None, is_on=False, h
             )
             if status == "completed":
                 output_path = job.get("output_path", "—")
-                rv.ListItemSubtitle(children=[f"Output: {output_path}"])
+                rv.ListItemSubtitle(children=[t("widgets.inference_output_list.output_label", path=output_path)])
             elif status == "failed":
-                error = job.get("error", "Unknown error")
+                error = job.get("error") or t("widgets.inference_output_list.unknown_error")
                 rv.ListItemSubtitle(
-                    children=[f"Error: {error}"],
+                    children=[t("widgets.inference_output_list.error_label", error=error)],
                     style_="color: red;",
                 )
             elif status == "cancelled":

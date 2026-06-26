@@ -4,7 +4,8 @@
       "title": "**TRAINED MODELS** ({count})",
       "completed_subtitle": "deviance: {dev} | samples: {samp}",
       "failed_subtitle": "Error: {error}",
-      "cancelled_subtitle": "Cancelled by user"
+      "cancelled_subtitle": "Cancelled by user",
+      "unknown_error": "Unknown error"
     },
     "prediction_import_modal": {
       "palette_far": "FAR ramp (probability, pinned 1..65535)",
@@ -21,12 +22,17 @@
     },
     "inference_output_list": {
       "status_cancelled": "Cancelled by user",
-      "outputs_header": "**OUTPUTS** ({count})"
+      "outputs_header": "**OUTPUTS** ({count})",
+      "output_label": "Output: {path}",
+      "error_label": "Error: {error}",
+      "unknown_error": "Unknown error"
     },
     "evaluation_results": {
       "job_status": "{id}: {status}",
       "saved_evaluations_header": "**SAVED EVALUATIONS** ({count})",
+      "row_title": "{truth_tag} · {n_maps} maps",
       "dialog_title": "Evaluation — {truth_tag}",
+      "dialog_title_fallback": "Evaluation",
       "no_indices_info": "No indices stored for this run."
     },
     "dataset_list": {

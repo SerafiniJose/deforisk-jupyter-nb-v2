@@ -59,7 +59,7 @@ def TrainJobItem(job: dict, on_cancel, on_remove):
                     children=[t("widgets.train_model_list.completed_subtitle", dev=dev_str, samp=samp_str)],
                 )
             elif status == "failed":
-                error = job.get("error", "Unknown error")
+                error = job.get("error") or t("widgets.train_model_list.unknown_error")
                 rv.ListItemSubtitle(
                     children=[t("widgets.train_model_list.failed_subtitle", error=error)],
                     style_="color: red;",
