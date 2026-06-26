@@ -1,0 +1,14 @@
+{
+  "common": {
+    "save": "Save",
+    "load": "Load",
+    "cancel": "Cancel",
+    "create": "Create",
+    "remove": "Remove",
+    "delete": "Delete",
+    "close": "Close",
+    "_test_fmt": "hello {name}",
+    "_test_one": "{n} item",
+    "_test_other": "{n} items"
+  }
+}

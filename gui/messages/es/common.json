@@ -1,0 +1,14 @@
+{
+  "common": {
+    "save": "Guardar",
+    "load": "Cargar",
+    "cancel": "Cancelar",
+    "create": "Crear",
+    "remove": "Quitar",
+    "delete": "Eliminar",
+    "close": "Cerrar",
+    "_test_fmt": "hola {name}",
+    "_test_one": "{n} elemento",
+    "_test_other": "{n} elementos"
+  }
+}
