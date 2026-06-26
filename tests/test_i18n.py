@@ -127,3 +127,27 @@ def test_unused_en_keys_are_reported_advisory():
     if unused:
         print(f"[i18n] {len(unused)} en keys not referenced via t()/plural(): {unused[:30]}")
     assert isinstance(unused, list)  # advisory: dynamic keys may be built at runtime
+
+
+def test_t_accepts_key_named_format_placeholder():
+    # Regression: t()'s first param was named `key`, which collided with a
+    # {key} format placeholder when callers passed key=... — the render crashed
+    # with "t() got multiple values for argument 'key'". The lookup key must be
+    # positional-only so a same-named placeholder interpolates instead.
+    assert i18n.t("tiles.train.model_name_saved_as", key="m1") == "Saved as 'm1'."
+    assert i18n.t("tiles.dataset.success_registered", key="ds1") == "Dataset 'ds1' registered."
+
+
+def test_every_key_placeholder_call_site_renders():
+    # Every catalog value with a {key} placeholder must be callable with key=
+    # without colliding with t()'s reserved parameter name (full blast radius
+    # of the param-collision bug across dataset_tile/variables_tile/train_tile).
+    for dotted in ("tiles.dataset.success_registered", "tiles.dataset.form_header_edit",
+                   "tiles.train.model_name_exists_warning", "tiles.train.model_name_saved_as",
+                   "tiles.train.confirm_delete_model_message",
+                   "tiles.train.confirm_overwrite_message"):
+        out = i18n.t(dotted, key="X")
+        assert out != dotted and "{key}" not in out, dotted
+    # error_toggle_map interpolates both key and exc
+    out = i18n.t("tiles.variables.error_toggle_map", key="rivers", exc="boom")
+    assert "rivers" in out and "boom" in out and out != "tiles.variables.error_toggle_map"
