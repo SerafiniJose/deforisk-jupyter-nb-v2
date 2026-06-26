@@ -79,3 +79,14 @@ def test_relative_time_plural_keys_exist():
     for k in ("time.days_ago_one", "time.days_ago_other",
               "chips.models_one", "chips.models_other"):
         assert i18n.t(k, n=1) != k  # resolves, not the raw key
+
+
+def test_every_model_label_and_description_key_resolves():
+    from gui.tile.train_tile import MODEL_REGISTRY
+    from gui import i18n
+    for key, spec in MODEL_REGISTRY.items():
+        assert i18n.t(spec["label_key"]) != spec["label_key"], key
+        # description may be "" in es and fall back to en, but must resolve in en
+        assert i18n.t(spec["description_key"]) != spec["description_key"], key
+        for p in spec.get("params", []) + spec.get("variables", []):
+            assert i18n.t(p["label_key"]) != p["label_key"], (key, p.get("key"))

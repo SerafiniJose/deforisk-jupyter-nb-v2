@@ -1,0 +1,59 @@
+{
+  "models": {
+    "benchmark": {
+      "label": "Referencia (JNR)",
+      "description": "",
+      "params": {
+        "blk_rows": { "label": "Filas por bloque" },
+        "defor_threshold": { "label": "Umbral de deforestación (%)" },
+        "forest_edge_var": { "label": "Variable de borde forestal" },
+        "forest_var": { "label": "Variable forestal" },
+        "subj_var": { "label": "Variable de subjurisdicción" }
+      }
+    },
+    "mw": {
+      "label": "Ventana móvil",
+      "description": "",
+      "params": {
+        "win_size_list": { "label": "Tamaños de ventana (px, separados por coma)" },
+        "blk_rows": { "label": "Filas por bloque" },
+        "defor_threshold": { "label": "Umbral de deforestación (%)" },
+        "forest_edge_var": { "label": "Variable de borde forestal" },
+        "forest_var": { "label": "Variable forestal" }
+      }
+    },
+    "glm": {
+      "label": "GLM (Regresión logística)",
+      "description": "",
+      "params": {
+        "solver": { "label": "Solucionador" },
+        "max_iter": { "label": "Iteraciones máximas" },
+        "random_seed": { "label": "Semilla aleatoria" }
+      }
+    },
+    "rf": {
+      "label": "Bosque aleatorio",
+      "description": "",
+      "params": {
+        "n_trees": { "label": "Número de árboles" },
+        "max_depth": { "label": "Profundidad máxima" },
+        "min_samples_leaf": { "label": "Mín. muestras por hoja" },
+        "random_seed": { "label": "Semilla aleatoria" }
+      }
+    },
+    "icar": {
+      "label": "iCAR (Espacial bayesiano)",
+      "description": "",
+      "params": {
+        "csize": { "label": "Tamaño de celda (km)" },
+        "mcmc": { "label": "Iteraciones MCMC" },
+        "burnin": { "label": "Iteraciones de calentamiento" },
+        "thin": { "label": "Factor de adelgazamiento" },
+        "prior_vrho": { "label": "Varianza a priori (rho)" },
+        "beta_start": { "label": "Beta inicial" },
+        "random_seed": { "label": "Semilla aleatoria" },
+        "csize_interpolate": { "label": "Tamaño de celda de interpolación" }
+      }
+    }
+  }
+}

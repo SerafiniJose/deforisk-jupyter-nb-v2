@@ -1,0 +1,59 @@
+{
+  "models": {
+    "benchmark": {
+      "label": "Benchmark (JNR)",
+      "description": "The JNR Benchmark model implements the Jurisdictional and Nested REDD+ approach for deforestation risk mapping. It stratifies the landscape by distance-to-forest-edge bins and subjurisdictions, assigning historical deforestation rates as vulnerability scores. This non-parametric method requires no feature variables — it relies solely on spatial proximity to the forest edge. It serves as the baseline against which more complex models are compared.",
+      "params": {
+        "blk_rows": { "label": "Block rows" },
+        "defor_threshold": { "label": "Deforestation threshold (%)" },
+        "forest_edge_var": { "label": "Forest-edge variable" },
+        "forest_var": { "label": "Forest variable" },
+        "subj_var": { "label": "Subjurisdiction variable" }
+      }
+    },
+    "mw": {
+      "label": "Moving Window",
+      "description": "The Moving Window model computes local deforestation rates within spatial windows of specified sizes to produce risk rasters. For each window size, it calculates the proportion of deforested pixels in the neighbourhood, creating a spatial heuristic of event density. No machine learning is involved — the model captures local spatial patterns of forest loss. Multiple window sizes (e.g. 5, 11, 21 pixels) can be evaluated simultaneously.",
+      "params": {
+        "win_size_list": { "label": "Window sizes (px, comma-separated)" },
+        "blk_rows": { "label": "Block rows" },
+        "defor_threshold": { "label": "Deforestation threshold (%)" },
+        "forest_edge_var": { "label": "Forest-edge variable" },
+        "forest_var": { "label": "Forest variable" }
+      }
+    },
+    "glm": {
+      "label": "GLM (Logistic Regression)",
+      "description": "The Generalized Linear Model uses logistic regression to estimate deforestation probability as a function of spatial predictor variables. It fits a linear combination of features (altitude, slope, distance to roads, etc.) through a logit link function. The model is fast to train, highly interpretable, and produces coefficient estimates that quantify each variable's contribution to deforestation risk. Uses sklearn's LogisticRegression with Patsy formula support.",
+      "params": {
+        "solver": { "label": "Solver" },
+        "max_iter": { "label": "Max iterations" },
+        "random_seed": { "label": "Random seed" }
+      }
+    },
+    "rf": {
+      "label": "Random Forest",
+      "description": "The Random Forest model is an ensemble method that builds multiple decision trees on random subsets of training data and features. Each tree votes on whether a pixel is at risk of deforestation, and the ensemble averages these votes into a probability. It captures non-linear relationships and variable interactions without requiring explicit feature engineering. Feature importance scores help identify the most influential predictors.",
+      "params": {
+        "n_trees": { "label": "Number of trees" },
+        "max_depth": { "label": "Max depth" },
+        "min_samples_leaf": { "label": "Min samples per leaf" },
+        "random_seed": { "label": "Random seed" }
+      }
+    },
+    "icar": {
+      "label": "iCAR (Bayesian Spatial)",
+      "description": "The intrinsic Conditional Auto-Regressive (iCAR) model is a Bayesian spatial model that accounts for spatial autocorrelation through a latent random effect (rho). It combines the explanatory power of predictor variables with a spatial smoothing component that captures unobserved neighbourhood effects. Training uses Markov Chain Monte Carlo (MCMC) sampling via the forestatrisk library. This is the most computationally intensive model but often yields the best spatial predictions.",
+      "params": {
+        "csize": { "label": "Cell size (km)" },
+        "mcmc": { "label": "MCMC iterations" },
+        "burnin": { "label": "Burn-in iterations" },
+        "thin": { "label": "Thinning factor" },
+        "prior_vrho": { "label": "Prior variance (rho)" },
+        "beta_start": { "label": "Beta start" },
+        "random_seed": { "label": "Random seed" },
+        "csize_interpolate": { "label": "Interpolation cell size" }
+      }
+    }
+  }
+}

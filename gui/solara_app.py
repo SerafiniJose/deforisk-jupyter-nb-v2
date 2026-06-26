@@ -72,10 +72,11 @@ setup_solara_server(extra_asset_locations=[])
 # label training jobs reconstructed from a loaded project (build_train_jobs) so
 # they read the same as in-session ones (the registry is keyed by UI key, e.g.
 # "benchmark", while models store their model_type, e.g. "jnr").
-_MODEL_TYPE_LABELS = {
-    spec["class"].model_fields["model_type"].default: spec["label"]
-    for spec in MODEL_REGISTRY.values()
-}
+def _model_type_labels():
+    return {
+        spec["class"].model_fields["model_type"].default: t(spec["label_key"])
+        for spec in MODEL_REGISTRY.values()
+    }
 
 
 @solara.lab.on_kernel_start
@@ -670,7 +671,7 @@ def Page():
     # the previous one's). Rebuilding from the active project handles both.
     def restore_jobs_on_load():
         loaded = app_state.project.value
-        train_jobs.set(build_train_jobs(loaded, _MODEL_TYPE_LABELS))
+        train_jobs.set(build_train_jobs(loaded, _model_type_labels()))
         inference_jobs.set(build_inference_jobs(loaded))
 
     solara.use_effect(restore_jobs_on_load, [project_loaded_signal])
