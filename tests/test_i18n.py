@@ -34,7 +34,9 @@ def test_plural_selects_variant():
 
 
 def test_app_available_locales_is_en_and_es():
-    assert set(i18n.app_available_locales()) == {"en", "es"}
+    # Spanish ships as "es-ES" — pysepal's LocaleSelect only lists IETF codes
+    # present in its locale table, which has no bare "es" (only es-ES/es-AR/...).
+    assert set(i18n.app_available_locales()) == {"en", "es-ES"}
 
 
 def _flat_keys(d, prefix=""):
@@ -61,14 +63,14 @@ def _merged_for_lang(lang):
 
 
 def test_no_duplicate_keys_within_language():
-    for lang in ("en", "es"):
+    for lang in ("en", "es-ES"):
         _, dupes = _merged_for_lang(lang)
         assert not dupes, f"Duplicate keys in {lang}: {dupes}"
 
 
 def test_es_parity_reports_gaps():
     en, _ = _merged_for_lang("en")
-    es, _ = _merged_for_lang("es")
+    es, _ = _merged_for_lang("es-ES")
     missing = sorted(k for k in en if k not in es and not k.startswith("common._test"))
     # Incremental translation allowed: report, do not hard-fail here.
     if missing:
