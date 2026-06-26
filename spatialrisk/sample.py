@@ -5,11 +5,14 @@ stratified sampling) and a mask variable (restricts valid pixels). Stores only
 point locations — feature extraction happens at training time against a chosen
 Dataset (see Dataset.extract_at_points). Solara-free; geo deps imported lazily.
 """
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+logger = logging.getLogger("spatial_risk")
 
 
 class Sample(BaseModel):
@@ -28,6 +31,7 @@ class Sample(BaseModel):
     spacing_m: Optional[float] = None
 
     points_path: Optional[Path] = None
+    pmtiles_path: Optional[Path] = None
     crs: Optional[str] = None
 
     n_total: int = 0
@@ -74,6 +78,25 @@ class Sample(BaseModel):
             str(int(k)): int(v) for k, v in gdf["strata"].value_counts().items()
         }
         self.created_at = datetime.now().isoformat(timespec="seconds")
+
+        if self.points_path is not None:
+            try:
+                from spatialrisk.pmtiles_convert import (
+                    gpkg_to_pmtiles, tippecanoe_available)
+                if tippecanoe_available():
+                    pm = Path(self.points_path).with_suffix(".pmtiles")
+                    gpkg_to_pmtiles(self.points_path, pm)
+                    self.pmtiles_path = pm
+                else:
+                    logger.warning(
+                        "tippecanoe unavailable; sample '%s' will render via "
+                        "GeoJSON fallback", self.name)
+            except Exception:
+                logger.exception(
+                    "PMTiles conversion failed for sample '%s'; GeoJSON "
+                    "fallback", self.name)
+                self.pmtiles_path = None
+
         return self
 
     def load_points(self):

@@ -81,3 +81,48 @@ def test_sample_spacing_generate(tmp_path):
     assert sample.spacing_m == 10.0
     assert sample.n_total == 16
     assert "project" not in sample.model_dump()
+
+
+def test_generate_pmtiles_failure_is_nonfatal(tmp_path, monkeypatch):
+    import numpy as np
+    from spatialrisk.sample import Sample
+    from spatialrisk import pmtiles_convert
+
+    strata = np.zeros((20, 20), dtype="uint8"); strata[:, 10:] = 1
+    mask = np.ones((20, 20), dtype="uint8")
+    rpath, mpath = tmp_path / "r.tif", tmp_path / "m.tif"
+    _write_raster(rpath, strata); _write_raster(mpath, mask)
+    project = _StubProject({"target": _Var(rpath), "forest_mask": _Var(mpath)})
+
+    monkeypatch.setattr(pmtiles_convert, "tippecanoe_available", lambda: True)
+    def boom(*a, **k): raise RuntimeError("tippecanoe blew up")
+    monkeypatch.setattr(pmtiles_convert, "gpkg_to_pmtiles", boom)
+
+    sample = Sample(
+        project=project, name="s", raster_var_name="target",
+        mask_var_name="forest_mask", strategy="random", n_samples=50, seed=1,
+        points_path=tmp_path / "s.gpkg")
+    sample.generate()                       # must not raise
+
+    assert sample.n_total == 50
+    assert sample.pmtiles_path is None      # failure left it unset
+
+
+@pytest.mark.skipif(
+    __import__("shutil").which("tippecanoe") is None, reason="tippecanoe not installed")
+def test_generate_sets_pmtiles_path(tmp_path):
+    import numpy as np
+    from spatialrisk.sample import Sample
+    strata = np.zeros((20, 20), dtype="uint8"); strata[:, 10:] = 1
+    mask = np.ones((20, 20), dtype="uint8")
+    rpath, mpath = tmp_path / "r.tif", tmp_path / "m.tif"
+    _write_raster(rpath, strata); _write_raster(mpath, mask)
+    project = _StubProject({"target": _Var(rpath), "forest_mask": _Var(mpath)})
+    sample = Sample(
+        project=project, name="s", raster_var_name="target",
+        mask_var_name="forest_mask", strategy="random", n_samples=50, seed=1,
+        points_path=tmp_path / "s.gpkg")
+    sample.generate()
+    assert sample.pmtiles_path is not None
+    assert sample.pmtiles_path.exists()
+    assert sample.pmtiles_path.suffix == ".pmtiles"
