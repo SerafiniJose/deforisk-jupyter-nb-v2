@@ -54,8 +54,8 @@ def _enable_loopback(port):
             jupyter_loopback.enable_comm_bridge()
         jupyter_loopback.intercept_localhost(int(port))
     except Exception:
-        logger.debug("jupyter-loopback unavailable for port %s; PMTiles tiles "
-                     "may not reach the browser on SEPAL", port, exc_info=True)
+        logger.warning("jupyter-loopback unavailable for port %s; PMTiles tiles "
+                       "may not reach the browser on SEPAL", port, exc_info=True)
 
 
 def add_sample_pmtiles_on_map(map_, pmtiles_path, name, key):
