@@ -28,10 +28,14 @@ def reset_translator() -> None:
     _translator.value = Translator(MESSAGES_DIR)
 
 
-def t(key: str, **fmt) -> str:
+def t(key: str, /, **fmt) -> str:
     """Resolve a dotted key against the active catalog (es->en->key) and
     str.format(**fmt). A key missing in both languages returns the key string
-    so a gap degrades visibly instead of crashing the GUI."""
+    so a gap degrades visibly instead of crashing the GUI.
+
+    ``key`` is positional-only so a catalog value may carry a ``{key}``
+    placeholder passed as a keyword (``key=...``) without colliding with this
+    lookup parameter."""
     node = get_translator()
     try:
         for part in key.split("."):
@@ -42,8 +46,11 @@ def t(key: str, **fmt) -> str:
         return key
 
 
-def plural(n: int, one_key: str, other_key: str, **fmt) -> str:
-    """Pick the singular vs plural key for a count and interpolate n."""
+def plural(n: int, one_key: str, other_key: str, /, **fmt) -> str:
+    """Pick the singular vs plural key for a count and interpolate n.
+
+    The selector args are positional-only so a catalog value may carry an
+    ``{n}``/``{one_key}``/``{other_key}`` placeholder without colliding."""
     fmt.setdefault("n", n)
     return t(one_key if n == 1 else other_key, **fmt)
 
