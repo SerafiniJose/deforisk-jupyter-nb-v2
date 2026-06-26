@@ -3,6 +3,7 @@
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts.summary_helpers import project_overview
 from gui.widget.summary_lists import (
     RawVariablesSummary,
@@ -14,15 +15,15 @@ from gui.widget.summary_lists import (
     EvaluationsSummary,
 )
 
-# (tab label, renderer) — order is the displayed tab order.
+# (i18n key for tab label, renderer) — order is the displayed tab order.
 _TABS = [
-    ("Raw variables", RawVariablesSummary),
-    ("Processed variables", ProcessedVariablesSummary),
-    ("Datasets", DatasetsSummary),
-    ("Samples", SamplesSummary),
-    ("Trained models", ModelsSummary),
-    ("Predictions", PredictionsSummary),
-    ("Evaluations", EvaluationsSummary),
+    ("tiles.summary.tab_raw_variables", RawVariablesSummary),
+    ("tiles.summary.tab_processed_variables", ProcessedVariablesSummary),
+    ("tiles.summary.tab_datasets", DatasetsSummary),
+    ("tiles.summary.tab_samples", SamplesSummary),
+    ("tiles.summary.tab_trained_models", ModelsSummary),
+    ("tiles.summary.tab_predictions", PredictionsSummary),
+    ("tiles.summary.tab_evaluations", EvaluationsSummary),
 ]
 
 
@@ -33,7 +34,7 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
     active_tab, set_active_tab = solara.use_state(0)
 
     if p is None:
-        solara.Info("No project open. Create or load a project first.")
+        solara.Info(t("tiles.summary.error_no_project"))
         return
 
     dirty = project_dirty.value if project_dirty is not None else False
@@ -46,7 +47,7 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
         with solara.Row(style="gap:8px;align-items:center;"):
             solara.Text(str(ov["project_name"]), style="font-weight:600;font-size:1.05rem;")
             rv.Chip(
-                children=["unsaved" if dirty else "saved"],
+                children=[t("project.chip_unsaved") if dirty else t("project.chip_saved")],
                 color="amber" if dirty else "green",
                 text_color="white",
                 x_small=True,
@@ -65,8 +66,8 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
 
         # One tab per component type
         with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=False, show_arrows=True):
-            for label, _ in _TABS:
-                rv.Tab(children=[label])
+            for label_key, _ in _TABS:
+                rv.Tab(children=[t(label_key)])
         with rv.TabsItems(v_model=active_tab):
             for _, renderer in _TABS:
                 with rv.TabItem():

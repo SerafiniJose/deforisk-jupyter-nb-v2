@@ -1,0 +1,10 @@
+{
+  "widgets": {
+    "train_model_list": {
+      "title": "**MODELOS ENTRENADOS** ({count})",
+      "completed_subtitle": "desviación: {dev} | muestras: {samp}",
+      "failed_subtitle": "Error: {error}",
+      "cancelled_subtitle": "Cancelado por el usuario"
+    }
+  }
+}

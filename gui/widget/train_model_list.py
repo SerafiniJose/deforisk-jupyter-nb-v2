@@ -5,6 +5,8 @@ import logging
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
+
 logger = logging.getLogger("spatial_risk")
 
 STATUS_COLORS = {
@@ -54,16 +56,16 @@ def TrainJobItem(job: dict, on_cancel, on_remove):
                 dev_str = f"{deviance:,.2f}" if deviance is not None else "—"
                 samp_str = f"{n_samples:,}" if n_samples is not None else "—"
                 rv.ListItemSubtitle(
-                    children=[f"deviance: {dev_str} | samples: {samp_str}"],
+                    children=[t("widgets.train_model_list.completed_subtitle", dev=dev_str, samp=samp_str)],
                 )
             elif status == "failed":
                 error = job.get("error", "Unknown error")
                 rv.ListItemSubtitle(
-                    children=[f"Error: {error}"],
+                    children=[t("widgets.train_model_list.failed_subtitle", error=error)],
                     style_="color: red;",
                 )
             elif status == "cancelled":
-                rv.ListItemSubtitle(children=["Cancelled by user"])
+                rv.ListItemSubtitle(children=[t("widgets.train_model_list.cancelled_subtitle")])
 
         with rv.ListItemAction():
             if status == "running":
@@ -96,7 +98,7 @@ def TrainModelList(train_jobs, on_cancel, on_remove):
     if not jobs:
         return
 
-    solara.Markdown(f"**TRAINED MODELS** ({len(jobs)})")
+    solara.Markdown(t("widgets.train_model_list.title", count=len(jobs)))
     with rv.List(dense=True):
         for job in reversed(jobs):
             TrainJobItem(job=job, on_cancel=on_cancel, on_remove=on_remove)

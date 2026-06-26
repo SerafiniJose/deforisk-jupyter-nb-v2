@@ -15,6 +15,7 @@ from datetime import datetime
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.tile.evaluation_helpers import (
     ALL_METRICS, build_evaluation_record, build_truth_spec, default_forest_key,
@@ -96,7 +97,7 @@ def EvaluationTile(project):
             set_form_error(err)
             return
         if not selected_metrics:
-            set_form_error("Select at least one metric to show.")
+            set_form_error(t("tiles.evaluation.error_select_metric"))
             return
         set_form_error(None)
         job_id = str(uuid.uuid4())[:8]
@@ -119,65 +120,62 @@ def EvaluationTile(project):
             set_selected_eval(None)
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 8 — Evaluation")
-        solara.Text(
-            "Score selected maps against one chosen truth (observed deforestation "
-            "+ forest-at-start + interval) so maps from different datasets are "
-            "comparable. Each run is saved below — click it to view the table. "
-            "Indices: MedAE / R² / RMSE / wRMSE.")
+        solara.Markdown(t("tiles.evaluation.header"))
+        solara.Text(t("tiles.evaluation.description"))
 
         if p is None or not var_items:
-            solara.Info("No processed variables yet — complete earlier steps first.")
+            solara.Info(t("tiles.evaluation.error_no_variables"))
             return
 
         rv.Select(
-            label="Truth — observed deforestation",
+            label=t("tiles.evaluation.truth_label"),
             items=var_items, item_text="text", item_value="value",
             v_model=truth_key, on_v_model=on_truth_change,
             dense=True, outlined=True,
         )
         rv.Select(
-            label="Forest at period start",
+            label=t("tiles.evaluation.forest_label"),
             items=var_items, item_text="text", item_value="value",
             v_model=forest_key, on_v_model=set_forest_key,
             dense=True, outlined=True,
         )
         rv.TextField(
-            label="Interval (years)", v_model=interval, on_v_model=set_interval,
+            label=t("tiles.evaluation.interval_label"),
+            v_model=interval, on_v_model=set_interval,
             type="number", dense=True, outlined=True,
-            hint="Auto-parsed from the truth variable name; editable.",
+            hint=t("tiles.evaluation.interval_hint"),
             persistent_hint=True,
         )
         rv.Select(
-            label="Maps to evaluate (empty = all)",
+            label=t("tiles.evaluation.maps_label"),
             items=pred_items, item_text="text", item_value="value",
             v_model=selected_maps, on_v_model=set_selected_maps,
             multiple=True, chips=True, dense=True, outlined=True,
-            no_data_text="No predictions registered. Run inference in Step 7.",
+            no_data_text=t("tiles.evaluation.maps_no_data"),
         )
         rv.TextField(
-            label="Cell size(s) — coarse grid (pixels)",
+            label=t("tiles.evaluation.csizes_label"),
             v_model=csizes_text, on_v_model=set_csizes_text,
             dense=True, outlined=True,
-            hint="One or more sizes, comma-separated (e.g. 100, 300, 1000). "
-                 "Each adds a row per map.",
+            hint=t("tiles.evaluation.csizes_hint"),
             persistent_hint=True,
         )
         rv.Select(
-            label="Metrics to show",
+            label=t("tiles.evaluation.metrics_label"),
             items=metric_items(), item_text="text", item_value="value",
             v_model=selected_metrics, on_v_model=set_selected_metrics,
             multiple=True, chips=True, dense=True, outlined=True,
         )
-        rv.Switch(label="Recompute defrate", v_model=recompute,
+        rv.Switch(label=t("tiles.evaluation.recompute_label"), v_model=recompute,
                   on_v_model=set_recompute)
 
         solara.Button(
-            "Run evaluation", icon_name="mdi-chart-bar", color="primary", small=True,
+            t("tiles.evaluation.run_button"),
+            icon_name="mdi-chart-bar", color="primary", small=True,
             on_click=on_run, disabled=n_predictions == 0,
         )
         if n_predictions == 0:
-            solara.Info("No predictions available yet — run inference first.")
+            solara.Info(t("tiles.evaluation.error_no_predictions"))
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
 

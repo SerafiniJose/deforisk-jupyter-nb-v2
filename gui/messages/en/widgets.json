@@ -1,0 +1,10 @@
+{
+  "widgets": {
+    "train_model_list": {
+      "title": "**TRAINED MODELS** ({count})",
+      "completed_subtitle": "deviance: {dev} | samples: {samp}",
+      "failed_subtitle": "Error: {error}",
+      "cancelled_subtitle": "Cancelled by user"
+    }
+  }
+}

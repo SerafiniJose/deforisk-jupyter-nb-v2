@@ -133,7 +133,7 @@ def test_inference_tile_uses_palette_helper_and_overview_option():
     assert "add_prediction_on_map" in src         # value-pinned palette path
     assert "map_.add_raster(" not in src           # no more bare grayscale add
     assert "gen_overviews" in src                  # opt-in overviews reactive
-    assert "Generate overviews" in src             # checkbox label
+    assert 'tiles.inference.generate_overviews_label' in src  # localized checkbox label
     assert "build_overviews=" in src               # flag forwarded to helper
     assert "to_thread" in src                       # add offloaded to a thread
     assert "use_task" in src                        # threaded via solara.lab.use_task

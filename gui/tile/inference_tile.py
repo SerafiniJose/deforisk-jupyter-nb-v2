@@ -8,6 +8,7 @@ import uuid
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t, plural
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
@@ -157,7 +158,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
         by the time this runs).
         """
         if p is None:
-            set_form_error("No active project.")
+            set_form_error(t("tiles.inference.error_no_project"))
             return
         name = entry["name"]
         job_id = str(uuid.uuid4())[:8]
@@ -207,17 +208,17 @@ def InferenceTile(project, map_=None, sepal_client=None):
     def on_run():
         set_form_error(None)
         if p is None:
-            set_form_error("No active project.")
+            set_form_error(t("tiles.inference.error_no_project"))
             return
         if not selected_model or selected_model not in p.models:
-            set_form_error("Select a valid trained model.")
+            set_form_error(t("tiles.inference.error_invalid_model"))
             return
         if not selected_dataset or selected_dataset not in p.datasets:
-            set_form_error("Select a valid dataset.")
+            set_form_error(t("tiles.inference.error_invalid_dataset"))
             return
         name = effective_pred_name
         if not name:
-            set_form_error("Enter a prediction name (letters, numbers, - or _).")
+            set_form_error(t("tiles.inference.error_name_required"))
             return
 
         # An existing prediction with this name would be replaced — confirm first.
@@ -300,7 +301,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
                         preds_on_map.set(set(preds_on_map.value) | {job_id})
         except Exception as exc:
             logger.exception("prediction map toggle failed for job %s", job_id)
-            set_form_error(f"Could not toggle prediction on map: {exc}")
+            set_form_error(t("tiles.inference.error_map_toggle", exc=exc))
 
     def on_toggle_map(job):
         """Trigger the threaded add/remove task for a completed job."""
@@ -335,29 +336,29 @@ def InferenceTile(project, map_=None, sepal_client=None):
     can_run = bool(selected_model and selected_dataset and effective_pred_name)
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 7 — Inference")
-        solara.Text("Select a trained model and a dataset, then run inference.")
+        solara.Markdown(t("tiles.inference.header"))
+        solara.Text(t("tiles.inference.description"))
 
         # Trained model selector
         rv.Select(
-            label="Trained model",
+            label=t("tiles.inference.model_select_label"),
             items=model_keys,
             v_model=selected_model,
             on_v_model=set_selected_model,
             dense=True,
             outlined=True,
-            no_data_text="No trained models available. Train one in Step 6.",
+            no_data_text=t("tiles.inference.model_select_no_data"),
         )
 
         # Dataset selector
         rv.Select(
-            label="Dataset",
+            label=t("tiles.inference.dataset_select_label"),
             items=dataset_keys,
             v_model=selected_dataset,
             on_v_model=set_selected_dataset,
             dense=True,
             outlined=True,
-            no_data_text="No datasets registered. Create one in Step 4.",
+            no_data_text=t("tiles.inference.dataset_select_no_data"),
         )
 
         # Prediction name — required; names the output so re-runs don't silently
@@ -365,18 +366,18 @@ def InferenceTile(project, map_=None, sepal_client=None):
         # name is already taken (running will overwrite it).
         pred_exists = _prediction_name_exists(p, effective_pred_name)
         rv.TextField(
-            label="Prediction name",
+            label=t("tiles.inference.pred_name_label"),
             v_model=pred_name_field,
             on_v_model=set_pred_name_input,
             dense=True,
             outlined=True,
             messages=(
-                f"⚠ A prediction named '{effective_pred_name}' already exists — running overwrites it."
+                t("tiles.inference.pred_name_exists_warning", name=effective_pred_name)
                 if pred_exists
                 else (
-                    f"Saved as '{effective_pred_name}'."
+                    t("tiles.inference.pred_name_saved_as", name=effective_pred_name)
                     if effective_pred_name
-                    else "Required."
+                    else t("tiles.inference.pred_name_required")
                 )
             ),
             error=not effective_pred_name,
@@ -384,7 +385,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
 
         # Run button
         solara.Button(
-            "Run inference",
+            t("tiles.inference.run_button"),
             icon_name="mdi-play",
             color="primary",
             small=True,
@@ -396,7 +397,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
         # copied + reprojected into the project and registered like a computed
         # prediction, so it shows in the outputs list and Step 8 — Evaluation.
         solara.Button(
-            "Import prediction",
+            t("tiles.inference.import_button"),
             icon_name="mdi-plus",
             color="primary",
             small=True,
@@ -408,7 +409,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
 
         # Optional raster optimisation before predictions hit the map.
         solara.Checkbox(
-            label="Generate overviews before display",
+            label=t("tiles.inference.generate_overviews_label"),
             value=gen_overviews.value,
             on_value=gen_overviews.set,
         )
@@ -434,14 +435,23 @@ def InferenceTile(project, map_=None, sepal_client=None):
             open=pending_remove is not None,
             on_cancel=lambda: set_pending_remove(None),
             on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-            title="Delete predictions?" if _pending_pred_count else "Remove job?",
-            message=(
-                f"Delete {_pending_pred_count} prediction raster(s) from this run? This "
-                "removes them from the project and deletes the files. This cannot be undone."
+            title=(
+                t("tiles.inference.confirm_delete_predictions_title")
                 if _pending_pred_count
-                else "Remove this inference job from the list?"
+                else t("tiles.inference.confirm_remove_job_title")
             ),
-            confirm_label="Delete" if _pending_pred_count else "Remove",
+            message=(
+                plural(
+                    _pending_pred_count,
+                    "tiles.inference.confirm_delete_predictions_message_one",
+                    "tiles.inference.confirm_delete_predictions_message_other",
+                )
+                if _pending_pred_count
+                else t("tiles.inference.confirm_remove_job_message")
+            ),
+            confirm_label=(
+                t("common.delete") if _pending_pred_count else t("common.remove")
+            ),
         )
 
         # Overwrite confirmation — shown when the chosen prediction name exists.
@@ -455,14 +465,16 @@ def InferenceTile(project, map_=None, sepal_client=None):
             open=pending_overwrite is not None,
             on_cancel=lambda: set_pending_overwrite(None),
             on_confirm=_confirm_overwrite,
-            title="Overwrite existing prediction?",
+            title=t("tiles.inference.confirm_overwrite_title"),
             message=(
-                f"A prediction named '{pending_overwrite['name']}' already exists. "
-                "Running will overwrite its raster(s) and registry entry. This cannot be undone."
+                t(
+                    "tiles.inference.confirm_overwrite_message",
+                    name=pending_overwrite["name"],
+                )
                 if pending_overwrite
                 else ""
             ),
-            confirm_label="Overwrite",
+            confirm_label=t("tiles.inference.confirm_overwrite_label"),
         )
 
         # Import-a-local-prediction modal (opened from the top action bar).

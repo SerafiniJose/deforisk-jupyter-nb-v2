@@ -1,8 +1,10 @@
 import inspect
 
 TAB_LABELS = [
-    "Raw variables", "Processed variables", "Datasets", "Samples",
-    "Trained models", "Predictions", "Evaluations",
+    "tiles.summary.tab_raw_variables", "tiles.summary.tab_processed_variables",
+    "tiles.summary.tab_datasets", "tiles.summary.tab_samples",
+    "tiles.summary.tab_trained_models", "tiles.summary.tab_predictions",
+    "tiles.summary.tab_evaluations",
 ]
 RENDERERS = [
     "RawVariablesSummary", "ProcessedVariablesSummary", "DatasetsSummary",
