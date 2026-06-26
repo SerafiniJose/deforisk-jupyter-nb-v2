@@ -5,6 +5,7 @@ import logging
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.store.state_manager import app_state
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.dataset_list import DatasetList
@@ -89,16 +90,16 @@ def DatasetTile(project):
         set_form_error(None)
         set_form_success(None)
         if p is None:
-            set_form_error("No active project.")
+            set_form_error(t("tiles.dataset.error_no_project"))
             return
         if not ds_name.strip():
-            set_form_error("Dataset name is required.")
+            set_form_error(t("tiles.dataset.error_dataset_name_required"))
             return
         if not target_name:
-            set_form_error("Select a target variable.")
+            set_form_error(t("tiles.dataset.error_target_required"))
             return
         if not feature_names:
-            set_form_error("Select at least one feature variable.")
+            set_form_error(t("tiles.dataset.error_features_required"))
             return
         try:
             # Store year for feature alignment, but only pass it to set_target for
@@ -119,39 +120,40 @@ def DatasetTile(project):
 
             logger.debug("Registered dataset '%s' with %d features", key, len(feature_names))
             reset_form()
-            set_form_success(f"Dataset '{key}' registered.")
+            set_form_success(t("tiles.dataset.success_registered", key=key))
             project.set(p.model_copy())
         except Exception as exc:
             logger.exception("on_register failed")
-            set_form_error(str(exc))
+            set_form_error(t("tiles.dataset.error_registration_failed", exc=exc))
 
     has_processed = p is not None and bool(p.processed_variables)
 
     with solara.Column(style="gap:16px;"):
-        solara.Markdown("### Step 4 — Dataset")
-        solara.Text(
-            "Bundle a target and feature variables into a dataset for model training."
-        )
+        solara.Markdown(t("tiles.dataset.header"))
+        solara.Text(t("tiles.dataset.description"))
 
         if not has_processed:
-            solara.Info("Run Step 3 — Process first.")
+            solara.Info(t("tiles.dataset.error_no_processed"))
             return
 
         # Create / Edit form
-        solara.Markdown("**NEW DATASET**" if not editing_key else f"**EDIT — {editing_key}**")
+        solara.Markdown(
+            t("tiles.dataset.form_header_new") if not editing_key
+            else t("tiles.dataset.form_header_edit", key=editing_key)
+        )
 
         rv.TextField(
-            label="Dataset name",
+            label=t("tiles.dataset.dataset_name_label"),
             v_model=ds_name,
             on_v_model=set_ds_name,
             dense=True,
             outlined=True,
-            placeholder="e.g. calibration_2020",
+            placeholder=t("tiles.dataset.dataset_name_placeholder"),
         )
 
         # Target
         rv.Select(
-            label="Target variable",
+            label=t("tiles.dataset.target_variable_label"),
             items=available_vars,
             v_model=target_name,
             on_v_model=set_target_name,
@@ -161,7 +163,7 @@ def DatasetTile(project):
 
         # Features (multi-select)
         rv.Select(
-            label="Feature variables",
+            label=t("tiles.dataset.feature_variables_label"),
             items=feature_options,
             v_model=feature_names,
             on_v_model=set_feature_names,
@@ -176,7 +178,7 @@ def DatasetTile(project):
         # Year (shown if temporal vars detected)
         if available_years:
             rv.Select(
-                label="Year (temporal alignment)",
+                label=t("tiles.dataset.year_label"),
                 items=available_years,
                 v_model=year,
                 on_v_model=set_year,
@@ -187,7 +189,7 @@ def DatasetTile(project):
         # Action buttons
         with solara.Row(style="gap:8px;align-items:center;"):
             solara.Button(
-                "Register",
+                t("tiles.dataset.register_button"),
                 icon_name="mdi-database-plus",
                 color="primary",
                 small=True,
@@ -195,7 +197,7 @@ def DatasetTile(project):
             )
             if editing_key:
                 solara.Button(
-                    "Cancel",
+                    t("common.cancel"),
                     on_click=reset_form,
                     text=True,
                     small=True,
@@ -203,7 +205,7 @@ def DatasetTile(project):
             # Push Clear to the right; resets all form inputs.
             rv.Spacer()
             solara.Button(
-                "Clear",
+                t("tiles.dataset.clear_button"),
                 icon_name="mdi-eraser",
                 text=True,
                 small=True,
@@ -218,14 +220,14 @@ def DatasetTile(project):
         # Existing datasets — shown below the form, matching the other tabs
         # (Train/Sampling/Inference all render their results list at the bottom).
         if p and p.datasets:
-            solara.Markdown(f"**DATASETS** ({len(p.datasets)})")
+            solara.Markdown(t("tiles.dataset.existing_datasets_header", count=len(p.datasets)))
             DatasetList(project=project, on_edit=on_edit, on_remove=set_pending_remove)
 
         ConfirmDialog(
             open=pending_remove is not None,
             on_cancel=lambda: set_pending_remove(None),
             on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-            title="Remove dataset?",
-            message=f"Remove dataset '{pending_remove}' from this project? This cannot be undone.",
-            confirm_label="Remove",
+            title=t("tiles.dataset.confirm_remove_title"),
+            message=t("tiles.dataset.confirm_remove_message", name=pending_remove or ""),
+            confirm_label=t("common.remove"),
         )

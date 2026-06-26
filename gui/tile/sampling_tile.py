@@ -12,6 +12,7 @@ import uuid
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts.map_helpers import (
     add_sample_points_on_map,
     remove_sample_points_from_map,
@@ -24,10 +25,14 @@ logger = logging.getLogger("spatial_risk")
 
 SAMPLING_STRATEGIES = ["random", "stratified", "systematic"]
 ALLOCATION_METHODS = ["equal", "proportional", "deforisk"]
-SYSTEMATIC_MODES = [
-    {"text": "Number of samples", "value": "n_samples"},
-    {"text": "Distance between points (m)", "value": "spacing"},
-]
+
+
+def _systematic_modes():
+    return [
+        {"text": t("tiles.sampling.systematic_mode_n_samples"), "value": "n_samples"},
+        {"text": t("tiles.sampling.systematic_mode_spacing"), "value": "spacing"},
+    ]
+
 
 # Module-level reactives shared across re-renders.
 sampling_jobs = solara.reactive([])
@@ -97,28 +102,28 @@ def SamplingTile(project, map_=None):
     if p is None:
         return
     if not raster_keys:
-        solara.Info("Create raster variables first (Step 3 — Process).")
+        solara.Info(t("tiles.sampling.error_no_raster"))
         return
 
     def on_generate():
         set_form_error(None)
         nm = (name or "").strip()
         if not nm:
-            set_form_error("Give the sample a name.")
+            set_form_error(t("tiles.sampling.error_name_required"))
             return
         if nm in p.samples:
-            set_form_error(f"A sample named '{nm}' already exists.")
+            set_form_error(t("tiles.sampling.error_name_exists", name=nm))
             return
         if not raster_var or raster_var not in p.processed_variables:
-            set_form_error("Select a valid raster variable.")
+            set_form_error(t("tiles.sampling.error_invalid_raster"))
             return
         if mask_var and mask_var not in p.processed_variables:
-            set_form_error("Select a valid mask variable.")
+            set_form_error(t("tiles.sampling.error_invalid_mask"))
             return
 
         use_spacing = strategy == "systematic" and sys_mode == "spacing"
         if use_spacing and (spacing_m is None or spacing_m <= 0):
-            set_form_error("Enter a positive distance between points (m).")
+            set_form_error(t("tiles.sampling.error_invalid_spacing"))
             return
         spacing_arg = spacing_m if use_spacing else None
         n_samples_arg = None if use_spacing else n_samples
@@ -158,7 +163,7 @@ def SamplingTile(project, map_=None):
                 samples_on_map.set(samples_on_map.value | {key})
         except Exception as exc:
             logger.exception("sample map toggle failed for %s", key)
-            set_form_error(f"Could not toggle sample on map: {exc}")
+            set_form_error(t("tiles.sampling.error_toggle_map", exc=exc))
 
     def _do_remove(key):
         if map_ is not None and key in samples_on_map.value:
@@ -170,43 +175,40 @@ def SamplingTile(project, map_=None):
             project.set(cur.model_copy())
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown("### Step 5 — Sampling")
-        solara.Text(
-            "Draw a persistent, named sample from a raster variable. Samples are "
-            "selectable in Train (Step 6) and can be added to the map."
-        )
+        solara.Markdown(t("tiles.sampling.header"))
+        solara.Text(t("tiles.sampling.description"))
 
         rv.Select(
-            label="Raster variable", items=raster_keys, v_model=raster_var,
+            label=t("tiles.sampling.raster_variable_label"), items=raster_keys, v_model=raster_var,
             on_v_model=set_raster_var, dense=True, outlined=True,
         )
         rv.Select(
-            label="Mask variable (optional)", items=[""] + raster_keys,
+            label=t("tiles.sampling.mask_variable_label"), items=[""] + raster_keys,
             v_model=mask_var, on_v_model=set_mask_var, dense=True, outlined=True,
         )
         rv.TextField(
-            label="Sample name", v_model=name,
+            label=t("tiles.sampling.sample_name_label"), v_model=name,
             on_v_model=set_name, dense=True, outlined=True,
         )
         rv.Select(
-            label="Strategy", items=SAMPLING_STRATEGIES, v_model=strategy,
+            label=t("tiles.sampling.strategy_label"), items=SAMPLING_STRATEGIES, v_model=strategy,
             on_v_model=set_strategy, dense=True, outlined=True,
         )
 
         if strategy == "stratified":
             rv.Select(
-                label="Allocation", items=ALLOCATION_METHODS, v_model=allocation,
+                label=t("tiles.sampling.allocation_label"), items=ALLOCATION_METHODS, v_model=allocation,
                 on_v_model=set_allocation, dense=True, outlined=True,
             )
             if allocation == "deforisk":
                 rv.Switch(
-                    label="Adapt allocation to observed deforestation rate",
+                    label=t("tiles.sampling.adapt_label"),
                     v_model=adapt, on_v_model=set_adapt,
                 )
 
         if strategy == "systematic":
             rv.Select(
-                label="Define grid by", items=SYSTEMATIC_MODES,
+                label=t("tiles.sampling.define_grid_label"), items=_systematic_modes(),
                 item_text="text", item_value="value",
                 v_model=sys_mode, on_v_model=set_sys_mode,
                 dense=True, outlined=True,
@@ -214,27 +216,27 @@ def SamplingTile(project, map_=None):
 
         if strategy == "systematic" and sys_mode == "spacing":
             rv.TextField(
-                label="Distance between points (m)", type_="number",
+                label=t("tiles.sampling.spacing_label"), type_="number",
                 v_model=str(spacing_m) if spacing_m is not None else "",
                 on_v_model=lambda v: set_spacing_m(float(v) if v and v.strip() else None),
                 dense=True, outlined=True,
             )
         else:
             rv.TextField(
-                label="Number of samples", type_="number",
+                label=t("tiles.sampling.n_samples_label"), type_="number",
                 v_model=str(n_samples) if n_samples is not None else "",
                 on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
                 dense=True, outlined=True,
             )
         rv.TextField(
-            label="Random seed", type_="number",
+            label=t("tiles.sampling.seed_label"), type_="number",
             v_model=str(seed) if seed is not None else "",
             on_v_model=lambda v: set_seed(int(v) if v and v.strip() else None),
             dense=True, outlined=True,
         )
 
         solara.Button(
-            "Generate", icon_name="mdi-play", color="primary", small=True,
+            t("tiles.sampling.generate_button"), icon_name="mdi-play", color="primary", small=True,
             on_click=on_generate,
         )
         if form_error:
@@ -244,10 +246,10 @@ def SamplingTile(project, map_=None):
         for job in sampling_jobs.value:
             if job["status"] == "running":
                 rv.Alert(type_="info", dense=True,
-                         children=[f"Generating '{job['name']}'…"])
+                         children=[t("tiles.sampling.job_running", name=job["name"])])
             elif job["status"] == "failed":
                 rv.Alert(type_="error", dense=True,
-                         children=[f"'{job['name']}' failed: {job['error']}"])
+                         children=[t("tiles.sampling.job_failed", name=job["name"], error=job["error"])])
 
         SampleSetList(
             project=project,
@@ -260,10 +262,7 @@ def SamplingTile(project, map_=None):
             open=pending_remove is not None,
             on_cancel=lambda: set_pending_remove(None),
             on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-            title="Delete sample?",
-            message=(
-                f"Delete sample '{pending_remove}'? This removes it from the "
-                "project and deletes its files. This cannot be undone."
-            ),
-            confirm_label="Delete",
+            title=t("tiles.sampling.confirm_remove_title"),
+            message=t("tiles.sampling.confirm_remove_message", name=pending_remove or ""),
+            confirm_label=t("tiles.sampling.confirm_remove_label"),
         )

@@ -24,7 +24,7 @@ def test_sampling_tile_has_distance_mode():
     src = inspect.getsource(sampling_tile)
     # systematic-only spacing mode wired into the form
     assert "spacing_m" in src
-    assert "Distance between points" in src
+    assert "tiles.sampling.systematic_mode_spacing" in src
     assert 'strategy == "systematic"' in src
     # _run_sampling carries spacing_m between n_samples and seed (catches
     # positional-arg reordering vs the spawn_in_context call site)

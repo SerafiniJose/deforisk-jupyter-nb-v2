@@ -6,6 +6,7 @@ import logging
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts import process_actions
 from gui.widget.variable_list import DerivedVariableList
 from spatialrisk.variables.models import PostProcessing
@@ -122,11 +123,11 @@ def ProcessTile(project, processing, process_error):
             base = p.raw_variables[base_key]
             path = getattr(base, "path", None)
             if path is None:
-                process_error.set("Download layers before auto-computing UTM.")
+                process_error.set(t("tiles.process.error_download_first"))
                 return
             set_epsg(process_actions.auto_utm_epsg(path))
         except Exception as exc:
-            process_error.set(f"Auto-UTM failed: {exc}")
+            process_error.set(t("tiles.process.error_auto_utm", exc=exc))
 
     def on_set_base():
         if p is None:
@@ -136,7 +137,7 @@ def ProcessTile(project, processing, process_error):
             process_actions.set_base_raster(p, base_key, epsg.strip(), res)
             project.set(p.model_copy())
         except Exception as exc:
-            process_error.set(f"Could not set base raster: {exc}")
+            process_error.set(t("tiles.process.error_set_base", exc=exc))
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
     async def process_task():
@@ -159,23 +160,20 @@ def ProcessTile(project, processing, process_error):
             process_actions.apply_post_processing(p, pp_key, pp_step)
             project.set(p.model_copy())
         except Exception as exc:
-            process_error.set(f"Post-processing failed: {exc}")
+            process_error.set(t("tiles.process.error_post_processing", exc=exc))
 
     with solara.Column(style="gap:16px;"):
-        solara.Markdown("### Step 3 — Process")
-        solara.Text(
-            "Download layers, set the base raster + projection, then reproject, "
-            "rasterize, and post-process all variables."
-        )
+        solara.Markdown(t("tiles.process.header"))
+        solara.Text(t("tiles.process.description"))
         if not has_vars:
-            solara.Info("Add variables in Step 2 first.")
+            solara.Info(t("tiles.process.error_no_variables"))
             return
 
         # A — Download layers
-        solara.Markdown("**1 · DOWNLOAD LAYERS**")
-        solara.Text(f"{len(pending_geevars)} GEE layer(s) need downloading.")
+        solara.Markdown(t("tiles.process.download_section_header"))
+        solara.Text(t("tiles.process.pending_geevars_count", count=len(pending_geevars)))
         solara.Button(
-            "Download layers", icon_name="mdi-cloud-download-outline",
+            t("tiles.process.download_button"), icon_name="mdi-cloud-download-outline",
             color="primary", outlined=True, small=True,
             on_click=lambda: download_task(),
             loading=download_task.pending,
@@ -185,53 +183,55 @@ def ProcessTile(project, processing, process_error):
             solara.ProgressLinear(True)
 
         # B — Base & projection
-        solara.Markdown("**2 · BASE & PROJECTION**")
+        solara.Markdown(t("tiles.process.base_projection_header"))
         with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
             rv.Select(
-                label="Base raster", items=_raw_raster_keys(p),
+                label=t("tiles.process.base_raster_label"), items=_raw_raster_keys(p),
                 v_model=base_key, on_v_model=set_base_key, dense=True, outlined=True,
                 style_="min-width:200px;flex:1 1 200px;",
             )
             rv.TextField(
-                label="EPSG", v_model=epsg, on_v_model=set_epsg,
-                dense=True, outlined=True, placeholder="EPSG:5490",
+                label=t("tiles.process.epsg_label"), v_model=epsg, on_v_model=set_epsg,
+                dense=True, outlined=True, placeholder=t("tiles.process.epsg_placeholder"),
                 style_="min-width:130px;max-width:170px;",
             )
             rv.TextField(
-                label="Resolution (m)", v_model=resolution, on_v_model=set_resolution,
+                label=t("tiles.process.resolution_label"), v_model=resolution, on_v_model=set_resolution,
                 dense=True, outlined=True, type="number",
                 style_="min-width:130px;max-width:170px;",
             )
             solara.Button(
-                "Auto (UTM)", small=True, text=True, on_click=on_auto_utm,
+                t("tiles.process.auto_utm_button"), small=True, text=True, on_click=on_auto_utm,
                 disabled=not base_key or autofill_base.pending,
             )
             solara.Button(
-                "Set base", icon_name="mdi-target", color="primary", small=True,
+                t("tiles.process.set_base_button"), icon_name="mdi-target", color="primary", small=True,
                 on_click=on_set_base,
                 disabled=autofill_base.pending or not (base_key and epsg.strip()),
             )
         if autofill_base.pending:
             solara.Text(
-                "Detecting projection & resolution…",
+                t("tiles.process.detecting_projection"),
                 style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
             )
         if has_base:
             solara.Text(
-                f"Base: {p.base_raster.name} · {p.base_raster.default_crs} · "
-                f"{p.base_raster.default_resolution} m",
+                t("tiles.process.base_info",
+                  name=p.base_raster.name,
+                  crs=p.base_raster.default_crs,
+                  resolution=p.base_raster.default_resolution),
                 style="font-size:0.8rem;color:rgba(0,0,0,0.6);",
             )
 
         # C — Run processing
-        solara.Markdown("**3 · RUN PROCESSING**")
+        solara.Markdown(t("tiles.process.run_processing_header"))
         if not has_base:
             solara.Text(
-                "Set a base raster above to enable processing.",
+                t("tiles.process.error_no_base"),
                 style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
             )
         solara.Button(
-            "Run processing", icon_name="mdi-cog-play-outline",
+            t("tiles.process.run_processing_button"), icon_name="mdi-cog-play-outline",
             color="primary", small=True, on_click=lambda: process_task(),
             disabled=processing.value or download_task.pending or not has_base,
         )
@@ -240,19 +240,19 @@ def ProcessTile(project, processing, process_error):
 
         # D — Post-processing
         if p and p.processed_variables:
-            solara.Markdown("**4 · POST-PROCESSING (edge / dist)**")
+            solara.Markdown(t("tiles.process.post_processing_header"))
             with solara.Row(style="gap:8px;align-items:center;"):
                 rv.Select(
-                    label="Processed variable",
+                    label=t("tiles.process.processed_variable_label"),
                     items=list(p.processed_variables.keys()),
                     v_model=pp_key, on_v_model=set_pp_key, dense=True, outlined=True,
                 )
                 rv.Select(
-                    label="Step", items=[s.value for s in PostProcessing],
+                    label=t("tiles.process.step_label"), items=[s.value for s in PostProcessing],
                     v_model=pp_step, on_v_model=set_pp_step, dense=True, outlined=True,
                 )
                 solara.Button(
-                    "Generate", icon_name="mdi-auto-fix", color="primary", small=True,
+                    t("tiles.process.generate_button"), icon_name="mdi-auto-fix", color="primary", small=True,
                     on_click=on_apply_pp, disabled=not pp_key,
                 )
             DerivedVariableList(project=project)
