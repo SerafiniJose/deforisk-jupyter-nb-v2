@@ -3,7 +3,7 @@ def test_workflow_tabs_includes_process():
     import gui.solara_app as app
     src = inspect.getsource(app.WorkflowTabs)
     assert "ProcessTile" in src
-    assert 'rv.Tab(children=["Process"]' in src
+    assert 'rv.Tab(children=[t("workflow.tab_process")]' in src
 
 
 def test_workflow_tabs_includes_sampling():
@@ -11,7 +11,7 @@ def test_workflow_tabs_includes_sampling():
     import gui.solara_app as app
     src = inspect.getsource(app.WorkflowTabs)
     assert "SamplingTile" in src
-    assert 'rv.Tab(children=["Sampling"], disabled=not has_processed_raster)' in src
+    assert 'rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)' in src
 
 
 def test_workflow_tabs_gate_downstream_steps():
@@ -19,9 +19,9 @@ def test_workflow_tabs_gate_downstream_steps():
     import inspect
     import gui.solara_app as app
     src = inspect.getsource(app.WorkflowTabs)
-    assert 'rv.Tab(children=["Train"], disabled=not has_datasets)' in src
-    assert 'rv.Tab(children=["Inference"], disabled=not has_models)' in src
-    assert 'rv.Tab(children=["Evaluation"], disabled=not has_predictions)' in src
+    assert 'rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)' in src
+    assert 'rv.Tab(children=[t("workflow.tab_inference")], disabled=not has_models)' in src
+    assert 'rv.Tab(children=[t("workflow.tab_evaluation")], disabled=not has_predictions)' in src
 
 
 def test_tab_gating_sampling_on_raster_train_on_datasets():
@@ -30,8 +30,8 @@ def test_tab_gating_sampling_on_raster_train_on_datasets():
     src = inspect.getsource(solara_app.WorkflowTabs)
     assert "has_processed_raster" in src
     # Sampling no longer gated on datasets; Train gated on datasets
-    assert 'rv.Tab(children=["Sampling"], disabled=not has_processed_raster)' in src
-    assert 'rv.Tab(children=["Train"], disabled=not has_datasets)' in src
+    assert 'rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)' in src
+    assert 'rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)' in src
 
 
 def test_train_tile_selects_dataset_and_sample():
@@ -80,7 +80,7 @@ def test_page_wires_project_summary_step():
     import inspect
     import gui.solara_app as app
     src = inspect.getsource(app.Page)
-    assert '"name": "Project Summary"' in src
+    assert 't("app.step_project_summary")' in src
     assert "ProjectSummaryTile(" in src
     # Left-drawer step opens as a modal dialog.
     assert '"display": "dialog"' in src

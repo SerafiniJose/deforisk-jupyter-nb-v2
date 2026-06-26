@@ -1,0 +1,21 @@
+{
+  "app": {
+    "title": "Spatial Risk",
+    "title_dirty_suffix": " ●",
+    "panel_workflow_title": "Workflow",
+    "step_project": "Project",
+    "step_project_summary": "Project Summary"
+  },
+  "workflow": {
+    "tab_aoi": "Area of Interest",
+    "tab_variables": "Variables",
+    "tab_process": "Process",
+    "tab_dataset": "Dataset",
+    "tab_sampling": "Sampling",
+    "tab_train": "Train",
+    "tab_inference": "Inference",
+    "tab_evaluation": "Evaluation",
+    "back": "Back",
+    "next": "Next"
+  }
+}

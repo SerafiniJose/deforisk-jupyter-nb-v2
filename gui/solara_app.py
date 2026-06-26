@@ -13,7 +13,7 @@ from solara.lab.components.theming import theme
 
 from pysepal import mapping as sm
 from pysepal.logger import setup_logging
-from pysepal.sepalwidgets.vue_app import MapApp, ThemeToggle
+from pysepal.sepalwidgets.vue_app import MapApp, ThemeToggle, LocaleSelect
 from pysepal.solara import (
     get_current_gee_interface,
     get_current_sepal_client,
@@ -55,6 +55,7 @@ from gui.widget.notification_area import NotificationArea
 from gui.scripts.job_restore import build_train_jobs, build_inference_jobs
 from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
 from gui.widget.log_console import LogConsole
+from gui.i18n import t, get_translator, reset_translator
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
@@ -79,6 +80,7 @@ _MODEL_TYPE_LABELS = {
 
 @solara.lab.on_kernel_start
 def on_kernel_start():
+    reset_translator()  # re-read ~/.sepal-ui-config locale on every (re)load
     return setup_sessions()
 
 
@@ -524,18 +526,18 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
         grow=True,
         class_="workflow-tabs",
     ):
-        rv.Tab(children=["Area of Interest"])
-        rv.Tab(children=["Variables"], disabled=not aoi_complete)
-        rv.Tab(children=["Process"], disabled=not has_raw)
-        rv.Tab(children=["Dataset"], disabled=not has_processed)
-        rv.Tab(children=["Sampling"], disabled=not has_processed_raster)
-        rv.Tab(children=["Train"], disabled=not has_datasets)
-        rv.Tab(children=["Inference"], disabled=not has_models)
-        rv.Tab(children=["Evaluation"], disabled=not has_predictions)
+        rv.Tab(children=[t("workflow.tab_aoi")])
+        rv.Tab(children=[t("workflow.tab_variables")], disabled=not aoi_complete)
+        rv.Tab(children=[t("workflow.tab_process")], disabled=not has_raw)
+        rv.Tab(children=[t("workflow.tab_dataset")], disabled=not has_processed)
+        rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)
+        rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)
+        rv.Tab(children=[t("workflow.tab_inference")], disabled=not has_models)
+        rv.Tab(children=[t("workflow.tab_evaluation")], disabled=not has_predictions)
 
     with solara.Row(justify="space-between", style="padding: 4px 8px; align-items: center;"):
         solara.Button(
-            "Back",
+            t("workflow.back"),
             icon_name="mdi-chevron-left",
             text=True,
             small=True,
@@ -543,7 +545,7 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
             on_click=go_prev,
         )
         solara.Button(
-            "Next",
+            t("workflow.next"),
             icon_name="mdi-chevron-right",
             text=True,
             small=True,
@@ -615,6 +617,7 @@ def Page():
     gee_interface = get_current_gee_interface()
     sepal_client = get_current_sepal_client()
     theme_toggle = solara.use_memo(lambda: ThemeToggle(), [])
+    locale_select = solara.use_memo(lambda: LocaleSelect(translator=get_translator()), [])
 
     def _observe_theme():
         handler = lambda e: setattr(theme, "dark", e["new"])
@@ -823,14 +826,14 @@ def Page():
     steps_data = [
         {
             "id": 1,
-            "name": "Project",
+            "name": t("app.step_project"),
             "icon": "mdi-folder-outline",
             "display": "dialog",
             "content": ProjectPanel(on_close=close_project_dialog),
         },
         {
             "id": 2,
-            "name": "Project Summary",
+            "name": t("app.step_project_summary"),
             "icon": "mdi-clipboard-text-outline",
             "display": "dialog",
             "content": ProjectSummaryTile(
@@ -844,7 +847,7 @@ def Page():
 
     # Right panel: workflow tabs
     right_panel_config = {
-        "title": "Workflow",
+        "title": t("app.panel_workflow_title"),
         "icon": "mdi-tune",
         "width": 480,
         "toggle_icon": "mdi-chevron-right",
@@ -856,7 +859,7 @@ def Page():
         },
     ]
 
-    solara.Title("Spatial Risk")
+    solara.Title(t("app.title"))
 
     # pysepal's step-dialog content area sets `overflow-y: auto` with no
     # `overflow-x`, which CSS resolves to `overflow-x: auto` — producing a
@@ -875,6 +878,7 @@ def Page():
         steps_data=steps_data,
         initial_step=1,  # auto-open the Project dialog (step id 1) at startup
         theme_toggle=[theme_toggle],
+        language_selector=[locale_select],
         right_panel_config=right_panel_config,
         right_panel_content=right_panel_content,
         right_panel_open=True,

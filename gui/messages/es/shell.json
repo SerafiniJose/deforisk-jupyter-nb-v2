@@ -1,0 +1,21 @@
+{
+  "app": {
+    "title": "Riesgo Espacial",
+    "title_dirty_suffix": " ●",
+    "panel_workflow_title": "Flujo de trabajo",
+    "step_project": "Proyecto",
+    "step_project_summary": "Resumen del proyecto"
+  },
+  "workflow": {
+    "tab_aoi": "Área de interés",
+    "tab_variables": "Variables",
+    "tab_process": "Procesar",
+    "tab_dataset": "Conjunto de datos",
+    "tab_sampling": "Muestreo",
+    "tab_train": "Entrenar",
+    "tab_inference": "Inferencia",
+    "tab_evaluation": "Evaluación",
+    "back": "Atrás",
+    "next": "Siguiente"
+  }
+}
