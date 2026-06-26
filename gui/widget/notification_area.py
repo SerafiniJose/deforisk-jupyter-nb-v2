@@ -3,6 +3,8 @@
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import plural, t
+
 
 def _compute(tab, aoi_result, project, process_error, status_message, error_message):
     """Return (message, type_) for the current tab, or None if nothing to show."""
@@ -12,7 +14,7 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
 
     if tab == 0:  # AOI
         if aoi_result is not None:
-            return (f"AOI selected: {aoi_result.name}", "success")
+            return (t("notifications.aoi_selected", name=aoi_result.name), "success")
 
     elif tab == 1:  # Variables
         if process_error:
@@ -22,35 +24,35 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
         if process_error:
             return (process_error, "error")
         if project and project.raw_variables and not project.base_raster:
-            return ("Set a base raster in the Process step before running processing.", "warning")
+            return (t("notifications.process_no_base_raster"), "warning")
 
     elif tab == 3:  # Dataset
         if project and not project.processed_variables:
-            return ("Run Step 3 — Process before creating datasets.", "warning")
+            return (t("notifications.dataset_run_process_first"), "warning")
         if project and project.datasets:
             count = len(project.datasets)
-            return (f"{count} dataset(s) registered.", "success")
+            return (plural(count, "notifications.dataset_count_one", "notifications.dataset_count_other"), "success")
 
     elif tab == 4:  # Sampling
         if project is not None and not any(
             str(getattr(v, "data_type", "")) == "raster"
             for v in project.processed_variables.values()
         ):
-            return ("Create raster variables (Step 3 — Process) before sampling.", "warning")
+            return (t("notifications.sampling_no_raster_vars"), "warning")
         if project is not None and project.samples:
-            return (f"{len(project.samples)} sample(s) generated.", "success")
+            return (plural(len(project.samples), "notifications.sampling_count_one", "notifications.sampling_count_other"), "success")
 
     elif tab == 5:  # Train
         if project is not None and not project.datasets:
-            return ("Register a dataset (Step 4) before training.", "warning")
+            return (t("notifications.train_no_dataset"), "warning")
 
     elif tab == 6:  # Inference
         if project is not None and not project.models:
-            return ("Train at least one model (Step 6) before inference.", "warning")
+            return (t("notifications.inference_no_model"), "warning")
 
     elif tab == 7:  # Evaluation
         if project is not None and not project.predictions:
-            return ("Run inference (Step 7) to produce predictions before evaluation.", "warning")
+            return (t("notifications.evaluation_no_predictions"), "warning")
 
     # Global status (project load/save) visible on any step
     if status_message:

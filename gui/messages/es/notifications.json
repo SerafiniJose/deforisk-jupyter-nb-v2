@@ -1,0 +1,20 @@
+{
+  "notifications": {
+    "aoi_selected": "AOI seleccionada: {name}",
+    "process_no_base_raster": "Definí un ráster base en el paso Procesar antes de ejecutar el procesamiento.",
+    "dataset_run_process_first": "Ejecutá el Paso 3 — Procesar antes de crear conjuntos de datos.",
+    "dataset_count_one": "{n} conjunto de datos registrado.",
+    "dataset_count_other": "{n} conjuntos de datos registrados.",
+    "sampling_no_raster_vars": "Creá variables ráster (Paso 3 — Procesar) antes de muestrear.",
+    "sampling_count_one": "{n} muestra generada.",
+    "sampling_count_other": "{n} muestras generadas.",
+    "train_no_dataset": "Registrá un conjunto de datos (Paso 4) antes de entrenar.",
+    "inference_no_model": "Entrená al menos un modelo (Paso 6) antes de la inferencia.",
+    "evaluation_no_predictions": "Ejecutá la inferencia (Paso 7) para producir predicciones antes de evaluar."
+  },
+  "dialog": {
+    "confirm_default_title": "¿Eliminar?",
+    "confirm_default_message": "Esta acción no se puede deshacer.",
+    "confirm_default_label": "Eliminar"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "notifications": {
+    "aoi_selected": "AOI selected: {name}",
+    "process_no_base_raster": "Set a base raster in the Process step before running processing.",
+    "dataset_run_process_first": "Run Step 3 — Process before creating datasets.",
+    "dataset_count_one": "{n} dataset registered.",
+    "dataset_count_other": "{n} datasets registered.",
+    "sampling_no_raster_vars": "Create raster variables (Step 3 — Process) before sampling.",
+    "sampling_count_one": "{n} sample generated.",
+    "sampling_count_other": "{n} samples generated.",
+    "train_no_dataset": "Register a dataset (Step 4) before training.",
+    "inference_no_model": "Train at least one model (Step 6) before inference.",
+    "evaluation_no_predictions": "Run inference (Step 7) to produce predictions before evaluation."
+  },
+  "dialog": {
+    "confirm_default_title": "Delete?",
+    "confirm_default_message": "This action cannot be undone.",
+    "confirm_default_label": "Delete"
+  }
+}
