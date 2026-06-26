@@ -11,6 +11,7 @@ import pandas as pd
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.tile.evaluation_helpers import rows_for_record
 
 
@@ -31,7 +32,7 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete):
             color = {"running": "info", "completed": "success",
                      "failed": "error"}.get(status, "grey")
             with rv.Alert(type_=color, dense=True, outlined=True):
-                solara.Text(f"{job['id']}: {status}")
+                solara.Text(t("widgets.evaluation_results.job_status", id=job['id'], status=status))
                 if job.get("error"):
                     solara.Text(job["error"])
 
@@ -40,7 +41,7 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete):
             return
 
         records.sort(key=lambda kv: kv[1].created_at, reverse=True)  # newest first
-        solara.Markdown(f"**SAVED EVALUATIONS** ({len(records)})")
+        solara.Markdown(t("widgets.evaluation_results.saved_evaluations_header", count=len(records)))
         with rv.List(dense=True):
             for key, rec in records:
                 EvaluationRow(rec_key=key, record=rec,
@@ -99,12 +100,12 @@ def EvaluationTableDialog(project, eval_key, on_close):
         with rv.Card():
             with rv.CardTitle():
                 solara.Text(
-                    f"Evaluation — {record.truth_tag}" if record else "Evaluation")
+                    t("widgets.evaluation_results.dialog_title", truth_tag=record.truth_tag) if record else "Evaluation")
             with rv.CardText():
                 if record is not None and record.indices:
                     rows = rows_for_record(record)
                     solara.DataFrame(pd.DataFrame(rows), items_per_page=max(len(rows), 1))
                 elif record is not None:
-                    solara.Info("No indices stored for this run.")
+                    solara.Info(t("widgets.evaluation_results.no_indices_info"))
             with rv.CardActions(style_="justify-content: flex-end;"):
-                solara.Button("Close", on_click=on_close, text=True, small=True)
+                solara.Button(t("common.close"), on_click=on_close, text=True, small=True)

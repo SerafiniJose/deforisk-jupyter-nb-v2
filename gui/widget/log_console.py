@@ -9,6 +9,7 @@ latest is always visible without fragile auto-scroll-to-bottom JS.
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts.log_bridge import install_log_console_handler, log_records
 
 # Level -> Vuetify chip colour (matches the colorlog scheme in logging_config.toml).
@@ -66,7 +67,7 @@ def LogConsole():
                     with solara.Row(style="align-items: center; gap: 8px;"):
                         rv.Icon(children=["mdi-text-box-outline"], small=True)
                         solara.Text(
-                            "Process log",
+                            t("widgets.log_console.header"),
                             style="font-weight: 600; white-space: nowrap;",
                         )
                         rv.Chip(children=[str(len(records))], x_small=True)
@@ -79,7 +80,7 @@ def LogConsole():
                     ):
                         if not records:
                             solara.Text(
-                                "No activity yet.",
+                                t("widgets.log_console.empty"),
                                 style="color: var(--md-grey-500); font-style: italic;",
                             )
                         # Newest first — latest line is always visible at the top.

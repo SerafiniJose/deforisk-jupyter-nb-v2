@@ -8,6 +8,7 @@ display-only and intentionally carry no edit/delete/map callbacks.
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts.summary_helpers import (
     raw_variable_rows,
     processed_variable_rows,
@@ -51,18 +52,18 @@ def _header(grid: str, labels):
 def RawVariablesSummary(p):
     stats, rows = raw_variable_rows(p)
     if not rows:
-        _Empty("No raw variables yet.")
+        _Empty(t("widgets.summary_lists.raw_vars_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) 90px 110px 70px;"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} total · {stats['vector']} vector · {stats['raster']} raster")
-        _header(grid, ["Name", "Type", "Raster type", "Year"])
+        _Banner(t("widgets.summary_lists.vars_banner", total=stats['total'], vector=stats['vector'], raster=stats['raster']))
+        _header(grid, [t("widgets.summary_lists.col_name"), t("widgets.summary_lists.col_type"), t("widgets.summary_lists.col_raster_type"), t("widgets.summary_lists.col_year")])
         for r in rows:
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):
                     solara.Text(str(r["name"]), style=_NAME_TEXT)
                     if r["is_base"]:
-                        rv.Chip(children=["base"], x_small=True, color="info")
+                        rv.Chip(children=[t("widgets.summary_lists.chip_base")], x_small=True, color="info")
                 with rv.Html(tag="div", style_=_CELL):
                     rv.Chip(children=[str(r["data_type"])], x_small=True, outlined=True, color="primary")
                 with rv.Html(tag="div", style_=_CELL):
@@ -75,12 +76,12 @@ def RawVariablesSummary(p):
 def ProcessedVariablesSummary(p):
     stats, rows = processed_variable_rows(p)
     if not rows:
-        _Empty("No processed variables yet.")
+        _Empty(t("widgets.summary_lists.processed_vars_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) 120px 110px 70px;"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} total · {stats['vector']} vector · {stats['raster']} raster")
-        _header(grid, ["Name", "Derived from", "Raster type", "Year"])
+        _Banner(t("widgets.summary_lists.vars_banner", total=stats['total'], vector=stats['vector'], raster=stats['raster']))
+        _header(grid, [t("widgets.summary_lists.col_name"), t("widgets.summary_lists.col_source"), t("widgets.summary_lists.col_raster_type"), t("widgets.summary_lists.col_year")])
         for r in rows:
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):
@@ -97,12 +98,12 @@ def ProcessedVariablesSummary(p):
 def DatasetsSummary(p):
     stats, rows = dataset_rows(p)
     if not rows:
-        _Empty("No datasets registered yet.")
+        _Empty(t("widgets.summary_lists.datasets_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) minmax(0,1fr) 70px 70px;"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} dataset(s)")
-        _header(grid, ["Name", "Target", "Feats", "Year"])
+        _Banner(t("widgets.summary_lists.datasets_banner", total=stats['total']))
+        _header(grid, [t("widgets.summary_lists.col_name"), t("widgets.summary_lists.col_target"), t("widgets.summary_lists.col_feats"), t("widgets.summary_lists.col_year")])
         for r in rows:
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):
@@ -119,12 +120,12 @@ def DatasetsSummary(p):
 def SamplesSummary(p):
     stats, rows = sample_rows(p)
     if not rows:
-        _Empty("No sample sets generated yet.")
+        _Empty(t("widgets.summary_lists.samples_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) minmax(0,1fr) 150px 60px;"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} set(s) · {stats['points']} points")
-        _header(grid, ["Name", "Strategy", "Points (class counts)", "Seed"])
+        _Banner(t("widgets.summary_lists.samples_banner", total=stats['total'], points=stats['points']))
+        _header(grid, [t("widgets.summary_lists.col_name"), t("widgets.summary_lists.col_strategy"), t("widgets.summary_lists.col_points_classes"), t("widgets.summary_lists.col_seed")])
         for r in rows:
             alloc = f" / {r['allocation']}" if r["allocation"] and r["allocation"] != "—" else ""
             strat = f"{r['strategy']}{alloc}"
@@ -145,18 +146,18 @@ def SamplesSummary(p):
 def ModelsSummary(p):
     stats, rows = model_rows(p)
     if not rows:
-        _Empty("No models trained yet.")
+        _Empty(t("widgets.summary_lists.models_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) 70px 60px 80px 90px minmax(0,1.2fr);"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} model(s) · {stats['trained']} trained")
-        _header(grid, ["Name", "Type", "Year", "Samples", "Deviance", "Params"])
+        _Banner(t("widgets.summary_lists.models_banner", total=stats['total'], trained=stats['trained']))
+        _header(grid, [t("widgets.summary_lists.col_name"), t("widgets.summary_lists.col_type"), t("widgets.summary_lists.col_year"), t("widgets.summary_lists.col_samples"), t("widgets.summary_lists.col_deviance"), t("widgets.summary_lists.col_params")])
         for r in rows:
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):
                     solara.Text(str(r["name"]), style=_NAME_TEXT)
                     if r["trained"]:
-                        rv.Chip(children=["✓"], x_small=True, color="success")
+                        rv.Chip(children=[t("widgets.summary_lists.chip_trained")], x_small=True, color="success")
                 with rv.Html(tag="div", style_=_CELL):
                     rv.Chip(children=[str(r["model_type"])], x_small=True, outlined=True, color="primary")
                 with rv.Html(tag="div", style_=_CELL):
@@ -173,12 +174,12 @@ def ModelsSummary(p):
 def PredictionsSummary(p):
     stats, rows = prediction_rows(p)
     if not rows:
-        _Empty("No predictions generated yet.")
+        _Empty(t("widgets.summary_lists.predictions_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) minmax(0,1fr) 70px 70px 60px;"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} prediction(s) · {stats['active']} active")
-        _header(grid, ["Model", "Dataset", "Year", "Window", "Active"])
+        _Banner(t("widgets.summary_lists.predictions_banner", total=stats['total'], active=stats['active']))
+        _header(grid, [t("widgets.summary_lists.col_model"), t("widgets.summary_lists.col_dataset"), t("widgets.summary_lists.col_year"), t("widgets.summary_lists.col_window"), t("widgets.summary_lists.col_active")])
         for r in rows:
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):
@@ -197,12 +198,12 @@ def PredictionsSummary(p):
 def EvaluationsSummary(p):
     stats, rows = evaluation_rows(p)
     if not rows:
-        _Empty("No evaluations saved yet.")
+        _Empty(t("widgets.summary_lists.evaluations_empty"))
         return
     grid = _GRID_BASE + "grid-template-columns:minmax(0,1fr) 60px minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);"
     with solara.Column(style="gap:0;width:100%;"):
-        _Banner(f"{stats['total']} evaluation(s)")
-        _header(grid, ["Name", "# Pred", "Cell sizes", "Metrics", "Created"])
+        _Banner(t("widgets.summary_lists.evaluations_banner", total=stats['total']))
+        _header(grid, [t("widgets.summary_lists.col_name"), t("widgets.summary_lists.col_pred_count"), t("widgets.summary_lists.col_cell_sizes"), t("widgets.summary_lists.col_metrics"), t("widgets.summary_lists.col_created")])
         for r in rows:
             with rv.Html(tag="div", style_=grid + _ROW_EXTRA):
                 with rv.Html(tag="div", style_=_NAME_CELL):

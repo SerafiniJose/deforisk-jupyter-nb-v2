@@ -6,6 +6,8 @@ from typing import Callable, Optional
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
+
 logger = logging.getLogger("spatial_risk")
 
 _GRID = "display:grid;grid-template-columns:1fr 1fr 1fr 70px 70px;align-items:center;width:100%;"
@@ -29,15 +31,15 @@ def SampleSetList(
     """Table of registered sample sets with add-to-map and remove actions."""
     p = project.value
     if p is None or not p.samples:
-        solara.Text("No sample sets generated yet.", style="color:grey;")
+        solara.Text(t("widgets.sample_set_list.empty"), style="color:grey;")
         return
 
     with solara.Column(style="gap:0;width:100%;"):
         with rv.Html(tag="div", style_=_GRID + _HEADER_EXTRA):
-            rv.Html(tag="span", children=["Name"])
-            rv.Html(tag="span", children=["Strategy"])
-            rv.Html(tag="span", children=["Points"])
-            rv.Html(tag="span", children=["Map"])
+            rv.Html(tag="span", children=[t("widgets.sample_set_list.col_name")])
+            rv.Html(tag="span", children=[t("widgets.sample_set_list.col_strategy")])
+            rv.Html(tag="span", children=[t("widgets.sample_set_list.col_points")])
+            rv.Html(tag="span", children=[t("widgets.sample_set_list.col_map")])
             rv.Html(tag="span", children=[""])
 
         for key, s in p.samples.items():

@@ -5,6 +5,98 @@
       "completed_subtitle": "deviance: {dev} | samples: {samp}",
       "failed_subtitle": "Error: {error}",
       "cancelled_subtitle": "Cancelled by user"
+    },
+    "prediction_import_modal": {
+      "palette_far": "FAR ramp (probability, pinned 1..65535)",
+      "palette_stretch": "Auto-stretch ramp to file range",
+      "error_select_raster": "Select a raster file to import.",
+      "error_enter_name": "Enter a name for the imported prediction.",
+      "title": "Import prediction raster",
+      "label_name": "Name",
+      "placeholder_name": "e.g. qgis-export-2020",
+      "label_file": "Select raster file",
+      "label_palette": "Map palette",
+      "info_text": "The raster must be spatially comparable to the truth chosen in Step 8 to be evaluated.",
+      "btn_import": "Import"
+    },
+    "inference_output_list": {
+      "status_cancelled": "Cancelled by user",
+      "outputs_header": "**OUTPUTS** ({count})"
+    },
+    "evaluation_results": {
+      "job_status": "{id}: {status}",
+      "saved_evaluations_header": "**SAVED EVALUATIONS** ({count})",
+      "dialog_title": "Evaluation — {truth_tag}",
+      "no_indices_info": "No indices stored for this run."
+    },
+    "dataset_list": {
+      "empty": "No datasets registered yet.",
+      "col_name": "Name",
+      "col_target": "Target",
+      "col_feats": "Feats",
+      "col_year": "Year"
+    },
+    "sample_set_list": {
+      "empty": "No sample sets generated yet.",
+      "col_name": "Name",
+      "col_strategy": "Strategy",
+      "col_points": "Points",
+      "col_map": "Map"
+    },
+    "variable_list": {
+      "source_empty": "No variables added yet.",
+      "source_col_name": "Name",
+      "source_col_type": "Type",
+      "source_col_year": "Year",
+      "chip_base": "base",
+      "derived_header": "DERIVED VARIABLES ({count})",
+      "derived_col_name": "Name",
+      "derived_col_source": "Source",
+      "derived_col_status": "Status",
+      "derived_source_unknown": "unknown",
+      "chip_ready": "ready"
+    },
+    "summary_lists": {
+      "raw_vars_empty": "No raw variables yet.",
+      "vars_banner": "{total} total · {vector} vector · {raster} raster",
+      "col_name": "Name",
+      "col_type": "Type",
+      "col_raster_type": "Raster type",
+      "col_year": "Year",
+      "chip_base": "base",
+      "processed_vars_empty": "No processed variables yet.",
+      "col_source": "Derived from",
+      "datasets_empty": "No datasets registered yet.",
+      "datasets_banner": "{total} dataset(s)",
+      "col_target": "Target",
+      "col_feats": "Feats",
+      "samples_empty": "No sample sets generated yet.",
+      "samples_banner": "{total} set(s) · {points} points",
+      "col_strategy": "Strategy",
+      "col_points_classes": "Points (class counts)",
+      "col_seed": "Seed",
+      "models_empty": "No models trained yet.",
+      "models_banner": "{total} model(s) · {trained} trained",
+      "col_samples": "Samples",
+      "col_deviance": "Deviance",
+      "col_params": "Params",
+      "chip_trained": "✓",
+      "predictions_empty": "No predictions generated yet.",
+      "predictions_banner": "{total} prediction(s) · {active} active",
+      "col_model": "Model",
+      "col_dataset": "Dataset",
+      "col_window": "Window",
+      "col_active": "Active",
+      "evaluations_empty": "No evaluations saved yet.",
+      "evaluations_banner": "{total} evaluation(s)",
+      "col_pred_count": "# Pred",
+      "col_cell_sizes": "Cell sizes",
+      "col_metrics": "Metrics",
+      "col_created": "Created"
+    },
+    "log_console": {
+      "header": "Process log",
+      "empty": "No activity yet."
     }
   }
 }

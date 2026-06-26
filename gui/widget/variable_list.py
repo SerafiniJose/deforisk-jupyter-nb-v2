@@ -6,6 +6,7 @@ from typing import Callable, Optional
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
 from gui.scripts.map_helpers import is_mappable
 
 logger = logging.getLogger("spatial_risk")
@@ -44,15 +45,15 @@ def SourceVariableList(
     )
 
     if p is None or not p.raw_variables:
-        solara.Text("No variables added yet.", style="color: grey;")
+        solara.Text(t("widgets.variable_list.source_empty"), style="color: grey;")
         return
 
     with solara.Column(style="gap:0;width:100%;"):
         # Header row
         with rv.Html(tag="div", style_=_GRID + _HEADER_EXTRA):
-            rv.Html(tag="span", children=["Name"])
-            rv.Html(tag="span", children=["Type"])
-            rv.Html(tag="span", children=["Year"])
+            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_name")])
+            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_type")])
+            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_year")])
             rv.Html(tag="span", children=[""])
 
         # Data rows
@@ -65,7 +66,7 @@ def SourceVariableList(
                 with rv.Html(tag="div", style_=_NAME_CELL):
                     solara.Text(var.name, style=_NAME_TEXT)
                     if is_base:
-                        rv.Chip(children=["base"], x_small=True, color="info")
+                        rv.Chip(children=[t("widgets.variable_list.chip_base")], x_small=True, color="info")
                 # Type
                 with rv.Html(tag="div", style_=_CELL_FLEX):
                     rv.Chip(children=[data_type_label], x_small=True, outlined=True, color="primary")
@@ -121,7 +122,7 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
     with solara.Column(style="gap:0;width:100%;"):
         with solara.Row(style="align-items:center;gap:8px;padding:4px 0;"):
             solara.Text(
-                f"DERIVED VARIABLES ({count})",
+                t("widgets.variable_list.derived_header", count=count),
                 style="font-weight:600;font-size:0.8rem;color:grey;",
             )
             solara.Button(
@@ -135,15 +136,15 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
 
         if not collapsed:
             with rv.Html(tag="div", style_=_DGRID + _HEADER_EXTRA):
-                rv.Html(tag="span", children=["Name"])
-                rv.Html(tag="span", children=["Source"])
-                rv.Html(tag="span", children=["Status"])
+                rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_name")])
+                rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_source")])
+                rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_status")])
                 rv.Html(tag="span", children=[""])
 
             for key, var in p.processed_variables.items():
                 source_name = next(
                     (k for k, raw_var in p.raw_variables.items() if var.name.startswith(raw_var.name)),
-                    "unknown",
+                    t("widgets.variable_list.derived_source_unknown"),
                 )
                 with rv.Html(tag="div", style_=_DGRID + _ROW_EXTRA):
                     with rv.Html(tag="div", style_="min-width:0;overflow:hidden;"):
@@ -151,7 +152,7 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
                     with rv.Html(tag="div", style_=_CELL_FLEX):
                         rv.Chip(children=[source_name], x_small=True, outlined=True)
                     with rv.Html(tag="div", style_=_CELL_FLEX):
-                        rv.Chip(children=["ready"], color="success", x_small=True, outlined=True)
+                        rv.Chip(children=[t("widgets.variable_list.chip_ready")], color="success", x_small=True, outlined=True)
                     # Actions — delete (also removes the generated file from disk)
                     with rv.Html(tag="div", style_=_CELL_RIGHT):
                         if on_remove is not None:

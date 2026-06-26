@@ -5,6 +5,98 @@
       "completed_subtitle": "desviación: {dev} | muestras: {samp}",
       "failed_subtitle": "Error: {error}",
       "cancelled_subtitle": "Cancelado por el usuario"
+    },
+    "prediction_import_modal": {
+      "palette_far": "Rampa FAR (probabilidad, fijada 1..65535)",
+      "palette_stretch": "Rampa ajustada al rango del archivo",
+      "error_select_raster": "Seleccioná un archivo ráster para importar.",
+      "error_enter_name": "Ingresá un nombre para la predicción importada.",
+      "title": "Importar ráster de predicción",
+      "label_name": "Nombre",
+      "placeholder_name": "p.ej. qgis-export-2020",
+      "label_file": "Seleccionar archivo ráster",
+      "label_palette": "Paleta del mapa",
+      "info_text": "El ráster debe ser espacialmente comparable con la verdad elegida en el Paso 8 para poder ser evaluado.",
+      "btn_import": "Importar"
+    },
+    "inference_output_list": {
+      "status_cancelled": "Cancelado por el usuario",
+      "outputs_header": "**SALIDAS** ({count})"
+    },
+    "evaluation_results": {
+      "job_status": "{id}: {status}",
+      "saved_evaluations_header": "**EVALUACIONES GUARDADAS** ({count})",
+      "dialog_title": "Evaluación — {truth_tag}",
+      "no_indices_info": "No hay índices almacenados para esta ejecución."
+    },
+    "dataset_list": {
+      "empty": "Aún no hay conjuntos de datos registrados.",
+      "col_name": "Nombre",
+      "col_target": "Objetivo",
+      "col_feats": "Vars",
+      "col_year": "Año"
+    },
+    "sample_set_list": {
+      "empty": "Aún no se generaron conjuntos de muestras.",
+      "col_name": "Nombre",
+      "col_strategy": "Estrategia",
+      "col_points": "Puntos",
+      "col_map": "Mapa"
+    },
+    "variable_list": {
+      "source_empty": "Aún no se agregaron variables.",
+      "source_col_name": "Nombre",
+      "source_col_type": "Tipo",
+      "source_col_year": "Año",
+      "chip_base": "base",
+      "derived_header": "VARIABLES DERIVADAS ({count})",
+      "derived_col_name": "Nombre",
+      "derived_col_source": "Fuente",
+      "derived_col_status": "Estado",
+      "derived_source_unknown": "desconocido",
+      "chip_ready": "listo"
+    },
+    "summary_lists": {
+      "raw_vars_empty": "Aún no hay variables crudas.",
+      "vars_banner": "{total} total · {vector} vector · {raster} ráster",
+      "col_name": "Nombre",
+      "col_type": "Tipo",
+      "col_raster_type": "Tipo de ráster",
+      "col_year": "Año",
+      "chip_base": "base",
+      "processed_vars_empty": "Aún no hay variables procesadas.",
+      "col_source": "Derivado de",
+      "datasets_empty": "Aún no hay conjuntos de datos registrados.",
+      "datasets_banner": "{total} conjunto(s)",
+      "col_target": "Objetivo",
+      "col_feats": "Vars",
+      "samples_empty": "Aún no se generaron conjuntos de muestras.",
+      "samples_banner": "{total} conjunto(s) · {points} puntos",
+      "col_strategy": "Estrategia",
+      "col_points_classes": "Puntos (conteos por clase)",
+      "col_seed": "Semilla",
+      "models_empty": "Aún no se entrenaron modelos.",
+      "models_banner": "{total} modelo(s) · {trained} entrenados",
+      "col_samples": "Muestras",
+      "col_deviance": "Desvianza",
+      "col_params": "Parámetros",
+      "chip_trained": "✓",
+      "predictions_empty": "Aún no se generaron predicciones.",
+      "predictions_banner": "{total} predicción(es) · {active} activa(s)",
+      "col_model": "Modelo",
+      "col_dataset": "Conjunto",
+      "col_window": "Ventana",
+      "col_active": "Activa",
+      "evaluations_empty": "Aún no hay evaluaciones guardadas.",
+      "evaluations_banner": "{total} evaluación(es)",
+      "col_pred_count": "# Pred",
+      "col_cell_sizes": "Tamaños de celda",
+      "col_metrics": "Métricas",
+      "col_created": "Creado"
+    },
+    "log_console": {
+      "header": "Registro de proceso",
+      "empty": "Sin actividad aún."
     }
   }
 }

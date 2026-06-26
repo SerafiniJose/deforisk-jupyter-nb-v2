@@ -12,16 +12,17 @@ import reacton.ipyvuetify as rv
 import solara
 from pysepal.solara.components.inputs import FileInputComponent
 
+from gui.i18n import t
+
 # Raster file types accepted for a local prediction import.
 _IMPORT_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
 
-# Map display palette choices offered when importing a local prediction raster.
-# Label -> palette key understood by prediction_import / prediction_map.
-_IMPORT_PALETTES = {
-    "FAR ramp (probability, pinned 1..65535)": "far",
-    "Auto-stretch ramp to file range": "stretch",
-}
-_IMPORT_PALETTE_LABELS = list(_IMPORT_PALETTES.keys())
+
+def _import_palette_items():
+    return [
+        {"text": t("widgets.prediction_import_modal.palette_far"), "value": "far"},
+        {"text": t("widgets.prediction_import_modal.palette_stretch"), "value": "stretch"},
+    ]
 
 
 @solara.component
@@ -40,13 +41,13 @@ def PredictionImportModal(
     """
     name, set_name = solara.use_state("")
     file_path, set_file_path = solara.use_state("")
-    palette_label, set_palette_label = solara.use_state(_IMPORT_PALETTE_LABELS[0])
+    palette, set_palette = solara.use_state("far")
     error, set_error = solara.use_state(None)
 
     def reset():
         set_name("")
         set_file_path("")
-        set_palette_label(_IMPORT_PALETTE_LABELS[0])
+        set_palette("far")
         set_error(None)
 
     def on_cancel():
@@ -55,15 +56,15 @@ def PredictionImportModal(
 
     def on_submit():
         if not file_path or not str(file_path).strip():
-            set_error("Select a raster file to import.")
+            set_error(t("widgets.prediction_import_modal.error_select_raster"))
             return
         if not name.strip():
-            set_error("Enter a name for the imported prediction.")
+            set_error(t("widgets.prediction_import_modal.error_enter_name"))
             return
         entry = {
             "name": name.strip(),
             "path": str(file_path),
-            "palette": _IMPORT_PALETTES.get(palette_label, "far"),
+            "palette": palette,
         }
         reset()
         open_.set(False)
@@ -74,19 +75,19 @@ def PredictionImportModal(
     ):
         with rv.Card():
             with rv.CardTitle():
-                solara.Text("Import prediction raster")
+                solara.Text(t("widgets.prediction_import_modal.title"))
 
             with rv.CardText():
                 rv.TextField(
-                    label="Name",
+                    label=t("widgets.prediction_import_modal.label_name"),
                     v_model=name,
                     on_v_model=set_name,
                     dense=True,
                     outlined=True,
-                    placeholder="e.g. qgis-export-2020",
+                    placeholder=t("widgets.prediction_import_modal.placeholder_name"),
                 )
                 FileInputComponent(
-                    label="Select raster file",
+                    label=t("widgets.prediction_import_modal.label_file"),
                     value=file_path,
                     on_value=set_file_path,
                     sepal_client=sepal_client,
@@ -95,20 +96,19 @@ def PredictionImportModal(
                     clearable=True,
                 )
                 rv.Select(
-                    label="Map palette",
-                    items=_IMPORT_PALETTE_LABELS,
-                    v_model=palette_label,
-                    on_v_model=set_palette_label,
+                    label=t("widgets.prediction_import_modal.label_palette"),
+                    items=_import_palette_items(),
+                    item_text="text",
+                    item_value="value",
+                    v_model=palette,
+                    on_v_model=set_palette,
                     dense=True,
                     outlined=True,
                 )
-                solara.Text(
-                    "The raster must be spatially comparable to the truth "
-                    "chosen in Step 8 to be evaluated."
-                )
+                solara.Text(t("widgets.prediction_import_modal.info_text"))
                 if error:
                     rv.Alert(type_="error", dense=True, children=[error])
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                solara.Button("Cancel", on_click=on_cancel, text=True, small=True)
-                solara.Button("Import", on_click=on_submit, color="primary", small=True)
+                solara.Button(t("common.cancel"), on_click=on_cancel, text=True, small=True)
+                solara.Button(t("widgets.prediction_import_modal.btn_import"), on_click=on_submit, color="primary", small=True)

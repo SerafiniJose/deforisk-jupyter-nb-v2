@@ -164,4 +164,4 @@ def test_inference_tile_supports_local_prediction_import():
 
     modal_src = inspect.getsource(prediction_import_modal)
     assert "FileInputComponent" in modal_src    # local raster file picker
-    assert "_IMPORT_PALETTES" in modal_src      # palette choice
+    assert "_import_palette_items" in modal_src      # palette choice

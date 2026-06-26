@@ -5,6 +5,8 @@ import logging
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
+
 logger = logging.getLogger("spatial_risk")
 
 STATUS_COLORS = {
@@ -62,7 +64,7 @@ def InferenceOutputItem(job: dict, on_remove, on_toggle_map=None, is_on=False, h
                     style_="color: red;",
                 )
             elif status == "cancelled":
-                rv.ListItemSubtitle(children=["Cancelled by user"])
+                rv.ListItemSubtitle(children=[t("widgets.inference_output_list.status_cancelled")])
 
         with rv.ListItemAction():
             with solara.Row(style="gap:0;align-items:center;flex-direction:row;"):
@@ -111,7 +113,7 @@ def InferenceOutputList(
 
     on_map = preds_on_map.value if preds_on_map is not None else set()
 
-    solara.Markdown(f"**OUTPUTS** ({len(jobs)})")
+    solara.Markdown(t("widgets.inference_output_list.outputs_header", count=len(jobs)))
     with rv.List(dense=True):
         for job in reversed(jobs):
             has_preds = bool(predictions_for(job)) if predictions_for is not None else False

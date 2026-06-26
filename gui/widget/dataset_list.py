@@ -6,6 +6,8 @@ from typing import Callable, Optional
 import reacton.ipyvuetify as rv
 import solara
 
+from gui.i18n import t
+
 logger = logging.getLogger("spatial_risk")
 
 _GRID = "display:grid;grid-template-columns:1fr 1fr 60px 60px 60px;align-items:center;width:100%;"
@@ -29,15 +31,15 @@ def DatasetList(
     """Table of registered datasets with edit and remove actions."""
     p = project.value
     if p is None or not p.datasets:
-        solara.Text("No datasets registered yet.", style="color:grey;")
+        solara.Text(t("widgets.dataset_list.empty"), style="color:grey;")
         return
 
     with solara.Column(style="gap:0;width:100%;"):
         with rv.Html(tag="div", style_=_GRID + _HEADER_EXTRA):
-            rv.Html(tag="span", children=["Name"])
-            rv.Html(tag="span", children=["Target"])
-            rv.Html(tag="span", children=["Feats"])
-            rv.Html(tag="span", children=["Year"])
+            rv.Html(tag="span", children=[t("widgets.dataset_list.col_name")])
+            rv.Html(tag="span", children=[t("widgets.dataset_list.col_target")])
+            rv.Html(tag="span", children=[t("widgets.dataset_list.col_feats")])
+            rv.Html(tag="span", children=[t("widgets.dataset_list.col_year")])
             rv.Html(tag="span", children=[""])
 
         for key, ds in p.datasets.items():
