@@ -504,6 +504,12 @@ class Project(BaseModel):
                 Path(path).unlink(missing_ok=True)
             except OSError:
                 print(f"  ⚠ Could not delete sample file: {path}")
+        pm = getattr(sample, "pmtiles_path", None)
+        if pm is not None:
+            try:
+                Path(pm).unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not delete sample pmtiles: %s", pm)
         if auto_save:
             self.save()
 
@@ -733,6 +739,7 @@ class Project(BaseModel):
                     "adapt": s.adapt,
                     "seed": s.seed,
                     "points_path": str(s.points_path) if s.points_path else None,
+                    "pmtiles_path": str(s.pmtiles_path) if s.pmtiles_path else None,
                     "crs": s.crs,
                     "n_total": s.n_total,
                     "class_counts": s.class_counts,
@@ -940,6 +947,7 @@ class Project(BaseModel):
                     adapt=s_data.get("adapt", False),
                     seed=s_data.get("seed"),
                     points_path=_Path(s_data["points_path"]) if s_data.get("points_path") else None,
+                    pmtiles_path=_Path(s_data["pmtiles_path"]) if s_data.get("pmtiles_path") else None,
                     crs=s_data.get("crs"),
                     n_total=s_data.get("n_total", 0),
                     class_counts=s_data.get("class_counts", {}),

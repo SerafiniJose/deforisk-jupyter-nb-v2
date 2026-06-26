@@ -13,10 +13,6 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
-from gui.scripts.map_helpers import (
-    add_sample_points_on_map,
-    remove_sample_points_from_map,
-)
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.sample_set_list import SampleSetList
@@ -37,10 +33,57 @@ def _systematic_modes():
 # Module-level reactives shared across re-renders.
 sampling_jobs = solara.reactive([])
 samples_on_map = solara.reactive(set())
+samples_pending = solara.reactive(frozenset())
 
 
 def _sample_layer_key(name: str) -> str:
     return f"sample_{name}"
+
+
+def _remove_sample_layers(map_, base_key):
+    """Clear both rendering paths for a sample: PMTiles (base key) and the
+    GeoJSON fallback (base_key__event / base_key__forest)."""
+    from gui.scripts.map_helpers import remove_sample_points_from_map
+    from gui.scripts.pmtiles_map import remove_sample_pmtiles_from_map
+    remove_sample_pmtiles_from_map(map_, base_key)
+    remove_sample_points_from_map(map_, base_key)
+
+
+def _toggle_sample_on_map(key, project_reactive, map_, turn_on):
+    """Background worker: add/remove a sample's map layer off the kernel thread.
+
+    Prefers PMTiles vector tiles; falls back to GeoJSON when the sample has no
+    .pmtiles (old project / tippecanoe missing) or PMTiles add fails.
+    """
+    base_key = _sample_layer_key(key)
+    try:
+        if turn_on:
+            cur = project_reactive.value
+            ss = cur.samples.get(key) if cur else None
+            if ss is None:
+                return
+            drew = False
+            if getattr(ss, "pmtiles_path", None):
+                try:
+                    from gui.scripts.pmtiles_map import add_sample_pmtiles_on_map
+                    add_sample_pmtiles_on_map(map_, ss.pmtiles_path, key, base_key)
+                    drew = True
+                except Exception:
+                    logger.exception(
+                        "PMTiles add failed for %s; GeoJSON fallback", key)
+            if not drew:
+                if ss.points_path is None:
+                    return
+                from gui.scripts.map_helpers import add_sample_points_on_map
+                add_sample_points_on_map(map_, ss.points_path, key, base_key)
+            samples_on_map.set(samples_on_map.value | {key})
+        else:
+            _remove_sample_layers(map_, base_key)
+            samples_on_map.set(samples_on_map.value - {key})
+    except Exception:
+        logger.exception("sample map toggle failed for %s", key)
+    finally:
+        samples_pending.set(samples_pending.value - {key})
 
 
 def _update_job(job_id, *, skip_if_cancelled=True, **changes):
@@ -146,28 +189,23 @@ def SamplingTile(project, map_=None):
     def on_toggle_map(key):
         if map_ is None:
             return
+        if key in samples_pending.value:        # idempotent: ignore re-clicks
+            return
         cur = project.value
         if cur is None:
             return
         ss = cur.samples.get(key)
-        if ss is None or ss.points_path is None:
+        if ss is None:
             return
-        try:
-            if key in samples_on_map.value:
-                remove_sample_points_from_map(map_, _sample_layer_key(key))
-                samples_on_map.set(samples_on_map.value - {key})
-            else:
-                add_sample_points_on_map(
-                    map_, ss.points_path, key, _sample_layer_key(key)
-                )
-                samples_on_map.set(samples_on_map.value | {key})
-        except Exception as exc:
-            logger.exception("sample map toggle failed for %s", key)
-            set_form_error(t("tiles.sampling.error_toggle_map", exc=exc))
+        turn_on = key not in samples_on_map.value
+        if turn_on and ss.points_path is None and getattr(ss, "pmtiles_path", None) is None:
+            return
+        samples_pending.set(samples_pending.value | {key})
+        spawn_in_context(_toggle_sample_on_map, (key, project, map_, turn_on))
 
     def _do_remove(key):
         if map_ is not None and key in samples_on_map.value:
-            remove_sample_points_from_map(map_, _sample_layer_key(key))
+            _remove_sample_layers(map_, _sample_layer_key(key))
             samples_on_map.set(samples_on_map.value - {key})
         cur = project.value
         if cur is not None and key in cur.samples:
@@ -256,6 +294,7 @@ def SamplingTile(project, map_=None):
             on_map=frozenset(samples_on_map.value),
             on_toggle_map=on_toggle_map,
             on_remove=set_pending_remove,
+            pending=frozenset(samples_pending.value),
         )
 
         ConfirmDialog(

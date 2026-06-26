@@ -73,3 +73,39 @@ def test_save_load_round_trips_spacing_m(tmp_path, monkeypatch):
     rs = loaded.get_sample("grid")
     assert rs is not None
     assert rs.spacing_m == 250.0
+
+
+def test_pmtiles_path_round_trips(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_mod, "downloads_folder", tmp_path)
+    p = Project(project_name="t_pmtiles_rt")
+    pm = tmp_path / "calib.pmtiles"; pm.write_bytes(b"PMTILES")
+    s = _sample(name="calib", points_path=tmp_path / "calib.gpkg", pmtiles_path=pm)
+    p.add_sample(s, auto_save=False)
+    p.save()
+
+    rs = Project.load("t_pmtiles_rt").get_sample("calib")
+    assert rs is not None
+    assert str(rs.pmtiles_path) == str(pm)
+
+
+def test_pmtiles_path_none_round_trips(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_mod, "downloads_folder", tmp_path)
+    p = Project(project_name="t_pmtiles_none")
+    s = _sample(name="calib", points_path=tmp_path / "calib.gpkg")  # no pmtiles_path
+    p.add_sample(s, auto_save=False)
+    p.save()
+
+    assert Project.load("t_pmtiles_none").get_sample("calib").pmtiles_path is None
+
+
+def test_delete_sample_removes_pmtiles(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_mod, "downloads_folder", tmp_path)
+    p = Project(project_name="t_pmtiles_del")
+    gpkg = tmp_path / "calib.gpkg"; gpkg.write_bytes(b"GPKG")
+    pm = tmp_path / "calib.pmtiles"; pm.write_bytes(b"PMTILES")
+    s = _sample(name="calib", points_path=gpkg, pmtiles_path=pm)
+    p.add_sample(s, auto_save=False)
+
+    p.delete_sample("calib", auto_save=False)
+    assert not gpkg.exists()
+    assert not pm.exists()

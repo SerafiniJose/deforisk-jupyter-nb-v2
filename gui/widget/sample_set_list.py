@@ -27,6 +27,7 @@ def SampleSetList(
     on_map=frozenset(),
     on_toggle_map: Optional[Callable[[str], None]] = None,
     on_remove: Optional[Callable[[str], None]] = None,
+    pending=frozenset(),
 ):
     """Table of registered sample sets with add-to-map and remove actions."""
     p = project.value
@@ -63,6 +64,7 @@ def SampleSetList(
                             icon_name="mdi-map-marker" if is_on else "mdi-map-marker-outline",
                             on_click=lambda *_, k=key: on_toggle_map(k),
                             icon=True, text=True, x_small=True,
+                            disabled=key in pending,
                             color="primary" if is_on else None,
                         )
                 with rv.Html(tag="div", style_=_CELL_RIGHT):
