@@ -9,6 +9,7 @@ dependencies:
   - fiona
   - geopandas
   - rioxarray
+  - tippecanoe
   # Scientific
   - numpy
   - pydantic
@@ -35,5 +36,7 @@ dependencies:
     # GUI
     - "starlette<0.53"
     - pysepal
+    - "pyvectortiles @ git+https://github.com/dfguerrerom/ipy-pmtiles"
+    - pmtiles
     # Install this project (spatialrisk + gui packages)
     - -e .
