@@ -9,14 +9,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from gui.i18n import t, plural
+
 _NAME_RE = re.compile(r"[A-Za-z0-9 _-]+")
 
 
-def compute_app_title(project, dirty: bool, base: str = "Spatial Risk") -> str:
+def compute_app_title(project, dirty: bool, base: str = None) -> str:
     """Header title: always '<base>', plus a '●' when there are unsaved changes.
     The project name is shown elsewhere, not in the header. Plain text (header
     cannot host a widget)."""
-    suffix = " ●" if dirty and project is not None else ""
+    base = base if base is not None else t("app.title")
+    suffix = t("app.title_dirty_suffix") if dirty and project is not None else ""
     return f"{base}{suffix}"
 
 
@@ -24,19 +27,22 @@ def format_relative(when: datetime, now: datetime) -> str:
     """Coarse relative time: 'just now' / 'N min ago' / 'N hr ago' / 'N days ago'."""
     seconds = max(0, int((now - when).total_seconds()))
     if seconds < 60:
-        return "just now"
+        return t("time.just_now")
     if seconds < 3600:
-        return f"{seconds // 60} min ago"
+        m = int(seconds // 60)
+        return plural(m, "time.minutes_ago_one", "time.minutes_ago_other")
     if seconds < 86400:
-        return f"{seconds // 3600} hr ago"
-    return f"{seconds // 86400} days ago"
+        h = int(seconds // 3600)
+        return plural(h, "time.hours_ago_one", "time.hours_ago_other")
+    d = int(seconds // 86400)
+    return plural(d, "time.days_ago_one", "time.days_ago_other")
 
 
 def format_last_saved(when: Optional[datetime], now: datetime) -> str:
     """'never saved' when None, else 'saved <relative>'."""
     if when is None:
-        return "never saved"
-    return f"saved {format_relative(when, now)}"
+        return t("project.never_saved")
+    return t("project.saved_relative", time_ago=format_relative(when, now))
 
 
 @dataclass
@@ -56,14 +62,14 @@ def project_count_chips(info) -> list[CountChip]:
     when any models exist and is accented when at least one is trained. The
     predictions chip is accented when there is at least one prediction.
     """
-    models_label = f"{info.model_count} models"
+    models_label = plural(info.model_count, "chips.models_one", "chips.models_other")
     if info.model_count:
-        models_label += f" ({info.trained_model_count} trained)"
+        models_label += t("project.chip_models_trained", trained=info.trained_model_count)
     return [
-        CountChip(f"{info.raw_count} raw", False),
-        CountChip(f"{info.processed_count} processed", False),
+        CountChip(plural(info.raw_count, "chips.raw_one", "chips.raw_other"), False),
+        CountChip(plural(info.processed_count, "chips.processed_one", "chips.processed_other"), False),
         CountChip(models_label, info.trained_model_count >= 1),
-        CountChip(f"{info.prediction_count} predictions", info.prediction_count > 0),
+        CountChip(plural(info.prediction_count, "chips.predictions_one", "chips.predictions_other"), info.prediction_count > 0),
     ]
 
 
@@ -80,13 +86,13 @@ def validate_project_name(name: str, existing_names: list[str]) -> NameValidatio
     ([A-Za-z0-9 _-]). ``exists`` is informational (a warning, not an error)."""
     cleaned = name.strip()
     if not cleaned:
-        return NameValidation(False, "", False, "Name cannot be empty")
+        return NameValidation(False, "", False, t("project.validation_empty_name"))
     if not _NAME_RE.fullmatch(cleaned):
         return NameValidation(
             False,
             cleaned,
             False,
-            "Use only letters, numbers, spaces, hyphens and underscores",
+            t("project.validation_invalid_chars"),
         )
     return NameValidation(True, cleaned, cleaned in existing_names, None)
 
@@ -107,8 +113,8 @@ def open_saved_label(count: Optional[int]) -> str:
     count is surfaced so the button is worth a click before opening the dialog.
     """
     if not count:  # 0 or None
-        return "No saved projects yet"
-    return f"Open saved… ({count})"
+        return t("project.open_saved_none")
+    return t("project.open_saved_count", count=count)
 
 
 def aoi_project_name(aoi_name: str, when: datetime) -> str:

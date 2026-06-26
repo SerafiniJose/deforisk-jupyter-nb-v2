@@ -149,7 +149,7 @@ def ProjectPanel(on_close=None):
             app_state.aoi_result.set(load_aoi(DATA_DIR / loaded.project_name, loaded.aoi))
             app_state.aoi_asset.set((loaded.aoi or {}).get("asset"))
             app_state.load_project_state(loaded, when)
-            app_state.status_message.set(f"Project '{selected}' loaded.")
+            app_state.status_message.set(t("project.status_loaded", name=selected))
             app_state.error_message.set(None)
             set_load_open(False)
             # Dismiss the whole Project popup too, not just the inner Load
@@ -181,7 +181,7 @@ def ProjectPanel(on_close=None):
         # new_project_state bumps project_loaded_signal, so the shell's
         # on-switch effects clear the previous project's map overlays/tracking
         # and reset the (empty) Train/Inference job lists — no manual reset here.
-        app_state.status_message.set(f"Project '{validation.cleaned}' created.")
+        app_state.status_message.set(t("project.status_created", name=validation.cleaned))
         set_new_open(False)
 
     def load_instead():
@@ -198,7 +198,7 @@ def ProjectPanel(on_close=None):
     def do_save():
         if p is None:
             app_state.error_message.set(
-                "No project to save. Create or load a project first."
+                t("project.error_no_project_to_save")
             )
             return
         if overwrite_needed(p.project_name, last_saved, existing_names()):
@@ -220,10 +220,10 @@ def ProjectPanel(on_close=None):
             app_state.mark_saved(datetime.now())
             note = ""
             if not p.raw_variables:
-                note = " (note: no variables yet)"
+                note = t("project.status_saved_note_no_vars")
             elif p.base_raster is None:
-                note = " (note: no base raster set yet)"
-            app_state.status_message.set(f"Saved to {path}{note}")
+                note = t("project.status_saved_note_no_base")
+            app_state.status_message.set(t("project.status_saved", path=path, note=note))
             app_state.error_message.set(None)
         except Exception as exc:
             app_state.error_message.set(str(exc))
@@ -237,14 +237,13 @@ def ProjectPanel(on_close=None):
                 children=["mdi-map-marker-plus-outline"],
                 style_="font-size: 40px; opacity: 0.5;",
             )
-            solara.Text("No project open", style="font-weight: 600;")
+            solara.Text(t("project.empty_heading"), style="font-weight: 600;")
             solara.Text(
-                "Create a project, then set its area of interest in the "
-                "Area of Interest tab — or open a saved one.",
+                t("project.empty_help"),
                 classes=["text--secondary"],
             )
             solara.Button(
-                "New project",
+                t("project.button_new_project"),
                 icon_name="mdi-plus",
                 color="primary",
                 on_click=open_new,
@@ -263,15 +262,14 @@ def ProjectPanel(on_close=None):
             with solara.Row(style="gap: 8px; align-items: center;"):
                 solara.Text(p.project_name, style="font-weight: 600;")
                 rv.Chip(
-                    children=["unsaved" if dirty else "saved"],
+                    children=[t("project.chip_unsaved") if dirty else t("project.chip_saved")],
                     color="amber" if dirty else "green",
                     text_color="white",
                     x_small=True,
                 )
             solara.Text(
-                f"{len(p.raw_variables)} raw · "
-                f"{len(p.processed_variables)} processed · "
-                f"{len(p.models)} models",
+                t("project.stats", raw=len(p.raw_variables),
+                  processed=len(p.processed_variables), models=len(p.models)),
                 style="font-size: 12px; color: var(--md-grey-500);",
             )
             solara.Text(
@@ -280,7 +278,7 @@ def ProjectPanel(on_close=None):
             )
             with solara.Row(style="gap: 8px;"):
                 solara.Button(
-                    "New",
+                    t("project.button_new"),
                     icon_name="mdi-plus",
                     color="primary",
                     outlined=True,
@@ -288,7 +286,7 @@ def ProjectPanel(on_close=None):
                     on_click=open_new,
                 )
                 solara.Button(
-                    "Load",
+                    t("common.load"),
                     icon_name="mdi-folder-open-outline",
                     color="primary",
                     outlined=True,
@@ -296,7 +294,7 @@ def ProjectPanel(on_close=None):
                     on_click=open_load,
                 )
                 solara.Button(
-                    "Save",
+                    t("project.button_save"),
                     icon_name="mdi-content-save-outline",
                     color="primary",
                     outlined=True,
@@ -311,10 +309,10 @@ def ProjectPanel(on_close=None):
     ):
         with rv.Card():
             with rv.CardTitle():
-                solara.Text("New Project")
+                solara.Text(t("project.dialog_new_title"))
             with rv.CardText():
                 rv.TextField(
-                    label="Project name",
+                    label=t("project.dialog_new_name_label"),
                     v_model=new_name,
                     on_v_model=set_new_name,
                     dense=True,
@@ -325,21 +323,20 @@ def ProjectPanel(on_close=None):
                     solara.Error(validation.error)
                 if validation and validation.valid and validation.exists:
                     solara.Warning(
-                        f"A project named '{validation.cleaned}' already exists "
-                        "— saving later will overwrite it."
+                        t("project.dialog_new_exists_warning", name=validation.cleaned)
                     )
                     solara.Button(
-                        "Load it instead",
+                        t("project.dialog_new_load_instead"),
                         text=True,
                         small=True,
                         on_click=load_instead,
                     )
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    "Cancel", on_click=lambda: set_new_open(False), text=True, small=True
+                    t("common.cancel"), on_click=lambda: set_new_open(False), text=True, small=True
                 )
                 solara.Button(
-                    "Create",
+                    t("common.create"),
                     on_click=do_create,
                     color="primary",
                     small=True,
@@ -352,20 +349,19 @@ def ProjectPanel(on_close=None):
     ):
         with rv.Card():
             with rv.CardTitle():
-                solara.Text("Discard unsaved changes?")
+                solara.Text(t("project.dialog_discard_title"))
             with rv.CardText():
                 solara.Text(
-                    f"Project '{p.project_name}' has unsaved changes. "
-                    "Starting a new project will discard them."
+                    t("project.dialog_discard_message", name=p.project_name)
                     if p is not None
-                    else "Discard unsaved changes?"
+                    else t("project.dialog_discard_title")
                 )
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    "Cancel", on_click=lambda: set_discard_open(False), text=True, small=True
+                    t("common.cancel"), on_click=lambda: set_discard_open(False), text=True, small=True
                 )
                 solara.Button(
-                    "Discard & New",
+                    t("project.dialog_discard_confirm"),
                     on_click=_open_new_dialog,
                     color="error",
                     small=True,
@@ -377,23 +373,22 @@ def ProjectPanel(on_close=None):
     ):
         with rv.Card():
             with rv.CardTitle():
-                solara.Text("Overwrite existing project?")
+                solara.Text(t("project.dialog_overwrite_title"))
             with rv.CardText():
                 solara.Text(
-                    f"A saved project named '{p.project_name}' already exists. "
-                    "Overwrite it?"
+                    t("project.dialog_overwrite_message", name=p.project_name)
                     if p is not None
-                    else "Overwrite existing project?"
+                    else t("project.dialog_overwrite_title")
                 )
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    "Cancel",
+                    t("common.cancel"),
                     on_click=lambda: set_overwrite_open(False),
                     text=True,
                     small=True,
                 )
                 solara.Button(
-                    "Overwrite", on_click=_really_save, color="error", small=True
+                    t("project.dialog_overwrite_confirm"), on_click=_really_save, color="error", small=True
                 )
 
     # ---- Load dialog ----------------------------------------------------
@@ -402,10 +397,10 @@ def ProjectPanel(on_close=None):
     ):
         with rv.Card():
             with rv.CardTitle():
-                solara.Text("Load Project")
+                solara.Text(t("project.dialog_load_title"))
             with rv.CardText():
                 if not infos:
-                    solara.Info("No saved projects found.")
+                    solara.Info(t("project.dialog_load_empty"))
                 else:
                     now = datetime.now()
                     with rv.List(three_line=True):
@@ -432,13 +427,14 @@ def ProjectPanel(on_close=None):
                                                     )
                                             rv.ListItemSubtitle(
                                                 children=[
-                                                    f"modified {format_relative(info.modified, now)}"
+                                                    t("project.dialog_load_modified",
+                                                      time_ago=format_relative(info.modified, now))
                                                 ]
                                             )
                                         else:
                                             rv.ListItemSubtitle(
                                                 children=[
-                                                    info.error or "unreadable project file"
+                                                    info.error or t("project.dialog_load_unreadable")
                                                 ]
                                             )
                 if load_busy:
@@ -447,10 +443,10 @@ def ProjectPanel(on_close=None):
                     solara.Error(load_error)
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    "Cancel", on_click=lambda: set_load_open(False), text=True, small=True
+                    t("common.cancel"), on_click=lambda: set_load_open(False), text=True, small=True
                 )
                 solara.Button(
-                    "Load",
+                    t("common.load"),
                     on_click=do_load,
                     color="primary",
                     small=True,

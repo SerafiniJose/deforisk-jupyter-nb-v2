@@ -73,3 +73,9 @@ def test_es_parity_reports_gaps():
     if missing:
         print(f"[i18n] {len(missing)} keys not yet in es: {missing[:20]}")
     assert isinstance(missing, list)
+
+
+def test_relative_time_plural_keys_exist():
+    for k in ("time.days_ago_one", "time.days_ago_other",
+              "chips.models_one", "chips.models_other"):
+        assert i18n.t(k, n=1) != k  # resolves, not the raw key
