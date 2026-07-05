@@ -212,7 +212,8 @@ def ProcessTile(project, processing, process_error):
         if autofill_base.pending:
             solara.Text(
                 t("tiles.process.detecting_projection"),
-                style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
+                style="font-size:0.8rem;font-style:italic;",
+                classes=["text--secondary"],
             )
         if has_base:
             solara.Text(
@@ -220,7 +221,8 @@ def ProcessTile(project, processing, process_error):
                   name=p.base_raster.name,
                   crs=p.base_raster.default_crs,
                   resolution=p.base_raster.default_resolution),
-                style="font-size:0.8rem;color:rgba(0,0,0,0.6);",
+                style="font-size:0.8rem;",
+                classes=["text--secondary"],
             )
 
         # C — Run processing
@@ -228,7 +230,8 @@ def ProcessTile(project, processing, process_error):
         if not has_base:
             solara.Text(
                 t("tiles.process.error_no_base"),
-                style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
+                style="font-size:0.8rem;font-style:italic;",
+                classes=["text--secondary"],
             )
         solara.Button(
             t("tiles.process.run_processing_button"), icon_name="mdi-cog-play-outline",

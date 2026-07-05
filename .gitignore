@@ -24,3 +24,6 @@ legacy/
 #Download Folder
 data/
 test/
+
+# Superpowers workspace
+.superpowers/
