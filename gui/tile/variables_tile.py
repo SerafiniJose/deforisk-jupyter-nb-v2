@@ -11,6 +11,7 @@ logger = logging.getLogger("spatial_risk")
 
 from gui.i18n import t
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
+from gui.scripts.variable_map import add_raster_var_on_map
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.variable_list import SourceVariableList
 from gui.widget.variable_modal import VariableModal
@@ -258,8 +259,10 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         the GEE interface's blocking API (via ``_add_gee_layer``) so the session
         calls run on the interface's own event loop; the async map API crashes
         with "bound to a different event loop" when awaited on Solara's loop.
-        Local raster/vector layers use the blocking ``add_raster`` /
-        ``add_vector_on_map`` helpers the same way.
+        Local raster/vector layers use the blocking ``add_raster_var_on_map`` /
+        ``add_vector_on_map`` helpers the same way. Downloaded rasters keep the
+        palette they had as a GEE layer (see ``add_raster_var_on_map``) instead of
+        rendering grayscale.
         """
         key = pending_toggle.value
         if key is None or map_ is None:
@@ -283,11 +286,12 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
                 await asyncio.to_thread(
                     add_vector_on_map, map_, str(var.path), key, layer_key
                 )
-            else:  # LocalRasterVar — grayscale ramp: 0=black, 1=white
+            else:  # LocalRasterVar — reuse the palette it had as a GEE layer
                 await asyncio.to_thread(
-                    map_.add_raster,
+                    add_raster_var_on_map,
+                    map_,
                     str(var.path),
-                    colormap="gray",
+                    var=var,
                     layer_name=key,
                     key=layer_key,
                     fit_bounds=False,
