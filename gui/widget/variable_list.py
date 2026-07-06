@@ -29,6 +29,23 @@ _NAME_CELL = "display:flex;align-items:center;gap:4px;min-width:0;overflow:hidde
 _NAME_TEXT = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
 
 
+def derived_source_key(p, var_name, fallback):
+    """Raw-variable key a derived name traces back to.
+
+    Change layers are named ``{op}_{source}_...`` — strip the operation prefix
+    so they resolve to their start layer instead of "unknown".
+    """
+    base = var_name
+    for prefix in ("loss_", "gain_"):
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    return next(
+        (k for k, raw_var in p.raw_variables.items() if base.startswith(raw_var.name)),
+        fallback,
+    )
+
+
 @solara.component
 def SourceVariableList(
     project,
@@ -142,9 +159,8 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
                 rv.Html(tag="span", children=[""])
 
             for key, var in p.processed_variables.items():
-                source_name = next(
-                    (k for k, raw_var in p.raw_variables.items() if var.name.startswith(raw_var.name)),
-                    t("widgets.variable_list.derived_source_unknown"),
+                source_name = derived_source_key(
+                    p, var.name, t("widgets.variable_list.derived_source_unknown")
                 )
                 with rv.Html(tag="div", style_=_DGRID + _ROW_EXTRA):
                     with rv.Html(tag="div", style_="min-width:0;overflow:hidden;"):
