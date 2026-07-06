@@ -8,6 +8,7 @@ import solara
 
 from gui.i18n import t
 from gui.scripts import process_actions
+from gui.widget.help import InfoButton
 
 logger = logging.getLogger("spatial_risk")
 
@@ -151,7 +152,9 @@ def ProcessTile(project, processing, process_error):
 
     with solara.Column(style="gap:16px;"):
         solara.Markdown(t("tiles.process.header"))
-        solara.Text(t("tiles.process.description"))
+        with solara.Row(style="gap:4px;align-items:center;"):
+            solara.Text(t("tiles.process.description"))
+            InfoButton(t("tiles.process.info_header"), t("tiles.process.info_md"))
         if not has_vars:
             solara.Info(t("tiles.process.error_no_variables"))
             return
@@ -176,16 +179,19 @@ def ProcessTile(project, processing, process_error):
                 label=t("tiles.process.base_raster_label"), items=_raw_raster_keys(p),
                 v_model=base_key, on_v_model=set_base_key, dense=True, outlined=True,
                 style_="min-width:200px;flex:1 1 200px;",
+                hint=t("tiles.process.base_raster_hint"), persistent_hint=True,
             )
             rv.TextField(
                 label=t("tiles.process.epsg_label"), v_model=epsg, on_v_model=set_epsg,
                 dense=True, outlined=True, placeholder=t("tiles.process.epsg_placeholder"),
                 style_="min-width:130px;max-width:170px;",
+                hint=t("tiles.process.epsg_hint"), persistent_hint=True,
             )
             rv.TextField(
                 label=t("tiles.process.resolution_label"), v_model=resolution, on_v_model=set_resolution,
                 dense=True, outlined=True, type="number",
                 style_="min-width:130px;max-width:170px;",
+                hint=t("tiles.process.resolution_hint"), persistent_hint=True,
             )
             solara.Button(
                 t("tiles.process.auto_utm_button"), small=True, text=True, on_click=on_auto_utm,
@@ -214,6 +220,11 @@ def ProcessTile(project, processing, process_error):
 
         # C — Run processing
         solara.Markdown(t("tiles.process.run_processing_header"))
+        solara.Text(
+            t("tiles.process.run_processing_subtitle"),
+            style="font-size:0.8rem;",
+            classes=["text--secondary"],
+        )
         if not has_base:
             solara.Text(
                 t("tiles.process.error_no_base"),

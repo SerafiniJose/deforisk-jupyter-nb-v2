@@ -13,6 +13,7 @@ from gui.i18n import t
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
 from gui.scripts.variable_map import add_raster_var_on_map
 from gui.widget.confirm_dialog import ConfirmDialog
+from gui.widget.help import InfoButton
 from gui.widget.variable_list import SourceVariableList
 from gui.widget.variable_modal import VariableModal
 from spatialrisk.project import Project
@@ -371,7 +372,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.variables.header"))
-        solara.Text(t("tiles.variables.description"))
+        with solara.Row(style="gap:4px;align-items:center;"):
+            solara.Text(t("tiles.variables.description"))
+            InfoButton(t("tiles.variables.info_header"), t("tiles.variables.info_md"))
 
         # Action bar
         with solara.Row(style="gap: 8px; align-items: center;"):

@@ -188,6 +188,8 @@ def VariableModal(
                     on_v_model=set_source,
                     dense=True,
                     outlined=True,
+                    hint=t("vars.modal.source_hint"),
+                    persistent_hint=True,
                 )
 
                 if source == "predefined":
@@ -238,6 +240,15 @@ def _render_predefined_fields(
     )
 
     if cat:
+        # Data-source blurb: where the layer comes from and how it is generated
+        # (catalogue link included). Rendered inline so it updates per selection.
+        if cat.get("description_key"):
+            with solara.Div(
+                style="font-size:0.85rem;padding:0 4px 4px 4px;",
+                classes=["text--secondary"],
+            ):
+                solara.Markdown(t(cat["description_key"]))
+
         # Year — selectable list for temporal variables
         if cat["temporal"]:
             available_years = cat.get("years", [])
@@ -293,6 +304,8 @@ def _render_custom_fields(
         on_v_model=set_var_type,
         dense=True,
         outlined=True,
+        hint=t("vars.modal.custom_type_hint"),
+        persistent_hint=True,
     )
     rv.TextField(
         label=t("vars.modal.custom_year_label"),
@@ -301,6 +314,8 @@ def _render_custom_fields(
         dense=True,
         outlined=True,
         type="number",
+        hint=t("vars.modal.custom_year_hint"),
+        persistent_hint=True,
     )
     if var_type in ("LocalRasterVar", "LocalVectorVar"):
         FileInputComponent(
@@ -332,6 +347,8 @@ def _render_custom_fields(
             dense=True,
             outlined=True,
             type="number",
+            hint=t("vars.modal.custom_scale_hint"),
+            persistent_hint=True,
         )
     if var_type in ("LocalRasterVar", "GEEVar"):
         rv.Select(
@@ -341,6 +358,8 @@ def _render_custom_fields(
             on_v_model=set_raster_type,
             dense=True,
             outlined=True,
+            hint=t("vars.modal.custom_raster_type_hint"),
+            persistent_hint=True,
         )
     if var_type == "LocalVectorVar":
         rv.Select(
@@ -350,4 +369,6 @@ def _render_custom_fields(
             on_v_model=set_rasterization_method,
             dense=True,
             outlined=True,
+            hint=t("vars.modal.custom_rasterization_method_hint"),
+            persistent_hint=True,
         )

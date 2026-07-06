@@ -174,6 +174,7 @@ def _get_subj(aoi, year=None):
 PREDEFINED_CATALOGUE = {
     "altitude": {
         "label_key": "vars.predefined.altitude",
+        "description_key": "vars.predefined_info.altitude",
         "var_type": "GEEVar",
         "raster_type": "continuous",
         "temporal": False,
@@ -185,6 +186,7 @@ PREDEFINED_CATALOGUE = {
     },
     "slope": {
         "label_key": "vars.predefined.slope",
+        "description_key": "vars.predefined_info.slope",
         "var_type": "GEEVar",
         "raster_type": "continuous",
         "temporal": False,
@@ -198,6 +200,7 @@ PREDEFINED_CATALOGUE = {
     },
     "protected_area": {
         "label_key": "vars.predefined.protected_area",
+        "description_key": "vars.predefined_info.protected_area",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,
@@ -206,6 +209,7 @@ PREDEFINED_CATALOGUE = {
     },
     "rivers": {
         "label_key": "vars.predefined.rivers",
+        "description_key": "vars.predefined_info.rivers",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,
@@ -214,6 +218,7 @@ PREDEFINED_CATALOGUE = {
     },
     "roads": {
         "label_key": "vars.predefined.roads",
+        "description_key": "vars.predefined_info.roads",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,
@@ -222,6 +227,7 @@ PREDEFINED_CATALOGUE = {
     },
     "forest_gfc": {
         "label_key": "vars.predefined.forest_gfc",
+        "description_key": "vars.predefined_info.forest_gfc",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
@@ -231,6 +237,7 @@ PREDEFINED_CATALOGUE = {
     },
     "forest_tmf": {
         "label_key": "vars.predefined.forest_tmf",
+        "description_key": "vars.predefined_info.forest_tmf",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
@@ -240,6 +247,7 @@ PREDEFINED_CATALOGUE = {
     },
     "towns": {
         "label_key": "vars.predefined.towns",
+        "description_key": "vars.predefined_info.towns",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
@@ -249,6 +257,7 @@ PREDEFINED_CATALOGUE = {
     },
     "subj": {
         "label_key": "vars.predefined.subj",
+        "description_key": "vars.predefined_info.subj",
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": False,

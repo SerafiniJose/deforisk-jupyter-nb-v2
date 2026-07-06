@@ -19,6 +19,7 @@ from spatialrisk.evaluation import interval_from_target
 from gui.i18n import t
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.confirm_dialog import ConfirmDialog
+from gui.widget.help import InfoButton
 from gui.widget.train_model_list import TrainModelList
 
 logger = logging.getLogger("spatial_risk")
@@ -347,6 +348,10 @@ def _make_param_component(model_key: str, group: str):
             pkey = param_def["key"]
             current = params.get(pkey, param_def["default"])
             ptype = param_def["type"]
+            # Per-parameter help resolved by catalog convention (same path as
+            # the label). Every registry param has a matching .hint entry —
+            # enforced by tests/test_i18n.py.
+            hint = t(f"models.{model_key}.params.{pkey}.hint")
 
             if is_variables:
                 # Dataset-layer reference: the options are the feature names of
@@ -362,6 +367,8 @@ def _make_param_component(model_key: str, group: str):
                     outlined=True,
                     clearable=True,
                     no_data_text=t("tiles.train.variables_select_no_data"),
+                    hint=hint,
+                    persistent_hint=True,
                 )
             elif ptype == "select":
                 rv.Select(
@@ -371,6 +378,8 @@ def _make_param_component(model_key: str, group: str):
                     on_v_model=lambda v, k=pkey: _update(k, v),
                     dense=True,
                     outlined=True,
+                    hint=hint,
+                    persistent_hint=True,
                 )
             elif ptype in ("int", "float"):
                 rv.TextField(
@@ -380,6 +389,8 @@ def _make_param_component(model_key: str, group: str):
                     dense=True,
                     outlined=True,
                     type_="number",
+                    hint=hint,
+                    persistent_hint=True,
                 )
             else:
                 rv.TextField(
@@ -388,6 +399,8 @@ def _make_param_component(model_key: str, group: str):
                     on_v_model=lambda v, k=pkey: _update(k, v),
                     dense=True,
                     outlined=True,
+                    hint=hint,
+                    persistent_hint=True,
                 )
 
     _Params.__name__ = f"Params_{model_key}_{group}"
@@ -559,17 +572,28 @@ def TrainTile(project):
         solara.Markdown(t("tiles.train.header"))
         solara.Text(t("tiles.train.description"))
 
-        # Model selector
-        rv.Select(
-            label=t("tiles.train.model_select_label"),
-            items=[{"text": model_label(k), "value": k} for k in MODEL_KEYS],
-            item_text="text",
-            item_value="value",
-            v_model=selected_key,
-            on_v_model=set_selected_key,
-            dense=True,
-            outlined=True,
-        )
+        # Model selector, with an info button opening the model description
+        # popup for the selected model (structured summary — approach /
+        # training data / output — followed by the prose description).
+        with solara.Row(style="gap:4px;align-items:center;"):
+            rv.Select(
+                label=t("tiles.train.model_select_label"),
+                items=[{"text": model_label(k), "value": k} for k in MODEL_KEYS],
+                item_text="text",
+                item_value="value",
+                v_model=selected_key,
+                on_v_model=set_selected_key,
+                dense=True,
+                outlined=True,
+                style_="flex:1 1 auto;",
+            )
+            InfoButton(
+                t("tiles.train.model_description_header_for",
+                  label=model_label(selected_key)),
+                t(f"models.{selected_key}.summary_md")
+                + "\n\n"
+                + t(registry["description_key"]),
+            )
 
         # Model name — required; gives each trained model a distinct key so it no
         # longer overwrites the previous one. The hint shows the resulting storage
@@ -589,21 +613,10 @@ def TrainTile(project):
             error=not clean_name,
         )
 
-        # Collapsible model description — collapsed by default to save space.
-        # The expansion panel handles expand/collapse entirely in the browser,
-        # so it needs no Python state or click round-trip.
-        with rv.ExpansionPanels(flat=True):
-            with rv.ExpansionPanel():
-                with rv.ExpansionPanelHeader():
-                    solara.Text(t("tiles.train.model_description_header"))
-                with rv.ExpansionPanelContent():
-                    solara.Markdown(t(registry["description_key"]))
-
         # Parameters — each model has its own component type, so reacton
         # does clean unmount/mount instead of reconciling children. Collapsed
-        # by default (same self-managed ExpansionPanels pattern as the model
-        # description) to keep the form compact; the dataset and sampling
-        # options below stay visible.
+        # by default (self-managed ExpansionPanels) to keep the form compact;
+        # the dataset and sampling options below stay visible.
         def _set_model_params(new_params, mk=selected_key):
             set_all_params({**all_params, mk: new_params})
 
@@ -628,6 +641,8 @@ def TrainTile(project):
             dense=True,
             outlined=True,
             no_data_text=t("tiles.train.dataset_select_no_data"),
+            hint=t("tiles.train.dataset_select_hint"),
+            persistent_hint=True,
         )
         if needs_sample:
             rv.Select(
@@ -638,6 +653,8 @@ def TrainTile(project):
                 dense=True,
                 outlined=True,
                 no_data_text=t("tiles.train.sample_select_no_data"),
+                hint=t("tiles.train.sample_select_hint"),
+                persistent_hint=True,
             )
 
         # Variables — for Benchmark/MW these name layers within the dataset.

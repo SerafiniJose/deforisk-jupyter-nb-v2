@@ -15,6 +15,7 @@ import solara
 from gui.i18n import t
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.confirm_dialog import ConfirmDialog
+from gui.widget.help import InfoButton
 from gui.widget.sample_set_list import SampleSetList
 
 logger = logging.getLogger("spatial_risk")
@@ -214,15 +215,19 @@ def SamplingTile(project, map_=None):
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.sampling.header"))
-        solara.Text(t("tiles.sampling.description"))
+        with solara.Row(style="gap:4px;align-items:center;"):
+            solara.Text(t("tiles.sampling.description"))
+            InfoButton(t("tiles.sampling.info_header"), t("tiles.sampling.info_md"))
 
         rv.Select(
             label=t("tiles.sampling.raster_variable_label"), items=raster_keys, v_model=raster_var,
             on_v_model=set_raster_var, dense=True, outlined=True,
+            hint=t("tiles.sampling.raster_variable_hint"), persistent_hint=True,
         )
         rv.Select(
             label=t("tiles.sampling.mask_variable_label"), items=[""] + raster_keys,
             v_model=mask_var, on_v_model=set_mask_var, dense=True, outlined=True,
+            hint=t("tiles.sampling.mask_variable_hint"), persistent_hint=True,
         )
         rv.TextField(
             label=t("tiles.sampling.sample_name_label"), v_model=name,
@@ -231,17 +236,22 @@ def SamplingTile(project, map_=None):
         rv.Select(
             label=t("tiles.sampling.strategy_label"), items=SAMPLING_STRATEGIES, v_model=strategy,
             on_v_model=set_strategy, dense=True, outlined=True,
+            # Dynamic help: describes the currently selected sample type.
+            hint=t(f"tiles.sampling.strategy_hint_{strategy}"), persistent_hint=True,
         )
 
         if strategy == "stratified":
             rv.Select(
                 label=t("tiles.sampling.allocation_label"), items=ALLOCATION_METHODS, v_model=allocation,
                 on_v_model=set_allocation, dense=True, outlined=True,
+                # Dynamic help: how the selected rule splits points across classes.
+                hint=t(f"tiles.sampling.allocation_hint_{allocation}"), persistent_hint=True,
             )
             if allocation == "deforisk":
                 rv.Switch(
                     label=t("tiles.sampling.adapt_label"),
                     v_model=adapt, on_v_model=set_adapt,
+                    hint=t("tiles.sampling.adapt_hint"), persistent_hint=True,
                 )
 
         if strategy == "systematic":
@@ -258,19 +268,28 @@ def SamplingTile(project, map_=None):
                 v_model=str(spacing_m) if spacing_m is not None else "",
                 on_v_model=lambda v: set_spacing_m(float(v) if v and v.strip() else None),
                 dense=True, outlined=True,
+                hint=t("tiles.sampling.spacing_hint"), persistent_hint=True,
             )
         else:
+            # deforisk allocation draws N from EACH class, not a split total.
+            _n_hint = (
+                t("tiles.sampling.n_samples_hint_deforisk")
+                if strategy == "stratified" and allocation == "deforisk"
+                else t("tiles.sampling.n_samples_hint")
+            )
             rv.TextField(
                 label=t("tiles.sampling.n_samples_label"), type_="number",
                 v_model=str(n_samples) if n_samples is not None else "",
                 on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
                 dense=True, outlined=True,
+                hint=_n_hint, persistent_hint=True,
             )
         rv.TextField(
             label=t("tiles.sampling.seed_label"), type_="number",
             v_model=str(seed) if seed is not None else "",
             on_v_model=lambda v: set_seed(int(v) if v and v.strip() else None),
             dense=True, outlined=True,
+            hint=t("tiles.sampling.seed_hint"), persistent_hint=True,
         )
 
         solara.Button(

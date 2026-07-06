@@ -9,6 +9,7 @@ from gui.i18n import t
 from gui.store.state_manager import app_state
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.dataset_list import DatasetList
+from gui.widget.help import InfoButton
 from spatialrisk.dataset import Dataset
 
 logger = logging.getLogger("spatial_risk")
@@ -130,7 +131,9 @@ def DatasetTile(project):
 
     with solara.Column(style="gap:16px;"):
         solara.Markdown(t("tiles.dataset.header"))
-        solara.Text(t("tiles.dataset.description"))
+        with solara.Row(style="gap:4px;align-items:center;"):
+            solara.Text(t("tiles.dataset.description"))
+            InfoButton(t("tiles.dataset.info_header"), t("tiles.dataset.info_md"))
 
         if not has_processed:
             solara.Info(t("tiles.dataset.error_no_processed"))
@@ -159,6 +162,8 @@ def DatasetTile(project):
             on_v_model=set_target_name,
             dense=True,
             outlined=True,
+            hint=t("tiles.dataset.target_hint"),
+            persistent_hint=True,
         )
 
         # Features (multi-select)
@@ -173,6 +178,8 @@ def DatasetTile(project):
             chips=True,
             small_chips=True,
             deletable_chips=True,
+            hint=t("tiles.dataset.features_hint"),
+            persistent_hint=True,
         )
 
         # Year (shown if temporal vars detected)
@@ -184,6 +191,8 @@ def DatasetTile(project):
                 on_v_model=set_year,
                 dense=True,
                 outlined=True,
+                hint=t("tiles.dataset.year_hint"),
+                persistent_hint=True,
             )
 
         # Action buttons

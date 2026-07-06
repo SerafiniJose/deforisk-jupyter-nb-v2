@@ -12,6 +12,7 @@ import solara
 
 from gui.i18n import t
 from gui.scripts import process_actions
+from gui.widget.help import InfoButton
 from gui.widget.variable_list import DerivedVariableList
 from spatialrisk.variables.models import PostProcessing
 
@@ -57,7 +58,9 @@ def PostProcessTile(project, process_error):
 
     with solara.Column(style="gap:16px;"):
         solara.Markdown(t("tiles.postprocess.header"))
-        solara.Text(t("tiles.postprocess.description"))
+        with solara.Row(style="gap:4px;align-items:center;"):
+            solara.Text(t("tiles.postprocess.description"))
+            InfoButton(t("tiles.postprocess.info_header"), t("tiles.postprocess.info_md"))
         if p is None or not p.processed_variables:
             solara.Info(t("tiles.postprocess.error_no_processed"))
             return
@@ -71,7 +74,9 @@ def PostProcessTile(project, process_error):
                 rv.Select(
                     label=t("tiles.postprocess.operation_label"), items=CHANGE_OPS,
                     v_model=op, on_v_model=set_op, dense=True, outlined=True,
-                    style_="max-width:130px;",
+                    style_="max-width:180px;",
+                    # Dynamic per-operation help (loss vs gain semantics).
+                    hint=t(f"tiles.postprocess.op_hint_{op}"), persistent_hint=True,
                 )
                 rv.Select(
                     label=t("tiles.postprocess.start_layer_label"), items=candidates,
@@ -106,11 +111,14 @@ def PostProcessTile(project, process_error):
                 label=t("tiles.postprocess.processed_variable_label"),
                 items=list(p.processed_variables.keys()),
                 v_model=pp_key, on_v_model=set_pp_key, dense=True, outlined=True,
+                hint=t("tiles.postprocess.processed_variable_hint"), persistent_hint=True,
             )
             rv.Select(
                 label=t("tiles.postprocess.step_label"),
                 items=[s.value for s in PostProcessing],
                 v_model=pp_step, on_v_model=set_pp_step, dense=True, outlined=True,
+                # Dynamic per-step help (edge vs dist semantics).
+                hint=t(f"tiles.postprocess.step_hint_{pp_step}"), persistent_hint=True,
             )
             solara.Button(
                 t("tiles.postprocess.generate_button"), icon_name="mdi-auto-fix",

@@ -91,8 +91,24 @@ def test_every_model_label_and_description_key_resolves():
         assert i18n.t(spec["label_key"]) != spec["label_key"], key
         # description may be "" in es and fall back to en, but must resolve in en
         assert i18n.t(spec["description_key"]) != spec["description_key"], key
+        # Train tile renders a structured summary above the prose description.
+        summary = f"models.{key}.summary_md"
+        assert i18n.t(summary) != summary, key
         for p in spec.get("params", []) + spec.get("variables", []):
             assert i18n.t(p["label_key"]) != p["label_key"], (key, p.get("key"))
+            # Train tile renders a per-parameter hint resolved by convention
+            # (models.<model>.params.<key>.hint) — every param must carry one.
+            hint = f"models.{key}.params.{p['key']}.hint"
+            assert i18n.t(hint) != hint, (key, p.get("key"))
+
+
+def test_every_predefined_variable_description_key_resolves():
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui import i18n
+    for key, meta in PREDEFINED_CATALOGUE.items():
+        dk = meta.get("description_key")
+        assert dk, key
+        assert i18n.t(dk) != dk, key
 
 
 def _code_keys():
