@@ -41,6 +41,8 @@ MODEL_REGISTRY = {
                 "type": "float",
                 "default": 99.5,
             },
+            {"key": "defor_var", "label_key": "models.benchmark.params.defor_var.label",
+             "type": "select", "default": "", "group": "variables"},
             {"key": "forest_edge_var", "label_key": "models.benchmark.params.forest_edge_var.label",
              "type": "select", "default": "", "group": "variables"},
             {"key": "forest_var", "label_key": "models.benchmark.params.forest_var.label",
@@ -68,6 +70,8 @@ MODEL_REGISTRY = {
                 "type": "float",
                 "default": 99.5,
             },
+            {"key": "defor_var", "label_key": "models.mw.params.defor_var.label",
+             "type": "select", "default": "", "group": "variables"},
             {"key": "forest_edge_var", "label_key": "models.mw.params.forest_edge_var.label",
              "type": "select", "default": "", "group": "variables"},
             {"key": "forest_var", "label_key": "models.mw.params.forest_var.label",
@@ -466,9 +470,14 @@ def TrainTile(project):
         if p and p.datasets and selected_dataset
         else None
     )
-    feature_options = (
-        [v.name for v in selected_ds_obj.features] if selected_ds_obj else []
-    )
+    # Options for the Benchmark/MW "Variables" selects: every layer in the
+    # dataset. The forest-loss layer is typically the dataset target (not a
+    # feature), so include the target name alongside the features.
+    feature_options = []
+    if selected_ds_obj:
+        feature_options = [v.name for v in selected_ds_obj.features]
+        if selected_ds_obj.target is not None and selected_ds_obj.target.name not in feature_options:
+            feature_options.append(selected_ds_obj.target.name)
 
     pending_overwrite, set_pending_overwrite = solara.use_state(None)
 
@@ -523,6 +532,8 @@ def TrainTile(project):
         if MODEL_HAS_VARIABLES[selected_key]:
             model_params = all_params.get(selected_key, {})
             available = [v.name for v in dataset.features]
+            if dataset.target is not None and dataset.target.name not in available:
+                available.append(dataset.target.name)
             for pdef in registry["params"]:
                 if pdef.get("group") != "variables":
                     continue

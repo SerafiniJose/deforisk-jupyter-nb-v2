@@ -72,6 +72,10 @@ class JNRBenchmarkModel(BaseRiskModel):
     subj_var : str
         Dataset feature name for the subjurisdiction raster, used by
         ``apply()`` (default: ``"subj"``).
+    defor_var : str
+        Dataset layer name for the binary forest-loss (deforestation) raster.
+        When set, this named layer (a feature or the target) is used as the
+        event raster; when empty, the dataset target is used (default: ``""``).
     defrate_files : dict
         Paths to the defrate CSV files written by ``apply()``, keyed by
         period name.  Pass ``defrate_files.get("calibration")`` as
@@ -97,6 +101,11 @@ class JNRBenchmarkModel(BaseRiskModel):
     forest_edge_var: str = "forest_edge"
     forest_var: str = "forest"
     subj_var: str = "subj"
+    # Forest-loss (deforestation) layer. When set, this named dataset layer is
+    # used as the binary event raster instead of the dataset target, letting the
+    # user pick which variable in their dataset is the forest-loss layer. Empty
+    # falls back to the dataset target (backward-compatible default).
+    defor_var: str = ""
 
     # Defrate CSV paths produced by apply(), keyed by period name
     defrate_files: Dict[str, Path] = Field(default_factory=dict)
@@ -143,6 +152,37 @@ class JNRBenchmarkModel(BaseRiskModel):
             f"  Set model.forest_edge_var / forest_var / subj_var to match "
             f"your variable names."
         )
+
+    def _resolve_defor_var(self, dataset: Any) -> Any:
+        """Resolve the binary forest-loss (deforestation) variable object.
+
+        If ``defor_var`` is set, look it up by exact name among the dataset's
+        features or its target, so the user controls which layer is the
+        forest-loss input.  When empty, fall back to the dataset target
+        (backward-compatible default).
+        """
+        if self.defor_var:
+            for var in dataset.features:
+                if var.name == self.defor_var:
+                    return var
+            if dataset.target is not None and dataset.target.name == self.defor_var:
+                return dataset.target
+            available = [v.name for v in dataset.features]
+            if dataset.target is not None:
+                available.append(dataset.target.name)
+            raise ValueError(
+                f"JNRBenchmarkModel forest-loss variable '{self.defor_var}' was "
+                f"not found in the dataset.\n"
+                f"  Available: {available}\n"
+                f"  Set model.defor_var to match a layer in your dataset."
+            )
+        if dataset.target is None:
+            raise ValueError(
+                "Dataset has no target set and defor_var is not configured. "
+                "Set the forest-loss variable (defor_var) or call "
+                "dataset.set_target() before fit()."
+            )
+        return dataset.target
 
     # ------------------------------------------------------------------
     # Fit
@@ -198,17 +238,14 @@ class JNRBenchmarkModel(BaseRiskModel):
                 "No dataset available. Pass dataset= or set model.dataset "
                 "before calling fit()."
             )
-        if active.target is None:
+        # Resolve the forest-loss variable (defor_var override, else the target)
+        # and validate it is a deforestation variable (by tag).
+        defor_var_obj = self._resolve_defor_var(active)
+        defor_tags = getattr(defor_var_obj, "tags", []) or []
+        if "deforestation" not in defor_tags:
             raise ValueError(
-                "Dataset has no target set. Call dataset.set_target() before fit()."
-            )
-
-        # Validate target is a deforestation variable (by tag)
-        target_tags = getattr(active.target, "tags", []) or []
-        if "deforestation" not in target_tags:
-            raise ValueError(
-                f"JNRBenchmarkModel requires a target variable tagged 'deforestation', "
-                f"but '{active.target.name}' has tags {target_tags}. "
+                f"JNRBenchmarkModel requires the forest-loss variable to be tagged "
+                f"'deforestation', but '{defor_var_obj.name}' has tags {defor_tags}. "
                 f"Ensure the variable was created/processed with the 'deforestation' tag."
             )
 
@@ -226,7 +263,7 @@ class JNRBenchmarkModel(BaseRiskModel):
             self.max_dist = max_dist
 
         # Extract file paths from dataset
-        deforestation_file = active.target.path
+        deforestation_file = defor_var_obj.path
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
 
         out_root = (
@@ -265,7 +302,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         print(f"  dist_bins: {len(self.dist_bins)} edges")
 
         # Populate serialisable metadata (mirrors _prepare_samples() pattern)
-        self.target_name = active.target.name
+        self.target_name = active.target.name if active.target is not None else defor_var_obj.name
         self.feature_names = [v.name for v in active.features]
         self.dataset_name = active.name
         if active.year is not None:
@@ -338,7 +375,7 @@ class JNRBenchmarkModel(BaseRiskModel):
             )
 
         # Extract file paths from dataset
-        deforestation_file = active.target.path
+        deforestation_file = self._resolve_defor_var(active).path
         forest_file = self._get_feature(active, self.forest_var)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         subj_file = self._get_feature(active, self.subj_var)

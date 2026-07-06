@@ -7,6 +7,7 @@
       "params": {
         "blk_rows": { "label": "Block rows", "hint": "Rows read per processing block — larger uses more memory, fewer I/O passes." },
         "defor_threshold": { "label": "Deforestation threshold (%)", "hint": "Cumulative % of deforestation defining the max distance-to-edge kept (default 99.5)." },
+        "defor_var": { "label": "Forest-loss variable", "hint": "Dataset layer with the binary forest-loss / deforestation raster (1 = loss). Usually the dataset target." },
         "forest_edge_var": { "label": "Forest-edge variable", "hint": "Dataset layer giving distance to forest edge." },
         "forest_var": { "label": "Forest variable", "hint": "Dataset layer with the forest mask (1 = forest)." },
         "subj_var": { "label": "Subjurisdiction variable", "hint": "Dataset layer of subjurisdiction zones used to stratify rates." }
@@ -20,6 +21,7 @@
         "win_size_list": { "label": "Window sizes (px, comma-separated)", "hint": "Odd pixel sizes to evaluate, e.g. 5, 11, 21. Each produces its own risk map." },
         "blk_rows": { "label": "Block rows", "hint": "Rows read per processing block — larger uses more memory, fewer I/O passes." },
         "defor_threshold": { "label": "Deforestation threshold (%)", "hint": "Cumulative % of deforestation defining the max distance-to-edge kept (default 99.5)." },
+        "defor_var": { "label": "Forest-loss variable", "hint": "Dataset layer with the binary forest-loss / deforestation raster (1 = loss). Usually the dataset target." },
         "forest_edge_var": { "label": "Forest-edge variable", "hint": "Dataset layer giving distance to forest edge." },
         "forest_var": { "label": "Forest variable", "hint": "Dataset layer with the forest mask (1 = forest)." }
       }

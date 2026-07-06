@@ -7,6 +7,7 @@
       "params": {
         "blk_rows": { "label": "Filas por bloque", "hint": "Filas leídas por bloque de procesamiento — más filas usan más memoria y menos pasadas de E/S." },
         "defor_threshold": { "label": "Umbral de deforestación (%)", "hint": "% acumulado de deforestación que define la distancia al borde máxima conservada (por defecto 99,5)." },
+        "defor_var": { "label": "Variable de pérdida forestal", "hint": "Capa del conjunto de datos con el ráster binario de pérdida forestal / deforestación (1 = pérdida). Normalmente el objetivo del conjunto de datos." },
         "forest_edge_var": { "label": "Variable de borde forestal", "hint": "Capa del conjunto de datos con la distancia al borde del bosque." },
         "forest_var": { "label": "Variable forestal", "hint": "Capa del conjunto de datos con la máscara de bosque (1 = bosque)." },
         "subj_var": { "label": "Variable de subjurisdicción", "hint": "Capa del conjunto de datos con las zonas de subjurisdicción para estratificar las tasas." }
@@ -20,6 +21,7 @@
         "win_size_list": { "label": "Tamaños de ventana (px, separados por coma)", "hint": "Tamaños impares en píxeles a evaluar, p. ej. 5, 11, 21. Cada uno produce su propio mapa de riesgo." },
         "blk_rows": { "label": "Filas por bloque", "hint": "Filas leídas por bloque de procesamiento — más filas usan más memoria y menos pasadas de E/S." },
         "defor_threshold": { "label": "Umbral de deforestación (%)", "hint": "% acumulado de deforestación que define la distancia al borde máxima conservada (por defecto 99,5)." },
+        "defor_var": { "label": "Variable de pérdida forestal", "hint": "Capa del conjunto de datos con el ráster binario de pérdida forestal / deforestación (1 = pérdida). Normalmente el objetivo del conjunto de datos." },
         "forest_edge_var": { "label": "Variable de borde forestal", "hint": "Capa del conjunto de datos con la distancia al borde del bosque." },
         "forest_var": { "label": "Variable forestal", "hint": "Capa del conjunto de datos con la máscara de bosque (1 = bosque)." }
       }

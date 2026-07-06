@@ -84,6 +84,10 @@ class MWModel(BaseRiskModel):
     forest_var : str
         Dataset feature name for the binary reference raster, used by
         ``apply()`` (default: ``"forest"``).
+    defor_var : str
+        Dataset layer name for the binary forest-loss (deforestation) raster.
+        When set, this named layer (a feature or the target) is used as the
+        event raster; when empty, the dataset target is used (default: ``""``).
     """
 
     model_type: str = "mw"
@@ -104,6 +108,11 @@ class MWModel(BaseRiskModel):
     # Configurable feature-variable name mappings
     forest_edge_var: str = "forest_edge"
     forest_var: str = "forest"
+    # Forest-loss (deforestation) layer. When set, this named dataset layer is
+    # used as the binary event raster instead of the dataset target, letting the
+    # user pick which variable in their dataset is the forest-loss layer. Empty
+    # falls back to the dataset target (backward-compatible default).
+    defor_var: str = ""
 
     def output_files(self) -> List[Path]:
         """MW persists one deforestation-rate raster per window size."""
@@ -153,6 +162,37 @@ class MWModel(BaseRiskModel):
             f"  Set model.forest_edge_var / forest_var to match "
             f"your variable names."
         )
+
+    def _resolve_defor_file(self, dataset: Any) -> Path:
+        """Resolve the binary forest-loss (deforestation) raster path.
+
+        If ``defor_var`` is set, look it up by exact name among the dataset's
+        features or its target, so the user controls which layer is the
+        forest-loss input.  When empty, fall back to the dataset target
+        (backward-compatible default).
+        """
+        if self.defor_var:
+            for var in dataset.features:
+                if var.name == self.defor_var:
+                    return var.path
+            if dataset.target is not None and dataset.target.name == self.defor_var:
+                return dataset.target.path
+            available = [v.name for v in dataset.features]
+            if dataset.target is not None:
+                available.append(dataset.target.name)
+            raise ValueError(
+                f"MWModel forest-loss variable '{self.defor_var}' was not found "
+                f"in the dataset.\n"
+                f"  Available: {available}\n"
+                f"  Set model.defor_var to match a layer in your dataset."
+            )
+        if dataset.target is None:
+            raise ValueError(
+                "Dataset has no target set and defor_var is not configured. "
+                "Set the forest-loss variable (defor_var) or call "
+                "dataset.set_target() before fit()."
+            )
+        return dataset.target.path
 
     # ------------------------------------------------------------------
     # Fit
@@ -231,7 +271,7 @@ class MWModel(BaseRiskModel):
         # Extract file paths from dataset. The forest-at-start layer is now an
         # explicit input to local_defor_rate (the moving-window denominator),
         # so it is required at fit() time as well as apply() time.
-        deforestation_file = active.target.path
+        deforestation_file = self._resolve_defor_file(active)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
@@ -362,7 +402,7 @@ class MWModel(BaseRiskModel):
         period = active.name or self.name
 
         # Extract file paths from dataset
-        deforestation_file = active.target.path
+        deforestation_file = self._resolve_defor_file(active)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
