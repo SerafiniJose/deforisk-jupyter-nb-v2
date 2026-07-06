@@ -1,8 +1,16 @@
 """Render-only, read-only summary tables for the Project Summary popup.
 
-Each renderer takes the plain Project ``p``, shapes it via a Solara-free helper,
-and draws a one-line stats banner above a CSS-grid table. No actions — these are
-display-only and intentionally carry no edit/delete/map callbacks.
+Each renderer takes the ``project`` *reactive* (not the plain value) and reads
+``p = project.value`` at the top, shapes it via a Solara-free helper, and draws a
+one-line stats banner above a CSS-grid table. No actions — these are display-only
+and intentionally carry no edit/delete/map callbacks.
+
+Taking the reactive (rather than a plain ``Project``) is load-bearing: the app
+replaces ``project`` via ``project.set(p.model_copy())`` on every mutation, and
+``model_copy()`` is *shallow*, so the new Project compares ``==`` to the previous
+one reacton last rendered. Passing that value as a prop would trip reacton's
+prop-equality bailout and freeze the table at its first snapshot; subscribing to
+the reactive here re-renders on every set instead.
 """
 
 import reacton.ipyvuetify as rv
@@ -49,7 +57,10 @@ def _header(grid: str, labels):
 
 
 @solara.component
-def RawVariablesSummary(p):
+def RawVariablesSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = raw_variable_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.raw_vars_empty"))
@@ -73,7 +84,10 @@ def RawVariablesSummary(p):
 
 
 @solara.component
-def ProcessedVariablesSummary(p):
+def ProcessedVariablesSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = processed_variable_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.processed_vars_empty"))
@@ -95,7 +109,10 @@ def ProcessedVariablesSummary(p):
 
 
 @solara.component
-def DatasetsSummary(p):
+def DatasetsSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = dataset_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.datasets_empty"))
@@ -117,7 +134,10 @@ def DatasetsSummary(p):
 
 
 @solara.component
-def SamplesSummary(p):
+def SamplesSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = sample_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.samples_empty"))
@@ -143,7 +163,10 @@ def SamplesSummary(p):
 
 
 @solara.component
-def ModelsSummary(p):
+def ModelsSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = model_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.models_empty"))
@@ -171,7 +194,10 @@ def ModelsSummary(p):
 
 
 @solara.component
-def PredictionsSummary(p):
+def PredictionsSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = prediction_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.predictions_empty"))
@@ -195,7 +221,10 @@ def PredictionsSummary(p):
 
 
 @solara.component
-def EvaluationsSummary(p):
+def EvaluationsSummary(project):
+    p = project.value
+    if p is None:
+        return
     stats, rows = evaluation_rows(p)
     if not rows:
         _Empty(t("widgets.summary_lists.evaluations_empty"))

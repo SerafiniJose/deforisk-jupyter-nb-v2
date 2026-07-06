@@ -71,4 +71,8 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
         with rv.TabsItems(v_model=active_tab):
             for _, renderer in _TABS:
                 with rv.TabItem():
-                    renderer(p)
+                    # Pass the reactive (not p): renderers subscribe to project and
+                    # re-render on every project.set(). Passing p — a Project that
+                    # compares == across shallow model_copy() — would trip reacton's
+                    # prop-equality bailout and freeze the tab. See summary_lists.py.
+                    renderer(project)
