@@ -46,6 +46,7 @@ from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.tile.process_tile import ProcessTile
+from gui.tile.postprocess_tile import PostProcessTile
 from gui.tile.sampling_tile import SamplingTile, samples_on_map
 from gui.tile.train_tile import TrainTile, train_jobs, MODEL_REGISTRY
 from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
@@ -479,6 +480,7 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
         False,  # Area of Interest — always reachable
         not aoi_complete,  # Variables
         not has_raw,  # Process
+        not has_processed,  # Post-process
         not has_processed,  # Dataset
         not has_processed_raster,  # Sampling
         not has_datasets,  # Train
@@ -526,6 +528,7 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
         rv.Tab(children=[t("workflow.tab_aoi")])
         rv.Tab(children=[t("workflow.tab_variables")], disabled=not aoi_complete)
         rv.Tab(children=[t("workflow.tab_process")], disabled=not has_raw)
+        rv.Tab(children=[t("workflow.tab_postprocess")], disabled=not has_processed)
         rv.Tab(children=[t("workflow.tab_dataset")], disabled=not has_processed)
         rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)
         rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)
@@ -573,6 +576,11 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
             ProcessTile(
                 project=app_state.project,
                 processing=app_state.processing,
+                process_error=app_state.process_error,
+            )
+        with rv.TabItem():
+            PostProcessTile(
+                project=app_state.project,
                 process_error=app_state.process_error,
             )
         with rv.TabItem():

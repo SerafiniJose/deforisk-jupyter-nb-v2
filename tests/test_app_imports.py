@@ -119,3 +119,22 @@ def test_page_clears_log_on_switch():
     src = inspect.getsource(app.Page)
     assert "clear_log_records()" in src
     assert "solara.use_effect(reset_log_on_switch, [project_loaded_signal])" in src
+
+
+def test_workflow_tabs_includes_postprocess():
+    import inspect
+    import gui.solara_app as app
+
+    src = inspect.getsource(app.WorkflowTabs)
+    assert "PostProcessTile" in src
+    assert 'rv.Tab(children=[t("workflow.tab_postprocess")], disabled=not has_processed)' in src
+
+
+def test_notification_ladder_renumbered_for_postprocess():
+    import inspect
+    from gui.widget import notification_area
+
+    src = inspect.getsource(notification_area._compute)
+    assert "elif tab == 3:  # Post-process" in src
+    assert "elif tab == 4:  # Dataset" in src
+    assert "elif tab == 8:  # Evaluation" in src

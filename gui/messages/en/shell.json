@@ -10,6 +10,7 @@
     "tab_aoi": "Area of Interest",
     "tab_variables": "Variables",
     "tab_process": "Process",
+    "tab_postprocess": "Post-process",
     "tab_dataset": "Dataset",
     "tab_sampling": "Sampling",
     "tab_train": "Train",

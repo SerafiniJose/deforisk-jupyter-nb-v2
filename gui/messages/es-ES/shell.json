@@ -10,6 +10,7 @@
     "tab_aoi": "Área de interés",
     "tab_variables": "Variables",
     "tab_process": "Procesar",
+    "tab_postprocess": "Postproceso",
     "tab_dataset": "Conjunto de datos",
     "tab_sampling": "Muestreo",
     "tab_train": "Entrenar",

@@ -26,14 +26,18 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
         if project and project.raw_variables and not project.base_raster:
             return (t("notifications.process_no_base_raster"), "warning")
 
-    elif tab == 3:  # Dataset
+    elif tab == 3:  # Post-process
+        if process_error:
+            return (process_error, "error")
+
+    elif tab == 4:  # Dataset
         if project and not project.processed_variables:
             return (t("notifications.dataset_run_process_first"), "warning")
         if project and project.datasets:
             count = len(project.datasets)
             return (plural(count, "notifications.dataset_count_one", "notifications.dataset_count_other"), "success")
 
-    elif tab == 4:  # Sampling
+    elif tab == 5:  # Sampling
         if project is not None and not any(
             str(getattr(v, "data_type", "")) == "raster"
             for v in project.processed_variables.values()
@@ -42,15 +46,15 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
         if project is not None and project.samples:
             return (plural(len(project.samples), "notifications.sampling_count_one", "notifications.sampling_count_other"), "success")
 
-    elif tab == 5:  # Train
+    elif tab == 6:  # Train
         if project is not None and not project.datasets:
             return (t("notifications.train_no_dataset"), "warning")
 
-    elif tab == 6:  # Inference
+    elif tab == 7:  # Inference
         if project is not None and not project.models:
             return (t("notifications.inference_no_model"), "warning")
 
-    elif tab == 7:  # Evaluation
+    elif tab == 8:  # Evaluation
         if project is not None and not project.predictions:
             return (t("notifications.evaluation_no_predictions"), "warning")
 
