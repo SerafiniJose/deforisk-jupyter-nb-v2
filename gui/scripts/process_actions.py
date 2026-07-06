@@ -174,3 +174,99 @@ def add_forest_loss_spec(project, var_name: str, start_year: int, end_year: int)
     )
     project.forest_loss_specs.append(spec)
     return spec
+
+
+def change_layer_candidates(project) -> List[str]:
+    """Sorted keys of processed temporal raster vars (change-detection inputs).
+
+    Any two of these can be paired — same source or cross-source; both must be
+    presence masks (1 = present, 0 = absent) of the same phenomenon, which is
+    the user's responsibility.
+    """
+    from spatialrisk.variables.models import DataType
+
+    return sorted(
+        k
+        for k, v in project.processed_variables.items()
+        if getattr(v, "data_type", None) != DataType.vector
+        and getattr(v, "year", None) is not None
+    )
+
+
+def _check_same_grid(start_var, end_var) -> None:
+    """Raise if the two processed rasters are not on the same grid.
+
+    Post-alignment they always should be; a mismatch means one predates the
+    current base raster — differencing it would produce garbage.
+    """
+    import rasterio
+
+    with rasterio.open(start_var.path) as a, rasterio.open(end_var.path) as b:
+        if a.crs != b.crs or a.transform != b.transform or a.shape != b.shape:
+            raise ValueError(
+                f"'{start_var.name}' and '{end_var.name}' are not on the same "
+                "grid — re-run Process so both layers are aligned to the base "
+                "raster."
+            )
+
+
+def generate_change_var(project, op: str, start_key: str, end_key: str):
+    """Generate a loss/gain change layer from two aligned processed masks.
+
+    Output convention: 1 = event, 0 = stable, 255 = nodata. Registers the
+    result as a static processed variable and saves the project. Idempotent:
+    an existing variable (or output file) is reused, and reuse of an existing
+    variable does NOT save the project.
+    """
+    from spatialrisk.variables import LocalRasterVar
+    from spatialrisk.variables.models import RasterType
+
+    if op not in ("loss", "gain"):
+        raise ValueError(f"op must be 'loss' or 'gain', got {op!r}")
+    if start_key == end_key:
+        raise ValueError("Choose two different layers.")
+
+    start = project.processed_variables.get(start_key)
+    end = project.processed_variables.get(end_key)
+    if start is None:
+        raise ValueError(f"Processed variable '{start_key}' not found.")
+    if end is None:
+        raise ValueError(f"Processed variable '{end_key}' not found.")
+
+    y1 = getattr(start, "year", None)
+    y2 = getattr(end, "year", None)
+    if y1 is None or y2 is None:
+        raise ValueError("Both layers must be temporal (have a year).")
+    if y1 >= y2:
+        raise ValueError("The start layer's year must be earlier than the end layer's.")
+
+    if start.name == end.name:
+        name = f"{op}_{start.name}_{y1}_{y2}"
+    else:
+        name = f"{op}_{start.name}_{y1}_{end.name}_{y2}"
+
+    existing = project.processed_variables.get(name)
+    if existing is not None:
+        logger.info("Change layer '%s' already exists — reusing it.", name)
+        return existing
+
+    _check_same_grid(start, end)
+
+    out_path = Path(project.folders.processed_data_folder) / f"{name}.tif"
+    if not out_path.exists():
+        from spatialrisk.processing import process_change_xarray
+
+        logger.info("Generating %s layer '%s'…", op, name)
+        process_change_xarray(str(start.path), str(end.path), str(out_path), op=op)
+
+    var = LocalRasterVar(
+        name=name,
+        path=out_path,
+        raster_type=RasterType.categorical,
+        project=project,
+        tags=[op, "change", f"{y1}_{y2}"],
+    )
+    var.add_as_processed(auto_save=False)
+    project.save()
+    logger.info("Change layer '%s' registered.", name)
+    return var
