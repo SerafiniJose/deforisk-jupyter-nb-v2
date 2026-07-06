@@ -8,8 +8,6 @@ import solara
 
 from gui.i18n import t
 from gui.scripts import process_actions
-from gui.widget.variable_list import DerivedVariableList
-from spatialrisk.variables.models import PostProcessing
 
 logger = logging.getLogger("spatial_risk")
 
@@ -44,12 +42,10 @@ def base_raster_key(p) -> str:
 
 @solara.component
 def ProcessTile(project, processing, process_error):
-    """Download → base/projection → run processing → post-processing."""
+    """Download → base/projection → run processing."""
     base_key, set_base_key = solara.use_state("")
     epsg, set_epsg = solara.use_state("")
     resolution, set_resolution = solara.use_state("30")
-    pp_key, set_pp_key = solara.use_state("")
-    pp_step, set_pp_step = solara.use_state(PostProcessing.dist.value)
 
     p = project.value
     has_vars = p is not None and bool(p.raw_variables)
@@ -153,15 +149,6 @@ def ProcessTile(project, processing, process_error):
             processing.set(False)
         project.set(p.model_copy())
 
-    def on_apply_pp():
-        if p is None:
-            return
-        try:
-            process_actions.apply_post_processing(p, pp_key, pp_step)
-            project.set(p.model_copy())
-        except Exception as exc:
-            process_error.set(t("tiles.process.error_post_processing", exc=exc))
-
     with solara.Column(style="gap:16px;"):
         solara.Markdown(t("tiles.process.header"))
         solara.Text(t("tiles.process.description"))
@@ -240,22 +227,3 @@ def ProcessTile(project, processing, process_error):
         )
         if processing.value:
             solara.ProgressLinear(True)
-
-        # D — Post-processing
-        if p and p.processed_variables:
-            solara.Markdown(t("tiles.process.post_processing_header"))
-            with solara.Row(style="gap:8px;align-items:center;"):
-                rv.Select(
-                    label=t("tiles.process.processed_variable_label"),
-                    items=list(p.processed_variables.keys()),
-                    v_model=pp_key, on_v_model=set_pp_key, dense=True, outlined=True,
-                )
-                rv.Select(
-                    label=t("tiles.process.step_label"), items=[s.value for s in PostProcessing],
-                    v_model=pp_step, on_v_model=set_pp_step, dense=True, outlined=True,
-                )
-                solara.Button(
-                    t("tiles.process.generate_button"), icon_name="mdi-auto-fix", color="primary", small=True,
-                    on_click=on_apply_pp, disabled=not pp_key,
-                )
-            DerivedVariableList(project=project)

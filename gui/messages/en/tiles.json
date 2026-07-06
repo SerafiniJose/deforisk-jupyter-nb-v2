@@ -21,7 +21,7 @@
     },
     "process": {
       "header": "### Step 3 — Process",
-      "description": "Download layers, set the base raster + projection, then reproject, rasterize, and post-process all variables.",
+      "description": "Download layers, set the base raster + projection, then reproject and rasterize all variables.",
       "error_no_variables": "Add variables in Step 2 first.",
       "download_section_header": "**1 · DOWNLOAD LAYERS**",
       "pending_geevars_count": "{count} GEE layer(s) need downloading.",
@@ -38,13 +38,24 @@
       "run_processing_header": "**3 · RUN PROCESSING**",
       "error_no_base": "Set a base raster above to enable processing.",
       "run_processing_button": "Run processing",
-      "post_processing_header": "**4 · POST-PROCESSING (edge / dist)**",
+      "error_download_first": "Download layers before auto-computing UTM.",
+      "error_auto_utm": "Auto-UTM failed: {exc}",
+      "error_set_base": "Could not set base raster: {exc}"
+    },
+    "postprocess": {
+      "header": "### Step 4 — Post-process",
+      "description": "Derive new variables from the processed, aligned layers: change detection (loss/gain) and edge/distance transforms.",
+      "error_no_processed": "Run Step 3 — Process first.",
+      "change_header": "**1 · CHANGE DETECTION (loss / gain)**",
+      "change_help_text": "Pick two presence masks (1 = present, 0 = absent) of the same phenomenon at two different years — same or different sources. Output: 1 = event, 0 = stable, 255 = nodata.",
+      "operation_label": "Operation",
+      "start_layer_label": "Start layer",
+      "end_layer_label": "End layer",
+      "error_change": "Change detection failed: {exc}",
+      "post_processing_header": "**2 · EDGE / DISTANCE**",
       "processed_variable_label": "Processed variable",
       "step_label": "Step",
       "generate_button": "Generate",
-      "error_download_first": "Download layers before auto-computing UTM.",
-      "error_auto_utm": "Auto-UTM failed: {exc}",
-      "error_set_base": "Could not set base raster: {exc}",
       "error_post_processing": "Post-processing failed: {exc}"
     },
     "dataset": {
