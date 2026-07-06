@@ -592,11 +592,11 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
 
     NotificationArea(
         active_tab=active_tab,
-        aoi_result=app_state.aoi_result.value,
-        project=app_state.project.value,
-        process_error=app_state.process_error.value,
-        status_message=app_state.status_message.value,
-        error_message=app_state.error_message.value,
+        aoi_result=app_state.aoi_result,
+        project=app_state.project,
+        process_error=app_state.process_error,
+        status_message=app_state.status_message,
+        error_message=app_state.error_message,
     )
 
 

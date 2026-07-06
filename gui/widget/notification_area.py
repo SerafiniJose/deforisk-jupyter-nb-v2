@@ -63,8 +63,23 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
 
 @solara.component
 def NotificationArea(active_tab, aoi_result, project, process_error, status_message, error_message):
-    """Sticky floating notification rendered at the bottom of the workflow panel."""
-    notif = _compute(active_tab, aoi_result, project, process_error, status_message, error_message)
+    """Sticky floating notification rendered at the bottom of the workflow panel.
+
+    Takes the ``app_state`` *reactives* (not their values) and reads ``.value``
+    here so the component subscribes and re-renders whenever any of them change —
+    including a project-only change on the current tab. Passing ``project.value``
+    would trip reacton's prop-equality bailout (the shallow ``model_copy()`` makes
+    the new Project compare ``==`` to the previous one) and leave a stale message
+    until the next tab switch. ``active_tab`` is local ``use_state``, passed as-is.
+    """
+    notif = _compute(
+        active_tab,
+        aoi_result.value,
+        project.value,
+        process_error.value,
+        status_message.value,
+        error_message.value,
+    )
 
     if notif is None:
         return
