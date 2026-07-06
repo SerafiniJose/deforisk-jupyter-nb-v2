@@ -59,7 +59,7 @@
       "error_post_processing": "El posprocesamiento falló: {exc}"
     },
     "dataset": {
-      "header": "### Paso 4 — Conjunto de datos",
+      "header": "### Paso 5 — Conjunto de datos",
       "description": "Agrupá una variable objetivo y variables de características en un conjunto de datos para el entrenamiento del modelo.",
       "error_no_processed": "Ejecutá primero el Paso 3 — Procesar.",
       "form_header_new": "**NUEVO CONJUNTO DE DATOS**",
@@ -82,8 +82,8 @@
       "error_registration_failed": "{exc}"
     },
     "sampling": {
-      "header": "### Paso 5 — Muestreo",
-      "description": "Extraé una muestra persistente y con nombre de una variable ráster. Las muestras son seleccionables en Entrenar (Paso 6) y se pueden agregar al mapa.",
+      "header": "### Paso 6 — Muestreo",
+      "description": "Extraé una muestra persistente y con nombre de una variable ráster. Las muestras son seleccionables en Entrenar (Paso 7) y se pueden agregar al mapa.",
       "error_no_raster": "Creá variables ráster primero (Paso 3 — Procesar).",
       "raster_variable_label": "Variable ráster",
       "mask_variable_label": "Variable de máscara (opcional)",
@@ -111,12 +111,12 @@
       "confirm_remove_label": "Eliminar"
     },
     "inference": {
-      "header": "### Paso 7 — Inferencia",
+      "header": "### Paso 8 — Inferencia",
       "description": "Seleccioná un modelo entrenado y un conjunto de datos, luego ejecutá la inferencia.",
       "model_select_label": "Modelo entrenado",
-      "model_select_no_data": "No hay modelos entrenados. Entrená un modelo en el Paso 6.",
+      "model_select_no_data": "No hay modelos entrenados. Entrená un modelo en el Paso 7.",
       "dataset_select_label": "Conjunto de datos",
-      "dataset_select_no_data": "No hay conjuntos de datos registrados. Creá uno en el Paso 4.",
+      "dataset_select_no_data": "No hay conjuntos de datos registrados. Creá uno en el Paso 5.",
       "pred_name_label": "Nombre de predicción",
       "pred_name_exists_warning": "⚠ Ya existe una predicción llamada '{name}' — ejecutar la sobrescribirá.",
       "pred_name_saved_as": "Guardado como '{name}'.",
@@ -139,14 +139,14 @@
       "error_map_toggle": "No se pudo alternar la predicción en el mapa: {exc}"
     },
     "evaluation": {
-      "header": "### Paso 8 — Evaluación",
+      "header": "### Paso 9 — Evaluación",
       "description": "Puntuá los mapas seleccionados contra una verdad elegida (deforestación observada + bosque al inicio + intervalo) para que los mapas de distintos conjuntos de datos sean comparables. Cada ejecución se guarda abajo — hacé clic para ver la tabla. Índices: MedAE / R² / RMSE / wRMSE.",
       "truth_label": "Verdad — deforestación observada",
       "forest_label": "Bosque al inicio del período",
       "interval_label": "Intervalo (años)",
       "interval_hint": "Se obtiene automáticamente del nombre de la variable de verdad; editable.",
       "maps_label": "Mapas a evaluar (vacío = todos)",
-      "maps_no_data": "No hay predicciones registradas. Ejecutá inferencia en el Paso 7.",
+      "maps_no_data": "No hay predicciones registradas. Ejecutá inferencia en el Paso 8.",
       "csizes_label": "Tamaño(s) de celda — cuadrícula gruesa (píxeles)",
       "csizes_hint": "Uno o más tamaños, separados por coma (p. ej. 100, 300, 1000). Cada uno agrega una fila por mapa.",
       "metrics_label": "Métricas a mostrar",
@@ -167,7 +167,7 @@
       "error_no_project": "No hay proyecto abierto. Creá o cargá un proyecto primero."
     },
     "train": {
-      "header": "### Paso 6 — Entrenar",
+      "header": "### Paso 7 — Entrenar",
       "description": "Seleccioná un modelo, configurá sus parámetros y lanzá el entrenamiento.",
       "model_select_label": "Modelo",
       "model_name_label": "Nombre del modelo",
@@ -175,9 +175,9 @@
       "parameters_header": "Parámetros",
       "training_data_header": "**Datos de entrenamiento**",
       "dataset_select_label": "Conjunto de datos",
-      "dataset_select_no_data": "Sin conjuntos de datos. Procesá uno en el Paso 2 — Procesar.",
+      "dataset_select_no_data": "Sin conjuntos de datos. Creá uno en el Paso 5 — Conjunto de datos.",
       "sample_select_label": "Muestra",
-      "sample_select_no_data": "Sin muestras. Generá una en el Paso 5 — Muestreo.",
+      "sample_select_no_data": "Sin muestras. Generá una en el Paso 6 — Muestreo.",
       "variables_header": "**Variables**",
       "variables_info_no_dataset": "Seleccioná un conjunto de datos arriba para listar sus características.",
       "variables_info_no_features": "El conjunto de datos '{dataset}' no tiene características para elegir.",

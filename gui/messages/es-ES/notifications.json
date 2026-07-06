@@ -8,9 +8,9 @@
     "sampling_no_raster_vars": "Creá variables ráster (Paso 3 — Procesar) antes de muestrear.",
     "sampling_count_one": "{n} muestra generada.",
     "sampling_count_other": "{n} muestras generadas.",
-    "train_no_dataset": "Registrá un conjunto de datos (Paso 4) antes de entrenar.",
-    "inference_no_model": "Entrená al menos un modelo (Paso 6) antes de la inferencia.",
-    "evaluation_no_predictions": "Ejecutá la inferencia (Paso 7) para producir predicciones antes de evaluar."
+    "train_no_dataset": "Registrá un conjunto de datos (Paso 5) antes de entrenar.",
+    "inference_no_model": "Entrená al menos un modelo (Paso 7) antes de la inferencia.",
+    "evaluation_no_predictions": "Ejecutá la inferencia (Paso 8) para producir predicciones antes de evaluar."
   },
   "dialog": {
     "confirm_default_title": "¿Eliminar?",

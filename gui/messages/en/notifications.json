@@ -8,9 +8,9 @@
     "sampling_no_raster_vars": "Create raster variables (Step 3 — Process) before sampling.",
     "sampling_count_one": "{n} sample generated.",
     "sampling_count_other": "{n} samples generated.",
-    "train_no_dataset": "Register a dataset (Step 4) before training.",
-    "inference_no_model": "Train at least one model (Step 6) before inference.",
-    "evaluation_no_predictions": "Run inference (Step 7) to produce predictions before evaluation."
+    "train_no_dataset": "Register a dataset (Step 5) before training.",
+    "inference_no_model": "Train at least one model (Step 7) before inference.",
+    "evaluation_no_predictions": "Run inference (Step 8) to produce predictions before evaluation."
   },
   "dialog": {
     "confirm_default_title": "Delete?",

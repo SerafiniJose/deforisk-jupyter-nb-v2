@@ -59,7 +59,7 @@
       "error_post_processing": "Post-processing failed: {exc}"
     },
     "dataset": {
-      "header": "### Step 4 — Dataset",
+      "header": "### Step 5 — Dataset",
       "description": "Bundle a target and feature variables into a dataset for model training.",
       "error_no_processed": "Run Step 3 — Process first.",
       "form_header_new": "**NEW DATASET**",
@@ -82,8 +82,8 @@
       "error_registration_failed": "{exc}"
     },
     "sampling": {
-      "header": "### Step 5 — Sampling",
-      "description": "Draw a persistent, named sample from a raster variable. Samples are selectable in Train (Step 6) and can be added to the map.",
+      "header": "### Step 6 — Sampling",
+      "description": "Draw a persistent, named sample from a raster variable. Samples are selectable in Train (Step 7) and can be added to the map.",
       "error_no_raster": "Create raster variables first (Step 3 — Process).",
       "raster_variable_label": "Raster variable",
       "mask_variable_label": "Mask variable (optional)",
@@ -111,12 +111,12 @@
       "confirm_remove_label": "Delete"
     },
     "inference": {
-      "header": "### Step 7 — Inference",
+      "header": "### Step 8 — Inference",
       "description": "Select a trained model and a dataset, then run inference.",
       "model_select_label": "Trained model",
-      "model_select_no_data": "No trained models available. Train one in Step 6.",
+      "model_select_no_data": "No trained models available. Train one in Step 7.",
       "dataset_select_label": "Dataset",
-      "dataset_select_no_data": "No datasets registered. Create one in Step 4.",
+      "dataset_select_no_data": "No datasets registered. Create one in Step 5.",
       "pred_name_label": "Prediction name",
       "pred_name_exists_warning": "⚠ A prediction named '{name}' already exists — running overwrites it.",
       "pred_name_saved_as": "Saved as '{name}'.",
@@ -139,14 +139,14 @@
       "error_map_toggle": "Could not toggle prediction on map: {exc}"
     },
     "evaluation": {
-      "header": "### Step 8 — Evaluation",
+      "header": "### Step 9 — Evaluation",
       "description": "Score selected maps against one chosen truth (observed deforestation + forest-at-start + interval) so maps from different datasets are comparable. Each run is saved below — click it to view the table. Indices: MedAE / R² / RMSE / wRMSE.",
       "truth_label": "Truth — observed deforestation",
       "forest_label": "Forest at period start",
       "interval_label": "Interval (years)",
       "interval_hint": "Auto-parsed from the truth variable name; editable.",
       "maps_label": "Maps to evaluate (empty = all)",
-      "maps_no_data": "No predictions registered. Run inference in Step 7.",
+      "maps_no_data": "No predictions registered. Run inference in Step 8.",
       "csizes_label": "Cell size(s) — coarse grid (pixels)",
       "csizes_hint": "One or more sizes, comma-separated (e.g. 100, 300, 1000). Each adds a row per map.",
       "metrics_label": "Metrics to show",
@@ -167,7 +167,7 @@
       "error_no_project": "No project open. Create or load a project first."
     },
     "train": {
-      "header": "### Step 6 — Train",
+      "header": "### Step 7 — Train",
       "description": "Select a model, configure its parameters, and launch training.",
       "model_select_label": "Model",
       "model_name_label": "Model name",
@@ -175,9 +175,9 @@
       "parameters_header": "Parameters",
       "training_data_header": "**Training data**",
       "dataset_select_label": "Dataset",
-      "dataset_select_no_data": "No datasets. Process one in Step 2 — Process.",
+      "dataset_select_no_data": "No datasets. Create one in Step 5 — Dataset.",
       "sample_select_label": "Sample",
-      "sample_select_no_data": "No samples. Generate one in Step 5 — Sampling.",
+      "sample_select_no_data": "No samples. Generate one in Step 6 — Sampling.",
       "variables_header": "**Variables**",
       "variables_info_no_dataset": "Select a dataset above to list its features.",
       "variables_info_no_features": "Dataset '{dataset}' has no features to choose from.",
