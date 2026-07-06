@@ -16,27 +16,39 @@ _SOURCE_LAYER = "points"
 
 def build_sample_circle_style(url, *, strata_field="strata",
                               event_color="#d62728", forest_color="#2ca02c"):
-    """MapLibre style: one circle layer colored by the strata attribute.
+    """Style dict: one filtered circle layer per class.
 
     event (strata == 1) -> red, forest (everything else) -> green.
+
+    ipyleaflet's PMTilesLayer renders through protomaps-leaflet's json_style,
+    which understands only a subset of the MapLibre spec: paint values are
+    copied verbatim into canvas styles (an expression like ["match", ...]
+    silently renders black) and circle-opacity is ignored. Legacy layer
+    filters (==, !=, in, all, ...) ARE supported, so data-driven coloring
+    must be expressed as one layer per class with scalar paint values.
     """
-    match = ["match", ["get", strata_field], 1, event_color, forest_color]
-    return {
-        "version": 8,
-        "sources": {"sample": {"type": "vector", "url": url}},
-        "layers": [{
-            "id": "sample-points",
+    def circle(id_, filter_, color):
+        return {
+            "id": id_,
             "type": "circle",
             "source": "sample",
             "source-layer": _SOURCE_LAYER,
+            "filter": filter_,
             "paint": {
                 "circle-radius": 4,
-                "circle-opacity": 0.7,
                 "circle-stroke-width": 1,
-                "circle-color": match,
-                "circle-stroke-color": match,
+                "circle-color": color,
+                "circle-stroke-color": color,
             },
-        }],
+        }
+
+    return {
+        "version": 8,
+        "sources": {"sample": {"type": "vector", "url": url}},
+        "layers": [
+            circle("sample-event", ["==", strata_field, 1], event_color),
+            circle("sample-forest", ["!=", strata_field, 1], forest_color),
+        ],
     }
 
 

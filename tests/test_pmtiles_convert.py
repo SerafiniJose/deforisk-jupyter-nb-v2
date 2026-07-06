@@ -43,6 +43,7 @@ def test_builds_expected_command(tmp_path, monkeypatch):
     assert "-l" in cmd and "points" in cmd
     assert "-z" in cmd and "12" in cmd
     assert "-Z" in cmd and "0" in cmd
+    assert "-r1" in cmd
     assert "--drop-densest-as-needed" in cmd
 
 

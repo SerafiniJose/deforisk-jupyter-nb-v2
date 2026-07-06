@@ -24,8 +24,10 @@ def gpkg_to_pmtiles(gpkg_path, out_path, *, layer="points",
 
     ``layer`` is the tippecanoe layer name (the MapLibre ``source-layer``).
     Raises ``RuntimeError`` if tippecanoe is missing, ``CalledProcessError`` if
-    it fails. ``--drop-densest-as-needed`` thins dense areas at low zoom so even
-    million-point samples tile cheaply.
+    it fails. ``-r1`` disables tippecanoe's default rate-based point dropping
+    (2.5x per zoom below maxzoom) so every point renders at every zoom;
+    ``--drop-densest-as-needed`` stays as a guard that only thins tiles
+    exceeding the 500KB limit, so million-point samples still tile.
     """
     import geopandas as gpd
 
@@ -44,7 +46,7 @@ def gpkg_to_pmtiles(gpkg_path, out_path, *, layer="points",
         cmd = [
             "tippecanoe", "-o", str(out_path), "-l", layer,
             "-Z", str(min_zoom), "-z", str(max_zoom),
-            "--drop-densest-as-needed", "--force", str(geojson),
+            "-r1", "--drop-densest-as-needed", "--force", str(geojson),
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     logger.info("PMTiles written: %s", out_path)
