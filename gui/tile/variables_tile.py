@@ -367,30 +367,6 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         _drop_from_map(key, map_)
         project.set(p.model_copy())
 
-    fl_var, set_fl_var = solara.use_state("")
-    fl_start, set_fl_start = solara.use_state(None)
-    fl_end, set_fl_end = solara.use_state(None)
-
-    def on_add_forest_loss():
-        from gui.scripts.process_actions import add_forest_loss_spec
-        p = project.value
-        if p is None:
-            return
-        try:
-            add_forest_loss_spec(p, fl_var, int(fl_start), int(fl_end))
-            set_fl_start(None)
-            set_fl_end(None)
-            project.set(p.model_copy())
-        except Exception as exc:
-            process_error.set(f"Could not add forest-loss target: {exc}")
-
-    def on_remove_forest_loss(name: str):
-        p = project.value
-        if p is None:
-            return
-        p.forest_loss_specs = [s for s in p.forest_loss_specs if s.name != name]
-        project.set(p.model_copy())
-
     p = project.value
 
     with solara.Column(style="gap: 16px;"):
@@ -416,57 +392,6 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             on_toggle_map=on_toggle_map if map_ is not None else None,
             vars_on_map=vars_on_map,
         )
-
-        # Forest-loss target declaration (deferred; generated during Process)
-        from gui.scripts.process_actions import forest_loss_candidates
-        candidates = forest_loss_candidates(p) if p else {}
-        with solara.Column(style="gap:8px;"):
-            solara.Markdown(t("tiles.variables.forest_loss_targets_header"))
-            if not candidates:
-                solara.Text(
-                    t("tiles.variables.forest_loss_help_text"),
-                    style="font-size:0.8rem;color:rgba(0,0,0,0.6);font-style:italic;",
-                )
-            else:
-                years = candidates.get(fl_var, [])
-                with solara.Row(style="gap:8px;align-items:center;"):
-                    rv.Select(
-                        label=t("tiles.variables.forest_layer_label"),
-                        items=list(candidates.keys()),
-                        v_model=fl_var,
-                        on_v_model=set_fl_var,
-                        dense=True, outlined=True,
-                    )
-                    rv.Select(
-                        label=t("tiles.variables.from_year_label"), items=years,
-                        v_model=fl_start, on_v_model=set_fl_start,
-                        dense=True, outlined=True,
-                    )
-                    rv.Select(
-                        label=t("tiles.variables.to_year_label"), items=years,
-                        v_model=fl_end, on_v_model=set_fl_end,
-                        dense=True, outlined=True,
-                    )
-                    solara.Button(
-                        t("tiles.variables.add_target_button"), icon_name="mdi-plus", small=True, color="primary",
-                        on_click=on_add_forest_loss,
-                        disabled=not (fl_var and fl_start and fl_end),
-                    )
-            for spec in (p.forest_loss_specs if p else []):
-                # The target is materialized during Process as a raw variable
-                # keyed by spec.name (see generate_forest_loss_targets). Once it
-                # exists the target is done — otherwise it's still pending.
-                generated = bool(p and spec.name in p.raw_variables)
-                with solara.Row(style="gap:8px;align-items:center;"):
-                    rv.Chip(children=[spec.name], x_small=True, outlined=True)
-                    if generated:
-                        rv.Chip(children=[t("tiles.variables.chip_ready")], color="success", x_small=True)
-                    else:
-                        rv.Chip(children=[t("tiles.variables.chip_pending")], color="amber", x_small=True)
-                    solara.Button(
-                        "", icon_name="mdi-delete-outline", icon=True, text=True, x_small=True,
-                        on_click=lambda *_, n=spec.name: on_remove_forest_loss(n),
-                    )
 
     editing_entry = (
         _variable_to_entry(editing_key, p.raw_variables[editing_key], p)

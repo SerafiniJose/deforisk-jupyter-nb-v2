@@ -8,7 +8,6 @@ class _Proj:
     def __init__(self):
         self.raw_variables = {}
         self.processed_variables = {}
-        self.forest_loss_specs = []
         self.base_raster = None
         self.saved = False
 
@@ -36,42 +35,13 @@ def test_set_base_raster_reprojects_and_sets():
     assert out is reprojected
 
 
-def test_generate_forest_loss_targets_adds_raw():
-    from spatialrisk.variables.models import ForestLossSpec
-
-    p = _Proj()
-    start = MagicMock(name="start")
-    end = MagicMock(name="end")
-    p.raw_variables = {"forest_gfc_2015": start, "forest_gfc_2020": end}
-    p.forest_loss_specs = [
-        ForestLossSpec(
-            name="forest_loss_2015_2020",
-            start_key="forest_gfc_2015",
-            end_key="forest_gfc_2020",
-            start_year=2015,
-            end_year=2020,
-        )
-    ]
-    new_var = MagicMock(name="forest_loss_var")
-
-    with patch("gui.scripts.process_actions.make_forest_loss_var", return_value=new_var) as m:
-        out = process_actions.generate_forest_loss_targets(p)
-
-    m.assert_called_once_with(p, start, end)
-    new_var.add_as_raw.assert_called_once_with(auto_save=False)
-    assert out == [new_var]
-
-
 def test_run_processing_sequences_steps():
     p = _Proj()
     p.base_raster = MagicMock(name="base")
-    with patch("gui.scripts.process_actions.materialize_raw_layers") as mat, patch(
-        "gui.scripts.process_actions.generate_forest_loss_targets"
-    ) as gen:
+    with patch("gui.scripts.process_actions.materialize_raw_layers") as mat:
         process_actions.run_processing(p)
 
     mat.assert_called_once_with(p)
-    gen.assert_called_once_with(p)
     assert p.reprojected == "raw"
     assert p.rasterized == "raw"
     assert p.saved is True
@@ -98,32 +68,11 @@ def test_run_processing_raises_without_base_raster():
         process_actions.run_processing(p)
 
 
-def test_generate_forest_loss_targets_skips_missing_key():
-    from spatialrisk.variables.models import ForestLossSpec
-    p = _Proj()
-    p.raw_variables = {}  # neither key present
-    p.forest_loss_specs = [
-        ForestLossSpec(
-            name="forest_loss_2015_2020",
-            start_key="forest_gfc_2015",
-            end_key="forest_gfc_2020",
-            start_year=2015,
-            end_year=2020,
-        )
-    ]
-    with patch("gui.scripts.process_actions.make_forest_loss_var") as m:
-        out = process_actions.generate_forest_loss_targets(p)
-    m.assert_not_called()
-    assert out == []
-
-
 def test_run_processing_logs_reproject_and_rasterize(caplog):
     p = _Proj()
     p.base_raster = MagicMock(name="base")
     with caplog.at_level(logging.INFO, logger="spatial_risk"):
-        with patch("gui.scripts.process_actions.materialize_raw_layers"), patch(
-            "gui.scripts.process_actions.generate_forest_loss_targets"
-        ):
+        with patch("gui.scripts.process_actions.materialize_raw_layers"):
             process_actions.run_processing(p)
     text = caplog.text.lower()
     assert "reproject" in text
