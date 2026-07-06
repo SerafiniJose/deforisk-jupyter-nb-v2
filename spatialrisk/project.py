@@ -7,7 +7,7 @@ from pathlib import Path
 from box import Box
 from pydantic import BaseModel, Field, ConfigDict
 from spatialrisk.variables import LocalVectorVar, LocalRasterVar
-from spatialrisk.variables.models import DataType, ForestLossSpec
+from spatialrisk.variables.models import DataType
 from spatialrisk.log_utils import log_progress
 
 root_folder: Path = Path.cwd().parent
@@ -75,7 +75,6 @@ class Project(BaseModel):
     samples: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
     evaluations: Dict[str, Any] = Field(default_factory=dict)
-    forest_loss_specs: List[ForestLossSpec] = Field(default_factory=list)
     # AOI descriptor (GUI-populated, library-agnostic): light metadata only
     # (method, name, gee, admin, geometry_file). The geometry itself lives in a
     # sidecar ``aoi.geojson`` in the project folder, written/read by the GUI —
@@ -758,12 +757,6 @@ class Project(BaseModel):
             for key, record in self.evaluations.items():
                 data["evaluations"][key] = record.model_dump(mode="json")
 
-        # Serialize deferred forest-loss target specs
-        if self.forest_loss_specs:
-            data["forest_loss_specs"] = [
-                spec.model_dump(mode="json") for spec in self.forest_loss_specs
-            ]
-
         # Serialize the AOI descriptor (geometry lives in the sidecar file)
         if self.aoi:
             data["aoi"] = self.aoi
@@ -977,10 +970,6 @@ class Project(BaseModel):
             for key, ev_data in data["evaluations"].items():
                 project.evaluations[key] = EvaluationRecord(**ev_data)
             print(f"Loaded {len(project.evaluations)} evaluation(s)")
-
-        # Reconstruct deferred forest-loss target specs
-        for spec_data in data.get("forest_loss_specs", []):
-            project.forest_loss_specs.append(ForestLossSpec(**spec_data))
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
