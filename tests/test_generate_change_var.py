@@ -77,6 +77,13 @@ def test_same_source_naming(tmp_path):
     )
     out.add_as_processed.assert_called_once_with(auto_save=False)
     assert p.saved is True
+    # Downstream (dataset static-target path) relies on these: a categorical,
+    # non-temporal var bound to this project.
+    from spatialrisk.variables.models import RasterType
+
+    assert kwargs["raster_type"] == RasterType.categorical
+    assert kwargs["project"] is p
+    assert "year" not in kwargs  # static — year defaults to None
 
 
 def test_cross_source_naming(tmp_path):
