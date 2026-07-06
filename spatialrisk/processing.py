@@ -246,7 +246,20 @@ def distance_to_edge_gdal_no_mask(
     del src_ds, dst_ds
 
 
-def process_forest_loss_xarray(input1_path, input2_path, output_path):
+def process_change_xarray(input1_path, input2_path, output_path, op="loss"):
+    """Pixel-wise change detection between two presence masks (1=present, 0=absent).
+
+    Output follows the far-target convention (1 = event of interest):
+    - op="loss": 1 where present(t1) -> absent(t2), 0 where present stayed
+      present, 255 otherwise (incl. nodata and absent-at-t1).
+    - op="gain": 1 where absent(t1) -> present(t2), 0 where absent stayed
+      absent, 255 otherwise.
+
+    Inputs must share the same grid (aligned processed layers).
+    """
+    if op not in ("loss", "gain"):
+        raise ValueError(f"op must be 'loss' or 'gain', got {op!r}")
+
     # Open the input rasters
     input1 = rioxarray.open_rasterio(
         input1_path,
@@ -280,18 +293,14 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
     nodata2 = input2.rio.nodata
     valid_mask = (input1 != nodata1) & (input2 != nodata2)
 
-    # Create output based on conditions using xarray operations
-    # Convention: 1 = deforestation (event of interest), 0 = forest remaining,
-    # 255 = nodata. `input1`/`input2` are forest masks (1 = forest) at t1/t2.
-    output = xr.where(
-        valid_mask & (input1 == 1) & (input2 == 0),
-        1,  # forest(t1) -> non-forest(t2): DEFORESTED -> 1
-        xr.where(
-            valid_mask & (input1 == 1) & (input2 == 1),
-            0,  # forest(t1) -> forest(t2): remaining forest -> 0
-            255,  # nodata for all other cases
-        ),
-    ).astype("uint8")
+    if op == "loss":
+        event = valid_mask & (input1 == 1) & (input2 == 0)
+        stable = valid_mask & (input1 == 1) & (input2 == 1)
+    else:  # gain
+        event = valid_mask & (input1 == 0) & (input2 == 1)
+        stable = valid_mask & (input1 == 0) & (input2 == 0)
+
+    output = xr.where(event, 1, xr.where(stable, 0, 255)).astype("uint8")
 
     # Set proper metadata
     output.rio.write_nodata(255, inplace=True)
@@ -306,6 +315,15 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
         bigtiff="YES",
         tiled=True,
     )
+
+
+def process_forest_loss_xarray(input1_path, input2_path, output_path):
+    """Back-compat wrapper: forest loss = change detection with op="loss".
+
+    Kept for the legacy notebook path (make_forest_loss_var /
+    get_forest_loss_calculated). New code should call process_change_xarray.
+    """
+    process_change_xarray(input1_path, input2_path, output_path, op="loss")
 
 
 def generate_deforestation_raster(
