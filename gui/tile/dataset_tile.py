@@ -85,6 +85,9 @@ def DatasetTile(project):
         if p is None or key not in p.datasets:
             return
         del p.datasets[key]
+        # Persist the removal to disk (matches delete_sample/delete_prediction
+        # auto_save behaviour) so it isn't silently resurrected on reload.
+        p.save()
         project.set(p.model_copy())
 
     def on_register():
@@ -117,7 +120,10 @@ def DatasetTile(project):
             # Remove old key if renaming during edit
             if editing_key and editing_key != key and editing_key in p.datasets:
                 del p.datasets[editing_key]
-            p.datasets[key] = ds
+            # Persist to the project JSON immediately so the dataset survives a
+            # reload without a manual Save — matches the auto_save behaviour of
+            # add_sample/add_model/add_prediction in the other workflow tiles.
+            p.add_dataset(ds, key=key, auto_save=True)
 
             logger.debug("Registered dataset '%s' with %d features", key, len(feature_names))
             reset_form()
