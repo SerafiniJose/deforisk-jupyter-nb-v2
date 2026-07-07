@@ -138,9 +138,13 @@ def InferenceTile(project, map_=None, sepal_client=None):
         _sanitize_pred_name(pred_name) if pred_name_touched else default_pred_name
     )
     pred_name_field = pred_name if pred_name_touched else default_pred_name
+    # Only flag the empty-name field as an error once a run has been attempted,
+    # so it doesn't show a red "Required." before the user has done anything.
+    run_attempted, set_run_attempted = solara.use_state(False)
 
     def set_pred_name_input(v):
         set_pred_name_touched(True)
+        set_run_attempted(False)
         set_pred_name(v)
 
     # Form messages
@@ -218,6 +222,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             return
         name = effective_pred_name
         if not name:
+            set_run_attempted(True)
             set_form_error(t("tiles.inference.error_name_required"))
             return
 
@@ -333,7 +338,9 @@ def InferenceTile(project, map_=None, sepal_client=None):
             [j for j in inference_jobs.value if j["id"] != job_id]
         )
 
-    can_run = bool(selected_model and selected_dataset and effective_pred_name)
+    # Name intentionally left out: the button stays enabled so an empty name can
+    # surface the "Required." error on click (on_run re-validates and bails).
+    can_run = bool(selected_model and selected_dataset)
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.inference.header"))
@@ -377,10 +384,14 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 else (
                     t("tiles.inference.pred_name_saved_as", name=effective_pred_name)
                     if effective_pred_name
-                    else t("tiles.inference.pred_name_required")
+                    else (
+                        t("tiles.inference.pred_name_required")
+                        if run_attempted
+                        else ""
+                    )
                 )
             ),
-            error=not effective_pred_name,
+            error=run_attempted and not effective_pred_name,
         )
 
         # Run button
