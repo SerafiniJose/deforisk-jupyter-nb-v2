@@ -140,7 +140,7 @@ def SamplingTile(project, map_=None):
     seed, set_seed = solara.use_state(1234)
     form_error, set_form_error = solara.use_state(None)
     sys_mode, set_sys_mode = solara.use_state("n_samples")
-    spacing_m, set_spacing_m = solara.use_state(1000.0)
+    spacing_m, set_spacing_m = solara.use_state(1000)
     pending_remove, set_pending_remove = solara.use_state(None)
 
     if p is None:
@@ -266,8 +266,8 @@ def SamplingTile(project, map_=None):
             rv.TextField(
                 label=t("tiles.sampling.spacing_label"), type_="number",
                 v_model=str(spacing_m) if spacing_m is not None else "",
-                on_v_model=lambda v: set_spacing_m(float(v) if v and v.strip() else None),
-                dense=True, outlined=True,
+                on_v_model=lambda v: set_spacing_m(int(round(float(v))) if v and v.strip() else None),
+                dense=True, outlined=True, step="1",
                 hint=t("tiles.sampling.spacing_hint"), persistent_hint=True,
             )
         else:
