@@ -5,6 +5,8 @@ spatial autocorrelation through a latent spatial random effect (rho).
 Training uses MCMC via forestatrisk.model_binomial_iCAR.
 """
 
+import concurrent.futures
+import multiprocessing
 import pickle
 from datetime import datetime
 from pathlib import Path
@@ -70,6 +72,79 @@ def compute_cell_indices(
     bigJ = ((pts_x - Xmin) / csize_m).astype(int)
     bigI = ((Ymax - pts_y) / csize_m).astype(int)
     return bigI * ncol_cells + bigJ
+
+
+def _mcmc_worker(payload: dict) -> dict:
+    """Run forestatrisk's MCMC sampler. Executed in a spawned child process.
+
+    Must stay a module-level function so multiprocessing can pickle it.
+    """
+    import os
+
+    import forestatrisk as far
+
+    mod = far.model_binomial_iCAR(
+        suitability_formula=payload["formula"],
+        data=payload["data"],
+        n_neighbors=payload["n_neighbors"],
+        neighbors=payload["neighbors"],
+        burnin=payload["burnin"],
+        mcmc=payload["mcmc"],
+        thin=payload["thin"],
+        priorVrho=payload["prior_vrho"],
+        seed=payload["seed"],
+        verbose=payload["verbose"],
+    )
+    # Only picklable posterior summaries cross the process boundary (the full
+    # model object holds patsy design objects that cannot be pickled).
+    return {
+        "betas": np.array(mod.betas),
+        "rho": np.array(mod.rho),
+        "Vrho": float(mod.Vrho) if hasattr(mod, "Vrho") else None,
+        "deviance": float(mod.deviance),
+        "worker_pid": os.getpid(),
+    }
+
+
+def run_icar_mcmc(
+    formula: str,
+    data: "pd.DataFrame",
+    n_neighbors: "np.ndarray",
+    neighbors: "np.ndarray",
+    *,
+    burnin: int,
+    mcmc: int,
+    thin: int,
+    prior_vrho: float,
+    seed: int,
+    verbose: int = 1,
+) -> dict:
+    """Run the iCAR MCMC in a spawned child process and return its posteriors.
+
+    forestatrisk's ``hbm`` C extension holds the GIL for the entire sampler
+    run, so executing it in-process stalls every other Python thread — in the
+    GUI that freezes the whole Solara server until training finishes. A
+    separate process has its own GIL, keeping the app responsive. "spawn"
+    (not "fork") because forking a multithreaded server process with GDAL/EE
+    state loaded is unsafe.
+    """
+    payload = {
+        "formula": formula,
+        "data": data,
+        "n_neighbors": n_neighbors,
+        "neighbors": neighbors,
+        "burnin": burnin,
+        "mcmc": mcmc,
+        "thin": thin,
+        "prior_vrho": prior_vrho,
+        "seed": seed,
+        "verbose": verbose,
+    }
+    ctx = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(max_workers=1, mp_context=ctx) as pool:
+        result = pool.submit(_mcmc_worker, payload).result()
+    print(f"  MCMC ran in subprocess (pid {result['worker_pid']})")
+    return result
 
 
 class ICARModel(BaseRiskModel):
@@ -192,27 +267,26 @@ class ICARModel(BaseRiskModel):
         print("  Building spatial neighbourhood...")
         n_neighbors, adj = far.cellneigh(raster_path, self.csize, rank=1)
 
-        # MCMC
-        mod = far.model_binomial_iCAR(
-            suitability_formula=icar_formula,
-            data=df,
-            n_neighbors=n_neighbors,
-            neighbors=adj,
+        # MCMC — isolated in a subprocess so the GIL-holding sampler cannot
+        # stall the calling process (see run_icar_mcmc).
+        posteriors = run_icar_mcmc(
+            icar_formula,
+            df,
+            n_neighbors,
+            adj,
             burnin=self.burnin,
             mcmc=self.mcmc,
             thin=self.thin,
-            priorVrho=self.prior_vrho,
+            prior_vrho=self.prior_vrho,
             seed=self.random_seed if self.random_seed is not None else 1234,
             verbose=1,
         )
 
-        # Extract only picklable fields from the forestatrisk model object
-        # (the full model contains patsy design objects that cannot be pickled)
         self._ml_model = {
-            "betas": np.array(mod.betas),
-            "rho": np.array(mod.rho),
-            "Vrho": float(mod.Vrho) if hasattr(mod, "Vrho") else None,
-            "deviance": float(mod.deviance),
+            "betas": posteriors["betas"],
+            "rho": posteriors["rho"],
+            "Vrho": posteriors["Vrho"],
+            "deviance": posteriors["deviance"],
             "formula": icar_formula,
         }
         self.n_samples = n_obs
