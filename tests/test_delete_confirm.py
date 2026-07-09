@@ -44,4 +44,4 @@ def test_inference_tile_confirms_and_really_deletes_predictions():
     src = inspect.getsource(InferenceTile)
     assert "ConfirmDialog" in src
     assert "delete_prediction" in src  # removal actually unregisters the predictions
-    assert "on_remove=set_pending_remove" in src
+    assert "on_delete=set_pending_delete" in src

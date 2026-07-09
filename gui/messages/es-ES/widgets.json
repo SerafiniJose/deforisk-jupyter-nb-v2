@@ -24,10 +24,12 @@
       "btn_import": "Importar"
     },
     "inference_output_list": {
-      "status_cancelled": "Cancelado por el usuario",
-      "outputs_header": "**SALIDAS** ({count})",
-      "output_label": "Salida: {path}",
-      "error_label": "Error: {error}",
+      "predictions_title": "Predicciones",
+      "empty": "Aún no hay predicciones — ejecuta un modelo arriba.",
+      "col_name": "Nombre",
+      "col_model": "Modelo",
+      "col_dataset": "Conjunto de datos",
+      "col_status": "Estado",
       "unknown_error": "Error desconocido"
     },
     "evaluation_results": {

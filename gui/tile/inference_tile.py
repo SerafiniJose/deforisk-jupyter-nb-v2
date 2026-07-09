@@ -9,6 +9,7 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t, plural
+from gui.scripts.product_rows import job_row_key
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
@@ -50,7 +51,9 @@ def _prediction_name_exists(project, name: str) -> bool:
 
 # Module-level reactives shared across re-renders
 inference_jobs = solara.reactive([])
-# Ids of completed jobs whose prediction raster(s) are currently on the map.
+# Row keys (prediction name, else "{model_key}__{dataset_name}") of prediction
+# groups currently shown on the map — works for predictions loaded from disk,
+# not just same-session runs.
 preds_on_map = solara.reactive(set())
 
 
@@ -96,6 +99,7 @@ def _run_import(job_id, src_path, name, palette, project, project_reactive):
             inference_jobs,
             job_id,
             status="completed",
+            pred_name=name,
             model_key=pred.model_key,
             dataset_name=pred.dataset_name,
             output_path=str(pred.path),
@@ -233,28 +237,9 @@ def InferenceTile(project, map_=None, sepal_client=None):
 
         _launch_inference(name)
 
-    def _matching_predictions(job):
-        """Predictions registered for *job*, keyed by storage_key (empty if none)."""
-        if p is None:
-            return {}
-        # Named runs (the current path) group their output(s) by the chosen name,
-        # so two runs of the same model+dataset under different names stay
-        # separate. Legacy/imported jobs (no pred_name) fall back to provenance.
-        if job.get("pred_name"):
-            return p.filter_predictions(name=job["pred_name"])
-        return p.filter_predictions(
-            model_key=job["model_key"], dataset_name=job["dataset_name"]
-        )
-
-    def predictions_for(job):
-        """Registered predictions for a *completed* job (drives the map button)."""
-        if job.get("status") != "completed":
-            return {}
-        return _matching_predictions(job)
-
-    def _forget_on_map(job_id):
+    def _forget_on_map(row_key):
         remaining = set(preds_on_map.value)
-        remaining.discard(job_id)
+        remaining.discard(row_key)
         preds_on_map.set(remaining)
 
     gen_overviews = solara.use_reactive(False)
@@ -262,35 +247,36 @@ def InferenceTile(project, map_=None, sepal_client=None):
 
     @solara.lab.use_task(dependencies=None, raise_error=False)
     async def _apply_pred_toggle():
-        """Add/remove a completed job's prediction raster(s) on the map.
+        """Add/remove a prediction row's raster(s) on the map.
 
         The layer-add is offloaded to a worker thread (it builds overviews and a
         localtileserver tile client, both blocking) so Solara's event loop stays
         responsive. Removal is cheap and stays inline.
         """
-        job = pending_toggle.value
-        if job is None or map_ is None:
+        row = pending_toggle.value
+        if row is None or map_ is None or p is None:
             return
-        matches = predictions_for(job)
-        if not matches:
+        storage_keys = [k for k in row.get("storage_keys", []) if k in p.predictions]
+        if not storage_keys:
             return
-        job_id = job["id"]
+        row_key = row["key"]
         try:
-            if job_id in preds_on_map.value:
-                for sk in matches:
+            if row_key in preds_on_map.value:
+                for sk in storage_keys:
                     map_.remove_layer(_pred_layer_key(sk), none_ok=True)
-                _forget_on_map(job_id)
+                _forget_on_map(row_key)
             else:
                 from gui.scripts.prediction_map import add_prediction_on_map
 
                 added_any = False
                 try:
-                    for sk, pred in matches.items():
+                    for sk in storage_keys:
+                        pred = p.predictions[sk]
                         await asyncio.to_thread(
                             add_prediction_on_map,
                             map_,
                             str(pred.path),
-                            model_key=job["model_key"],
+                            model_key=row["model_key"],
                             layer_name=sk,
                             key=_pred_layer_key(sk),
                             fit_bounds=False,
@@ -299,43 +285,47 @@ def InferenceTile(project, map_=None, sepal_client=None):
                         )
                         added_any = True
                 finally:
-                    # Mark the job on-map if ANY layer landed (even on partial
+                    # Mark the row on-map if ANY layer landed (even on partial
                     # failure) so toggle-off can remove all its keys; fire the
                     # reactive once, not per-iteration.
                     if added_any:
-                        preds_on_map.set(set(preds_on_map.value) | {job_id})
+                        preds_on_map.set(set(preds_on_map.value) | {row_key})
         except Exception as exc:
-            logger.exception("prediction map toggle failed for job %s", job_id)
+            logger.exception("prediction map toggle failed for row %s", row.get("key"))
             set_form_error(t("tiles.inference.error_map_toggle", exc=exc))
 
-    def on_toggle_map(job):
-        """Trigger the threaded add/remove task for a completed job."""
+    def on_toggle_map(row):
+        """Trigger the threaded add/remove task for a prediction row."""
         if map_ is None:
             return
-        pending_toggle.set(job)
+        pending_toggle.set(row)
         _apply_pred_toggle()
 
-    pending_remove, set_pending_remove = solara.use_state(None)
+    pending_delete, set_pending_delete = solara.use_state(None)  # row dict or None
 
-    def _do_remove(job_id):
-        job = next((j for j in inference_jobs.value if j["id"] == job_id), None)
-        # Drop any prediction layers this job placed on the map before forgetting it.
-        if map_ is not None and job_id in preds_on_map.value:
-            if job is not None:
-                for sk in _matching_predictions(job):
-                    map_.remove_layer(_pred_layer_key(sk), none_ok=True)
-            _forget_on_map(job_id)
-        # Delete the registered predictions (registry + output rasters).
+    def on_dismiss(job_id):
+        # Failed job rows only — never touches the prediction registry.
+        inference_jobs.set([j for j in inference_jobs.value if j["id"] != job_id])
+
+    def _delete_row(row):
         cur = project.value
-        if cur is not None and job is not None:
-            keys = list(_matching_predictions(job).keys())
-            for k in keys:
-                cur.delete_prediction(k, auto_save=False)
-            if keys:
-                cur.save()
-                project.set(cur.model_copy())
+        if cur is None:
+            return
+        row_key = row["key"]
+        if map_ is not None and row_key in preds_on_map.value:
+            for sk in row.get("storage_keys", []):
+                map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+            _forget_on_map(row_key)
+        deleted = False
+        for sk in row.get("storage_keys", []):
+            deleted = cur.delete_prediction(sk, auto_save=False) or deleted
+        if deleted:
+            cur.save()
+            project.set(cur.model_copy())
+        # Purge session jobs that produced this row, so a stale "completed"
+        # job doesn't resurface once its registry group is gone.
         inference_jobs.set(
-            [j for j in inference_jobs.value if j["id"] != job_id]
+            [j for j in inference_jobs.value if job_row_key(j) != row_key]
         )
 
     # Name intentionally left out: the button stays enabled so an empty name can
@@ -429,40 +419,26 @@ def InferenceTile(project, map_=None, sepal_client=None):
 
         # Outputs list
         InferenceOutputList(
+            project=project,
             inference_jobs=inference_jobs,
-            on_remove=set_pending_remove,
-            on_toggle_map=on_toggle_map if map_ is not None else None,
             preds_on_map=preds_on_map,
-            predictions_for=predictions_for,
+            on_toggle_map=on_toggle_map if map_ is not None else None,
+            on_dismiss=on_dismiss,
+            on_delete=set_pending_delete,
         )
 
-        _pending_job = (
-            next((j for j in inference_jobs.value if j["id"] == pending_remove), None)
-            if pending_remove
-            else None
-        )
-        _pending_pred_count = len(_matching_predictions(_pending_job)) if _pending_job else 0
+        _pending_count = len(pending_delete.get("storage_keys", [])) if pending_delete else 0
         ConfirmDialog(
-            open=pending_remove is not None,
-            on_cancel=lambda: set_pending_remove(None),
-            on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-            title=(
-                t("tiles.inference.confirm_delete_predictions_title")
-                if _pending_pred_count
-                else t("tiles.inference.confirm_remove_job_title")
+            open=pending_delete is not None,
+            on_cancel=lambda: set_pending_delete(None),
+            on_confirm=lambda: (_delete_row(pending_delete), set_pending_delete(None)),
+            title=t("tiles.inference.confirm_delete_predictions_title"),
+            message=plural(
+                _pending_count,
+                "tiles.inference.confirm_delete_predictions_message_one",
+                "tiles.inference.confirm_delete_predictions_message_other",
             ),
-            message=(
-                plural(
-                    _pending_pred_count,
-                    "tiles.inference.confirm_delete_predictions_message_one",
-                    "tiles.inference.confirm_delete_predictions_message_other",
-                )
-                if _pending_pred_count
-                else t("tiles.inference.confirm_remove_job_message")
-            ),
-            confirm_label=(
-                t("common.delete") if _pending_pred_count else t("common.remove")
-            ),
+            confirm_label=t("common.delete"),
         )
 
         # Overwrite confirmation — shown when the chosen prediction name exists.

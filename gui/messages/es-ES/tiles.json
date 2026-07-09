@@ -171,8 +171,6 @@
       "confirm_delete_predictions_title": "¿Eliminar predicciones?",
       "confirm_delete_predictions_message_one": "¿Eliminar {n} ráster de predicción de esta ejecución? Esto lo elimina del proyecto y borra el archivo. Esta acción no se puede deshacer.",
       "confirm_delete_predictions_message_other": "¿Eliminar {n} rásteres de predicción de esta ejecución? Esto los elimina del proyecto y borra los archivos. Esta acción no se puede deshacer.",
-      "confirm_remove_job_title": "¿Eliminar tarea?",
-      "confirm_remove_job_message": "¿Eliminar esta tarea de inferencia de la lista?",
       "confirm_overwrite_title": "¿Sobrescribir predicción existente?",
       "confirm_overwrite_message": "Ya existe una predicción llamada '{name}'. Ejecutar sobrescribirá su(s) ráster(es) y entrada en el registro. Esta acción no se puede deshacer.",
       "confirm_overwrite_label": "Sobrescribir",

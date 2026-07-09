@@ -171,8 +171,6 @@
       "confirm_delete_predictions_title": "Delete predictions?",
       "confirm_delete_predictions_message_one": "Delete {n} prediction raster from this run? This removes it from the project and deletes the file. This cannot be undone.",
       "confirm_delete_predictions_message_other": "Delete {n} prediction rasters from this run? This removes them from the project and deletes the files. This cannot be undone.",
-      "confirm_remove_job_title": "Remove job?",
-      "confirm_remove_job_message": "Remove this inference job from the list?",
       "confirm_overwrite_title": "Overwrite existing prediction?",
       "confirm_overwrite_message": "A prediction named '{name}' already exists. Running will overwrite its raster(s) and registry entry. This cannot be undone.",
       "confirm_overwrite_label": "Overwrite",
