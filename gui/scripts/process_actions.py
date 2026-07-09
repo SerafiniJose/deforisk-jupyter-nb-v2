@@ -17,19 +17,23 @@ def _is_geevar(var) -> bool:
     return type(var).__name__ == "GEEVar"
 
 
-def materialize_raw_layers(project) -> List[str]:
-    """Download every raw GEEVar to a local var, replacing it in raw_variables.
+def materialize_raw_layers(project, keys=None) -> List[str]:
+    """Download raw GEEVars to local vars, replacing them in raw_variables.
 
     Raster GEEVars -> to_local_raster(); vector GEEVars -> to_local_vector().
-    Idempotent: already-local variables are skipped. Returns the list of keys
-    that were materialized.
+    Idempotent: already-local variables are skipped. ``keys`` restricts the
+    download to those raw-variable keys (None = all pending). Returns the list
+    of keys that were materialized.
     """
     from spatialrisk.variables.models import DataType
 
     from spatialrisk.log_utils import log_progress
 
     # Snapshot pairs: to_local_*().add_as_raw() mutates raw_variables in place.
-    pending = [(k, v) for k, v in list(project.raw_variables.items()) if _is_geevar(v)]
+    pending = [
+        (k, v) for k, v in list(project.raw_variables.items())
+        if _is_geevar(v) and (keys is None or k in keys)
+    ]
     if pending:
         logger.info("Downloading %d GEE layer(s)…", len(pending))
 

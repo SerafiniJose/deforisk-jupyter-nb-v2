@@ -14,7 +14,7 @@ logger = logging.getLogger("spatial_risk")
 # First column is minmax(0,1fr) — NOT 1fr — so a long, unbreakable variable
 # name can shrink (and ellipsize) instead of widening the grid past 100% and
 # pushing the right-hand action column off-screen.
-_GRID = "display:grid;grid-template-columns:minmax(0,1fr) 90px 70px 116px;align-items:center;width:100%;column-gap:16px;"
+_GRID = "display:grid;grid-template-columns:minmax(0,1fr) 90px 70px 86px 144px;align-items:center;width:100%;column-gap:16px;"
 _HEADER_EXTRA = (
     "padding:4px 8px 6px;"
     "border-bottom:2px solid rgba(0,0,0,0.15);"
@@ -53,8 +53,17 @@ def SourceVariableList(
     on_edit: Optional[Callable[[str], None]] = None,
     on_toggle_map: Optional[Callable[[str], None]] = None,
     vars_on_map=None,
+    on_download: Optional[Callable[[str], None]] = None,
+    download_pending: bool = False,
+    downloading_key: Optional[str] = None,
 ):
-    """Table of source (raw) variables with map-toggle, edit, and remove actions."""
+    """Table of source (raw) variables with map-toggle, edit, and remove actions.
+
+    Cloud-backed variables (GEEVar) show a "cloud" status chip and, when
+    ``on_download`` is given, a per-row download button. ``downloading_key`` is
+    the key currently downloading (None while a bulk download runs); every
+    download button is disabled while ``download_pending``.
+    """
     p = project.value
     logger.debug(
         "SourceVariableList render — raw_variables: %s",
@@ -71,12 +80,14 @@ def SourceVariableList(
             rv.Html(tag="span", children=[t("widgets.variable_list.source_col_name")])
             rv.Html(tag="span", children=[t("widgets.variable_list.source_col_type")])
             rv.Html(tag="span", children=[t("widgets.variable_list.source_col_year")])
+            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_status")])
             rv.Html(tag="span", children=[""])
 
         # Data rows
         for key, var in p.raw_variables.items():
             is_base = p.base_raster is not None and p.base_raster.name == var.name
             data_type_label = var.data_type if isinstance(var.data_type, str) else var.data_type.value
+            is_cloud = type(var).__name__ == "GEEVar"
 
             with rv.Html(tag="div", style_=_GRID + _ROW_EXTRA):
                 # Name
@@ -90,8 +101,36 @@ def SourceVariableList(
                 # Year
                 with rv.Html(tag="div", style_=_CELL_FLEX):
                     solara.Text(str(var.year) if var.year else "—", style="color:grey;")
+                # Status — cloud (still on GEE) vs local (on disk)
+                with rv.Html(tag="div", style_=_CELL_FLEX):
+                    if is_cloud:
+                        rv.Chip(
+                            children=[
+                                rv.Icon(children=["mdi-cloud-outline"], x_small=True, left=True),
+                                t("widgets.variable_list.chip_cloud"),
+                            ],
+                            x_small=True, outlined=True, color="warning",
+                        )
+                    else:
+                        rv.Chip(
+                            children=[t("widgets.variable_list.chip_local")],
+                            x_small=True, outlined=True, color="success",
+                        )
                 # Actions — right-aligned
                 with rv.Html(tag="div", style_=_CELL_RIGHT):
+                    # Download — only cloud-backed variables still need it.
+                    if on_download is not None and is_cloud:
+                        solara.Button(
+                            "",
+                            icon_name="mdi-cloud-download-outline",
+                            on_click=lambda *_, k=key: on_download(k),
+                            icon=True,
+                            text=True,
+                            x_small=True,
+                            color="primary",
+                            loading=download_pending and downloading_key == key,
+                            disabled=download_pending,
+                        )
                     # Map toggle — GEE-backed images and local raster/vector files.
                     if on_toggle_map is not None and is_mappable(var):
                         on_map = vars_on_map.value if vars_on_map is not None else set()

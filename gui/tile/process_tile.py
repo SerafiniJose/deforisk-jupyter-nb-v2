@@ -43,7 +43,7 @@ def base_raster_key(p) -> str:
 
 @solara.component
 def ProcessTile(project, processing, process_error):
-    """Download → base/projection → run processing."""
+    """Base/projection → run processing (downloading lives in Step 2 — Variables)."""
     base_key, set_base_key = solara.use_state("")
     epsg, set_epsg = solara.use_state("")
     resolution, set_resolution = solara.use_state("30")
@@ -76,20 +76,6 @@ def ProcessTile(project, processing, process_error):
             set_resolution(str(round(p.base_raster.default_resolution)))
 
     solara.use_effect(_restore_base_form, [restored_key])
-
-    @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
-    async def download_task():
-        # Runs on a worker thread (prefer_threaded) so the UI stays responsive;
-        # progress is driven by download_task.pending, not the shared processing flag.
-        if p is None:
-            return
-        process_error.set(None)
-        try:
-            await asyncio.to_thread(process_actions.materialize_raw_layers, p)
-            await asyncio.to_thread(p.save)
-        except Exception as exc:
-            process_error.set(str(exc))
-        project.set(p.model_copy())
 
     @solara.lab.use_task(dependencies=[base_key], raise_error=False, prefer_threaded=True)
     async def autofill_base():
@@ -159,20 +145,12 @@ def ProcessTile(project, processing, process_error):
             solara.Info(t("tiles.process.error_no_variables"))
             return
 
-        # A — Download layers
-        solara.Markdown(t("tiles.process.download_section_header"))
-        solara.Text(t("tiles.process.pending_geevars_count", count=len(pending_geevars)))
-        solara.Button(
-            t("tiles.process.download_button"), icon_name="mdi-cloud-download-outline",
-            color="primary", outlined=True, small=True,
-            on_click=lambda: download_task(),
-            loading=download_task.pending,
-            disabled=download_task.pending or not pending_geevars,
-        )
-        if download_task.pending:
-            solara.ProgressLinear(True)
+        # Downloading now lives in Step 2 — Variables; point back if layers are
+        # still cloud-backed (auto-UTM needs the GeoTIFF on disk).
+        if pending_geevars:
+            solara.Info(t("tiles.process.pending_geevars_hint", count=len(pending_geevars)))
 
-        # B — Base & projection
+        # A — Base & projection
         solara.Markdown(t("tiles.process.base_projection_header"))
         with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
             rv.Select(
@@ -218,7 +196,7 @@ def ProcessTile(project, processing, process_error):
                 classes=["text--secondary"],
             )
 
-        # C — Run processing
+        # B — Run processing
         solara.Markdown(t("tiles.process.run_processing_header"))
         solara.Text(
             t("tiles.process.run_processing_subtitle"),
@@ -234,7 +212,7 @@ def ProcessTile(project, processing, process_error):
         solara.Button(
             t("tiles.process.run_processing_button"), icon_name="mdi-cog-play-outline",
             color="primary", small=True, on_click=lambda: process_task(),
-            disabled=processing.value or download_task.pending or not has_base,
+            disabled=processing.value or not has_base,
         )
         if processing.value:
             solara.ProgressLinear(True)

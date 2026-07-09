@@ -46,6 +46,40 @@ def test_materialize_skips_non_geevar():
     assert process_actions.materialize_raw_layers(p) == []
 
 
+def test_materialize_keys_filter_downloads_only_selected(monkeypatch):
+    p = _Proj()
+    for name in ("altitude", "slope"):
+        p.raw_variables[name] = GEEVar(
+            name=name,
+            data_type=DataType.raster,
+            raster_type=RasterType.continuous,
+            gee_images=["img"],
+        )
+
+    downloaded = []
+
+    def fake_to_local_raster(self, *a, **k):
+        local = MagicMock(name=f"Local_{self.name}")
+        p.raw_variables[self.name] = local
+        downloaded.append(self.name)
+        return local
+
+    monkeypatch.setattr(GEEVar, "to_local_raster", fake_to_local_raster, raising=True)
+
+    done = process_actions.materialize_raw_layers(p, keys=["slope"])
+
+    assert done == ["slope"]
+    assert downloaded == ["slope"]
+    # the unselected variable is untouched
+    assert isinstance(p.raw_variables["altitude"], GEEVar)
+
+
+def test_materialize_keys_filter_ignores_local_and_unknown_keys():
+    p = _Proj()
+    p.raw_variables["x"] = MagicMock(name="LocalRasterVar")
+    assert process_actions.materialize_raw_layers(p, keys=["x", "missing"]) == []
+
+
 def test_materialize_logs_download_milestones(monkeypatch, caplog):
     import logging
 

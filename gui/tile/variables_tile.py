@@ -10,6 +10,7 @@ import solara
 logger = logging.getLogger("spatial_risk")
 
 from gui.i18n import t
+from gui.scripts import process_actions
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
 from gui.scripts.variable_map import add_raster_var_on_map
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -251,6 +252,34 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     modal_open = solara.use_reactive(False)
     editing_key, set_editing_key = solara.use_state(None)
     pending_toggle = solara.use_reactive(None)
+    # Key of the variable being downloaded, or None for a bulk download.
+    pending_download = solara.use_reactive(None)
+
+    @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
+    async def download_task():
+        """Materialize GEE-backed variables to local files (all, or one key).
+
+        Runs on a worker thread (prefer_threaded) so the UI stays responsive;
+        progress is driven by download_task.pending.
+        """
+        p = project.value
+        if p is None:
+            return
+        key = pending_download.value
+        keys = [key] if key is not None else None
+        process_error.set(None)
+        try:
+            await asyncio.to_thread(process_actions.materialize_raw_layers, p, keys)
+            await asyncio.to_thread(p.save)
+        except Exception as exc:
+            logger.exception("download failed")
+            process_error.set(t("tiles.variables.error_download", exc=exc))
+        project.set(p.model_copy())
+
+    def on_download(key=None):
+        """Download one variable (key) or all pending GEE variables (None)."""
+        pending_download.set(key)
+        download_task()
 
     @solara.lab.use_task(dependencies=None, raise_error=False)
     async def _apply_map_toggle():
@@ -369,6 +398,10 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         project.set(p.model_copy())
 
     p = project.value
+    pending_geevars = (
+        [k for k, v in p.raw_variables.items() if type(v).__name__ == "GEEVar"]
+        if p else []
+    )
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.variables.header"))
@@ -385,6 +418,18 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
                 small=True,
                 on_click=lambda: modal_open.set(True),
             )
+            solara.Button(
+                t("tiles.variables.download_button", count=len(pending_geevars)),
+                icon_name="mdi-cloud-download-outline",
+                color="primary",
+                outlined=True,
+                small=True,
+                on_click=lambda: on_download(None),
+                loading=download_task.pending and pending_download.value is None,
+                disabled=download_task.pending or not pending_geevars,
+            )
+        if download_task.pending:
+            solara.ProgressLinear(True)
 
         # Source variable list
         solara.Markdown(t("tiles.variables.source_variables_header", count=len(p.raw_variables) if p else 0))
@@ -394,6 +439,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             on_edit=on_edit_open,
             on_toggle_map=on_toggle_map if map_ is not None else None,
             vars_on_map=vars_on_map,
+            on_download=on_download,
+            download_pending=download_task.pending,
+            downloading_key=pending_download.value if download_task.pending else None,
         )
 
     editing_entry = (
