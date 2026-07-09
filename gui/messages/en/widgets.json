@@ -67,6 +67,13 @@
       "chip_ready": "ready"
     },
     "summary_lists": {
+      "raw_vars_title": "Source variables",
+      "processed_vars_title": "Derived variables",
+      "datasets_title": "Datasets",
+      "samples_title": "Sample sets",
+      "models_title": "Models",
+      "predictions_title": "Predictions",
+      "evaluations_title": "Evaluations",
       "raw_vars_empty": "No raw variables yet.",
       "vars_banner": "{total} total · {vector} vector · {raster} raster",
       "col_name": "Name",

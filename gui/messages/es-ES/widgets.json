@@ -67,6 +67,13 @@
       "chip_ready": "listo"
     },
     "summary_lists": {
+      "raw_vars_title": "Variables fuente",
+      "processed_vars_title": "Variables derivadas",
+      "datasets_title": "Conjuntos de datos",
+      "samples_title": "Conjuntos de muestras",
+      "models_title": "Modelos",
+      "predictions_title": "Predicciones",
+      "evaluations_title": "Evaluaciones",
       "raw_vars_empty": "Aún no hay variables crudas.",
       "vars_banner": "{total} total · {vector} vector · {raster} ráster",
       "col_name": "Nombre",
