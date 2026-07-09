@@ -5,6 +5,7 @@
     "cancel": "Cancel",
     "create": "Create",
     "remove": "Remove",
+    "replace": "Replace",
     "delete": "Delete",
     "close": "Close",
     "_test_fmt": "hello {name}",

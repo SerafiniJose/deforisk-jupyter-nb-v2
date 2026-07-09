@@ -37,3 +37,14 @@ def test_gee_without_path_does_not_emit_literal_none():
     entry = _variable_to_entry("custom_layer", var, _FakeProject())
 
     assert entry.get("asset_id", "") != "None"
+
+
+def test_entry_key_matches_add_key_convention():
+    """entry_key must predict the storage key on_add computes after building the
+    variable (name_year, or bare name when year is empty) so the duplicate-add
+    confirmation fires exactly when the add would overwrite."""
+    from gui.tile.variables_tile import entry_key
+
+    assert entry_key({"name": "forest", "year": "2020"}) == "forest_2020"
+    assert entry_key({"name": "altitude", "year": ""}) == "altitude"
+    assert entry_key({"name": "altitude"}) == "altitude"

@@ -168,6 +168,17 @@ def _variable_to_entry(key: str, var, project) -> dict:
     return entry
 
 
+def entry_key(entry: dict) -> str:
+    """Storage key a modal entry will land under in raw_variables.
+
+    Mirrors the key on_add computes from the built variable (name_year, or bare
+    name when year is empty) — used to detect a duplicate BEFORE building the
+    variable, which for predefined entries would already fetch the GEE image.
+    """
+    year = entry.get("year")
+    return f"{entry['name']}_{year}" if year else entry["name"]
+
+
 def _build_variable(entry: dict, project):
     """Instantiate the correct variable class from a modal entry dict."""
     if entry.get("source") == "predefined":
@@ -338,8 +349,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         pending_toggle.set(key)
         _apply_map_toggle()
 
-    def on_add(entry: dict):
-        logger.debug("on_add called: %s", entry)
+    pending_add, set_pending_add = solara.use_state(None)
+
+    def _do_add(entry: dict):
         p = project.value
         if p is None:
             logger.warning("on_add: project is None")
@@ -348,13 +360,37 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         try:
             var = _build_variable(entry, p)
             key = f"{var.name}_{var.year}" if var.year else var.name
+            # Replacing an existing entry needs the same cleanup as an edit:
+            # drop the stale map layer and reset the base raster if this was
+            # its source (the replacement starts cloud-backed again).
+            old = p.raw_variables.pop(key, None)
+            if old is not None:
+                if p.base_raster is not None and p.base_raster.name == old.name:
+                    p.base_raster = None
+                    process_error.set(
+                        t("tiles.variables.error_base_raster_reset", name=old.name)
+                    )
+                _drop_from_map(key, map_)
             p.raw_variables[key] = var
             logger.debug("Added var '%s', raw_variables now: %s", key, list(p.raw_variables.keys()))
             project.set(p.model_copy())
-            logger.debug("project.set() called, project.value.raw_variables: %s", list(project.value.raw_variables.keys()))
         except Exception as exc:
             logger.exception("on_add failed")
             process_error.set(t("tiles.variables.error_add_variable", exc=exc))
+
+    def on_add(entry: dict):
+        logger.debug("on_add called: %s", entry)
+        p = project.value
+        if p is None:
+            logger.warning("on_add: project is None")
+            process_error.set(t("tiles.variables.error_no_project"))
+            return
+        # Duplicate key (e.g. re-adding a predefined variable that was already
+        # downloaded): confirm before silently clobbering it.
+        if entry_key(entry) in p.raw_variables:
+            set_pending_add(entry)
+            return
+        _do_add(entry)
 
     def on_edit_open(key: str):
         set_editing_key(key)
@@ -472,4 +508,22 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         title=t("tiles.variables.confirm_remove_title"),
         message=_confirm_msg,
         confirm_label=t("common.remove"),
+    )
+
+    # Duplicate-add confirmation — warns when the replaced variable was already
+    # downloaded (status resets to cloud) or backs the base raster.
+    _add_key = entry_key(pending_add) if pending_add else None
+    _add_old = p.raw_variables.get(_add_key) if (p and _add_key) else None
+    _replace_msg = t("tiles.variables.confirm_replace_message", key=_add_key or "")
+    if _add_old is not None and type(_add_old).__name__ != "GEEVar":
+        _replace_msg += " " + t("tiles.variables.confirm_replace_downloaded_warning")
+    if _add_old is not None and p.base_raster is not None and p.base_raster.name == _add_old.name:
+        _replace_msg += " " + t("tiles.variables.confirm_replace_base_warning")
+    ConfirmDialog(
+        open=pending_add is not None,
+        on_cancel=lambda: set_pending_add(None),
+        on_confirm=lambda: (_do_add(pending_add), set_pending_add(None)),
+        title=t("tiles.variables.confirm_replace_title"),
+        message=_replace_msg,
+        confirm_label=t("common.replace"),
     )
