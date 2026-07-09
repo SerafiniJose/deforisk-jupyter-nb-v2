@@ -45,17 +45,16 @@ def test_train_tile_selects_dataset_and_sample():
     assert "sample_set.dataset_name" not in src
 
 
-def test_page_restores_job_lists_on_load():
-    """Loading a project rebuilds the Train/Inference session job lists so saved
-    models/predictions appear in the GUI (regression for empty lists on load)."""
+def test_page_resets_job_lists_on_load():
+    """Switching projects clears the session job lists; product rows derive
+    from the registries at render time (no job_restore facade)."""
     import inspect
     import gui.solara_app as app
     src = inspect.getsource(app.Page)
-    assert "restore_jobs_on_load" in src
-    assert "build_train_jobs" in src
-    assert "build_inference_jobs" in src
-    # Reconstruction must be driven by the on-switch signal.
-    assert "solara.use_effect(restore_jobs_on_load, [project_loaded_signal])" in src
+    assert "reset_jobs_on_load" in src
+    assert "build_train_jobs" not in src
+    assert "build_inference_jobs" not in src
+    assert "solara.use_effect(reset_jobs_on_load, [project_loaded_signal])" in src
 
 
 def test_page_clears_map_overlays_on_switch():

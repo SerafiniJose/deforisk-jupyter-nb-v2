@@ -48,12 +48,11 @@ from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.tile.process_tile import ProcessTile
 from gui.tile.postprocess_tile import PostProcessTile
 from gui.tile.sampling_tile import SamplingTile, samples_on_map
-from gui.tile.train_tile import TrainTile, train_jobs, MODEL_REGISTRY
+from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
-from gui.tile.evaluation_tile import EvaluationTile
+from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
 from gui.widget.notification_area import NotificationArea
-from gui.scripts.job_restore import build_train_jobs, build_inference_jobs
 from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
 from gui.widget.log_console import LogConsole
 from gui.i18n import t, get_translator, reset_translator
@@ -68,16 +67,6 @@ logger.debug("Solara version: %s", solara.__version__)
 install_log_console_handler()
 
 setup_solara_server(extra_asset_locations=[])
-
-# model_type -> human label, derived from the Train tile's registry. Used to
-# label training jobs reconstructed from a loaded project (build_train_jobs) so
-# they read the same as in-session ones (the registry is keyed by UI key, e.g.
-# "benchmark", while models store their model_type, e.g. "jnr").
-def _model_type_labels():
-    return {
-        spec["class"].model_fields["model_type"].default: t(spec["label_key"])
-        for spec in MODEL_REGISTRY.values()
-    }
 
 
 @solara.lab.on_kernel_start
@@ -687,16 +676,15 @@ def Page():
 
     solara.use_effect(render_map_on_switch, [project_loaded_signal])
 
-    # List reset. The Train/Inference lists are module-level session reactives
-    # only appended to by in-session jobs, so without this a loaded project's
-    # saved models/predictions never appear (and a new project would still show
-    # the previous one's). Rebuilding from the active project handles both.
-    def restore_jobs_on_load():
-        loaded = app_state.project.value
-        train_jobs.set(build_train_jobs(loaded, _model_type_labels()))
-        inference_jobs.set(build_inference_jobs(loaded))
+    # Session job lists are transient overlays; product rows derive from the
+    # loaded project's registries at render time. Only the leftovers of the
+    # previous project's runs need clearing on switch.
+    def reset_jobs_on_load():
+        train_jobs.set([])
+        inference_jobs.set([])
+        eval_jobs.set([])
 
-    solara.use_effect(restore_jobs_on_load, [project_loaded_signal])
+    solara.use_effect(reset_jobs_on_load, [project_loaded_signal])
 
     # Each project starts with a fresh process log (consistent with the map /
     # job-list resets above, keyed on the same project-switch signal).
