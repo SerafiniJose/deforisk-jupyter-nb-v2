@@ -13,8 +13,12 @@ logger = logging.getLogger("spatial_risk")
 
 # First column is minmax(0,1fr) — NOT 1fr — so a long, unbreakable variable
 # name can shrink (and ellipsize) instead of widening the grid past 100% and
-# pushing the right-hand action column off-screen.
-_GRID = "display:grid;grid-template-columns:minmax(0,1fr) 90px 70px 86px 144px;align-items:center;width:100%;column-gap:16px;"
+# pushing the right-hand action column off-screen. The other columns are
+# fixed-width: header and data rows are separate grid containers, so
+# content-sized (max-content) columns would align differently in each and the
+# headers would drift off their columns. Keep the fixed part lean — the name
+# only gets what's left of the narrow side panel.
+_GRID = "display:grid;grid-template-columns:minmax(0,1fr) 150px 44px 112px;align-items:center;width:100%;column-gap:8px;"
 _HEADER_EXTRA = (
     "padding:4px 8px 6px;"
     "border-bottom:2px solid rgba(0,0,0,0.15);"
@@ -80,7 +84,6 @@ def SourceVariableList(
             rv.Html(tag="span", children=[t("widgets.variable_list.source_col_name")])
             rv.Html(tag="span", children=[t("widgets.variable_list.source_col_type")])
             rv.Html(tag="span", children=[t("widgets.variable_list.source_col_year")])
-            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_status")])
             rv.Html(tag="span", children=[""])
 
         # Data rows
@@ -95,14 +98,9 @@ def SourceVariableList(
                     solara.Text(var.name, style=_NAME_TEXT)
                     if is_base:
                         rv.Chip(children=[t("widgets.variable_list.chip_base")], x_small=True, color="info")
-                # Type
+                # Type + status chips share one cell to leave room for the name.
                 with rv.Html(tag="div", style_=_CELL_FLEX):
                     rv.Chip(children=[data_type_label], x_small=True, outlined=True, color="primary")
-                # Year
-                with rv.Html(tag="div", style_=_CELL_FLEX):
-                    solara.Text(str(var.year) if var.year else "—", style="color:grey;")
-                # Status — cloud (still on GEE) vs local (on disk)
-                with rv.Html(tag="div", style_=_CELL_FLEX):
                     if is_cloud:
                         rv.Chip(
                             children=[
@@ -116,6 +114,9 @@ def SourceVariableList(
                             children=[t("widgets.variable_list.chip_local")],
                             x_small=True, outlined=True, color="success",
                         )
+                # Year
+                with rv.Html(tag="div", style_=_CELL_FLEX):
+                    solara.Text(str(var.year) if var.year else "—", style="color:grey;")
                 # Actions — right-aligned
                 with rv.Html(tag="div", style_=_CELL_RIGHT):
                     # Download — only cloud-backed variables still need it.
