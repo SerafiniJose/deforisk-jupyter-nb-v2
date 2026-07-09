@@ -72,8 +72,7 @@
       "derived_col_name": "Name",
       "derived_col_source": "Source",
       "derived_col_status": "Status",
-      "derived_source_unknown": "unknown",
-      "chip_ready": "ready"
+      "derived_source_unknown": "unknown"
     },
     "summary_lists": {
       "raw_vars_title": "Source variables",

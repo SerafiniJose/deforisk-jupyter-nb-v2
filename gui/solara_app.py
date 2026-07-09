@@ -666,7 +666,7 @@ def Page():
     # previous project's overlay layers (variables, sample points, predictions,
     # old AOI; basemaps kept) and forget each tile's "on map" tracking, THEN
     # draw this project's AOI and frame it. Clearing MUST precede the redraw, so
-    # this effect runs before the job-rebuild effect below.
+    # this effect runs before the job-list reset effect below.
     def render_map_on_switch():
         clear_project_overlays(sepal_map)
         vars_on_map.set(set())
