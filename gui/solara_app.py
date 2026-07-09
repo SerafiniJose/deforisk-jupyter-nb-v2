@@ -461,6 +461,16 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
     """Three-tab workflow panel rendered in the right side panel."""
     active_tab, set_active_tab = solara.use_state(0)
 
+    # The global load/save status banner shows on whatever tab the user is on
+    # when they load/create/save, but it's stale once they move on. Clear it the
+    # moment they navigate to another step. Keyed on active_tab: the mount run is
+    # a harmless no-op (nothing set yet) and a load never changes active_tab, so
+    # the message survives until the user actually switches tabs.
+    def _clear_status_on_tab_switch():
+        app_state.status_message.set(None)
+
+    solara.use_effect(_clear_status_on_tab_switch, [active_tab])
+
     aoi_complete = app_state.aoi_result.value is not None
     p = app_state.project.value
     has_raw = p is not None and bool(p.raw_variables)
