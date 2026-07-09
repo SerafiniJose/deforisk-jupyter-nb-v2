@@ -8,6 +8,7 @@
     "replace": "Replace",
     "delete": "Delete",
     "close": "Close",
+    "actions": "Actions",
     "_test_fmt": "hello {name}",
     "_test_one": "{n} item",
     "_test_other": "{n} items"

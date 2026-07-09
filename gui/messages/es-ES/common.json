@@ -8,6 +8,7 @@
     "replace": "Reemplazar",
     "delete": "Eliminar",
     "close": "Cerrar",
+    "actions": "Acciones",
     "_test_fmt": "hola {name}",
     "_test_one": "{n} elemento",
     "_test_other": "{n} elementos"

@@ -105,6 +105,13 @@
     "log_console": {
       "header": "Registro de proceso",
       "empty": "Sin actividad aún."
+    },
+    "product_table": {
+      "status_running": "en ejecución",
+      "status_ready": "listo",
+      "status_trained": "entrenado",
+      "status_failed": "falló",
+      "status_cancelled": "cancelado"
     }
   }
 }
