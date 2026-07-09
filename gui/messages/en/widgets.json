@@ -33,9 +33,13 @@
       "unknown_error": "Unknown error"
     },
     "evaluation_results": {
-      "job_status": "{id}: {status}",
-      "saved_evaluations_header": "**SAVED EVALUATIONS** ({count})",
-      "row_title": "{truth_tag} · {n_maps} maps",
+      "evaluations_title": "Saved evaluations",
+      "empty": "No saved evaluations yet — run one above.",
+      "col_truth": "Truth",
+      "col_maps": "Maps",
+      "col_created": "Created",
+      "col_status": "Status",
+      "unknown_error": "Unknown error",
       "dialog_title": "Evaluation — {truth_tag}",
       "dialog_title_fallback": "Evaluation",
       "no_indices_info": "No indices stored for this run."

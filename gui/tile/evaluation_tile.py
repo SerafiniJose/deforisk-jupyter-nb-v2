@@ -102,8 +102,12 @@ def EvaluationTile(project):
         set_form_error(None)
         job_id = str(uuid.uuid4())[:8]
         created_at = datetime.now().isoformat(timespec="seconds")
-        eval_jobs.set(list(eval_jobs.value) + [
-            {"id": job_id, "status": "running", "error": None}])
+        eval_jobs.set(list(eval_jobs.value) + [{
+            "id": job_id, "status": "running", "error": None,
+            "truth_tag": spec["truth_tag"],
+            "n_maps": len(selected_maps) or n_predictions,
+            "created_at": created_at,
+        }])
         spawn_in_context(
             _run_evaluation,
             (job_id, project, list(selected_maps), spec, recompute, created_at,
@@ -118,6 +122,9 @@ def EvaluationTile(project):
         project.set(cur.model_copy())
         if selected_eval == key:
             set_selected_eval(None)
+
+    def on_dismiss(job_id):
+        eval_jobs.set([j for j in eval_jobs.value if j["id"] != job_id])
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.evaluation.header"))
@@ -180,6 +187,7 @@ def EvaluationTile(project):
             rv.Alert(type_="error", dense=True, children=[form_error])
 
         EvaluationResults(eval_jobs=eval_jobs, project=project,
-                          on_open=set_selected_eval, on_delete=on_delete)
+                          on_open=set_selected_eval, on_delete=on_delete,
+                          on_dismiss=on_dismiss)
         EvaluationTableDialog(project=project, eval_key=selected_eval,
                               on_close=lambda: set_selected_eval(None))

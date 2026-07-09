@@ -12,73 +12,65 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
+from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
+from gui.widget.product_table import ProductTable
 
 
 @solara.component
-def EvaluationResults(eval_jobs, project, on_open, on_delete):
-    """Render running/failed job alerts and the list of saved evaluation runs.
+def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
+    """Evaluations table: saved runs (registry) plus in-flight/failed jobs.
 
     Args:
         eval_jobs: solara.Reactive[list] — transient per-run job dicts.
         project: solara.Reactive[Project] — source of project.evaluations.
         on_open: callback(key) — open the table popup for a saved run.
         on_delete: callback(key) — delete a saved run.
+        on_dismiss: callback(job_id) — discard a failed job row.
     """
     p = project.value
-    with solara.Column(style="gap: 12px;"):
-        for job in eval_jobs.value:
-            status = job["status"]
-            color = {"running": "info", "completed": "success",
-                     "failed": "error"}.get(status, "grey")
-            with rv.Alert(type_=color, dense=True, outlined=True):
-                solara.Text(t("widgets.evaluation_results.job_status", id=job['id'], status=status))
-                if job.get("error"):
-                    solara.Text(job["error"])
+    data = evaluation_tab_rows(p, eval_jobs.value)
 
-        records = list(p.evaluations.items()) if p is not None else []
-        if not records:
-            return
+    rows = []
+    for r in data:
+        if r["kind"] == "evaluation":
+            actions = [
+                {"kind": "open", "on_click": lambda *_, k=r["key"]: on_open(k)},
+                {"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)},
+            ]
+        elif r["status"] != "running" and on_dismiss is not None:
+            actions = [{"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}]
+        else:
+            actions = []
 
-        records.sort(key=lambda kv: kv[1].created_at, reverse=True)  # newest first
-        solara.Markdown(t("widgets.evaluation_results.saved_evaluations_header", count=len(records)))
-        with rv.List(dense=True):
-            for key, rec in records:
-                EvaluationRow(rec_key=key, record=rec,
-                              on_open=on_open, on_delete=on_delete)
+        error = r.get("error")
+        if r["status"] == "failed" and not error:
+            error = t("widgets.evaluation_results.unknown_error")
+        rows.append(
+            {
+                "key": r["key"],
+                "cells": [
+                    {"type": "text", "value": r["truth_tag"]},
+                    {"type": "chip", "value": str(r["n_maps"])},
+                    {"type": "text", "value": r["created_at"], "size": "0.78rem", "muted": True},
+                    {"type": "status", "status": r["status"]},
+                ],
+                "actions": actions,
+                "error": error,
+            }
+        )
 
-
-@solara.component
-def EvaluationRow(rec_key, record, on_open, on_delete):
-    """One saved-evaluation row: a 'view table' button opens the popup; × deletes.
-
-    Both actions are explicit icon Buttons in ListItemAction — the codebase's
-    proven click pattern (matches variable_list / inference_output_list). NOTE:
-    ``on_click`` on ``rv.ListItem``/``rv.ListItemContent`` does NOT reliably fire
-    in this reacton.ipyvuetify setup, so the row container is intentionally not
-    clickable; opening goes through the dedicated Button instead.
-    """
-    n_maps = len(record.prediction_keys)
-    with rv.ListItem(dense=True):
-        with rv.ListItemContent():
-            rv.ListItemTitle(
-                children=[t("widgets.evaluation_results.row_title", truth_tag=record.truth_tag, n_maps=n_maps)],
-                style_="font-size: 0.875rem;",
-            )
-            rv.ListItemSubtitle(children=[record.created_at])
-        with rv.ListItemAction():
-            with solara.Row(style="gap:0;align-items:center;flex-direction:row;"):
-                solara.Button(
-                    "",
-                    icon_name="mdi-table-eye",
-                    on_click=lambda *_: on_open(rec_key),
-                    icon=True, text=True, x_small=True, color="primary",
-                )
-                rv.Btn(
-                    children=[rv.Icon(children=["mdi-close"], small=True)],
-                    icon=True, x_small=True,
-                    on_click=lambda *_: on_delete(rec_key),
-                )
+    ProductTable(
+        title=t("widgets.evaluation_results.evaluations_title"),
+        columns=[
+            {"label": t("widgets.evaluation_results.col_truth"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.evaluation_results.col_maps"), "width": "55px"},
+            {"label": t("widgets.evaluation_results.col_created"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.evaluation_results.col_status"), "width": "95px"},
+        ],
+        rows=rows,
+        empty_text=t("widgets.evaluation_results.empty"),
+    )
 
 
 @solara.component

@@ -33,9 +33,13 @@
       "unknown_error": "Error desconocido"
     },
     "evaluation_results": {
-      "job_status": "{id}: {status}",
-      "saved_evaluations_header": "**EVALUACIONES GUARDADAS** ({count})",
-      "row_title": "{truth_tag} · {n_maps} mapas",
+      "evaluations_title": "Evaluaciones guardadas",
+      "empty": "Aún no hay evaluaciones guardadas — ejecuta una arriba.",
+      "col_truth": "Verdad",
+      "col_maps": "Mapas",
+      "col_created": "Creado",
+      "col_status": "Estado",
+      "unknown_error": "Error desconocido",
       "dialog_title": "Evaluación — {truth_tag}",
       "dialog_title_fallback": "Evaluación",
       "no_indices_info": "No hay índices almacenados para esta ejecución."
