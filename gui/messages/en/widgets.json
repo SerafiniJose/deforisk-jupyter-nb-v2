@@ -36,6 +36,7 @@
       "no_indices_info": "No indices stored for this run."
     },
     "dataset_list": {
+      "title": "Datasets",
       "empty": "No datasets registered yet.",
       "col_name": "Name",
       "col_target": "Target",

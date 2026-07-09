@@ -36,6 +36,7 @@
       "no_indices_info": "No hay índices almacenados para esta ejecución."
     },
     "dataset_list": {
+      "title": "Conjuntos de datos",
       "empty": "Aún no hay conjuntos de datos registrados.",
       "col_name": "Nombre",
       "col_target": "Objetivo",
