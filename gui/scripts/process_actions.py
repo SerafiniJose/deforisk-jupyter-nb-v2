@@ -116,6 +116,31 @@ def apply_post_processing(project, processed_key: str, step: str):
     return derived
 
 
+def postprocess_output_keys(project) -> List[str]:
+    """Registry keys of processed variables produced by the Post-process step.
+
+    Change layers carry a "change" tag; edge/dist outputs record the step in
+    ``processing_history`` (variable-name suffix kept as a fallback for legacy
+    variables saved before ``processing_history`` existed).
+    """
+    from spatialrisk.variables.models import PostProcessing
+
+    steps = tuple(s.value for s in PostProcessing)
+    suffixes = tuple(f"_{s}" for s in steps)
+    keys = []
+    for key, var in project.processed_variables.items():
+        tags = getattr(var, "tags", None) or []
+        history = getattr(var, "processing_history", None) or []
+        name = getattr(var, "name", key)
+        if (
+            "change" in tags
+            or any(s in steps for s in history)
+            or name.endswith(suffixes)
+        ):
+            keys.append(key)
+    return keys
+
+
 def change_layer_candidates(project) -> List[str]:
     """Sorted keys of processed temporal raster vars (change-detection inputs).
 

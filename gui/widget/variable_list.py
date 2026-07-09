@@ -164,15 +164,29 @@ def SourceVariableList(
 
 
 @solara.component
-def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = None):
-    """Collapsible table of derived (processed) variables with a remove action."""
+def DerivedVariableList(
+    project,
+    on_remove: Optional[Callable[[str], None]] = None,
+    keys: Optional[list] = None,
+):
+    """Collapsible table of derived (processed) variables with a remove action.
+
+    ``keys`` restricts the rows to those registry keys (None = all).
+    """
     collapsed, set_collapsed = solara.use_state(False)
 
     p = project.value
-    if p is None or not p.processed_variables:
+    if p is None:
+        return
+    variables = {
+        k: v
+        for k, v in p.processed_variables.items()
+        if keys is None or k in keys
+    }
+    if not variables:
         return
 
-    count = len(p.processed_variables)
+    count = len(variables)
     _DGRID = "display:grid;grid-template-columns:minmax(0,1fr) 120px 80px 56px;align-items:center;width:100%;"
 
     with solara.Column(style="gap:0;width:100%;"):
@@ -197,7 +211,7 @@ def DerivedVariableList(project, on_remove: Optional[Callable[[str], None]] = No
                 rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_status")])
                 rv.Html(tag="span", children=[""])
 
-            for key, var in p.processed_variables.items():
+            for key, var in variables.items():
                 source_name = derived_source_key(
                     p, var.name, t("widgets.variable_list.derived_source_unknown")
                 )
