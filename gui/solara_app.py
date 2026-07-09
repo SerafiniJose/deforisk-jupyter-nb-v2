@@ -185,6 +185,10 @@ def ProjectPanel(on_close=None):
         # and reset the (empty) Train/Inference job lists — no manual reset here.
         app_state.status_message.set(t("project.status_created", name=validation.cleaned))
         set_new_open(False)
+        # Dismiss the whole Project popup too, not just the inner New dialog, so
+        # a freshly created project returns the user to the map (mirrors do_load).
+        if on_close is not None:
+            on_close()
 
     def load_instead():
         name = validate_project_name(new_name, existing_names()).cleaned
