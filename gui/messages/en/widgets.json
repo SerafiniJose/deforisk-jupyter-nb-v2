@@ -44,11 +44,11 @@
       "col_year": "Year"
     },
     "sample_set_list": {
+      "title": "Sample sets",
       "empty": "No sample sets generated yet.",
       "col_name": "Name",
       "col_strategy": "Strategy",
-      "col_points": "Points",
-      "col_map": "Map"
+      "col_points": "Points"
     },
     "variable_list": {
       "source_empty": "No variables added yet.",

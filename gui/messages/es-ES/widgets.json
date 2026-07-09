@@ -44,11 +44,11 @@
       "col_year": "Año"
     },
     "sample_set_list": {
+      "title": "Conjuntos de muestras",
       "empty": "Aún no se generaron conjuntos de muestras.",
       "col_name": "Nombre",
       "col_strategy": "Estrategia",
-      "col_points": "Puntos",
-      "col_map": "Mapa"
+      "col_points": "Puntos"
     },
     "variable_list": {
       "source_empty": "Aún no se agregaron variables.",
