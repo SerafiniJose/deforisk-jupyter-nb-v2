@@ -564,20 +564,22 @@ def TrainTile(project):
     def on_cancel(job_id):
         _update_job(job_id, skip_if_cancelled=False, status="cancelled")
 
-    pending_remove, set_pending_remove = solara.use_state(None)
-
-    def _do_remove(job_id):
-        # Completed jobs carry the registered model's key; delete it (registry +
-        # on-disk artifacts) from the current project. Failed/cancelled jobs have
-        # no model, so this is just a list dismissal.
-        job = next((j for j in train_jobs.value if j["id"] == job_id), None)
-        key = job.get("model_storage_key") if job else None
-        if key:
-            cur = project.value
-            if cur is not None and key in cur.models:
-                cur.delete_model(key, auto_save=True)
-                project.set(cur.model_copy())
+    def on_dismiss(job_id):
+        # Failed/cancelled job rows only — never touches the model registry.
         train_jobs.set([j for j in train_jobs.value if j["id"] != job_id])
+
+    pending_delete, set_pending_delete = solara.use_state(None)
+
+    def _delete_model(key):
+        cur = project.value
+        if cur is not None and key in cur.models:
+            cur.delete_model(key, auto_save=True)
+            project.set(cur.model_copy())
+        # Purge session jobs that produced this model, so a stale "completed"
+        # job row doesn't resurface once its registry entry is gone.
+        train_jobs.set(
+            [j for j in train_jobs.value if j.get("model_storage_key") != key]
+        )
 
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.train.header"))
@@ -706,28 +708,21 @@ def TrainTile(project):
 
         # Trained models list
         TrainModelList(
+            project=project,
             train_jobs=train_jobs,
+            model_labels={k: model_label(k) for k in MODEL_KEYS},
             on_cancel=on_cancel,
-            on_remove=set_pending_remove,
+            on_dismiss=on_dismiss,
+            on_delete=set_pending_delete,
         )
 
-        _pending_job = (
-            next((j for j in train_jobs.value if j["id"] == pending_remove), None)
-            if pending_remove
-            else None
-        )
-        _pending_model_key = _pending_job.get("model_storage_key") if _pending_job else None
         ConfirmDialog(
-            open=pending_remove is not None,
-            on_cancel=lambda: set_pending_remove(None),
-            on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
-            title=t("tiles.train.confirm_delete_model_title") if _pending_model_key else t("tiles.train.confirm_remove_job_title"),
-            message=(
-                t("tiles.train.confirm_delete_model_message", key=_pending_model_key)
-                if _pending_model_key
-                else t("tiles.train.confirm_remove_job_message")
-            ),
-            confirm_label=t("common.delete") if _pending_model_key else t("common.remove"),
+            open=pending_delete is not None,
+            on_cancel=lambda: set_pending_delete(None),
+            on_confirm=lambda: (_delete_model(pending_delete), set_pending_delete(None)),
+            title=t("tiles.train.confirm_delete_model_title"),
+            message=t("tiles.train.confirm_delete_model_message", key=pending_delete or ""),
+            confirm_label=t("common.delete"),
         )
 
         # Overwrite confirmation — shown when the chosen name+type already exists.

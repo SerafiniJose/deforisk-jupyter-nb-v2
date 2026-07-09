@@ -33,7 +33,10 @@ def test_train_tile_confirms_and_really_deletes_model():
     src = inspect.getsource(TrainTile)
     assert "ConfirmDialog" in src
     assert "delete_model" in src  # removal actually unregisters the model
-    assert "on_remove=set_pending_remove" in src
+    # Model deletion (not job dismissal) drives the confirm dialog — see
+    # docs/spec: completed runs render as model rows and "delete" on a model
+    # row deletes the model.
+    assert "on_delete=set_pending_delete" in src
 
 
 def test_inference_tile_confirms_and_really_deletes_predictions():

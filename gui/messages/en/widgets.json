@@ -1,10 +1,13 @@
 {
   "widgets": {
     "train_model_list": {
-      "title": "**TRAINED MODELS** ({count})",
-      "completed_subtitle": "deviance: {dev} | samples: {samp}",
-      "failed_subtitle": "Error: {error}",
-      "cancelled_subtitle": "Cancelled by user",
+      "models_title": "Models",
+      "empty": "No models yet — configure and train one above.",
+      "col_name": "Name",
+      "col_type": "Type",
+      "col_dataset": "Dataset",
+      "col_metrics": "Dev / samples",
+      "col_status": "Status",
       "unknown_error": "Unknown error"
     },
     "prediction_import_modal": {

@@ -233,8 +233,6 @@
       "error_layer_not_in_dataset": "'{label}' = '{val}' is not a feature in dataset '{dataset}'.",
       "confirm_delete_model_title": "Delete model?",
       "confirm_delete_model_message": "Delete model '{key}'? This removes it from the project and deletes its files. This cannot be undone.",
-      "confirm_remove_job_title": "Remove job?",
-      "confirm_remove_job_message": "Remove this training job from the list?",
       "confirm_overwrite_title": "Overwrite existing model?",
       "confirm_overwrite_message": "A model named '{key}' already exists. Training will replace it and delete its files. This cannot be undone.",
       "confirm_overwrite_label": "Overwrite",

@@ -1,104 +1,70 @@
-"""Trained models list widget for the Train tab."""
+"""Trained-models list for the Train tab: registry products + session-job overlay."""
 
 import logging
 
-import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
+from gui.scripts.product_rows import train_rows
+from gui.widget.product_table import ProductTable
 
 logger = logging.getLogger("spatial_risk")
 
-STATUS_COLORS = {
-    "running": "blue",
-    "completed": "green",
-    "failed": "red",
-    "cancelled": "grey",
-}
-
-STATUS_ICONS = {
-    "running": "mdi-loading mdi-spin",
-    "completed": "mdi-check-circle",
-    "failed": "mdi-alert-circle",
-    "cancelled": "mdi-cancel",
-}
-
 
 @solara.component
-def TrainJobItem(job: dict, on_cancel, on_remove):
-    """Single training job row."""
-    status = job["status"]
-    color = STATUS_COLORS.get(status, "grey")
-    icon = STATUS_ICONS.get(status, "mdi-help-circle")
-    model_label = job.get("model_label", job["model_type"])
-    dataset_name = job.get("dataset_name", "—")
-    model_name = job.get("model_name")
-
-    # Lead with the user-chosen name so distinct models are told apart at a
-    # glance; fall back to the old "label — dataset" form for legacy jobs.
-    title = (
-        f"{model_name} ({model_label}) — {dataset_name}"
-        if model_name
-        else f"{model_label} — {dataset_name}"
-    )
-
-    with rv.ListItem(dense=True):
-        with rv.ListItemIcon():
-            rv.Icon(children=[icon], color=color, small=True)
-        with rv.ListItemContent():
-            rv.ListItemTitle(
-                children=[title],
-                style_="font-size: 0.875rem;",
-            )
-            if status == "completed":
-                deviance = job.get("deviance")
-                n_samples = job.get("n_samples")
-                dev_str = f"{deviance:,.2f}" if deviance is not None else "—"
-                samp_str = f"{n_samples:,}" if n_samples is not None else "—"
-                rv.ListItemSubtitle(
-                    children=[t("widgets.train_model_list.completed_subtitle", dev=dev_str, samp=samp_str)],
-                )
-            elif status == "failed":
-                error = job.get("error") or t("widgets.train_model_list.unknown_error")
-                rv.ListItemSubtitle(
-                    children=[t("widgets.train_model_list.failed_subtitle", error=error)],
-                    style_="color: red;",
-                )
-            elif status == "cancelled":
-                rv.ListItemSubtitle(children=[t("widgets.train_model_list.cancelled_subtitle")])
-
-        with rv.ListItemAction():
-            if status == "running":
-                rv.Btn(
-                    children=[rv.Icon(children=["mdi-stop-circle"], small=True)],
-                    icon=True,
-                    x_small=True,
-                    on_click=lambda *_: on_cancel(job["id"]),
-                )
-            else:
-                rv.Btn(
-                    children=[rv.Icon(children=["mdi-close"], small=True)],
-                    icon=True,
-                    x_small=True,
-                    on_click=lambda *_: on_remove(job["id"]),
-                )
-
-
-@solara.component
-def TrainModelList(train_jobs, on_cancel, on_remove):
-    """List of all training jobs with status, metrics, and actions.
+def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_delete):
+    """Models table: one row per registered model plus in-flight/failed jobs.
 
     Args:
-        train_jobs: solara.Reactive[list] — list of job dicts.
+        project: solara.Reactive[Project] — source of project.models.
+        train_jobs: solara.Reactive[list] — transient session job dicts.
+        model_labels: dict model_type -> human label.
         on_cancel: callback(job_id) — cancel a running job.
-        on_remove: callback(job_id) — remove a finished/failed/cancelled job.
+        on_dismiss: callback(job_id) — discard a failed/cancelled job row.
+        on_delete: callback(model_key) — delete a registered model (confirmed
+            by the tile).
     """
-    jobs = train_jobs.value
+    p = project.value
+    data = train_rows(p, train_jobs.value, model_labels)
 
-    if not jobs:
-        return
+    rows = []
+    for r in data:
+        if r["kind"] == "model":
+            actions = [{"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)}]
+        elif r["status"] == "running":
+            actions = [{"kind": "cancel", "on_click": lambda *_, i=r["job_id"]: on_cancel(i)}]
+        else:
+            actions = [{"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}]
 
-    solara.Markdown(t("widgets.train_model_list.title", count=len(jobs)))
-    with rv.List(dense=True):
-        for job in reversed(jobs):
-            TrainJobItem(job=job, on_cancel=on_cancel, on_remove=on_remove)
+        dev = f"{r['deviance']:,.2f}" if r.get("deviance") is not None else "—"
+        samp = f"{r['n_samples']:,}" if r.get("n_samples") is not None else "—"
+        error = r.get("error")
+        if r["status"] == "failed" and not error:
+            error = t("widgets.train_model_list.unknown_error")
+        rows.append(
+            {
+                "key": r["key"],
+                "cells": [
+                    {"type": "text", "value": r["name"]},
+                    {"type": "chip", "value": r["model_label"], "color": "primary"},
+                    {"type": "text", "value": r["dataset_name"], "size": "0.8rem", "muted": True},
+                    {"type": "text", "value": f"{dev} / {samp}", "size": "0.8rem", "muted": True},
+                    {"type": "status", "status": r["status"]},
+                ],
+                "actions": actions,
+                "error": error,
+            }
+        )
+
+    ProductTable(
+        title=t("widgets.train_model_list.models_title"),
+        columns=[
+            {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.train_model_list.col_type"), "width": "80px"},
+            {"label": t("widgets.train_model_list.col_dataset"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.train_model_list.col_metrics"), "width": "110px"},
+            {"label": t("widgets.train_model_list.col_status"), "width": "95px"},
+        ],
+        rows=rows,
+        empty_text=t("widgets.train_model_list.empty"),
+    )
