@@ -11,15 +11,12 @@ of the job-status icon maps formerly duplicated across train_model_list.py /
 inference_output_list.py.
 """
 
-import logging
 from typing import Optional
 
 import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
-
-logger = logging.getLogger("spatial_risk")
 
 GRID_BASE = "display:grid;align-items:center;width:100%;column-gap:8px;"
 HEADER_EXTRA = (
@@ -41,6 +38,7 @@ STATUS_COLORS = {
     "running": "blue",
     "ready": "green",
     "trained": "green",
+    "completed": "green",
     "failed": "red",
     "cancelled": "grey",
 }
@@ -48,6 +46,7 @@ STATUS_ICONS = {
     "running": "mdi-loading mdi-spin",
     "ready": "mdi-check-circle",
     "trained": "mdi-check-circle",
+    "completed": "mdi-check-circle",
     "failed": "mdi-alert-circle",
     "cancelled": "mdi-cancel",
 }

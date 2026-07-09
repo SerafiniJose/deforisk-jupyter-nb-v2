@@ -25,10 +25,11 @@ def test_grid_style_builds_template_columns():
 def test_status_maps_cover_all_states():
     from gui.widget.product_table import STATUS_COLORS, STATUS_ICONS
 
-    for status in ("running", "ready", "trained", "failed", "cancelled"):
+    for status in ("running", "ready", "trained", "completed", "failed", "cancelled"):
         assert status in STATUS_ICONS
         assert status in STATUS_COLORS
     assert STATUS_ICONS["running"] == "mdi-loading mdi-spin"
+    assert STATUS_ICONS["completed"] == "mdi-check-circle"
     assert STATUS_COLORS["failed"] == "red"
 
 

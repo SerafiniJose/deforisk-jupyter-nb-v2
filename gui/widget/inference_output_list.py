@@ -1,14 +1,10 @@
 """Predictions list for the Inference tab: registry products + session-job overlay."""
 
-import logging
-
 import solara
 
 from gui.i18n import t
 from gui.scripts.product_rows import inference_rows
 from gui.widget.product_table import ProductTable
-
-logger = logging.getLogger("spatial_risk")
 
 
 @solara.component

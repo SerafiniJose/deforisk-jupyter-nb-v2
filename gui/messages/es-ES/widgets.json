@@ -127,6 +127,7 @@
       "status_running": "en ejecución",
       "status_ready": "listo",
       "status_trained": "entrenado",
+      "status_completed": "completado",
       "status_failed": "falló",
       "status_cancelled": "cancelado"
     }

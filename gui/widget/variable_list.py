@@ -1,6 +1,5 @@
 """Source and Derived variable list widgets."""
 
-import logging
 from typing import Callable, Optional
 
 import solara
@@ -8,8 +7,6 @@ import solara
 from gui.i18n import t
 from gui.scripts.map_helpers import is_mappable
 from gui.widget.product_table import ProductTable
-
-logger = logging.getLogger("spatial_risk")
 
 
 def derived_source_key(p, var_name, fallback):

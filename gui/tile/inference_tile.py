@@ -322,10 +322,14 @@ def InferenceTile(project, map_=None, sepal_client=None):
         if deleted:
             cur.save()
             project.set(cur.model_copy())
-        # Purge session jobs that produced this row, so a stale "completed"
-        # job doesn't resurface once its registry group is gone.
+        # Purge completed session jobs that produced this row, so a stale
+        # "completed" job doesn't resurface once its registry group is gone.
+        # A running/failed re-run of the same name is left alone.
         inference_jobs.set(
-            [j for j in inference_jobs.value if job_row_key(j) != row_key]
+            [
+                j for j in inference_jobs.value
+                if job_row_key(j) != row_key or j.get("status") != "completed"
+            ]
         )
 
     # Name intentionally left out: the button stays enabled so an empty name can

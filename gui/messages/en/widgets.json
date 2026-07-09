@@ -127,6 +127,7 @@
       "status_running": "running",
       "status_ready": "ready",
       "status_trained": "trained",
+      "status_completed": "completed",
       "status_failed": "failed",
       "status_cancelled": "cancelled"
     }
