@@ -51,6 +51,7 @@
       "col_points": "Puntos"
     },
     "variable_list": {
+      "source_title": "Variables fuente",
       "source_empty": "Aún no se agregaron variables.",
       "source_col_name": "Nombre",
       "source_col_type": "Tipo",
@@ -58,7 +59,7 @@
       "chip_cloud": "nube",
       "chip_local": "local",
       "chip_base": "base",
-      "derived_header": "VARIABLES DERIVADAS ({count})",
+      "derived_title": "Variables derivadas",
       "derived_col_name": "Nombre",
       "derived_col_source": "Fuente",
       "derived_col_status": "Estado",

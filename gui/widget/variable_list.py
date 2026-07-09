@@ -3,34 +3,13 @@
 import logging
 from typing import Callable, Optional
 
-import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
 from gui.scripts.map_helpers import is_mappable
+from gui.widget.product_table import ProductTable
 
 logger = logging.getLogger("spatial_risk")
-
-# First column is minmax(0,1fr) — NOT 1fr — so a long, unbreakable variable
-# name can shrink (and ellipsize) instead of widening the grid past 100% and
-# pushing the right-hand action column off-screen. The other columns are
-# fixed-width: header and data rows are separate grid containers, so
-# content-sized (max-content) columns would align differently in each and the
-# headers would drift off their columns. Keep the fixed part lean — the name
-# only gets what's left of the narrow side panel.
-_GRID = "display:grid;grid-template-columns:minmax(0,1fr) 150px 44px 112px;align-items:center;width:100%;column-gap:8px;"
-_HEADER_EXTRA = (
-    "padding:4px 8px 6px;"
-    "border-bottom:2px solid rgba(0,0,0,0.15);"
-    "font-size:0.72rem;font-weight:600;color:grey;"
-    "text-transform:uppercase;letter-spacing:0.05em;"
-)
-_ROW_EXTRA = "padding:5px 8px;border-bottom:1px solid rgba(0,0,0,0.08);"
-_CELL_FLEX = "display:flex;align-items:center;gap:4px;"
-_CELL_RIGHT = "display:flex;align-items:center;justify-content:flex-end;gap:0;"
-# Name cell: allow shrinking + truncate long names with an ellipsis.
-_NAME_CELL = "display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;"
-_NAME_TEXT = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
 
 
 def derived_source_key(p, var_name, fallback):
@@ -61,107 +40,94 @@ def SourceVariableList(
     download_pending: bool = False,
     downloading_key: Optional[str] = None,
 ):
-    """Table of source (raw) variables with map-toggle, edit, and remove actions.
+    """Table of source (raw) variables with download/map/edit/remove actions.
 
-    Cloud-backed variables (GEEVar) show a "cloud" status chip and, when
+    Cloud-backed variables (GEEVar) show a "cloud" chip and, when
     ``on_download`` is given, a per-row download button. ``downloading_key`` is
     the key currently downloading (None while a bulk download runs); every
     download button is disabled while ``download_pending``.
     """
     p = project.value
-    logger.debug(
-        "SourceVariableList render — raw_variables: %s",
-        list(p.raw_variables.keys()) if p else "no project",
+    raw_variables = (p.raw_variables if p is not None else {}) or {}
+    on_map = vars_on_map.value if vars_on_map is not None else set()
+
+    rows = []
+    for key, var in raw_variables.items():
+        is_base = p.base_raster is not None and p.base_raster.name == var.name
+        data_type_label = (
+            var.data_type if isinstance(var.data_type, str) else var.data_type.value
+        )
+        is_cloud = type(var).__name__ == "GEEVar"
+
+        status_chip = (
+            {
+                "value": t("widgets.variable_list.chip_cloud"),
+                "icon": "mdi-cloud-outline",
+                "color": "warning",
+            }
+            if is_cloud
+            else {"value": t("widgets.variable_list.chip_local"), "color": "success"}
+        )
+
+        actions = []
+        if on_download is not None and is_cloud:
+            actions.append(
+                {
+                    "kind": "download",
+                    "on_click": lambda *_, k=key: on_download(k),
+                    "loading": download_pending and downloading_key == key,
+                    "disabled": download_pending,
+                }
+            )
+        if on_toggle_map is not None and is_mappable(var):
+            actions.append(
+                {
+                    "kind": "map_toggle",
+                    "on_click": lambda *_, k=key: on_toggle_map(k),
+                    "is_on": key in on_map,
+                }
+            )
+        if on_edit is not None:
+            actions.append({"kind": "edit", "on_click": lambda *_, k=key: on_edit(k)})
+        actions.append({"kind": "delete", "on_click": lambda *_, k=key: on_remove(k)})
+
+        name_chips = (
+            [{"value": t("widgets.variable_list.chip_base"), "color": "info", "outlined": False}]
+            if is_base
+            else []
+        )
+        rows.append(
+            {
+                "key": key,
+                "cells": [
+                    {"type": "text", "value": var.name, "chips": name_chips},
+                    {
+                        "type": "chips",
+                        "items": [
+                            {"value": data_type_label, "color": "primary"},
+                            status_chip,
+                        ],
+                    },
+                    {
+                        "type": "text",
+                        "value": str(var.year) if var.year else "—",
+                        "muted": True,
+                    },
+                ],
+                "actions": actions,
+            }
+        )
+
+    ProductTable(
+        title=t("widgets.variable_list.source_title"),
+        columns=[
+            {"label": t("widgets.variable_list.source_col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.variable_list.source_col_type"), "width": "150px"},
+            {"label": t("widgets.variable_list.source_col_year"), "width": "44px"},
+        ],
+        rows=rows,
+        empty_text=t("widgets.variable_list.source_empty"),
     )
-
-    if p is None or not p.raw_variables:
-        solara.Text(t("widgets.variable_list.source_empty"), style="color: grey;")
-        return
-
-    with solara.Column(style="gap:0;width:100%;"):
-        # Header row
-        with rv.Html(tag="div", style_=_GRID + _HEADER_EXTRA):
-            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_name")])
-            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_type")])
-            rv.Html(tag="span", children=[t("widgets.variable_list.source_col_year")])
-            rv.Html(tag="span", children=[""])
-
-        # Data rows
-        for key, var in p.raw_variables.items():
-            is_base = p.base_raster is not None and p.base_raster.name == var.name
-            data_type_label = var.data_type if isinstance(var.data_type, str) else var.data_type.value
-            is_cloud = type(var).__name__ == "GEEVar"
-
-            with rv.Html(tag="div", style_=_GRID + _ROW_EXTRA):
-                # Name
-                with rv.Html(tag="div", style_=_NAME_CELL):
-                    solara.Text(var.name, style=_NAME_TEXT)
-                    if is_base:
-                        rv.Chip(children=[t("widgets.variable_list.chip_base")], x_small=True, color="info")
-                # Type + status chips share one cell to leave room for the name.
-                with rv.Html(tag="div", style_=_CELL_FLEX):
-                    rv.Chip(children=[data_type_label], x_small=True, outlined=True, color="primary")
-                    if is_cloud:
-                        rv.Chip(
-                            children=[
-                                rv.Icon(children=["mdi-cloud-outline"], x_small=True, left=True),
-                                t("widgets.variable_list.chip_cloud"),
-                            ],
-                            x_small=True, outlined=True, color="warning",
-                        )
-                    else:
-                        rv.Chip(
-                            children=[t("widgets.variable_list.chip_local")],
-                            x_small=True, outlined=True, color="success",
-                        )
-                # Year
-                with rv.Html(tag="div", style_=_CELL_FLEX):
-                    solara.Text(str(var.year) if var.year else "—", style="color:grey;")
-                # Actions — right-aligned
-                with rv.Html(tag="div", style_=_CELL_RIGHT):
-                    # Download — only cloud-backed variables still need it.
-                    if on_download is not None and is_cloud:
-                        solara.Button(
-                            "",
-                            icon_name="mdi-cloud-download-outline",
-                            on_click=lambda *_, k=key: on_download(k),
-                            icon=True,
-                            text=True,
-                            x_small=True,
-                            color="primary",
-                            loading=download_pending and downloading_key == key,
-                            disabled=download_pending,
-                        )
-                    # Map toggle — GEE-backed images and local raster/vector files.
-                    if on_toggle_map is not None and is_mappable(var):
-                        on_map = vars_on_map.value if vars_on_map is not None else set()
-                        is_on = key in on_map
-                        solara.Button(
-                            "",
-                            icon_name="mdi-map-minus" if is_on else "mdi-map-plus",
-                            on_click=lambda *_, k=key: on_toggle_map(k),
-                            icon=True,
-                            text=True,
-                            x_small=True,
-                            color="primary" if is_on else "grey darken-1",
-                        )
-                    if on_edit is not None:
-                        solara.Button(
-                            "",
-                            icon_name="mdi-pencil-outline",
-                            on_click=lambda *_, k=key: on_edit(k),
-                            icon=True,
-                            text=True,
-                            x_small=True,
-                        )
-                    solara.Button(
-                        "",
-                        icon_name="mdi-delete-outline",
-                        on_click=lambda *_, k=key: on_remove(k),
-                        icon=True,
-                        text=True,
-                        x_small=True,
-                    )
 
 
 @solara.component
@@ -170,67 +136,46 @@ def DerivedVariableList(
     on_remove: Optional[Callable[[str], None]] = None,
     keys: Optional[list] = None,
 ):
-    """Collapsible table of derived (processed) variables with a remove action.
+    """Table of derived (processed) variables with a remove action.
 
     ``keys`` restricts the rows to those registry keys (None = all).
     """
-    collapsed, set_collapsed = solara.use_state(False)
-
     p = project.value
     if p is None:
         return
     variables = {
-        k: v
-        for k, v in p.processed_variables.items()
-        if keys is None or k in keys
+        k: v for k, v in p.processed_variables.items() if keys is None or k in keys
     }
     if not variables:
         return
 
-    count = len(variables)
-    _DGRID = "display:grid;grid-template-columns:minmax(0,1fr) 120px 80px 56px;align-items:center;width:100%;"
+    rows = []
+    for key, var in variables.items():
+        source_name = derived_source_key(
+            p, var.name, t("widgets.variable_list.derived_source_unknown")
+        )
+        actions = []
+        if on_remove is not None:
+            actions.append({"kind": "delete", "on_click": lambda *_, k=key: on_remove(k)})
+        rows.append(
+            {
+                "key": key,
+                "cells": [
+                    {"type": "text", "value": var.name, "size": "0.9rem"},
+                    {"type": "chip", "value": source_name},
+                    {"type": "status", "status": "ready"},
+                ],
+                "actions": actions,
+            }
+        )
 
-    with solara.Column(style="gap:0;width:100%;"):
-        with solara.Row(style="align-items:center;gap:8px;padding:4px 0;"):
-            solara.Text(
-                t("widgets.variable_list.derived_header", count=count),
-                style="font-weight:600;font-size:0.8rem;color:grey;",
-            )
-            solara.Button(
-                "",
-                icon_name="mdi-chevron-up" if not collapsed else "mdi-chevron-down",
-                on_click=lambda: set_collapsed(not collapsed),
-                icon=True,
-                text=True,
-                x_small=True,
-            )
-
-        if not collapsed:
-            with rv.Html(tag="div", style_=_DGRID + _HEADER_EXTRA):
-                rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_name")])
-                rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_source")])
-                rv.Html(tag="span", children=[t("widgets.variable_list.derived_col_status")])
-                rv.Html(tag="span", children=[""])
-
-            for key, var in variables.items():
-                source_name = derived_source_key(
-                    p, var.name, t("widgets.variable_list.derived_source_unknown")
-                )
-                with rv.Html(tag="div", style_=_DGRID + _ROW_EXTRA):
-                    with rv.Html(tag="div", style_="min-width:0;overflow:hidden;"):
-                        solara.Text(var.name, style="font-size:0.9rem;" + _NAME_TEXT)
-                    with rv.Html(tag="div", style_=_CELL_FLEX):
-                        rv.Chip(children=[source_name], x_small=True, outlined=True)
-                    with rv.Html(tag="div", style_=_CELL_FLEX):
-                        rv.Chip(children=[t("widgets.variable_list.chip_ready")], color="success", x_small=True, outlined=True)
-                    # Actions — delete (also removes the generated file from disk)
-                    with rv.Html(tag="div", style_=_CELL_RIGHT):
-                        if on_remove is not None:
-                            solara.Button(
-                                "",
-                                icon_name="mdi-delete-outline",
-                                on_click=lambda *_, k=key: on_remove(k),
-                                icon=True,
-                                text=True,
-                                x_small=True,
-                            )
+    ProductTable(
+        title=t("widgets.variable_list.derived_title"),
+        columns=[
+            {"label": t("widgets.variable_list.derived_col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.variable_list.derived_col_source"), "width": "120px"},
+            {"label": t("widgets.variable_list.derived_col_status"), "width": "90px"},
+        ],
+        rows=rows,
+        empty_text="",
+    )
