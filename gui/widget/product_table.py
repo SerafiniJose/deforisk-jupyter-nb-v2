@@ -29,6 +29,12 @@ CELL = "display:flex;align-items:center;gap:4px;min-width:0;"
 CELL_RIGHT = "display:flex;align-items:center;justify-content:flex-end;gap:0;"
 NAME_CELL = "display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;"
 NAME_TEXT = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+# Header labels clip like data cells so a narrow column never overlaps its
+# neighbour (grid items need min-width:0 + block display for ellipsis to apply).
+HEADER_CELL = (
+    "display:block;min-width:0;overflow:hidden;"
+    "text-overflow:ellipsis;white-space:nowrap;"
+)
 # Full-width line under a failed row (grid rows have no subtitle slot).
 ERROR_LINE = "grid-column:1/-1;padding:0 8px 5px;color:#c62828;font-size:0.75rem;"
 
@@ -193,7 +199,7 @@ def ProductTable(
             solara.Text(
                 f"{title} ({len(rows)})",
                 style=(
-                    "font-weight:600;font-size:0.8rem;color:grey;"
+                    "font-weight:600;font-size:0.8rem;"
                     "text-transform:uppercase;letter-spacing:0.05em;"
                 ),
             )
@@ -215,8 +221,16 @@ def ProductTable(
                 solara.Text(empty_text, style="color:grey;padding:4px 8px;")
             else:
                 with rv.Html(tag="div", style_=grid + HEADER_EXTRA):
-                    for lbl in labels:
-                        rv.Html(tag="span", children=[lbl])
+                    for i, lbl in enumerate(labels):
+                        # Right-align the Actions header to sit over its
+                        # right-aligned (flex-end) action buttons.
+                        is_actions = show_actions and i == len(labels) - 1
+                        rv.Html(
+                            tag="span",
+                            style_=HEADER_CELL
+                            + ("text-align:right;" if is_actions else ""),
+                            children=[lbl],
+                        )
                 for row in rows:
                     with rv.Html(tag="div", style_=grid + ROW_EXTRA):
                         for i, cell in enumerate(row.get("cells", [])):

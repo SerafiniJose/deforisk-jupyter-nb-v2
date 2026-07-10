@@ -60,10 +60,10 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
         title=t("widgets.train_model_list.models_title"),
         columns=[
             {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.train_model_list.col_type"), "width": "80px"},
+            {"label": t("widgets.train_model_list.col_type"), "width": "90px"},
             {"label": t("widgets.train_model_list.col_dataset"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.train_model_list.col_metrics"), "width": "110px"},
-            {"label": t("widgets.train_model_list.col_status"), "width": "95px"},
+            {"label": t("widgets.train_model_list.col_metrics"), "width": "104px"},
+            {"label": t("widgets.train_model_list.col_status"), "width": "82px"},
         ],
         rows=rows,
         empty_text=t("widgets.train_model_list.empty"),

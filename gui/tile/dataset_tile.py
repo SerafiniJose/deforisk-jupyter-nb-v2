@@ -235,7 +235,7 @@ def DatasetTile(project):
         # Existing datasets — shown below the form, matching the other tabs
         # (Train/Sampling/Inference all render their results list at the bottom).
         if p and p.datasets:
-            solara.Markdown(t("tiles.dataset.existing_datasets_header", count=len(p.datasets)))
+            # DatasetList renders its own collapsible ProductTable header.
             DatasetList(project=project, on_edit=on_edit, on_remove=set_pending_remove)
 
         ConfirmDialog(

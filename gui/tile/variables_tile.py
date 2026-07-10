@@ -467,8 +467,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         if download_task.pending:
             solara.ProgressLinear(True)
 
-        # Source variable list
-        solara.Markdown(t("tiles.variables.source_variables_header", count=len(p.raw_variables) if p else 0))
+        # Source variable list (ProductTable renders its own collapsible header)
         SourceVariableList(
             project=project,
             on_remove=set_pending_remove,
