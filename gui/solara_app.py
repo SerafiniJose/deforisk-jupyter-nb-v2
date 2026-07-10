@@ -13,7 +13,7 @@ from solara.lab.components.theming import theme
 
 from pysepal import mapping as sm
 from pysepal.logger import setup_logging
-from pysepal.sepalwidgets.vue_app import MapApp, ThemeToggle, LocaleSelect
+from pysepal.sepalwidgets.vue_app import MapApp, ThemeToggle
 from pysepal.solara import (
     get_current_gee_interface,
     get_current_sepal_client,
@@ -52,6 +52,7 @@ from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
+from gui.widget.locale_select import AppLocaleSelect
 from gui.widget.notification_area import NotificationArea
 from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
 from gui.widget.log_console import LogConsole
@@ -625,7 +626,7 @@ def Page():
     gee_interface = get_current_gee_interface()
     sepal_client = get_current_sepal_client()
     theme_toggle = solara.use_memo(lambda: ThemeToggle(), [])
-    locale_select = solara.use_memo(lambda: LocaleSelect(translator=get_translator()), [])
+    locale_select = solara.use_memo(lambda: AppLocaleSelect(translator=get_translator()), [])
 
     def _observe_theme():
         handler = lambda e: setattr(theme, "dark", e["new"])
