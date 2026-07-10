@@ -18,6 +18,19 @@ from spatialrisk.variables.models import (
 VAR_TYPES = ["LocalRasterVar", "GEEVar", "LocalVectorVar"]
 SOURCES = ["predefined", "custom"]
 
+# Stored discriminator value -> i18n key for its user-facing display label.
+# The internal values above are persisted and branched on throughout the app,
+# so we only translate them for display and never change the stored strings.
+_SOURCE_LABEL_KEYS = {
+    "predefined": "vars.modal.source_predefined",
+    "custom": "vars.modal.source_user",
+}
+_TYPE_LABEL_KEYS = {
+    "LocalRasterVar": "vars.modal.type_local_raster",
+    "GEEVar": "vars.modal.type_gee",
+    "LocalVectorVar": "vars.modal.type_local_vector",
+}
+
 _RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
 _VECTOR_EXTENSIONS = [".geojson", ".gpkg", ".shp", ".json"]
 
@@ -28,6 +41,22 @@ def _predefined_items():
         {"text": t(meta["label_key"]), "value": key}
         for key, meta in PREDEFINED_CATALOGUE.items()
     ]
+
+
+def _source_items():
+    """Source dropdown items — friendly labels over the stored values."""
+    return [{"text": t(_SOURCE_LABEL_KEYS[s]), "value": s} for s in SOURCES]
+
+
+def _type_items():
+    """Variable-type dropdown items — friendly labels over the class names."""
+    return [{"text": t(_TYPE_LABEL_KEYS[v]), "value": v} for v in VAR_TYPES]
+
+
+def _type_display(var_type: str) -> str:
+    """Friendly label for a variable-type discriminator (falls back to raw)."""
+    key = _TYPE_LABEL_KEYS.get(var_type)
+    return t(key) if key else var_type
 
 
 @solara.component
@@ -183,7 +212,7 @@ def VariableModal(
                 # ---- Source toggle (first field) ----
                 rv.Select(
                     label=t("vars.modal.source_label"),
-                    items=SOURCES,
+                    items=_source_items(),
                     v_model=source,
                     on_v_model=set_source,
                     dense=True,
@@ -264,7 +293,7 @@ def _render_predefined_fields(
         # Read-only info fields
         rv.TextField(
             label=t("vars.modal.predefined_var_type_label"),
-            v_model=cat.get("var_type", "GEEVar"),
+            v_model=_type_display(cat.get("var_type", "GEEVar")),
             dense=True,
             outlined=True,
             disabled=True,
@@ -299,7 +328,7 @@ def _render_custom_fields(
     )
     rv.Select(
         label=t("vars.modal.custom_type_label"),
-        items=VAR_TYPES,
+        items=_type_items(),
         v_model=var_type,
         on_v_model=set_var_type,
         dense=True,
