@@ -1,5 +1,5 @@
 """PipelineHeader: badge text logic, render smoke, and codebase-gotcha
-contracts (no rv.Btn(on_click), eager dialog, reactives-as-props)."""
+contracts (no rv.Btn(on_click), anchored dropdown, reactives-as-props)."""
 
 import inspect
 from types import SimpleNamespace
@@ -62,12 +62,25 @@ def test_render_smoke_populated_project():
     rc.close()
 
 
-def test_no_dead_click_or_lazy_dialog_patterns():
+def test_jump_menu_is_a_dropdown_not_a_modal():
+    """"All steps" opens a dropdown anchored to its button, not a centred
+    modal — and its rows keep the working click primitives."""
+    from gui.widget import pipeline_header
+
+    src = inspect.getsource(pipeline_header)
+    assert "solara.lab.Menu(" in src     # anchored dropdown
+    assert "rv.Dialog(" not in src       # no modal popup
+    # use_activator_width=False sends min-width="auto" to v-menu; Vuetify's
+    # off-screen guard then computes NaN and stops clamping, so the dropdown
+    # runs off the right edge of the viewport.
+    assert "use_activator_width=False" not in src
+
+
+def test_no_dead_click_patterns():
     from gui.widget import pipeline_header
 
     src = inspect.getsource(pipeline_header)
     assert "rv.Btn(" not in src          # dead-click gotcha
-    assert "eager=True" in src           # proven dialog pattern
-    assert "rv.use_event(" in src        # segment clicks
+    assert "rv.use_event(" in src        # segment + dropdown-row clicks
     # Reads reactives inside the component (prop-equality bailout).
     assert "project.value" in src and "aoi_result.value" in src
