@@ -70,3 +70,79 @@ def test_subj_random_visualizer_uses_qualitative_colormap():
 
     assert style["vmin"] is None and style["vmax"] is None
     assert isinstance(style["colormap"], Colormap)
+
+
+def _postprocess_raster(var_name, raster_type, tags=None, history=None):
+    """A stand-in post-process LocalRasterVar (renamed, so never in the catalogue)."""
+    rt = type("RT", (), {"value": raster_type})()
+    return type(
+        "LocalRasterVar",
+        (),
+        {
+            "name": var_name,
+            "raster_type": rt,
+            "tags": tags or [],
+            "processing_history": history or [],
+        },
+    )()
+
+
+def test_postprocess_distance_wins_over_the_grayscale_fallback():
+    """An `edge` output is continuous and not in the catalogue — it used to land on
+    grayscale. It now gets the dist_edge.qml ramp, pinned to 30..1000 m."""
+    style = resolve_variable_style(
+        _postprocess_raster("forest_gfc_edge", "continuous", history=["edge"])
+    )
+
+    assert style["vmin"] == 30 and style["vmax"] == 1000
+    assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (227, 26, 28)
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (34, 139, 34)
+
+
+def test_postprocess_dist_gets_the_same_distance_ramp():
+    style = resolve_variable_style(
+        _postprocess_raster("roads_dist", "continuous", history=["dist"])
+    )
+
+    assert style["vmin"] == 30 and style["vmax"] == 1000
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (34, 139, 34)
+
+
+def test_postprocess_loss_wins_over_the_black_white_fallback():
+    """A change mask is categorical and not in the catalogue — it used to land on
+    black(0)/white(1). The event (1) is now red over an opaque grey stable class."""
+    style = resolve_variable_style(
+        _postprocess_raster(
+            "loss_forest_2015_2020", "categorical", tags=["loss", "change", "2015_2020"]
+        )
+    )
+
+    assert style["vmin"] == 0 and style["vmax"] == 1
+    assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (217, 217, 217)
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (227, 26, 28)
+
+
+def test_postprocess_gain_paints_the_event_green():
+    style = resolve_variable_style(
+        _postprocess_raster(
+            "gain_forest_2015_2020", "categorical", tags=["gain", "change", "2015_2020"]
+        )
+    )
+
+    assert style["vmin"] == 0 and style["vmax"] == 1
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (34, 139, 34)
+
+
+def test_legacy_postprocess_variable_classified_by_name_alone():
+    """Variables saved before tags/processing_history existed still get the ramp."""
+    style = resolve_variable_style(_postprocess_raster("loss_forest_2000_2010", "categorical"))
+
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (227, 26, 28)
+
+
+def test_catalogue_variable_is_unaffected_by_the_postprocess_branch():
+    """slope still resolves through PREDEFINED_CATALOGUE, exactly as before."""
+    style = resolve_variable_style(_postprocess_raster("slope", "continuous"))
+
+    assert style["vmin"] == 0 and style["vmax"] == 60
+    assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (26, 152, 80)

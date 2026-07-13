@@ -15,6 +15,11 @@ is consumed by ``variable_map.add_raster_var_on_map`` via
 ``localtileserver.get_leaflet_tile_layer`` (which — unlike ``SepalMap.add_raster``
 — honours a Colormap object and pinned ``vmin``/``vmax``).
 
+Post-process outputs (edge / dist / loss / gain) are the exception to the
+name-keyed rule: the post-process step *renames* them, so they never hit the
+catalogue. Their look comes from ``postprocess_styles`` instead, which is
+consulted first here.
+
 Kept free of Solara/ipyvuetify/localtileserver so the mapping stays unit-testable.
 """
 
@@ -48,6 +53,8 @@ def resolve_variable_style(var) -> dict:
 
     Selection mirrors ``_styled_layer`` (the GEE-side authority):
 
+    * post-process output (edge/dist/loss/gain, per ``postprocess_styles``) -> its
+      QGIS-derived ramp, pinned;
     * predefined catalogue entry with ``vis_params.palette`` -> that palette,
       pinned to its ``min``/``max`` when given (else auto-stretched);
     * predefined ``random_visualizer`` (multi-class categorical, e.g. subj) ->
@@ -55,7 +62,15 @@ def resolve_variable_style(var) -> dict:
     * otherwise by ``raster_type``: categorical -> 0=black, 1=white pinned to
       [0, 1]; continuous -> grayscale auto-stretched.
     """
+    from gui.scripts.postprocess_styles import resolve_postprocess_style
     from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+
+    # Post-process outputs (edge/dist/loss/gain) first: they are renamed because they
+    # measure a *new* quantity, so a parent's catalogue palette would be meaningless
+    # for them — and their names miss the catalogue anyway. None => not one of ours.
+    postprocess = resolve_postprocess_style(var)
+    if postprocess is not None:
+        return postprocess
 
     name = getattr(var, "name", "") or ""
     cat = PREDEFINED_CATALOGUE.get(name)
