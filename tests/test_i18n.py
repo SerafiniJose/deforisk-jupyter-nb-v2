@@ -169,3 +169,15 @@ def test_every_key_placeholder_call_site_renders():
     # error_toggle_map interpolates both key and exc
     out = i18n.t("tiles.variables.error_toggle_map", key="rivers", exc="boom")
     assert "rivers" in out and "boom" in out and out != "tiles.variables.error_toggle_map"
+
+
+def test_no_hardcoded_step_numbers_in_messages():
+    """Step numbers derive from the STEPS registry; message catalogs must not
+    hardcode them (they drifted for months before the pipeline header)."""
+    import re
+
+    for lang in ("en", "es-ES"):
+        for f in sorted((i18n.MESSAGES_DIR / lang).glob("*.json")):
+            text = f.read_text()
+            hits = re.findall(r"(?:Step|Paso) \d", text)
+            assert not hits, (lang, f.name, hits)

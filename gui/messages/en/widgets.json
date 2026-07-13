@@ -20,7 +20,7 @@
       "placeholder_name": "e.g. qgis-export-2020",
       "label_file": "Select raster file",
       "label_palette": "Map palette",
-      "info_text": "The raster must be spatially comparable to the truth chosen in Step 8 to be evaluated.",
+      "info_text": "The raster must be spatially comparable to the truth chosen in the Evaluation step to be evaluated.",
       "btn_import": "Import"
     },
     "inference_output_list": {

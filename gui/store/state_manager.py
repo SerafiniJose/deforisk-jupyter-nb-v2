@@ -8,9 +8,6 @@ class AppState:
     """Reactive application state for Spatial Risk."""
 
     def __init__(self):
-        # Navigation
-        self.current_step = solara.reactive(0)  # 0=AOI, 1=Variables, 2=Dataset
-
         # Project (spatialrisk.project.Project | None)
         # Use identity equality: Project is a mutable pydantic model — field-value
         # comparison (pydantic __eq__) would suppress re-renders after in-place

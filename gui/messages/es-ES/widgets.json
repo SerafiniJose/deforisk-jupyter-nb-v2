@@ -20,7 +20,7 @@
       "placeholder_name": "p.ej. qgis-export-2020",
       "label_file": "Seleccionar archivo ráster",
       "label_palette": "Paleta del mapa",
-      "info_text": "El ráster debe ser espacialmente comparable con la verdad elegida en el Paso 8 para poder ser evaluado.",
+      "info_text": "El ráster debe ser espacialmente comparable con la verdad elegida en el paso Evaluación para poder ser evaluado.",
       "btn_import": "Importar"
     },
     "inference_output_list": {

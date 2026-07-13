@@ -54,6 +54,7 @@ from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
 from gui.widget.locale_select import AppLocaleSelect
 from gui.widget.notification_area import NotificationArea
+from gui.widget.pipeline_header import PipelineHeader
 from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
 from gui.widget.log_console import LogConsole
 from gui.i18n import t, get_translator, reset_translator
@@ -452,7 +453,8 @@ def ProjectPanel(on_close=None):
 
 @solara.component
 def WorkflowTabs(map_, gee_interface, sepal_client=None):
-    """Three-tab workflow panel rendered in the right side panel."""
+    """Workflow panel: pipeline header (step map + navigation) over the
+    step tiles. Step order/gating live in gui/store/workflow_steps.py."""
     active_tab, set_active_tab = solara.use_state(0)
 
     # The global load/save status banner shows on whatever tab the user is on
@@ -465,98 +467,12 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
 
     solara.use_effect(_clear_status_on_tab_switch, [active_tab])
 
-    aoi_complete = app_state.aoi_result.value is not None
-    p = app_state.project.value
-    has_raw = p is not None and bool(p.raw_variables)
-    has_processed = p is not None and bool(p.processed_variables)
-    has_processed_raster = p is not None and any(
-        getattr(v, "data_type", None) == "raster" or str(getattr(v, "data_type", "")) == "raster"
-        for v in p.processed_variables.values()
+    PipelineHeader(
+        active_step=active_tab,
+        on_navigate=set_active_tab,
+        project=app_state.project,
+        aoi_result=app_state.aoi_result,
     )
-    has_datasets = p is not None and bool(p.datasets)
-    has_samples = p is not None and bool(p.samples)
-    has_models = p is not None and bool(p.models)
-    has_predictions = p is not None and bool(p.predictions)
-
-    # Per-tab disabled flags (same gating as the rv.Tab calls below). Used both
-    # to render the tab strip and to drive the Back/Next navigation buttons.
-    disabled_flags = [
-        False,  # Area of Interest — always reachable
-        not aoi_complete,  # Variables
-        not has_raw,  # Process
-        not has_processed,  # Post-process
-        not has_processed,  # Dataset
-        not has_processed_raster,  # Sampling
-        not has_datasets,  # Train
-        not has_models,  # Inference
-        not has_predictions,  # Evaluation
-    ]
-
-    # The arrows Vuetify shows on an overflowing tab strip only *scroll* it; they
-    # do not change the active step. These explicit buttons do — each skips over
-    # any locked (disabled) steps to the nearest reachable one.
-    prev_target = next(
-        (i for i in range(active_tab - 1, -1, -1) if not disabled_flags[i]), None
-    )
-    next_target = next(
-        (
-            i
-            for i in range(active_tab + 1, len(disabled_flags))
-            if not disabled_flags[i]
-        ),
-        None,
-    )
-
-    def go_prev():
-        if prev_target is not None:
-            set_active_tab(prev_target)
-
-    def go_next():
-        if next_target is not None:
-            set_active_tab(next_target)
-
-    # Hide Vuetify's built-in scroll arrows on the overflowing tab strip — the
-    # Back/Next buttons below are the sole step navigation. Vuetify still
-    # auto-scrolls the selected tab into view when active_tab changes.
-    solara.Style(
-        ".workflow-tabs .v-slide-group__prev,"
-        " .workflow-tabs .v-slide-group__next { display: none !important; }"
-    )
-
-    with rv.Tabs(
-        v_model=active_tab,
-        on_v_model=set_active_tab,
-        grow=True,
-        class_="workflow-tabs",
-    ):
-        rv.Tab(children=[t("workflow.tab_aoi")])
-        rv.Tab(children=[t("workflow.tab_variables")], disabled=not aoi_complete)
-        rv.Tab(children=[t("workflow.tab_process")], disabled=not has_raw)
-        rv.Tab(children=[t("workflow.tab_postprocess")], disabled=not has_processed)
-        rv.Tab(children=[t("workflow.tab_dataset")], disabled=not has_processed)
-        rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)
-        rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)
-        rv.Tab(children=[t("workflow.tab_inference")], disabled=not has_models)
-        rv.Tab(children=[t("workflow.tab_evaluation")], disabled=not has_predictions)
-
-    with solara.Row(justify="space-between", style="padding: 4px 8px; align-items: center;"):
-        solara.Button(
-            t("workflow.back"),
-            icon_name="mdi-chevron-left",
-            text=True,
-            small=True,
-            disabled=prev_target is None,
-            on_click=go_prev,
-        )
-        solara.Button(
-            t("workflow.next"),
-            icon_name="mdi-chevron-right",
-            text=True,
-            small=True,
-            color="primary",
-            disabled=next_target is None,
-            on_click=go_next,
-        )
 
     with rv.TabsItems(v_model=active_tab):
         with rv.TabItem():

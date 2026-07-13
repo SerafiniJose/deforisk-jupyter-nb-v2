@@ -1,37 +1,33 @@
-def test_workflow_tabs_includes_process():
+def test_workflow_tabs_uses_pipeline_header():
     import inspect
     import gui.solara_app as app
     src = inspect.getsource(app.WorkflowTabs)
-    assert "ProcessTile" in src
-    assert 'rv.Tab(children=[t("workflow.tab_process")]' in src
+    assert "PipelineHeader(" in src
+    assert "on_navigate=set_active_tab" in src
+    # The old strip and its hand-maintained gating are gone.
+    assert "rv.Tab(" not in src
+    assert "disabled_flags" not in src
 
 
-def test_workflow_tabs_includes_sampling():
+def test_workflow_tabs_hosts_all_tiles_in_registry_order():
+    """One rv.TabItem per registry step, tiles in canonical order — the
+    registry is the single source of truth for step order."""
     import inspect
     import gui.solara_app as app
+    from gui.store.workflow_steps import STEPS
+
     src = inspect.getsource(app.WorkflowTabs)
-    assert "SamplingTile" in src
-    assert 'rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)' in src
+    assert src.count("with rv.TabItem():") == len(STEPS)
+    tiles = ["AoiTile", "VariablesTile", "ProcessTile", "PostProcessTile",
+             "DatasetTile", "SamplingTile", "TrainTile", "InferenceTile",
+             "EvaluationTile"]
+    positions = [src.index(t) for t in tiles]
+    assert positions == sorted(positions), "tiles out of registry order"
 
 
-def test_workflow_tabs_gate_downstream_steps():
-    """Train is now gated on datasets; Inference/Evaluation unchanged."""
-    import inspect
-    import gui.solara_app as app
-    src = inspect.getsource(app.WorkflowTabs)
-    assert 'rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)' in src
-    assert 'rv.Tab(children=[t("workflow.tab_inference")], disabled=not has_models)' in src
-    assert 'rv.Tab(children=[t("workflow.tab_evaluation")], disabled=not has_predictions)' in src
-
-
-def test_tab_gating_sampling_on_raster_train_on_datasets():
-    import inspect
-    from gui import solara_app
-    src = inspect.getsource(solara_app.WorkflowTabs)
-    assert "has_processed_raster" in src
-    # Sampling no longer gated on datasets; Train gated on datasets
-    assert 'rv.Tab(children=[t("workflow.tab_sampling")], disabled=not has_processed_raster)' in src
-    assert 'rv.Tab(children=[t("workflow.tab_train")], disabled=not has_datasets)' in src
+def test_app_state_has_no_stale_current_step():
+    from gui.store.state_manager import AppState
+    assert not hasattr(AppState(), "current_step")
 
 
 def test_train_tile_selects_dataset_and_sample():
@@ -120,20 +116,15 @@ def test_page_clears_log_on_switch():
     assert "solara.use_effect(reset_log_on_switch, [project_loaded_signal])" in src
 
 
-def test_workflow_tabs_includes_postprocess():
-    import inspect
-    import gui.solara_app as app
-
-    src = inspect.getsource(app.WorkflowTabs)
-    assert "PostProcessTile" in src
-    assert 'rv.Tab(children=[t("workflow.tab_postprocess")], disabled=not has_processed)' in src
-
-
-def test_notification_ladder_renumbered_for_postprocess():
+def test_notification_compute_is_registry_driven():
+    """No more hand-maintained `if tab == N` ladder — the step key comes from
+    the STEPS registry, so reordering steps can't desync notifications."""
     import inspect
     from gui.widget import notification_area
 
     src = inspect.getsource(notification_area._compute)
-    assert "elif tab == 3:  # Post-process" in src
-    assert "elif tab == 4:  # Dataset" in src
-    assert "elif tab == 8:  # Evaluation" in src
+    assert "tab ==" not in src
+    assert "STEPS[" in src
+    # Count/"run X first" messages moved into the pipeline header.
+    assert "dataset_count" not in src
+    assert "train_no_dataset" not in src
