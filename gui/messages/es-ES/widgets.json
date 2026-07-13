@@ -69,6 +69,7 @@
       "chip_local": "local",
       "chip_base": "base",
       "derived_title": "Variables derivadas",
+      "processed_title": "Variables procesadas",
       "derived_col_name": "Nombre",
       "derived_col_source": "Fuente",
       "derived_col_status": "Estado",

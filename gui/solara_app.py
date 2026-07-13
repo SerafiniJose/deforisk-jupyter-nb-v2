@@ -45,6 +45,7 @@ from gui.scripts.aoi_io import load_aoi, write_aoi
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile, vars_on_map
+from gui.tile.derived_map import derived_on_map
 from gui.tile.process_tile import ProcessTile
 from gui.tile.postprocess_tile import PostProcessTile
 from gui.tile.sampling_tile import SamplingTile, samples_on_map
@@ -497,11 +498,13 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
                 project=app_state.project,
                 processing=app_state.processing,
                 process_error=app_state.process_error,
+                map_=map_,
             )
         with rv.TabItem():
             PostProcessTile(
                 project=app_state.project,
                 process_error=app_state.process_error,
+                map_=map_,
             )
         with rv.TabItem():
             DatasetTile(project=app_state.project)
@@ -587,6 +590,7 @@ def Page():
     def render_map_on_switch():
         clear_project_overlays(sepal_map)
         vars_on_map.set(set())
+        derived_on_map.set(set())
         samples_on_map.set(set())
         preds_on_map.set(set())
         show_aoi_on_map(sepal_map, app_state.aoi_result.value)

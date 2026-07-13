@@ -132,10 +132,15 @@ def DerivedVariableList(
     project,
     on_remove: Optional[Callable[[str], None]] = None,
     keys: Optional[list] = None,
+    on_toggle_map: Optional[Callable[[str], None]] = None,
+    derived_on_map=None,
+    title: Optional[str] = None,
 ):
-    """Table of derived (processed) variables with a remove action.
+    """Table of derived (processed) variables with map/remove actions.
 
     ``keys`` restricts the rows to those registry keys (None = all).
+    ``derived_on_map`` is the reactive set of keys currently drawn on the map
+    (see ``gui/tile/derived_map.py``), which drives the toggle state.
     """
     p = project.value
     if p is None:
@@ -145,6 +150,7 @@ def DerivedVariableList(
     }
     if not variables:
         return
+    on_map = derived_on_map.value if derived_on_map is not None else set()
 
     rows = []
     for key, var in variables.items():
@@ -152,6 +158,14 @@ def DerivedVariableList(
             p, var.name, t("widgets.variable_list.derived_source_unknown")
         )
         actions = []
+        if on_toggle_map is not None and is_mappable(var):
+            actions.append(
+                {
+                    "kind": "map_toggle",
+                    "on_click": lambda *_, k=key: on_toggle_map(k),
+                    "is_on": key in on_map,
+                }
+            )
         if on_remove is not None:
             actions.append({"kind": "delete", "on_click": lambda *_, k=key: on_remove(k)})
         rows.append(
@@ -167,7 +181,7 @@ def DerivedVariableList(
         )
 
     ProductTable(
-        title=t("widgets.variable_list.derived_title"),
+        title=title or t("widgets.variable_list.derived_title"),
         columns=[
             {"label": t("widgets.variable_list.derived_col_name"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.variable_list.derived_col_source"), "width": "120px"},

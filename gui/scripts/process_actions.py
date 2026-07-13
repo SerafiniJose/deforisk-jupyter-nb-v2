@@ -141,6 +141,17 @@ def postprocess_output_keys(project) -> List[str]:
     return keys
 
 
+def processing_output_keys(project) -> List[str]:
+    """Registry keys of processed variables produced by the Process step.
+
+    Everything in ``processed_variables`` that the Post-process step did not
+    produce — i.e. the reprojected/matched rasters and rasterized vectors that
+    ``run_processing`` writes.
+    """
+    postprocess = set(postprocess_output_keys(project))
+    return [k for k in project.processed_variables if k not in postprocess]
+
+
 def change_layer_candidates(project) -> List[str]:
     """Sorted keys of processed temporal raster vars (change-detection inputs).
 

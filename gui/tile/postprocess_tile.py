@@ -12,6 +12,7 @@ import solara
 
 from gui.i18n import t
 from gui.scripts import process_actions
+from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import DerivedVariableList
 from spatialrisk.variables.models import PostProcessing
@@ -23,12 +24,13 @@ OPERATIONS = CHANGE_OPS + [s.value for s in PostProcessing]
 
 
 @solara.component
-def PostProcessTile(project, process_error):
+def PostProcessTile(project, process_error, map_=None):
     """Change detection (loss/gain) + edge/dist on processed variables."""
     op, set_op = solara.use_state("loss")
     start_key, set_start_key = solara.use_state("")
     end_key, set_end_key = solara.use_state("")
     pp_key, set_pp_key = solara.use_state("")
+    on_toggle_map = use_derived_map_toggle(project, map_, process_error)
 
     p = project.value
 
@@ -123,5 +125,8 @@ def PostProcessTile(project, process_error):
                 )
 
         DerivedVariableList(
-            project=project, keys=process_actions.postprocess_output_keys(p)
+            project=project,
+            keys=process_actions.postprocess_output_keys(p),
+            on_toggle_map=on_toggle_map,
+            derived_on_map=derived_on_map,
         )
