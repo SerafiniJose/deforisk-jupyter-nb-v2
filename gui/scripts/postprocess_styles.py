@@ -70,10 +70,20 @@ def classify_postprocess(var) -> Optional[str]:
     The predicates mirror ``process_actions.postprocess_output_keys`` — the function
     that decides which variables the Post-process tile *lists* — so what is listed and
     what is styled cannot drift apart. Change layers are checked first, matching the
-    order there (a variable can never be both: ``_create_post_var`` does not tag).
+    order there.
 
     Tags / processing history are the authority; the name suffix and prefix are the
     fallback for legacy variables saved before those fields existed.
+
+    KNOWN LIMITATION (accepted). A variable *can* be both: ``_create_post_var``
+    inherits the parent's tags, and the tile's edge/dist picker offers every processed
+    variable — so running ``dist`` on a loss layer yields ``loss_..._dist`` carrying
+    both ``tags=["loss", "change", ...]`` and ``processing_history=["dist"]``. Because
+    change is checked first, that raster classifies as ``loss`` and is drawn with the
+    binary 0/1 ramp even though its values are metres. Flipping the order would fix it
+    (a change layer never carries edge/dist history or suffix, so the reverse
+    false positive is impossible), but the ordering is a deliberate project decision —
+    do not change it without raising the question again.
     """
     name = getattr(var, "name", "") or ""
     tags = getattr(var, "tags", None) or []
