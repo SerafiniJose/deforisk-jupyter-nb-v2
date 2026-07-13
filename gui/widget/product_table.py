@@ -21,7 +21,7 @@ from gui.i18n import t
 GRID_BASE = "display:grid;align-items:center;width:100%;column-gap:8px;"
 HEADER_EXTRA = (
     "padding:4px 8px 6px;border-bottom:2px solid rgba(0,0,0,0.15);"
-    "font-size:0.72rem;font-weight:600;color:grey;"
+    "font-size:0.72rem;font-weight:600;"
     "text-transform:uppercase;letter-spacing:0.05em;"
 )
 ROW_EXTRA = "padding:5px 8px;border-bottom:1px solid rgba(0,0,0,0.08);"
@@ -36,16 +36,18 @@ HEADER_CELL = (
     "text-overflow:ellipsis;white-space:nowrap;"
 )
 # Full-width line under a failed row (grid rows have no subtitle slot).
-ERROR_LINE = "grid-column:1/-1;padding:0 8px 5px;color:#c62828;font-size:0.75rem;"
+ERROR_LINE = "grid-column:1/-1;padding:0 8px 5px;font-size:0.75rem;"
 
 ACTIONS_COL_WIDTH = "112px"
 
+# Vuetify theme tokens, so status chips follow the app accent in light and dark.
+# "cancelled" stays a literal grey: it is deliberately neutral, not a theme tone.
 STATUS_COLORS = {
-    "running": "blue",
-    "ready": "green",
-    "trained": "green",
-    "completed": "green",
-    "failed": "red",
+    "running": "info",
+    "ready": "success",
+    "trained": "success",
+    "completed": "success",
+    "failed": "error",
     "cancelled": "grey",
 }
 STATUS_ICONS = {
@@ -113,7 +115,7 @@ def _render_cell(cell: dict, first: bool):
                 if status in STATUS_ICONS
                 else str(status)
             )
-            solara.Text(label, style="font-size:0.8rem;color:grey;")
+            solara.Text(label, classes=["text--secondary"], style="font-size:0.8rem;")
         return
     if ctype == "chip":
         with rv.Html(tag="div", style_=CELL):
@@ -127,12 +129,11 @@ def _render_cell(cell: dict, first: bool):
 
     # "text" (default)
     style = NAME_TEXT if first else ""
-    if cell.get("muted"):
-        style += "color:grey;"
+    classes = ["text--secondary"] if cell.get("muted") else []
     if cell.get("size"):
         style += f"font-size:{cell['size']};"
     with rv.Html(tag="div", style_=wrapper):
-        solara.Text(str(cell.get("value", "")), style=style)
+        solara.Text(str(cell.get("value", "")), classes=classes, style=style)
         for item in cell.get("chips", []):
             _render_chip(item)
 
@@ -215,12 +216,20 @@ def ProductTable(
         if not collapsed:
             if banner:
                 solara.Text(
-                    banner, style="font-size:0.78rem;color:grey;padding:2px 8px 8px;"
+                    banner,
+                    classes=["text--secondary"],
+                    style="font-size:0.78rem;padding:2px 8px 8px;",
                 )
             if not rows:
-                solara.Text(empty_text, style="color:grey;padding:4px 8px;")
+                solara.Text(
+                    empty_text,
+                    classes=["text--secondary"],
+                    style="padding:4px 8px;",
+                )
             else:
-                with rv.Html(tag="div", style_=grid + HEADER_EXTRA):
+                with rv.Html(
+                    tag="div", class_="text--secondary", style_=grid + HEADER_EXTRA
+                ):
                     for i, lbl in enumerate(labels):
                         # Right-align the Actions header to sit over its
                         # right-aligned (flex-end) action buttons.
@@ -242,6 +251,7 @@ def ProductTable(
                         if row.get("error"):
                             rv.Html(
                                 tag="span",
+                                class_="error--text",
                                 style_=ERROR_LINE,
                                 children=[str(row["error"])],
                             )

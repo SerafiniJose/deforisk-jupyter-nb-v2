@@ -48,7 +48,7 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
             solara.Text(str(ov["project_name"]), style="font-weight:600;font-size:1.05rem;")
             rv.Chip(
                 children=[t("project.chip_unsaved") if dirty else t("project.chip_saved")],
-                color="amber" if dirty else "green",
+                color="warning" if dirty else "primary",
                 text_color="white",
                 x_small=True,
             )
@@ -62,7 +62,11 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
             f"{c['samples']} samples · {c['models']} models · "
             f"{c['predictions']} predictions · {c['evaluations']} evaluations"
         )
-        solara.Text(" — ".join(meta), style="font-size:0.8rem;color:grey;")
+        solara.Text(
+            " — ".join(meta),
+            classes=["text--secondary"],
+            style="font-size:0.8rem;",
+        )
 
         # One tab per component type
         with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=False, show_arrows=True):

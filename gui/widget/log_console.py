@@ -13,12 +13,14 @@ from gui.i18n import t
 from gui.scripts.log_bridge import install_log_console_handler, log_records
 
 # Level -> Vuetify chip colour (matches the colorlog scheme in logging_config.toml).
+# Vuetify theme tokens so the level chips follow the app palette in both modes.
+# DEBUG keeps a literal grey: it is deliberately neutral, not a theme tone.
 _LEVEL_COLOR = {
     "DEBUG": "grey",
-    "INFO": "green",
-    "WARNING": "amber",
-    "ERROR": "red",
-    "CRITICAL": "red darken-2",
+    "INFO": "success",
+    "WARNING": "warning",
+    "ERROR": "error",
+    "CRITICAL": "error",
 }
 
 
@@ -81,14 +83,16 @@ def LogConsole():
                         if not records:
                             solara.Text(
                                 t("widgets.log_console.empty"),
-                                style="color: var(--md-grey-500); font-style: italic;",
+                                classes=["text--secondary"],
+                                style="font-style: italic;",
                             )
                         # Newest first — latest line is always visible at the top.
                         for rec in reversed(records):
                             with solara.Row(style="gap: 6px; align-items: baseline;"):
                                 solara.Text(
                                     rec["time"],
-                                    style="color: var(--md-grey-500); flex: 0 0 auto;",
+                                    classes=["text--secondary"],
+                                    style="flex: 0 0 auto;",
                                 )
                                 rv.Chip(
                                     children=[rec["level"]],

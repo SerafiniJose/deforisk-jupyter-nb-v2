@@ -261,18 +261,20 @@ def ProjectPanel(on_close=None):
                 solara.Text(p.project_name, style="font-weight: 600;")
                 rv.Chip(
                     children=[t("project.chip_unsaved") if dirty else t("project.chip_saved")],
-                    color="amber" if dirty else "green",
+                    color="warning" if dirty else "primary",
                     text_color="white",
                     x_small=True,
                 )
             solara.Text(
                 t("project.stats", raw=len(p.raw_variables),
                   processed=len(p.processed_variables), models=len(p.models)),
-                style="font-size: 12px; color: var(--md-grey-500);",
+                classes=["text--secondary"],
+                style="font-size: 12px;",
             )
             solara.Text(
                 format_last_saved(last_saved, datetime.now()),
-                style="font-size: 12px; color: var(--md-grey-500);",
+                classes=["text--secondary"],
+                style="font-size: 12px;",
             )
             with solara.Row(style="gap: 8px;"):
                 solara.Button(

@@ -30,7 +30,10 @@ def test_status_maps_cover_all_states():
         assert status in STATUS_COLORS
     assert STATUS_ICONS["running"] == "mdi-loading mdi-spin"
     assert STATUS_ICONS["completed"] == "mdi-check-circle"
-    assert STATUS_COLORS["failed"] == "red"
+    # Status tones are Vuetify theme tokens, not literal colours, so they track
+    # the app palette in light and dark ("cancelled" stays a neutral grey).
+    assert STATUS_COLORS["failed"] == "error"
+    assert STATUS_COLORS["ready"] == "success"
 
 
 def test_product_table_component_importable():
