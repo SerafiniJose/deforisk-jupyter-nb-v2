@@ -218,7 +218,13 @@ def ProcessTile(project, processing, process_error, map_=None):
         solara.Button(
             t("tiles.process.run_processing_button"), icon_name="mdi-cog-play-outline",
             color="primary", small=True, on_click=lambda: process_task(),
-            disabled=processing.value or not has_base,
+            # `processing` is only set INSIDE the coroutine, so it lands a render
+            # later — a fast double-click would re-invoke process_task, cancelling
+            # run 1 while its orphaned thread keeps writing rasters and saving the
+            # project (with the writing() mark already dropped). The task's own
+            # `pending` flips synchronously on call, so it is the real guard —
+            # same gate as variables_tile/postprocess_tile.
+            disabled=processing.value or process_task.pending or not has_base,
         )
         if processing.value:
             solara.ProgressLinear(True)

@@ -48,6 +48,19 @@ def test_thread_workers_do_not_publish_the_project_directly():
         assert "writing(" in src, f"{fn.__name__} does not mark the project as being written"
 
 
+def test_inference_marks_the_project_as_being_written():
+    """_run_inference cannot join the loop above — it never republishes the project
+    (run_inference saves it itself), so the publish_if_current assert would fail it.
+    It still has to hold the writer mark: it is the longest-running writer here, and
+    run_inference mkdir(exist_ok=True)s the output folder, so deleting the project
+    mid-run without the mark would let it re-create the folder that was just erased.
+    """
+    from gui.tile.inference_tile import _run_inference
+
+    src = inspect.getsource(_run_inference)
+    assert "writing(" in src, "_run_inference does not mark the project as being written"
+
+
 def test_use_task_tiles_do_not_publish_the_project_directly():
     for rel, task in TASK_TILES:
         body = _task_body((ROOT / rel).read_text(), task)

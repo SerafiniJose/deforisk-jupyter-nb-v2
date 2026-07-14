@@ -103,6 +103,10 @@ def ProjectPanel(on_close=None):
     selected = solara.use_reactive(None)        # selected project name
     pending_delete = solara.use_reactive(None)  # ProjectInfo being deleted
     pending_size = solara.use_reactive(0)       # its size on disk, in bytes
+    # Delete failures are owned here rather than read off delete_task.error /
+    # .exception: a Task keeps its error until the *next* invoke, so the trash
+    # button on project B would open B's confirmation with A's failure under it.
+    delete_error = solara.use_reactive(None)
 
     load_error, set_load_error = solara.use_state(None)
     load_busy, set_load_busy = solara.use_state(False)
@@ -116,9 +120,12 @@ def ProjectPanel(on_close=None):
         try:
             infos.set(list_project_infos(DATA_DIR))
             scan_failed.set(False)
-        except Exception:  # pragma: no cover - defensive
+        except Exception as exc:  # pragma: no cover - defensive
+            # Keep the reason. Swallowing it left the user with a bare "No saved
+            # projects yet" and nothing to act on; the dialog surfaces this text.
             infos.set([])
             scan_failed.set(True)
+            set_load_error(str(exc))
 
     solara.use_effect(refresh_infos, [])
     saved_count = None if scan_failed.value else len(infos.value)
@@ -163,6 +170,7 @@ def ProjectPanel(on_close=None):
         """Row trash button: stage a target and price it. The size is computed for
         this one project only — never per row, so the list stays cheap even with a
         multi-GB project in it."""
+        delete_error.set(None)  # never carry the last target's failure into this one
         pending_size.set(project_dir_size(info.name))
         pending_delete.set(info)
 
@@ -183,25 +191,57 @@ def ProjectPanel(on_close=None):
         Mirrors variables_tile.download_task: async body, blocking call handed to
         asyncio.to_thread, target passed via a reactive. A 3.2 GB rmtree on a
         network-backed SEPAL home takes seconds — blocking here would freeze the UI.
+
+        The rmtree cannot be cancelled once it has started, so nothing here may
+        assume the world stood still while it ran: everything after the await is
+        reconciled against what is actually on disk.
         """
         info = pending_delete.value
         if info is None:
             return
-        # Read the live project rather than the render closure's `p`: the task body
-        # outlives the render that defined it, so `p` can be stale by now.
-        current = app_state.project.value
-        was_open = current is not None and current.project_name == info.name
+        delete_error.set(None)  # a retry starts clean
+        # The render-time is_writing() gate is a TOCTOU: a writer can register
+        # between the last render and this click, and its auto-save would re-create
+        # the folder right after the rmtree. Re-check on the kernel thread.
+        if is_writing(info.name):
+            delete_error.set(t("project.dialog_delete_busy"))
+            return
+        try:
+            await asyncio.to_thread(delete_project, info.name)
+        except Exception as exc:
+            delete_error.set(str(exc))
+        finally:
+            # Reconcile against the disk, not against what we assumed: the delete
+            # can fail or partially fail, and we may have awaited for seconds while
+            # the user moved on. Skipping this block (an unguarded raise used to)
+            # would strand the app holding a project whose folder is gone — the next
+            # save would then re-create it as a manifest-only zombie.
+            refresh_infos()
+            if selected.value == info.name:
+                selected.set(None)
+            gone = not (DATA_DIR / info.name).exists()
+            # Re-read the project: like the closure's `p`, anything read before the
+            # await can be stale — the user may have loaded a different one since.
+            live = app_state.project.value
+            if gone and live is not None and live.project_name == info.name:
+                app_state.close_project_state()
+            if gone:
+                # After close_project_state, which deliberately leaves status alone (§3).
+                app_state.status_message.set(t("project.status_deleted", name=info.name))
+                pending_delete.set(None)  # closes the confirm dialog; manage stays open
 
-        await asyncio.to_thread(delete_project, info.name)
+    def confirm_delete():
+        """Confirm button: drop a re-click while a delete is already in flight.
 
-        refresh_infos()
-        if selected.value == info.name:
-            selected.set(None)
-        if was_open:
-            app_state.close_project_state()
-        # After close_project_state, which deliberately leaves status alone (§3).
-        app_state.status_message.set(t("project.status_deleted", name=info.name))
-        pending_delete.set(None)  # closes the confirm dialog; manage stays open
+        ``TaskAsyncio.__call__`` sets ``pending`` synchronously on this thread, so
+        this is a hard guard; the button's ``disabled`` only reaches the browser a
+        round-trip later, so a real double-click does land twice. Re-invoking would
+        cancel the in-flight task — which does NOT stop the rmtree — and skip its
+        continuation entirely, leaving the app holding a project whose folder is gone.
+        """
+        if delete_task.pending:
+            return
+        delete_task()
 
     # ---- New ------------------------------------------------------------
     def open_new():
@@ -299,7 +339,9 @@ def ProjectPanel(on_close=None):
                 icon_name="mdi-folder-cog-outline",
                 color="primary",
                 outlined=True,
-                disabled=not saved_count,
+                # Only a *known* zero disables it. A failed scan (None) leaves the
+                # button live, so the user can open the dialog and read why.
+                disabled=saved_count == 0,
                 on_click=open_manage,
                 style="width: 100%;",
             )
@@ -457,12 +499,11 @@ def ProjectPanel(on_close=None):
         name=target.name if target is not None else "",
         size_bytes=pending_size.value,
         on_cancel=cancel_delete,
-        on_confirm=delete_task,
+        on_confirm=confirm_delete,  # never the task itself: it is re-entrant
         is_open_project=target_is_open,
         writer_active=target_busy,
         busy=delete_task.pending,
-        # Task.error is a bool; the exception object lives on Task.exception.
-        error=str(delete_task.exception) if delete_task.error else None,
+        error=delete_error.value,
     )
 
 

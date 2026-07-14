@@ -72,5 +72,21 @@ def test_project_panel_confirms_and_really_deletes_projects():
     assert "on_delete=open_delete" in src # the trash button opens the confirm dialog
     assert "close_project_state" in src   # deleting the open project closes it
     assert "is_writing" in src            # refused while a task is writing to it
-    # Task.error is a bool; the message lives on Task.exception.
-    assert "delete_task.exception" in src
+
+
+def test_project_panel_delete_is_not_re_entrant_and_owns_its_error():
+    """The two ways the confirm button can go wrong on an uncancellable rmtree.
+
+    The button's `disabled` only reaches the browser a round-trip later, so a real
+    double-click invokes the task twice — and TaskAsyncio.__call__ cancels the
+    in-flight one, which does not stop the rmtree but does skip its continuation.
+    The confirm button must therefore go through the `pending` guard, never straight
+    to the task. And a Task keeps `.error`/`.exception` until the next invoke, so the
+    failure text must be owned by the panel or it leaks into the next target's dialog.
+    """
+    import gui.solara_app as app
+    src = inspect.getsource(app.ProjectPanel)
+    assert "on_confirm=confirm_delete" in src   # not on_confirm=delete_task
+    assert "if delete_task.pending:" in src     # the synchronous re-entrancy guard
+    assert "error=delete_error.value" in src    # the panel owns the message …
+    assert "delete_task.exception" not in src   # … and never the task's sticky one

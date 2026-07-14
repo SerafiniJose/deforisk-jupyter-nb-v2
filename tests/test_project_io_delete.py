@@ -5,11 +5,12 @@ guards (not the happy path) are the point of this file.
 """
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
 
-from gui.scripts.project_io import delete_project, project_dir_size
+from gui.scripts.project_io import delete_project, list_project_infos, project_dir_size
 
 
 def _write_project(data_dir: Path, name: str) -> Path:
@@ -41,6 +42,37 @@ def test_deletes_a_corrupt_project(tmp_path):
     (folder / "broken_project.json").write_text("{not json", encoding="utf-8")
 
     assert delete_project("broken", tmp_path) is True
+    assert not folder.exists()
+
+
+def test_a_partial_delete_keeps_the_manifest_so_the_leftover_stays_deletable(
+    tmp_path, monkeypatch
+):
+    """A subtree that refuses to go must not orphan a multi-GB folder.
+
+    A plain rmtree(folder) unlinks in scandir order, so the manifest is routinely
+    removed *before* a deep subdirectory — and if that subdirectory then fails, the
+    leftover no longer looks like a project: list_project_infos skips it (it vanishes
+    from the Manage list) and delete_project refuses it ("no manifest"). It would be
+    invisible AND undeletable through the UI. So the manifest goes last: the failed
+    project still lists, and a retry still finishes the job.
+    """
+    folder = _write_project(tmp_path, "GUY")
+    (folder / "data").mkdir()
+    (folder / "data" / "big.tif").write_bytes(b"x" * 2048)
+
+    def boom(path, *args, **kwargs):
+        raise OSError(f"Device or resource busy: {path}")
+
+    monkeypatch.setattr(shutil, "rmtree", boom)
+    with pytest.raises(OSError):
+        delete_project("GUY", tmp_path)
+
+    assert (folder / "GUY_project.json").exists()          # still a project …
+    assert [i.name for i in list_project_infos(tmp_path)] == ["GUY"]  # … still listed
+
+    monkeypatch.undo()  # the transient failure clears; the user hits Delete again
+    assert delete_project("GUY", tmp_path) is True
     assert not folder.exists()
 
 

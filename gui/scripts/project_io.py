@@ -152,15 +152,38 @@ def delete_project(name: str, data_dir: Path = DATA_DIR) -> bool:
     ``data_dir`` (see ``_project_dir``). A folder counts as a project when it
     contains ``{name}_project.json``; that file merely has to exist, so *corrupt*
     projects stay deletable — the case users most want to clean up.
+
+    The manifest is unlinked **last**, so a delete that fails part-way stays
+    recoverable — see below.
     """
     folder = _project_dir(name, data_dir)
     if not folder.exists():
         return False
     if not folder.is_dir():
         raise ValueError(f"Not a project folder: {folder}")
-    if not (folder / f"{folder.name}_project.json").exists():
+    manifest = folder / f"{folder.name}_project.json"
+    if not manifest.exists():
         raise ValueError(f"Not a project folder (no manifest): {folder}")
 
-    shutil.rmtree(folder)
+    # Contents first, manifest last — deliberately NOT a plain rmtree(folder).
+    # rmtree unlinks in os.scandir order, which routinely removes the manifest
+    # before a deep subdirectory. If that subdirectory then fails (permissions, a
+    # raster still held open by a reader), what is left is a multi-GB folder that no
+    # longer looks like a project: list_project_infos drops it from the Manage list
+    # and this function refuses it ("no manifest") — undeletable through the UI, and
+    # invisible. Keeping the manifest until everything else is gone means a partial
+    # failure still lists, and a retry can still finish the job.
+    #
+    # Symlink handling matches rmtree's: a symlinked directory is unlinked, never
+    # followed. (`_project_dir` has already refused a symlinked project root.)
+    for child in list(folder.iterdir()):  # materialised: we mutate the directory
+        if child == manifest:
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    manifest.unlink()
+    folder.rmdir()
     logger.info("Deleted project folder: %s", folder)
     return True

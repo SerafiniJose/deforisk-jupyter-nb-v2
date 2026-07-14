@@ -196,6 +196,12 @@ def ConfirmDeleteProjectDialog(
         on_v_model=lambda v: None if v else on_cancel(),
         max_width="420px",
         eager=True,
+        # An rmtree cannot be called back once it starts, so while it runs the
+        # dialog must not pretend otherwise. ESC / a scrim click would dismiss it
+        # and hand back a live Manage dialog (Load enabled) over a folder that is
+        # being erased; the delete would land anyway, seconds later, on whatever
+        # the user had moved on to. `persistent` blocks both while busy.
+        persistent=busy,
     ):
         with rv.Card():
             with rv.CardTitle():
@@ -228,7 +234,13 @@ def ConfirmDeleteProjectDialog(
                     solara.Error(error)
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    t("common.cancel"), on_click=on_cancel, text=True, small=True
+                    t("common.cancel"),
+                    on_click=on_cancel,
+                    text=True,
+                    small=True,
+                    # Cancel cannot stop the rmtree, so it must not offer to: while
+                    # busy it would only close the dialog over a live delete.
+                    disabled=busy,
                 )
                 solara.Button(
                     t("project.dialog_delete_confirm"),
