@@ -34,6 +34,19 @@ POSTPROCESS_PALETTES = {
     "distance": {
         "vmin": 30,
         "vmax": 1000,
+        # NOT the file's own tag. distance_to_edge_gdal_no_mask (spatialrisk/
+        # processing.py) passes NODATA=0 to gdal.ComputeProximity -- so input-nodata
+        # pixels are actually written as 0 -- but then calls
+        # dstband.SetNoDataValue(4294967295), a tag that matches nothing in the file.
+        # Verified on real rasters: declared-nodata pixel count is 0, while 0-valued
+        # pixels are 62-86% of the raster (the out-of-AOI fill). Trusting the file's
+        # tag masks nothing and every 0 pixel clamps to vmin (30 m, opaque red). 0 is
+        # the true fill value, so it is hardcoded here as the authority instead.
+        # Do NOT "fix" this back to 4294967295 -- that reintroduces the bug. The
+        # writer itself is out of scope for this fix (see project decision).
+        # Accepted side effect: genuine 0-metre pixels (the feature itself -- rivers
+        # in rivers_dist, non-forest in forest_edge) also render transparent.
+        "nodata": 0,
         "nodes": [
             (30, "#e31a1c"),  # at the edge
             (100, "#ffa500"),
@@ -49,11 +62,13 @@ POSTPROCESS_PALETTES = {
     "loss": {
         "vmin": 0,
         "vmax": 1,
+        "nodata": 255,
         "nodes": [(0, "#d9d9d9"), (1, "#e31a1c")],
     },
     "gain": {
         "vmin": 0,
         "vmax": 1,
+        "nodata": 255,
         "nodes": [(0, "#d9d9d9"), (1, "#228b22")],
     },
 }
@@ -67,10 +82,16 @@ _CHANGE_OPS = ("loss", "gain")
 def classify_postprocess(var) -> Optional[str]:
     """Which post-process output ``var`` is: 'distance', 'loss', 'gain', or None.
 
-    The predicates mirror ``process_actions.postprocess_output_keys`` — the function
-    that decides which variables the Post-process tile *lists* — so what is listed and
-    what is styled cannot drift apart. Change layers are checked first, matching the
-    order there.
+    The predicates are kept deliberately in step with
+    ``process_actions.postprocess_output_keys`` — the function that decides which
+    variables the Post-process tile *lists* — but the two do not share a source of
+    truth: ``postprocess_output_keys`` derives its steps from the ``PostProcessing``
+    enum at runtime, while ``_DISTANCE_STEPS`` below is a hardcoded tuple. They agree
+    today; if ``PostProcessing`` gains a member, ``_DISTANCE_STEPS`` (or a new branch
+    here) must be updated by hand, or the new step will be listed but fall through to
+    the caller's default styling unstyled. This module stays free of ``spatialrisk``
+    imports on purpose, so it cannot read the enum directly. Change layers are checked
+    first, matching the order there.
 
     Tags / processing history are the authority; the name suffix and prefix are the
     fallback for legacy variables saved before those fields existed.
@@ -103,8 +124,11 @@ def classify_postprocess(var) -> Optional[str]:
 def resolve_postprocess_style(var) -> Optional[dict]:
     """Tile-layer styling for a post-process raster, or None if it isn't one.
 
-    Returns ``{"colormap": Colormap, "vmin": float, "vmax": float}``. Both ramps pin
-    their range, so no caller needs to auto-stretch. ``None`` means "not a post-process
+    Returns ``{"colormap": Colormap, "vmin": float, "vmax": float, "nodata": float}``.
+    Both ramps pin their range, so no caller needs to auto-stretch. ``nodata`` is this
+    module's own authority on the fill value — the caller must prefer it over whatever
+    the file itself declares (see the "distance" comment in ``POSTPROCESS_PALETTES``
+    for why the file's tag cannot be trusted). ``None`` means "not a post-process
     output" — the caller keeps whatever default it would otherwise have used.
     """
     kind = classify_postprocess(var)
@@ -116,6 +140,7 @@ def resolve_postprocess_style(var) -> Optional[dict]:
         "colormap": _ramp(palette["nodes"], palette["vmin"], palette["vmax"], kind),
         "vmin": palette["vmin"],
         "vmax": palette["vmax"],
+        "nodata": palette["nodata"],
     }
 
 

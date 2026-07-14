@@ -60,6 +60,23 @@ def _binary_mask_tif(path, nodata=255):
         dst.write(data, 1)
 
 
+def _distance_tif(path, nodata=4294967295):
+    """A 2x2 uint32 GeoTIFF mimicking distance_to_edge_gdal_no_mask's output: 0-filled
+    where distance couldn't be computed, but declaring the (wrong) 4294967295 tag.
+    """
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    data = np.array([[0, 30], [100, 0]], dtype="uint32")
+    with rasterio.open(
+        path, "w", driver="GTiff", height=2, width=2, count=1,
+        dtype="uint32", crs="EPSG:4326", transform=from_origin(0, 2, 1, 1),
+        nodata=nodata,
+    ) as dst:
+        dst.write(data, 1)
+
+
 def _named(type_name, **attrs):
     return type(type_name, (), attrs)()
 
@@ -89,6 +106,27 @@ def test_predefined_var_rendered_with_catalogue_palette_and_file_nodata(monkeypa
     # layer registered under key, replacing any prior layer
     assert fake_map.removed == ["var_rivers"]
     assert fake_map.added[0][1] == "var_rivers"
+
+
+def test_postprocess_var_nodata_overrides_the_files_lying_tag(monkeypatch, tmp_path):
+    """distance_to_edge_gdal_no_mask declares nodata=4294967295 but actually fills
+    with 0 (spatialrisk/processing.py). The style-supplied nodata (0, from
+    postprocess_styles) must win over whatever the file itself claims -- otherwise
+    the out-of-AOI fill (60-85% of the raster) clamps to vmin and paints opaque.
+    """
+    captured = _patch_localtileserver(monkeypatch)
+    tif = tmp_path / "forest_gfc_dist.tif"
+    _distance_tif(tif, nodata=4294967295)
+
+    var = _named("LocalRasterVar", name="forest_gfc_dist", tags=[], processing_history=["dist"])
+    fake_map = FakeMap()
+
+    vmap.add_raster_var_on_map(
+        fake_map, str(tif), var=var, layer_name="forest_gfc_dist", key="var_forest_gfc_dist",
+    )
+
+    # style-supplied nodata (0), NOT the file's declared (and wrong) 4294967295 tag
+    assert captured["nodata"] == 0
 
 
 def test_fit_bounds_false_does_not_recenter(monkeypatch, tmp_path):

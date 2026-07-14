@@ -36,7 +36,13 @@ def add_raster_var_on_map(
 
     path = str(path)
     style = resolve_variable_style(var)
-    nodata = _file_nodata(path)
+    # Post-process styles (postprocess_styles.resolve_postprocess_style) carry their
+    # own "nodata" key and are the authority when present: distance rasters declare a
+    # nodata tag on disk that does not match their actual fill value (see
+    # postprocess_styles.POSTPROCESS_PALETTES["distance"]), so sniffing the file would
+    # reproduce that bug. Catalogue / raster_type styles carry no "nodata" key, so
+    # they fall back to sniffing the file exactly as before.
+    nodata = style.get("nodata", _file_nodata(path))
 
     client = TileClient(path)
     layer = get_leaflet_tile_layer(

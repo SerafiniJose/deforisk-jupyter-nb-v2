@@ -92,6 +92,13 @@ def test_distance_style_pins_the_qgis_range_and_stops():
 
     assert isinstance(style["colormap"], Colormap)  # localtileserver needs the object
     assert style["vmin"] == 30 and style["vmax"] == 1000
+    # distance_to_edge_gdal_no_mask (spatialrisk/processing.py) passes NODATA=0 to
+    # gdal.ComputeProximity but then declares SetNoDataValue(4294967295) -- a tag that
+    # matches nothing in the file. 0 is the real fill value; the style must say so
+    # rather than trust the file's (wrong) tag. Accepted side effect: genuine 0-metre
+    # pixels (the feature itself -- rivers in rivers_dist, non-forest in forest_edge)
+    # also render transparent.
+    assert style["nodata"] == 0
 
     cmap = style["colormap"]
     span = 1000 - 30
@@ -109,6 +116,7 @@ def test_loss_style_paints_the_event_red_over_an_opaque_stable_class():
     assert style["vmin"] == 0 and style["vmax"] == 1
     assert _rgb(style["colormap"], 0.0) == (217, 217, 217)  # #d9d9d9
     assert _rgb(style["colormap"], 1.0) == (227, 26, 28)  # #e31a1c
+    assert style["nodata"] == 255  # generate_change_var writes 255 = nodata
 
 
 def test_gain_style_paints_the_event_green():
@@ -117,6 +125,7 @@ def test_gain_style_paints_the_event_green():
     assert style["vmin"] == 0 and style["vmax"] == 1
     assert _rgb(style["colormap"], 0.0) == (217, 217, 217)  # #d9d9d9
     assert _rgb(style["colormap"], 1.0) == (34, 139, 34)  # #228b22
+    assert style["nodata"] == 255  # generate_change_var writes 255 = nodata
 
 
 def test_resolve_returns_none_for_a_non_postprocess_variable():
