@@ -12,6 +12,8 @@ import solara
 
 from gui.i18n import t
 from gui.scripts import process_actions
+from gui.scripts.solara_threads import publish_if_current
+from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import DerivedVariableList
@@ -39,15 +41,16 @@ def PostProcessTile(project, process_error, map_=None):
         if p is None:
             return
         process_error.set(None)
-        try:
-            await asyncio.to_thread(
-                process_actions.generate_change_var, p, op, start_key, end_key
-            )
-        except Exception as exc:
-            logger.exception("change detection failed")
-            process_error.set(t("tiles.postprocess.error_change", exc=exc))
-            return
-        project.set(p.model_copy())
+        with writing(p.project_name):
+            try:
+                await asyncio.to_thread(
+                    process_actions.generate_change_var, p, op, start_key, end_key
+                )
+            except Exception as exc:
+                logger.exception("change detection failed")
+                process_error.set(t("tiles.postprocess.error_change", exc=exc))
+                return
+            publish_if_current(project, p)
 
     def on_apply_pp():
         if p is None:

@@ -12,7 +12,9 @@ logger = logging.getLogger("spatial_risk")
 from gui.i18n import t
 from gui.scripts import process_actions
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
+from gui.scripts.solara_threads import publish_if_current
 from gui.scripts.variable_map import add_raster_var_on_map
+from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import SourceVariableList
@@ -279,13 +281,14 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         key = pending_download.value
         keys = [key] if key is not None else None
         process_error.set(None)
-        try:
-            await asyncio.to_thread(process_actions.materialize_raw_layers, p, keys)
-            await asyncio.to_thread(p.save)
-        except Exception as exc:
-            logger.exception("download failed")
-            process_error.set(t("tiles.variables.error_download", exc=exc))
-        project.set(p.model_copy())
+        with writing(p.project_name):
+            try:
+                await asyncio.to_thread(process_actions.materialize_raw_layers, p, keys)
+                await asyncio.to_thread(p.save)
+            except Exception as exc:
+                logger.exception("download failed")
+                process_error.set(t("tiles.variables.error_download", exc=exc))
+            publish_if_current(project, p)
 
     def on_download(key=None):
         """Download one variable (key) or all pending GEE variables (None)."""

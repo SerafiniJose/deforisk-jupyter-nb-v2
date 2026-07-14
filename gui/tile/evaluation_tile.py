@@ -16,7 +16,8 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
-from gui.scripts.solara_threads import spawn_in_context, update_job
+from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
+from gui.store.project_writers import writing
 from gui.tile.evaluation_helpers import (
     ALL_METRICS, build_evaluation_record, build_truth_spec, default_forest_key,
     map_items, metric_items, parse_csizes, parse_interval, variable_items)
@@ -36,27 +37,30 @@ def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_a
         from spatialrisk.evaluation import evaluate_against_truth
 
         p = project.value
-        df = evaluate_against_truth(
-            p,
-            prediction_keys=prediction_keys or None,
-            defor_file=spec["defor_file"],
-            forest_file=spec["forest_file"],
-            time_interval=spec["time_interval"],
-            truth_tag=spec["truth_tag"],
-            csizes=tuple(csizes),
-            recompute_defrate=recompute,
-            auto_save=False,
-        )
-        resolved = list(prediction_keys) or list(p.predictions.keys())
-        record = build_evaluation_record(
-            p, df, spec, resolved_keys=resolved, run_id=job_id,
-            created_at=created_at, csizes=tuple(csizes), metrics=metrics)
-        p.add_evaluation(record, auto_save=False)
-        p.save()
-        project.set(p.model_copy())
-        update_job(eval_jobs, job_id, status="completed")
-        logger.info("Evaluation saved as project.evaluations['%s'] (%d rows)",
-                    record.storage_key(), len(df))
+        if p is None:
+            return  # project was closed/deleted while the job was queued
+        with writing(p.project_name):
+            df = evaluate_against_truth(
+                p,
+                prediction_keys=prediction_keys or None,
+                defor_file=spec["defor_file"],
+                forest_file=spec["forest_file"],
+                time_interval=spec["time_interval"],
+                truth_tag=spec["truth_tag"],
+                csizes=tuple(csizes),
+                recompute_defrate=recompute,
+                auto_save=False,
+            )
+            resolved = list(prediction_keys) or list(p.predictions.keys())
+            record = build_evaluation_record(
+                p, df, spec, resolved_keys=resolved, run_id=job_id,
+                created_at=created_at, csizes=tuple(csizes), metrics=metrics)
+            p.add_evaluation(record, auto_save=False)
+            p.save()
+            publish_if_current(project, p)
+            update_job(eval_jobs, job_id, status="completed")
+            logger.info("Evaluation saved as project.evaluations['%s'] (%d rows)",
+                        record.storage_key(), len(df))
     except Exception as exc:
         logger.exception("Evaluation failed")
         update_job(eval_jobs, job_id, status="failed", error=str(exc))

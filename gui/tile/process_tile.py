@@ -8,6 +8,8 @@ import solara
 
 from gui.i18n import t
 from gui.scripts import process_actions
+from gui.scripts.solara_threads import publish_if_current
+from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import DerivedVariableList
@@ -131,13 +133,14 @@ def ProcessTile(project, processing, process_error, map_=None):
             return
         processing.set(True)
         process_error.set(None)
-        try:
-            await asyncio.to_thread(process_actions.run_processing, p)
-        except Exception as exc:
-            process_error.set(str(exc))
-        finally:
-            processing.set(False)
-        project.set(p.model_copy())
+        with writing(p.project_name):
+            try:
+                await asyncio.to_thread(process_actions.run_processing, p)
+            except Exception as exc:
+                process_error.set(str(exc))
+            finally:
+                processing.set(False)
+            publish_if_current(project, p)
 
     with solara.Column(style="gap:16px;"):
         solara.Markdown(t("tiles.process.header"))

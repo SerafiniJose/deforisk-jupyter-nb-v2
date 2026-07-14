@@ -13,7 +13,8 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
-from gui.scripts.solara_threads import spawn_in_context, update_job
+from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
+from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
 from gui.widget.sample_set_list import SampleSetList
@@ -98,21 +99,24 @@ def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
         from spatialrisk.sample import Sample
 
         p = project_reactive.value
-        folder = p.folders.samples_folder
-        sample = Sample(
-            project=p, name=name, raster_var_name=raster_var,
-            mask_var_name=mask_var if mask_var else None,
-            strategy=strategy,
-            allocation=allocation if strategy == "stratified" else None,
-            adapt=adapt, n_samples=n_samples, spacing_m=spacing_m, seed=seed,
-            points_path=folder / f"{name}.gpkg",
-        )
-        sample.generate()
-        p.add_sample(sample, auto_save=True)
-        project_reactive.set(p.model_copy())
-        _update_job(job_id, status="completed", n_total=sample.n_total,
-                    class_counts=sample.class_counts)
-        logger.info("Sample generated: %s (%d points)", name, sample.n_total)
+        if p is None:
+            return  # project was closed/deleted while the job was queued
+        with writing(p.project_name):
+            folder = p.folders.samples_folder
+            sample = Sample(
+                project=p, name=name, raster_var_name=raster_var,
+                mask_var_name=mask_var if mask_var else None,
+                strategy=strategy,
+                allocation=allocation if strategy == "stratified" else None,
+                adapt=adapt, n_samples=n_samples, spacing_m=spacing_m, seed=seed,
+                points_path=folder / f"{name}.gpkg",
+            )
+            sample.generate()
+            p.add_sample(sample, auto_save=True)
+            publish_if_current(project_reactive, p)
+            _update_job(job_id, status="completed", n_total=sample.n_total,
+                        class_counts=sample.class_counts)
+            logger.info("Sample generated: %s (%d points)", name, sample.n_total)
     except Exception as exc:
         logger.exception("Sampling failed for %s", name)
         _update_job(job_id, status="failed", error=str(exc))

@@ -73,3 +73,32 @@ def spawn_in_context(target, args=(), *, daemon=True):
         kernel_context.set_context_for_thread(ctx, thread)
     thread.start()
     return thread
+
+
+def publish_if_current(project_reactive, project) -> bool:
+    """Publish a job's mutated project — unless it is no longer the open one.
+
+    Background jobs capture a ``Project`` reference when they start and publish a
+    fresh copy when they finish, so dependent tiles re-render. If the project was
+    **deleted** meanwhile the reactive holds ``None``; if the user **switched
+    projects** it holds a different one. Writing the captured reference back in
+    either case resurrects a dead project into app state, and the auto-save inside
+    those jobs re-creates the folder that was just deleted (``Project.save()``
+    does ``mkdir(parents=True, exist_ok=True)``).
+
+    Matching on ``project_name`` rather than object identity is deliberate: tiles
+    routinely republish via ``project.set(p.model_copy())``, so by the time a long
+    job finishes the live object is usually a *different instance* of the same
+    project — and that job's result must still reach the UI.
+
+    Returns True when the copy was published.
+    """
+    if project_reactive is None or project is None:
+        return False
+    live = project_reactive.value
+    if live is None:
+        return False  # project closed/deleted — never resurrect it
+    if live.project_name != project.project_name:
+        return False  # user switched projects — do not clobber the new one
+    project_reactive.set(project.model_copy())
+    return True

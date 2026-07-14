@@ -48,7 +48,7 @@ from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.tile.derived_map import derived_on_map
 from gui.tile.process_tile import ProcessTile
 from gui.tile.postprocess_tile import PostProcessTile
-from gui.tile.sampling_tile import SamplingTile, samples_on_map
+from gui.tile.sampling_tile import SamplingTile, sampling_jobs, samples_on_map
 from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
@@ -206,6 +206,8 @@ def ProjectPanel(on_close=None):
 
     def _really_save():
         set_overwrite_open(False)
+        if p is None:  # project was deleted while the overwrite dialog was open
+            return
         try:
             # Persist the AOI alongside the project: geometry → aoi.geojson
             # sidecar, light metadata → project.aoi (saved into the manifest).
@@ -606,6 +608,7 @@ def Page():
         train_jobs.set([])
         inference_jobs.set([])
         eval_jobs.set([])
+        sampling_jobs.set([])
 
     solara.use_effect(reset_jobs_on_load, [project_loaded_signal])
 

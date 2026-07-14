@@ -17,7 +17,8 @@ from spatialrisk.mlmodels import (
 from spatialrisk.evaluation import interval_from_target
 
 from gui.i18n import t
-from gui.scripts.solara_threads import spawn_in_context, update_job
+from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
+from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
 from gui.widget.train_model_list import TrainModelList
@@ -271,52 +272,52 @@ def _run_training(job_id, model_key, param_values, dataset, sample, project,
     model_cls = registry["class"]
 
     try:
-        # Build model kwargs from param_values
-        kwargs = {}
-        for param_def in registry["params"]:
-            key = param_def["key"]
-            raw = param_values.get(key, param_def["default"])
-            if key == "win_size_list" and isinstance(raw, str):
-                kwargs[key] = [int(x.strip()) for x in raw.split(",") if x.strip()]
-            else:
-                kwargs[key] = _parse_param(str(raw) if raw is not None else None, param_def["type"])
+        with writing(project.project_name):
+            # Build model kwargs from param_values
+            kwargs = {}
+            for param_def in registry["params"]:
+                key = param_def["key"]
+                raw = param_values.get(key, param_def["default"])
+                if key == "win_size_list" and isinstance(raw, str):
+                    kwargs[key] = [int(x.strip()) for x in raw.split(",") if x.strip()]
+                else:
+                    kwargs[key] = _parse_param(str(raw) if raw is not None else None, param_def["type"])
 
-        model = model_cls(**kwargs)
-        # The user-chosen name drives both the project.models key and the pickle
-        # filename, so it MUST be set before fit() (fit() calls save()).
-        model.name = model_name or None
-        model.dataset = dataset
-        model.project = project
-        if sample is not None:
-            model.sample = sample
-            model.sample_name = sample.name
+            model = model_cls(**kwargs)
+            # The user-chosen name drives both the project.models key and the pickle
+            # filename, so it MUST be set before fit() (fit() calls save()).
+            model.name = model_name or None
+            model.dataset = dataset
+            model.project = project
+            if sample is not None:
+                model.sample = sample
+                model.sample_name = sample.name
 
-        model.fit(**build_fit_kwargs(model_key, dataset, project))
+            model.fit(**build_fit_kwargs(model_key, dataset, project))
 
-        # Update job on success (immutably, so the UI actually re-renders).
-        _update_job(
-            job_id,
-            status="completed",
-            deviance=model.deviance,
-            n_samples=model.n_samples,
-        )
+            # Update job on success (immutably, so the UI actually re-renders).
+            _update_job(
+                job_id,
+                status="completed",
+                deviance=model.deviance,
+                n_samples=model.n_samples,
+            )
 
-        # Register in the project under the name-derived key. The user already
-        # confirmed any overwrite in the UI, so if the key is taken we delete the
-        # superseded model (and its files) first to avoid orphaned pickles.
-        storage_key = _storage_key(model_key, model_name)
-        if storage_key in project.models:
-            project.delete_model(storage_key, auto_save=False)
-        model.register(project, key=storage_key, auto_save=True)
-        _update_job(job_id, model_storage_key=model._model_key())
+            # Register in the project under the name-derived key. The user already
+            # confirmed any overwrite in the UI, so if the key is taken we delete the
+            # superseded model (and its files) first to avoid orphaned pickles.
+            storage_key = _storage_key(model_key, model_name)
+            if storage_key in project.models:
+                project.delete_model(storage_key, auto_save=False)
+            model.register(project, key=storage_key, auto_save=True)
+            _update_job(job_id, model_storage_key=model._model_key())
 
-        # register() mutates project.models in place; publish a fresh copy on the
-        # reactive so dependent tiles (Step 7 — Inference) re-render and list the
-        # newly trained model. Without this set() the identity-equality reactive
-        # never fires and the Inference model dropdown stays empty.
-        if project_reactive is not None:
-            project_reactive.set(project.model_copy())
-        logger.info("Model %s trained and registered.", model_key)
+            # register() mutates project.models in place; publish a fresh copy on the
+            # reactive so dependent tiles (Step 7 — Inference) re-render and list the
+            # newly trained model. Skipped when the project was deleted or switched
+            # out while training ran — see publish_if_current.
+            publish_if_current(project_reactive, project)
+            logger.info("Model %s trained and registered.", model_key)
 
     except Exception as exc:
         logger.exception("Training failed for %s", model_key)

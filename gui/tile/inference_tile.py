@@ -10,7 +10,8 @@ import solara
 
 from gui.i18n import t, plural
 from gui.scripts.product_rows import job_row_key
-from gui.scripts.solara_threads import spawn_in_context, update_job
+from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
+from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
 from gui.widget.prediction_import_modal import PredictionImportModal
@@ -65,17 +66,18 @@ def _pred_layer_key(storage_key: str) -> str:
 def _run_inference(job_id, model_key, dataset_key, project, name=None):
     """Run model inference in a background thread."""
     try:
-        from gui.scripts.inference_runner import run_inference
+        with writing(project.project_name):
+            from gui.scripts.inference_runner import run_inference
 
-        run_inference(project, model_key, dataset_key, name=name)
+            run_inference(project, model_key, dataset_key, name=name)
 
-        update_job(
-            inference_jobs,
-            job_id,
-            status="completed",
-            output_path="see project predictions",
-        )
-        logger.info("Inference completed: %s on %s (name=%s)", model_key, dataset_key, name)
+            update_job(
+                inference_jobs,
+                job_id,
+                status="completed",
+                output_path="see project predictions",
+            )
+            logger.info("Inference completed: %s on %s (name=%s)", model_key, dataset_key, name)
 
     except Exception as exc:
         logger.exception("Inference failed for %s on %s", model_key, dataset_key)
@@ -91,22 +93,22 @@ def _run_import(job_id, src_path, name, palette, project, project_reactive):
     republished so the outputs list and Step 8 — Evaluation pick it up.
     """
     try:
-        from gui.scripts.prediction_import import import_prediction
+        with writing(project.project_name):
+            from gui.scripts.prediction_import import import_prediction
 
-        pred = import_prediction(project, src_path, name, palette=palette, auto_save=True)
+            pred = import_prediction(project, src_path, name, palette=palette, auto_save=True)
 
-        update_job(
-            inference_jobs,
-            job_id,
-            status="completed",
-            pred_name=name,
-            model_key=pred.model_key,
-            dataset_name=pred.dataset_name,
-            output_path=str(pred.path),
-        )
-        if project_reactive is not None:
-            project_reactive.set(project.model_copy())
-        logger.info("Imported prediction '%s' registered as %s", name, pred.model_key)
+            update_job(
+                inference_jobs,
+                job_id,
+                status="completed",
+                pred_name=name,
+                model_key=pred.model_key,
+                dataset_name=pred.dataset_name,
+                output_path=str(pred.path),
+            )
+            publish_if_current(project_reactive, project)
+            logger.info("Imported prediction '%s' registered as %s", name, pred.model_key)
 
     except Exception as exc:
         logger.exception("Prediction import failed for %s", src_path)
