@@ -45,3 +45,32 @@ def test_inference_tile_confirms_and_really_deletes_predictions():
     assert "ConfirmDialog" in src
     assert "delete_prediction" in src  # removal actually unregisters the predictions
     assert "on_delete=set_pending_delete" in src
+
+
+def test_manage_projects_widget_confirms_delete():
+    from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
+    assert callable(ManageProjectsDialog) and callable(ConfirmDeleteProjectDialog)
+
+    src = inspect.getsource(ManageProjectsDialog)
+    assert "on_delete(" in src          # the row hands the target up; it never deletes
+    assert "delete_project" not in src  # the widget must not touch the disk
+    assert "rv.Btn(" not in src         # rv.Btn silently drops clicks in this codebase
+    # A disabled rv.ListItem suppresses its children, which would make the trash
+    # button dead on exactly the corrupt projects we most need to remove.
+    assert "disabled=not info.readable" not in src
+
+    confirm = inspect.getsource(ConfirmDeleteProjectDialog)
+    assert "delete_confirm_valid" in confirm   # type-the-name gating
+    assert "writer_active" in confirm          # refused while a task is writing
+
+
+def test_project_panel_confirms_and_really_deletes_projects():
+    import gui.solara_app as app
+    src = inspect.getsource(app.ProjectPanel)
+    assert "ConfirmDeleteProjectDialog" in src
+    assert "delete_project" in src        # removal actually hits the disk
+    assert "on_delete=open_delete" in src # the trash button opens the confirm dialog
+    assert "close_project_state" in src   # deleting the open project closes it
+    assert "is_writing" in src            # refused while a task is writing to it
+    # Task.error is a bool; the message lives on Task.exception.
+    assert "delete_task.exception" in src
