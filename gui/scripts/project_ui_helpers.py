@@ -105,16 +105,50 @@ def overwrite_needed(
     return last_saved is None and name in existing_names
 
 
-def open_saved_label(count: Optional[int]) -> str:
-    """Label for the empty-state 'open saved' button.
+def manage_projects_label(count: Optional[int]) -> str:
+    """Label for the empty-state 'manage projects' button.
 
     ``count`` is the number of saved projects on disk; ``None`` when the scan
     failed. 0 or None → a neutral invite to create one instead; otherwise the
     count is surfaced so the button is worth a click before opening the dialog.
     """
     if not count:  # 0 or None
-        return t("project.open_saved_none")
-    return t("project.open_saved_count", count=count)
+        return t("project.manage_none")
+    return t("project.manage_count", count=count)
+
+
+def filter_project_infos(infos: list, query: str) -> list:
+    """Saved projects whose name contains ``query`` (case-insensitive).
+
+    A blank query returns every project. Input order is preserved — the caller
+    has already sorted them.
+    """
+    needle = (query or "").strip().lower()
+    if not needle:
+        return list(infos)
+    return [i for i in infos if needle in i.name.lower()]
+
+
+def format_size(num_bytes: int) -> str:
+    """Human size for the delete-confirm message: '512 B', '2.9 MB', '3.2 GB'.
+
+    Binary steps (1024) with conventional labels — it matches what ``du -h``
+    reports, which is what the user sees if they check the folder themselves.
+    """
+    size = float(max(0, num_bytes))
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024.0 or unit == "TB":
+            return f"{int(size)} B" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024.0
+
+
+def delete_confirm_valid(typed: str, name: str) -> bool:
+    """True when the user has typed the project's exact name.
+
+    Deleting is irreversible and can discard GBs, so the match is exact and
+    case-sensitive; only surrounding whitespace is forgiven.
+    """
+    return (typed or "").strip() == name
 
 
 def aoi_project_name(aoi_name: str, when: datetime) -> str:

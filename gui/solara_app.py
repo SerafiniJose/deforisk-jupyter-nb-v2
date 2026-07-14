@@ -35,7 +35,7 @@ from gui.scripts.project_ui_helpers import (
     compute_app_title,
     format_last_saved,
     format_relative,
-    open_saved_label,
+    manage_projects_label,
     overwrite_needed,
     project_count_chips,
     validate_project_name,
@@ -248,7 +248,7 @@ def ProjectPanel(on_close=None):
                 style="width: 100%;",
             )
             solara.Button(
-                open_saved_label(saved_count),
+                manage_projects_label(saved_count),
                 icon_name="mdi-folder-open-outline",
                 color="primary",
                 outlined=True,

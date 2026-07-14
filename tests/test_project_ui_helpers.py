@@ -5,9 +5,12 @@ from gui.scripts.project_ui_helpers import (
     NameValidation,
     aoi_project_name,
     compute_app_title,
+    delete_confirm_valid,
+    filter_project_infos,
     format_last_saved,
     format_relative,
-    open_saved_label,
+    format_size,
+    manage_projects_label,
     overwrite_needed,
     project_count_chips,
     validate_project_name,
@@ -133,15 +136,48 @@ def test_overwrite_needed():
     assert overwrite_needed("fresh", None, ["mtq"]) is False
 
 
-def test_open_saved_label_with_projects():
-    assert open_saved_label(3) == "Open saved… (3)"
-    assert open_saved_label(1) == "Open saved… (1)"
+def test_manage_projects_label_with_projects():
+    assert manage_projects_label(3) == "Manage projects… (3)"
+    assert manage_projects_label(1) == "Manage projects… (1)"
 
 
-def test_open_saved_label_zero_or_unknown():
+def test_manage_projects_label_zero_or_unknown():
     # 0 saved → invite to create; None (scan failed) → same neutral copy.
-    assert open_saved_label(0) == "No saved projects yet"
-    assert open_saved_label(None) == "No saved projects yet"
+    assert manage_projects_label(0) == "No saved projects yet"
+    assert manage_projects_label(None) == "No saved projects yet"
+
+
+def test_filter_project_infos_is_case_insensitive_substring():
+    infos = [_info(name="GUY"), _info(name="mtq_ui"), _info(name="testjuly")]
+    assert [i.name for i in filter_project_infos(infos, "mtq")] == ["mtq_ui"]
+    assert [i.name for i in filter_project_infos(infos, "guy")] == ["GUY"]
+    assert [i.name for i in filter_project_infos(infos, "U")] == ["GUY", "mtq_ui", "testjuly"]
+
+
+def test_filter_project_infos_blank_query_returns_all_in_order():
+    infos = [_info(name="b"), _info(name="a")]
+    assert [i.name for i in filter_project_infos(infos, "")] == ["b", "a"]
+    assert [i.name for i in filter_project_infos(infos, "   ")] == ["b", "a"]
+
+
+def test_filter_project_infos_no_match_is_empty():
+    assert filter_project_infos([_info(name="GUY")], "zzz") == []
+
+
+def test_format_size_units():
+    assert format_size(0) == "0 B"
+    assert format_size(512) == "512 B"
+    assert format_size(1024) == "1.0 KB"
+    assert format_size(3 * 1024 * 1024) == "3.0 MB"
+    assert format_size(int(3.2 * 1024**3)) == "3.2 GB"
+
+
+def test_delete_confirm_valid_requires_exact_name():
+    assert delete_confirm_valid("GUY", "GUY") is True
+    assert delete_confirm_valid("  GUY  ", "GUY") is True   # surrounding space tolerated
+    assert delete_confirm_valid("guy", "GUY") is False      # case-sensitive
+    assert delete_confirm_valid("GU", "GUY") is False
+    assert delete_confirm_valid("", "GUY") is False
 
 
 def test_aoi_project_name_appends_yyyymmdd():
