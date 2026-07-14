@@ -120,7 +120,7 @@ def test_project_panel_guards_stage_load_and_save_against_a_delete_in_flight():
                 return "if delete_task.pending:" in window
         return False
 
-    for signature in ("def open_delete(info):", "def do_load():", "def do_save():"):
+    for signature in ("def open_delete(info):", "def do_load():", "def do_save():", "def _really_save():"):
         assert guard_follows(signature), (
             f"{signature} must bail out on delete_task.pending before doing anything else"
         )

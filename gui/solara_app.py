@@ -297,6 +297,8 @@ def ProjectPanel(on_close=None):
 
     def _really_save():
         set_overwrite_open(False)
+        if delete_task.pending:
+            return  # a delete is in flight; nothing else may be staged
         if p is None:  # project was deleted while the overwrite dialog was open
             return
         try:
