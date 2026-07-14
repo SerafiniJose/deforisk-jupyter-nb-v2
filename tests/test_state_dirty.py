@@ -67,3 +67,31 @@ def test_new_project_resets_aoi_asset():
     s.aoi_asset.set({"asset_id": "users/me/x", "type": "TABLE", "column": "ALL", "value": None})
     s.new_project_state(Project(project_name="p"))
     assert s.aoi_asset.value is None
+
+
+def test_close_project_state_returns_to_empty():
+    s = AppState()
+    s.project.set(_P("GUY"))
+    s.last_saved.set(datetime(2026, 7, 14, 12, 0, 0))
+    s.aoi_result.set(object())
+    s.aoi_asset.set({"asset_id": "x"})
+    before = s.project_loaded_signal.value
+
+    s.close_project_state()
+
+    assert s.project.value is None
+    assert s.project_dirty.value is False   # the subscription clears it
+    assert s.last_saved.value is None
+    assert s.aoi_result.value is None
+    assert s.aoi_asset.value is None
+    # The bump re-runs the shell's on-switch effects (map overlays, jobs, log).
+    assert s.project_loaded_signal.value == before + 1
+
+
+def test_close_project_state_leaves_status_message_for_the_caller():
+    # close() is followed by "Project 'X' deleted." — clearing here would race it.
+    s = AppState()
+    s.project.set(_P("GUY"))
+    s.status_message.set("Project 'GUY' deleted.")
+    s.close_project_state()
+    assert s.status_message.value == "Project 'GUY' deleted."

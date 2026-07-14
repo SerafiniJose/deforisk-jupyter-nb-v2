@@ -83,6 +83,26 @@ class AppState:
         # installed" — loaded from disk OR newly created.
         self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
+    def close_project_state(self) -> None:
+        """Return to the no-project state — the open project was deleted.
+
+        The only path back to ``project=None`` after start-up. ``project=None`` is
+        already a supported render state (it is what the app boots into), and the
+        signal bump re-runs the shell's on-switch effects, so the map overlays,
+        job lists and log console are torn down by the existing code.
+
+        Unlike ``new_project_state`` this deliberately leaves ``status_message``
+        alone: the caller sets "Project 'X' deleted." right after, and clearing it
+        here would race that.
+        """
+        self.project.set(None)  # subscription sets dirty=False
+        self.last_saved.set(None)
+        self.aoi_result.set(None)
+        self.aoi_asset.set(None)
+        self.process_error.set(None)
+        self.error_message.set(None)
+        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+
     @property
     def aoi_complete(self) -> bool:
         return self.aoi_result.value is not None
