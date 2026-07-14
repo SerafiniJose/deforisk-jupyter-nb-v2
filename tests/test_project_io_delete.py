@@ -90,3 +90,36 @@ def test_project_dir_size_sums_files(tmp_path):
 
 def test_project_dir_size_missing_is_zero(tmp_path):
     assert project_dir_size("nope", tmp_path) == 0
+
+
+def test_delete_project_symlink_loop_raises_valueerror(tmp_path):
+    """A symlink loop in .resolve() should surface as ValueError, not RuntimeError."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    # Create a symlink loop: loopy -> loopy
+    loopy = data_dir / "loopy"
+    loopy.symlink_to(data_dir / "loopy")
+
+    with pytest.raises(ValueError):
+        delete_project("loopy", data_dir)
+
+
+def test_project_dir_size_symlink_loop_returns_zero(tmp_path):
+    """A symlink loop should cause project_dir_size to return 0, not raise RuntimeError."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    # Create a symlink loop: loopy -> loopy
+    loopy = data_dir / "loopy"
+    loopy.symlink_to(data_dir / "loopy")
+
+    assert project_dir_size("loopy", data_dir) == 0
+
+
+def test_project_dir_size_unsafe_name_returns_zero(tmp_path):
+    """An unsafe name in _project_dir should cause project_dir_size to return 0."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    # The "../escape" case is rejected by the path component check in _project_dir,
+    # which raises ValueError. project_dir_size should catch it and return 0.
+    assert project_dir_size("../escape", data_dir) == 0

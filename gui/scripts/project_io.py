@@ -111,7 +111,10 @@ def _project_dir(name: str, data_dir: Path) -> Path:
     if "/" in cleaned or "\\" in cleaned or Path(cleaned).name != cleaned:
         raise ValueError(f"Invalid project name: {name!r}")
 
-    target = (data_dir / cleaned).resolve()
+    try:
+        target = (data_dir / cleaned).resolve()
+    except (RuntimeError, OSError) as exc:
+        raise ValueError(f"Invalid project path: {name!r}") from exc
     if target.parent != data_dir.resolve():
         raise ValueError(f"Refusing to delete outside the data directory: {target}")
     return target
