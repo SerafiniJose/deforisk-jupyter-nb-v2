@@ -1,12 +1,16 @@
 """Project load/save helpers for the Spatial Risk GUI."""
 
 import json
+import logging
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from spatialrisk.project import Project
+from spatialrisk.project import Project, DATA_DIR
+
+logger = logging.getLogger("spatial_risk")
 
 
 def load_project(project_name: str) -> Project:
@@ -91,3 +95,69 @@ def list_project_infos(data_dir: Path) -> list[ProjectInfo]:
                 )
             )
     return infos
+
+
+def _project_dir(name: str, data_dir: Path) -> Path:
+    """Resolve a saved project's folder, refusing anything that is not one.
+
+    ``delete_project`` calls ``shutil.rmtree`` on the result, so this is the
+    security boundary: the target must be a direct child of ``data_dir``.
+    Symlinks resolve out of ``data_dir`` and are therefore refused — we do not
+    follow a link out of the data dir.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned or cleaned in {".", ".."}:
+        raise ValueError(f"Invalid project name: {name!r}")
+    if "/" in cleaned or "\\" in cleaned or Path(cleaned).name != cleaned:
+        raise ValueError(f"Invalid project name: {name!r}")
+
+    target = (data_dir / cleaned).resolve()
+    if target.parent != data_dir.resolve():
+        raise ValueError(f"Refusing to delete outside the data directory: {target}")
+    return target
+
+
+def project_dir_size(name: str, data_dir: Path = DATA_DIR) -> int:
+    """Total bytes on disk for a saved project's folder (0 when it does not exist).
+
+    Only stats files — never reads them — so it stays cheap even for a multi-GB
+    project. Entries that vanish or deny access mid-walk are skipped.
+    """
+    try:
+        folder = _project_dir(name, data_dir)
+    except ValueError:
+        return 0
+    if not folder.is_dir():
+        return 0
+    total = 0
+    for path in folder.rglob("*"):
+        try:
+            if path.is_file() and not path.is_symlink():
+                total += path.stat().st_size
+        except OSError:  # pragma: no cover - races, broken links
+            continue
+    return total
+
+
+def delete_project(name: str, data_dir: Path = DATA_DIR) -> bool:
+    """Permanently delete a saved project's folder. False when it does not exist.
+
+    Removes everything: the manifest, downloaded rasters, samples, trained models
+    and predictions. There is no undo — the caller confirms.
+
+    Raises ``ValueError`` when the target is not a project folder directly inside
+    ``data_dir`` (see ``_project_dir``). A folder counts as a project when it
+    contains ``{name}_project.json``; that file merely has to exist, so *corrupt*
+    projects stay deletable — the case users most want to clean up.
+    """
+    folder = _project_dir(name, data_dir)
+    if not folder.exists():
+        return False
+    if not folder.is_dir():
+        raise ValueError(f"Not a project folder: {folder}")
+    if not (folder / f"{folder.name}_project.json").exists():
+        raise ValueError(f"Not a project folder (no manifest): {folder}")
+
+    shutil.rmtree(folder)
+    logger.info("Deleted project folder: %s", folder)
+    return True
