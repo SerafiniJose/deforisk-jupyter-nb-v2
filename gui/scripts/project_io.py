@@ -183,6 +183,17 @@ def delete_project(name: str, data_dir: Path = DATA_DIR) -> bool:
             shutil.rmtree(child)
         else:
             child.unlink()
+
+    # The snapshot above is taken once, up front. If anything lands in the folder
+    # afterwards — a writer that slipped the mark, an NFS silly-rename of a
+    # top-level file still held open by a reader — the loop never saw it and so
+    # never removed it. Unlinking the manifest anyway and letting rmdir() fail on
+    # that leftover would already have done the one thing "manifest last" exists
+    # to prevent: the project must stay a project (manifest present) until the
+    # folder is verified genuinely empty, not merely believed to be.
+    leftover = [c for c in folder.iterdir() if c != manifest]
+    if leftover:
+        raise OSError(f"Refusing to finish the delete, folder not empty: {leftover[0]}")
     manifest.unlink()
     folder.rmdir()
     logger.info("Deleted project folder: %s", folder)

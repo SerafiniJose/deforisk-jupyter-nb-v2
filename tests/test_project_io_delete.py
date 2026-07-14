@@ -76,6 +76,46 @@ def test_a_partial_delete_keeps_the_manifest_so_the_leftover_stays_deletable(
     assert not folder.exists()
 
 
+def test_a_late_arrival_after_the_child_pass_keeps_the_manifest_and_stays_listed(
+    tmp_path, monkeypatch
+):
+    """"Manifest last" must hold even when the folder gains an entry AFTER the
+    child-removal loop already took its one-time snapshot — a writer that slipped
+    the mark, or an NFS silly-rename of a top-level file (e.g. aoi.geojson) still
+    held open by a reader. The loop never sees a late arrival, so it never removes
+    it. Unlinking the manifest anyway and letting rmdir() fail on the leftover
+    would strip the manifest from a folder that is about to become exactly the
+    invisible, undeletable orphan "manifest last" exists to prevent: gone from
+    list_project_infos, and refused by delete_project itself ("no manifest").
+    """
+    folder = _write_project(tmp_path, "GUY")
+    (folder / "aoi.geojson").write_bytes(b"{}")
+    (folder / "data").mkdir()
+    (folder / "data" / "big.tif").write_bytes(b"x" * 2048)
+
+    real_rmtree = shutil.rmtree
+
+    def sneaky_rmtree(path, *args, **kwargs):
+        # A late arrival landing after the child loop's one-time snapshot was
+        # taken — simulates a writer (or an NFS silly-rename) slipping a new
+        # top-level file into the folder while this subtree is being removed.
+        (folder / "late.tmp").write_bytes(b"x")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", sneaky_rmtree)
+
+    with pytest.raises(OSError):
+        delete_project("GUY", tmp_path)
+
+    assert (folder / "GUY_project.json").exists()                    # still a project …
+    assert [i.name for i in list_project_infos(tmp_path)] == ["GUY"]  # … still listed
+
+    monkeypatch.undo()
+    (folder / "late.tmp").unlink()  # the race resolves; the user hits Delete again
+    assert delete_project("GUY", tmp_path) is True
+    assert not folder.exists()
+
+
 def test_refuses_a_directory_that_is_not_a_project(tmp_path):
     (tmp_path / "random").mkdir()
     with pytest.raises(ValueError):

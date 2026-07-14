@@ -90,3 +90,42 @@ def test_project_panel_delete_is_not_re_entrant_and_owns_its_error():
     assert "if delete_task.pending:" in src     # the synchronous re-entrancy guard
     assert "error=delete_error.value" in src    # the panel owns the message …
     assert "delete_task.exception" not in src   # … and never the task's sticky one
+
+
+def test_project_panel_guards_stage_load_and_save_against_a_delete_in_flight():
+    """The rmtree behind a confirmed delete cannot be called back either — and it
+    is not only the confirm button that can re-enter it. Staging a new target
+    (open_delete), loading a different project (do_load), or saving the one
+    already open (do_save) are each gated ONLY by a render-time `disabled=`/
+    `busy=` prop elsewhere in this file, which reaches the browser a round-trip
+    after delete_task starts — the same window that makes the confirm button's
+    own `disabled` insufficient. Missing this on do_load/do_save is the more
+    dangerous half: Load succeeds while a delete for that same project is still
+    running (its manifest dies last, so it is still listable), and a subsequent
+    Save does mkdir(parents=True, exist_ok=True) and writes the manifest straight
+    back into the folder the in-flight rmtree is erasing — a manifest-only
+    zombie project, the same harm confirm_delete's guard exists to prevent,
+    arriving through a different door.
+    """
+    import gui.solara_app as app
+    src = inspect.getsource(app.ProjectPanel)
+    lines = src.splitlines()
+
+    def guard_follows(signature: str, within: int = 4) -> bool:
+        """True when `signature`'s def line is followed, within a few lines (to
+        allow for a leading docstring), by the synchronous pending guard."""
+        for i, line in enumerate(lines):
+            if signature in line:
+                window = "\n".join(lines[i + 1 : i + 1 + within])
+                return "if delete_task.pending:" in window
+        return False
+
+    for signature in ("def open_delete(info):", "def do_load():", "def do_save():"):
+        assert guard_follows(signature), (
+            f"{signature} must bail out on delete_task.pending before doing anything else"
+        )
+
+    # Cosmetic, but the UI should reflect it too — the handler guards above are
+    # what actually hold this closed.
+    assert "busy=load_busy or delete_task.pending" in src   # Manage dialog's Load button
+    assert "disabled=delete_task.pending" in src             # the panel's own Save button

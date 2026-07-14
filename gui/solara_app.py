@@ -141,6 +141,8 @@ def ProjectPanel(on_close=None):
         set_load_open(True)
 
     def do_load():
+        if delete_task.pending:
+            return  # a delete is in flight; nothing else may be staged
         name = selected.value
         if not name:
             return
@@ -170,6 +172,8 @@ def ProjectPanel(on_close=None):
         """Row trash button: stage a target and price it. The size is computed for
         this one project only — never per row, so the list stays cheap even with a
         multi-GB project in it."""
+        if delete_task.pending:
+            return  # a delete is in flight; nothing else may be staged
         delete_error.set(None)  # never carry the last target's failure into this one
         pending_size.set(project_dir_size(info.name))
         pending_delete.set(info)
@@ -279,6 +283,8 @@ def ProjectPanel(on_close=None):
 
     # ---- Save -----------------------------------------------------------
     def do_save():
+        if delete_task.pending:
+            return  # a delete is in flight; nothing else may be staged
         if p is None:
             app_state.error_message.set(
                 t("project.error_no_project_to_save")
@@ -389,6 +395,9 @@ def ProjectPanel(on_close=None):
                     outlined=True,
                     small=True,
                     on_click=do_save,
+                    # Same round-trip-lag caveat as the Load button above: cosmetic
+                    # only. do_save's own delete_task.pending guard is what holds.
+                    disabled=delete_task.pending,
                 )
 
     # ---- New dialog -----------------------------------------------------
@@ -490,7 +499,10 @@ def ProjectPanel(on_close=None):
         on_load=do_load,
         on_delete=open_delete,
         on_cancel=lambda: set_load_open(False),
-        busy=load_busy,
+        # `or delete_task.pending` so the Load button also *looks* disabled while a
+        # delete is in flight; the handler-side guard in do_load is what actually
+        # holds (this is a render-time prop, so it lags by one round-trip).
+        busy=load_busy or delete_task.pending,
         error=load_error,
     )
 
