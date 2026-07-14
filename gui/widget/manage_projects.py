@@ -35,6 +35,7 @@ def ManageProjectsDialog(
     on_load,
     on_delete,
     on_cancel,
+    current=None,
     busy=False,
     error=None,
 ):
@@ -44,6 +45,11 @@ def ManageProjectsDialog(
         open: bool — whether the dialog is shown.
         infos: list[ProjectInfo] — every saved project (already scanned).
         selected: str | None — name of the selected project.
+        current: str | None — name of the project already open in the app, badged
+            in the list. Distinct from `selected`, which is the row the user has
+            clicked *in this dialog*: the two are highlighted by different things
+            (chip vs ListItemGroup) because they answer different questions.
+            An unsaved new project has no row here, so nothing is badged.
         on_select / on_load / on_cancel: footer actions.
         on_delete: callback(ProjectInfo) — the row's trash button; the caller
             opens the confirm dialog. This widget never touches the disk.
@@ -103,7 +109,20 @@ def ManageProjectsDialog(
                                 # for. Load is gated instead (load_disabled above).
                                 with rv.ListItem(value=info.name):
                                     with rv.ListItemContent():
-                                        rv.ListItemTitle(children=[info.name])
+                                        # Outlined, so the badge cannot be mistaken
+                                        # for one of the filled count chips below it.
+                                        title = [info.name]
+                                        if current and info.name == current:
+                                            title.append(
+                                                rv.Chip(
+                                                    children=[t("project.chip_open")],
+                                                    x_small=True,
+                                                    outlined=True,
+                                                    color="primary",
+                                                    class_="ml-2",
+                                                )
+                                            )
+                                        rv.ListItemTitle(children=title)
                                         if info.readable:
                                             with rv.Row(
                                                 style_="flex-wrap: wrap; gap: 4px; "

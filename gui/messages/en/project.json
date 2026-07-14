@@ -7,6 +7,7 @@
     "button_save": "Save",
     "chip_unsaved": "unsaved",
     "chip_saved": "saved",
+    "chip_open": "open",
     "stats": "{raw} raw · {processed} processed · {models} models",
     "dialog_new_title": "New Project",
     "dialog_new_name_label": "Project name",

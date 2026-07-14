@@ -67,7 +67,7 @@ def LogConsole():
             with rv.ExpansionPanel():
                 with rv.ExpansionPanelHeader():
                     with solara.Row(style="align-items: center; gap: 8px;"):
-                        rv.Icon(children=["mdi-text-box-outline"], small=True)
+                        rv.Icon(children=["mdi-file-document-outline"], small=True)
                         solara.Text(
                             t("widgets.log_console.header"),
                             style="font-weight: 600; white-space: nowrap;",

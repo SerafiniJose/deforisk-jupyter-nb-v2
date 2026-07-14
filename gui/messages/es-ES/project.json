@@ -7,6 +7,7 @@
     "button_save": "Guardar",
     "chip_unsaved": "sin guardar",
     "chip_saved": "guardado",
+    "chip_open": "abierto",
     "stats": "{raw} crudas · {processed} procesadas · {models} modelos",
     "dialog_new_title": "Nuevo proyecto",
     "dialog_new_name_label": "Nombre del proyecto",

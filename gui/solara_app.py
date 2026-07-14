@@ -344,7 +344,7 @@ def ProjectPanel(on_close=None):
             )
             solara.Button(
                 manage_projects_label(saved_count),
-                icon_name="mdi-folder-cog-outline",
+                icon_name="mdi-folder-open-outline",
                 color="primary",
                 outlined=True,
                 # Only a *known* zero disables it. A failed scan (None) leaves the
@@ -384,7 +384,7 @@ def ProjectPanel(on_close=None):
                 )
                 solara.Button(
                     t("project.button_manage"),
-                    icon_name="mdi-folder-cog-outline",
+                    icon_name="mdi-folder-open-outline",
                     color="primary",
                     outlined=True,
                     small=True,
@@ -497,6 +497,7 @@ def ProjectPanel(on_close=None):
         open=load_open,
         infos=infos.value,
         selected=selected.value,
+        current=p.project_name if p is not None else None,
         on_select=selected.set,
         on_load=do_load,
         on_delete=open_delete,

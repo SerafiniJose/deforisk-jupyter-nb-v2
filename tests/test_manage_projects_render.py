@@ -95,6 +95,28 @@ def _button(rc, label):
     return next(btn for btn in rc.find(vw.Btn).widgets if btn.children == [label])
 
 
+def _open_chips_by_row(rc):
+    """{row name: [open-chip labels in that row]} — which row wears the badge.
+
+    Asserting only that *a* chip exists would pass with the badge on the wrong
+    project, which is exactly the failure that matters: it would tell the user
+    the project they are about to load is already the open one.
+    """
+    label = t("project.chip_open")
+    rows = {}
+    for item in rc.find(vw.ListItem).widgets:
+        title = next(
+            w for w in item.children[0].children if isinstance(w, vw.ListItemTitle)
+        )
+        name = next(c for c in title.children if isinstance(c, str))
+        rows[name] = [
+            c.children[0]
+            for c in title.children
+            if isinstance(c, vw.Chip) and c.children == [label]
+        ]
+    return rows
+
+
 # --- the row -> target binding (the bug the substring tests cannot see) --------
 
 def test_each_row_trash_button_deletes_its_own_project():
@@ -121,6 +143,32 @@ def test_row_hands_up_the_whole_info_not_just_a_name():
     _trash_buttons(rc)[0].fire_event("click", None)
 
     assert isinstance(captured[0], ProjectInfo) and captured[0].name == "GUY"
+    rc.close()
+
+
+# --- "this one is already open" -----------------------------------------------
+
+def test_the_open_project_row_wears_the_open_chip():
+    box, rc = _render_manage(current="GUY")
+
+    assert _open_chips_by_row(rc) == {"GUY": [t("project.chip_open")], "broken": []}
+    rc.close()
+
+
+def test_no_row_is_badged_when_no_project_is_open():
+    """The panel's empty state can still reach Manage, so `current` is None there."""
+    box, rc = _render_manage(current=None)
+
+    assert _open_chips_by_row(rc) == {"GUY": [], "broken": []}
+    rc.close()
+
+
+def test_an_open_project_that_was_never_saved_badges_nothing():
+    """`current` is the in-memory project name; until its first save it has no row
+    on disk to badge — and must not badge a same-named stranger's."""
+    box, rc = _render_manage(current="unsaved-draft")
+
+    assert _open_chips_by_row(rc) == {"GUY": [], "broken": []}
     rc.close()
 
 

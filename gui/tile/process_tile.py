@@ -231,7 +231,7 @@ def ProcessTile(project, processing, process_error, map_=None):
                 classes=["text--secondary"],
             )
         solara.Button(
-            t("tiles.process.run_processing_button"), icon_name="mdi-cog-play-outline",
+            t("tiles.process.run_processing_button"), icon_name="mdi-play-circle-outline",
             color="primary", small=True, on_click=run_processing,
             # `disabled=` is a render-time prop: like `processing` (only set INSIDE
             # the coroutine), it reaches the browser a round-trip after the task
