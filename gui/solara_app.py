@@ -718,28 +718,9 @@ def Page():
     # (SOLARA_TEST stays on; re-enable by uncommenting the line below.)
     # solara.use_effect(_seed_test_variables, [app_state.project.value])
 
-    def _seed_test_model_and_prediction():
-        import os
-        if os.getenv("SOLARA_TEST", "false").lower() != "true":
-            return
-        p = app_state.project.value
-        if p is None or p.models or not p.processed_variables:
-            return
-        from spatialrisk.mlmodels import GLMModel
-        from spatialrisk.predictions.prediction import Prediction
-        from pathlib import Path
-
-        model = GLMModel(name="glm_v1", model_type="glm", year=2015)
-        p.add_model(model, auto_save=False)
-        Prediction(
-            path=Path("/tmp/processed/glm_calibration.tif"),
-            model_key="glm_glm_v1",
-            dataset_name="calibration",
-            year=2015,
-        ).add_to_project(p, auto_save=False)
-        logger.debug("SOLARA_TEST: seeded GLM model + one prediction")
-
-    solara.use_effect(_seed_test_model_and_prediction, [])
+    # Test model/prediction seeding removed: it injected a fake GLM model and a
+    # prediction pointing at a nonexistent /tmp path into whatever real project
+    # was open, which the next save then persisted.
 
     # Handle to the MapApp widget, captured after mount (see _capture_map_app
     # below), so we can imperatively close its step-dialog from inside a tile.
