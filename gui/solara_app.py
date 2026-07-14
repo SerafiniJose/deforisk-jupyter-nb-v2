@@ -4,6 +4,7 @@ Run locally:
     ./run_solara.sh gui/solara_app.py 8910
 """
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -25,19 +26,20 @@ from pysepal.solara import (
 
 from spatialrisk.project import Project, DATA_DIR
 from gui.store.state_manager import app_state
+from gui.store.project_writers import is_writing
 from gui.scripts.project_io import (
+    delete_project,
     list_project_infos,
     load_project,
+    project_dir_size,
     save_project,
 )
 from gui.scripts.project_ui_helpers import (
     aoi_project_name,
     compute_app_title,
     format_last_saved,
-    format_relative,
     manage_projects_label,
     overwrite_needed,
-    project_count_chips,
     validate_project_name,
 )
 from gui.scripts.map_helpers import show_aoi_on_map, clear_project_overlays
@@ -54,6 +56,7 @@ from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
 from gui.widget.locale_select import AppLocaleSelect
+from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
 from gui.widget.notification_area import NotificationArea
 from gui.widget.pipeline_header import PipelineHeader
 from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
@@ -95,65 +98,110 @@ def ProjectPanel(on_close=None):
     discard_open, set_discard_open = solara.use_state(False)
     overwrite_open, set_overwrite_open = solara.use_state(False)
 
-    infos, set_infos = solara.use_state([])          # list[ProjectInfo] for load
-    selected, set_selected = solara.use_state(None)  # selected project name
+    infos = solara.use_reactive([])             # list[ProjectInfo]
+    scan_failed = solara.use_reactive(False)
+    selected = solara.use_reactive(None)        # selected project name
+    pending_delete = solara.use_reactive(None)  # ProjectInfo being deleted
+    pending_size = solara.use_reactive(0)       # its size on disk, in bytes
+
     load_error, set_load_error = solara.use_state(None)
     load_busy, set_load_busy = solara.use_state(False)
 
     new_name, set_new_name = solara.use_state("")
 
-    # Saved-project count for the empty-state "Open saved" button. The empty
-    # state is only reachable at session start (nothing sets project back to
-    # None), so a single filesystem scan per mount is enough; None = scan failed.
-    def _count_saved():
+    def refresh_infos():
+        """Rescan the saved projects. The single source of truth for both the
+        dialog list and the empty-state button's count — a delete changes it, so
+        the old use_memo(deps=[]) count went stale the moment one landed."""
         try:
-            return len(list_project_infos(DATA_DIR))
+            infos.set(list_project_infos(DATA_DIR))
+            scan_failed.set(False)
         except Exception:  # pragma: no cover - defensive
-            return None
+            infos.set([])
+            scan_failed.set(True)
 
-    saved_count = solara.use_memo(_count_saved, [])
+    solara.use_effect(refresh_infos, [])
+    saved_count = None if scan_failed.value else len(infos.value)
 
     def existing_names() -> list:
         return [i.name for i in list_project_infos(DATA_DIR)]
 
-    # ---- Load -----------------------------------------------------------
-    def open_load():
+    # ---- Manage / Load ---------------------------------------------------
+    def open_manage():
         set_load_error(None)
-        set_selected(None)
-        try:
-            set_infos(list_project_infos(DATA_DIR))
-        except Exception as exc:  # pragma: no cover - defensive
-            set_infos([])
-            set_load_error(str(exc))
+        selected.set(None)
+        refresh_infos()
         set_load_open(True)
 
     def do_load():
-        if not selected:
+        name = selected.value
+        if not name:
             return
         set_load_busy(True)
         set_load_error(None)
         try:
-            loaded = load_project(selected)
-            when = next(
-                (i.modified for i in infos if i.name == selected), None
-            )
+            loaded = load_project(name)
+            when = next((i.modified for i in infos.value if i.name == name), None)
             # Restore the saved AOI (sidecar geometry + metadata) so the map can
             # frame it and the downstream tabs unlock. Set before installing the
             # project so the load-zoom effect sees it on the same render.
             app_state.aoi_result.set(load_aoi(DATA_DIR / loaded.project_name, loaded.aoi))
             app_state.aoi_asset.set((loaded.aoi or {}).get("asset"))
             app_state.load_project_state(loaded, when)
-            app_state.status_message.set(t("project.status_loaded", name=selected))
+            app_state.status_message.set(t("project.status_loaded", name=name))
             app_state.error_message.set(None)
             set_load_open(False)
-            # Dismiss the whole Project popup too, not just the inner Load
-            # dialog, so a successful load returns the user to the map.
             if on_close is not None:
                 on_close()
         except Exception as exc:
             set_load_error(str(exc))
         finally:
             set_load_busy(False)
+
+    # ---- Delete ----------------------------------------------------------
+    def open_delete(info):
+        """Row trash button: stage a target and price it. The size is computed for
+        this one project only — never per row, so the list stays cheap even with a
+        multi-GB project in it."""
+        pending_size.set(project_dir_size(info.name))
+        pending_delete.set(info)
+
+    def cancel_delete():
+        pending_delete.set(None)
+
+    target = pending_delete.value
+    target_is_open = target is not None and p is not None and p.project_name == target.name
+    # A background task is still saving into this folder. Deleting now would let
+    # its auto-save re-create the folder (Project.save() does mkdir(exist_ok=True)).
+    # Keyed by name, so it also catches a job orphaned by a project switch.
+    target_busy = target is not None and is_writing(target.name)
+
+    @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
+    async def delete_task():
+        """Delete the staged project's folder, off the render thread.
+
+        Mirrors variables_tile.download_task: async body, blocking call handed to
+        asyncio.to_thread, target passed via a reactive. A 3.2 GB rmtree on a
+        network-backed SEPAL home takes seconds — blocking here would freeze the UI.
+        """
+        info = pending_delete.value
+        if info is None:
+            return
+        # Read the live project rather than the render closure's `p`: the task body
+        # outlives the render that defined it, so `p` can be stale by now.
+        current = app_state.project.value
+        was_open = current is not None and current.project_name == info.name
+
+        await asyncio.to_thread(delete_project, info.name)
+
+        refresh_infos()
+        if selected.value == info.name:
+            selected.set(None)
+        if was_open:
+            app_state.close_project_state()
+        # After close_project_state, which deliberately leaves status alone (§3).
+        app_state.status_message.set(t("project.status_deleted", name=info.name))
+        pending_delete.set(None)  # closes the confirm dialog; manage stays open
 
     # ---- New ------------------------------------------------------------
     def open_new():
@@ -185,11 +233,8 @@ def ProjectPanel(on_close=None):
     def load_instead():
         name = validate_project_name(new_name, existing_names()).cleaned
         set_new_open(False)
-        set_selected(name)
-        try:
-            set_infos(list_project_infos(DATA_DIR))
-        except Exception:
-            set_infos([])
+        selected.set(name)
+        refresh_infos()
         set_load_open(True)
 
     # ---- Save -----------------------------------------------------------
@@ -251,11 +296,11 @@ def ProjectPanel(on_close=None):
             )
             solara.Button(
                 manage_projects_label(saved_count),
-                icon_name="mdi-folder-open-outline",
+                icon_name="mdi-folder-cog-outline",
                 color="primary",
                 outlined=True,
-                disabled=saved_count == 0,
-                on_click=open_load,
+                disabled=not saved_count,
+                on_click=open_manage,
                 style="width: 100%;",
             )
         else:
@@ -288,12 +333,12 @@ def ProjectPanel(on_close=None):
                     on_click=open_new,
                 )
                 solara.Button(
-                    t("common.load"),
-                    icon_name="mdi-folder-open-outline",
+                    t("project.button_manage"),
+                    icon_name="mdi-folder-cog-outline",
                     color="primary",
                     outlined=True,
                     small=True,
-                    on_click=open_load,
+                    on_click=open_manage,
                 )
                 solara.Button(
                     t("project.button_save"),
@@ -393,67 +438,32 @@ def ProjectPanel(on_close=None):
                     t("project.dialog_overwrite_confirm"), on_click=_really_save, color="error", small=True
                 )
 
-    # ---- Load dialog ----------------------------------------------------
-    with rv.Dialog(
-        v_model=load_open, on_v_model=set_load_open, max_width="440px", eager=True
-    ):
-        with rv.Card():
-            with rv.CardTitle():
-                solara.Text(t("project.dialog_load_title"))
-            with rv.CardText():
-                if not infos:
-                    solara.Info(t("project.dialog_load_empty"))
-                else:
-                    now = datetime.now()
-                    with rv.List(three_line=True):
-                        with rv.ListItemGroup(
-                            v_model=selected, on_v_model=set_selected
-                        ):
-                            for info in infos:
-                                with rv.ListItem(
-                                    value=info.name, disabled=not info.readable
-                                ):
-                                    with rv.ListItemContent():
-                                        rv.ListItemTitle(children=[info.name])
-                                        if info.readable:
-                                            with rv.Row(
-                                                style_="flex-wrap: wrap; gap: 4px; "
-                                                "margin: 2px 0;"
-                                            ):
-                                                for chip in project_count_chips(info):
-                                                    rv.Chip(
-                                                        children=[chip.label],
-                                                        x_small=True,
-                                                        color="primary" if chip.accent else None,
-                                                        text_color="white" if chip.accent else None,
-                                                    )
-                                            rv.ListItemSubtitle(
-                                                children=[
-                                                    t("project.dialog_load_modified",
-                                                      time_ago=format_relative(info.modified, now))
-                                                ]
-                                            )
-                                        else:
-                                            rv.ListItemSubtitle(
-                                                children=[
-                                                    info.error or t("project.dialog_load_unreadable")
-                                                ]
-                                            )
-                if load_busy:
-                    rv.ProgressLinear(indeterminate=True)
-                if load_error:
-                    solara.Error(load_error)
-            with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                solara.Button(
-                    t("common.cancel"), on_click=lambda: set_load_open(False), text=True, small=True
-                )
-                solara.Button(
-                    t("common.load"),
-                    on_click=do_load,
-                    color="primary",
-                    small=True,
-                    disabled=not selected or load_busy,
-                )
+    # ---- Manage dialog + delete confirmation ----------------------------
+    # Both render at the panel's top level, never inside a list row.
+    ManageProjectsDialog(
+        open=load_open,
+        infos=infos.value,
+        selected=selected.value,
+        on_select=selected.set,
+        on_load=do_load,
+        on_delete=open_delete,
+        on_cancel=lambda: set_load_open(False),
+        busy=load_busy,
+        error=load_error,
+    )
+
+    ConfirmDeleteProjectDialog(
+        open=target is not None,
+        name=target.name if target is not None else "",
+        size_bytes=pending_size.value,
+        on_cancel=cancel_delete,
+        on_confirm=delete_task,
+        is_open_project=target_is_open,
+        writer_active=target_busy,
+        busy=delete_task.pending,
+        # Task.error is a bool; the exception object lives on Task.exception.
+        error=str(delete_task.exception) if delete_task.error else None,
+    )
 
 
 @solara.component
