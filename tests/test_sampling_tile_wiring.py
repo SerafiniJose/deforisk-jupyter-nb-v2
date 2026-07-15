@@ -52,3 +52,26 @@ def test_toggle_is_offloaded_and_idempotent():
     remover = inspect.getsource(st._remove_sample_layers)
     assert "remove_sample_pmtiles_from_map" in remover
     assert "remove_sample_points_from_map" in remover
+
+
+def test_sampling_tile_design_first_and_autoname():
+    import inspect
+    from gui.tile import sampling_tile as st
+
+    # pure helper is used by the component
+    assert hasattr(st, "_suggest_name")
+
+    src = inspect.getsource(st.SamplingTile)
+    # name-dirty tracking exists
+    assert "name_dirty" in src
+    # existing-name set includes in-flight jobs, not just persisted samples
+    assert "sampling_jobs" in src and "_suggest_name" in src
+    # contextual raster label keys are referenced
+    assert "raster_variable_label_strata" in src
+    assert "raster_variable_label_area" in src
+
+    # design (strategy) select is rendered before the raster select.
+    # (Note: "raster_variable_label_" only appears in the hoisted raster_label
+    # computation above on_generate, not at the render call site — the render
+    # references the `raster_label` variable, so we anchor on that instead.)
+    assert src.index("strategy_label") < src.index("label=raster_label")

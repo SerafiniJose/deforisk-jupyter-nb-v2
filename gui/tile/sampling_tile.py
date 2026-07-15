@@ -145,6 +145,7 @@ def SamplingTile(project, map_=None):
     raster_var, set_raster_var = solara.use_state(raster_keys[0] if raster_keys else "")
     mask_var, set_mask_var = solara.use_state("")
     name, set_name = solara.use_state("")
+    name_dirty, set_name_dirty = solara.use_state(False)
     strategy, set_strategy = solara.use_state("random")
     allocation, set_allocation = solara.use_state("equal")
     adapt, set_adapt = solara.use_state(False)
@@ -161,13 +162,27 @@ def SamplingTile(project, map_=None):
         solara.Info(t("tiles.sampling.error_no_raster"))
         return
 
+    # Names already taken: persisted samples plus still-running jobs (a sample
+    # registers asynchronously inside the worker, so p.samples lags a click).
+    existing_names = set(p.samples) | {
+        j["name"] for j in sampling_jobs.value if j["status"] == "running"
+    }
+    suggested_name = _suggest_name(strategy, existing_names)
+    # Displayed value: the live suggestion until the user edits the field.
+    displayed_name = name if name_dirty else suggested_name
+    raster_label = t(
+        "tiles.sampling.raster_variable_label_strata"
+        if strategy == "stratified"
+        else "tiles.sampling.raster_variable_label_area"
+    )
+
     def on_generate():
         set_form_error(None)
-        nm = (name or "").strip()
+        nm = (displayed_name or "").strip()
         if not nm:
             set_form_error(t("tiles.sampling.error_name_required"))
             return
-        if nm in p.samples:
+        if nm in existing_names:
             set_form_error(t("tiles.sampling.error_name_exists", name=nm))
             return
         if not raster_var or raster_var not in p.processed_variables:
@@ -197,6 +212,7 @@ def SamplingTile(project, map_=None):
              adapt, n_samples_arg, spacing_arg, seed, project),
         )
         set_name("")
+        set_name_dirty(False)
         logger.info("Sampling started: %s (raster=%s, job=%s)", nm, raster_var, job_id)
 
     def on_toggle_map(key):
@@ -232,7 +248,24 @@ def SamplingTile(project, map_=None):
             InfoButton(t("tiles.sampling.info_header"), t("tiles.sampling.info_md"))
 
         rv.Select(
-            label=t("tiles.sampling.raster_variable_label"), items=raster_keys, v_model=raster_var,
+            label=t("tiles.sampling.strategy_label"), items=SAMPLING_STRATEGIES, v_model=strategy,
+            on_v_model=set_strategy, dense=True, outlined=True,
+            # Dynamic help: describes the currently selected sampling design.
+            hint=t(f"tiles.sampling.strategy_hint_{strategy}"), persistent_hint=True,
+        )
+
+        def on_name(v):
+            set_name(v)
+            # Once the typed value diverges from the live suggestion, stop
+            # auto-overriding; matching the suggestion leaves it non-dirty.
+            set_name_dirty(v != suggested_name)
+
+        rv.TextField(
+            label=t("tiles.sampling.sample_name_label"), v_model=displayed_name,
+            on_v_model=on_name, dense=True, outlined=True,
+        )
+        rv.Select(
+            label=raster_label, items=raster_keys, v_model=raster_var,
             on_v_model=set_raster_var, dense=True, outlined=True,
             hint=t("tiles.sampling.raster_variable_hint"), persistent_hint=True,
         )
@@ -240,16 +273,6 @@ def SamplingTile(project, map_=None):
             label=t("tiles.sampling.mask_variable_label"), items=[""] + raster_keys,
             v_model=mask_var, on_v_model=set_mask_var, dense=True, outlined=True,
             hint=t("tiles.sampling.mask_variable_hint"), persistent_hint=True,
-        )
-        rv.TextField(
-            label=t("tiles.sampling.sample_name_label"), v_model=name,
-            on_v_model=set_name, dense=True, outlined=True,
-        )
-        rv.Select(
-            label=t("tiles.sampling.strategy_label"), items=SAMPLING_STRATEGIES, v_model=strategy,
-            on_v_model=set_strategy, dense=True, outlined=True,
-            # Dynamic help: describes the currently selected sample type.
-            hint=t(f"tiles.sampling.strategy_hint_{strategy}"), persistent_hint=True,
         )
 
         if strategy == "stratified":
