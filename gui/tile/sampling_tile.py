@@ -32,6 +32,14 @@ def _systematic_modes():
     ]
 
 
+def _suggest_name(strategy, taken):
+    """Smallest '<strategy>_<n>' (n>=1) not already in `taken`."""
+    n = 1
+    while f"{strategy}_{n}" in taken:
+        n += 1
+    return f"{strategy}_{n}"
+
+
 # Module-level reactives shared across re-renders.
 sampling_jobs = solara.reactive([])
 samples_on_map = solara.reactive(set())
