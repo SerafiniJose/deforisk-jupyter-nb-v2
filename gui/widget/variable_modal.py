@@ -9,6 +9,7 @@ from pysepal.solara.components.inputs import FileInputComponent
 
 from gui.i18n import t
 from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+from gui.widget.artifact_name_field import ArtifactNameField
 from spatialrisk.variables.models import (
     DataType,
     RasterType,
@@ -67,6 +68,7 @@ def VariableModal(
     editing_key: Optional[str] = None,
     initial_entry: Optional[dict] = None,
     sepal_client=None,
+    existing_keys=frozenset(),
 ):
     """Modal dialog for adding or editing a variable."""
     # --- state ---
@@ -88,6 +90,11 @@ def VariableModal(
 
     # Derived: catalogue entry for the selected predefined variable
     cat = PREDEFINED_CATALOGUE.get(predefined_key) if predefined_key else None
+
+    # Storage key the entry will land under (mirrors variables_tile.entry_key).
+    _key_name = predefined_key if source == "predefined" else name.strip()
+    storage_key = f"{_key_name}_{year}" if (_key_name and year and str(year).strip()) else _key_name
+    key_exists = bool(storage_key) and storage_key in existing_keys and storage_key != editing_key
 
     def reset():
         set_source(SOURCES[0])
@@ -226,6 +233,7 @@ def VariableModal(
                         predefined_key, set_predefined_key,
                         year, set_year,
                         cat,
+                        storage_key, key_exists,
                     )
                 else:
                     _render_custom_fields(
@@ -238,6 +246,8 @@ def VariableModal(
                         raster_type, set_raster_type,
                         rasterization_method, set_rasterization_method,
                         sepal_client=sepal_client,
+                        storage_key=storage_key,
+                        key_exists=key_exists,
                     )
 
                 if error:
@@ -257,6 +267,7 @@ def _render_predefined_fields(
     predefined_key, set_predefined_key,
     year, set_year,
     cat,
+    storage_key, key_exists,
 ):
     """Fields shown when source == 'predefined'."""
     rv.Select(
@@ -306,6 +317,17 @@ def _render_predefined_fields(
             disabled=True,
         )
 
+    if storage_key:
+        solara.Text(
+            t(
+                "widgets.artifact_name.exists_warning" if key_exists
+                else "widgets.artifact_name.saved_as",
+                key=storage_key,
+            ),
+            style="font-size:0.8rem;padding:0 4px 4px;",
+            classes=["text--secondary"],
+        )
+
 
 def _render_custom_fields(
     var_type, set_var_type,
@@ -317,14 +339,16 @@ def _render_custom_fields(
     raster_type, set_raster_type,
     rasterization_method, set_rasterization_method,
     sepal_client,
+    storage_key,
+    key_exists,
 ):
     """Fields shown when source == 'custom'."""
-    rv.TextField(
+    ArtifactNameField(
+        value=name,
+        on_input=set_name,
+        storage_key=storage_key,
+        exists=key_exists,
         label=t("vars.modal.custom_name_label"),
-        v_model=name,
-        on_v_model=set_name,
-        dense=True,
-        outlined=True,
     )
     rv.Select(
         label=t("vars.modal.custom_type_label"),

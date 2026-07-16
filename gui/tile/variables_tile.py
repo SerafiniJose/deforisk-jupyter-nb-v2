@@ -494,6 +494,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         editing_key=editing_key,
         initial_entry=editing_entry,
         sepal_client=sepal_client,
+        existing_keys=frozenset(p.raw_variables) if p else frozenset(),
     )
 
     _pending_var = p.raw_variables.get(pending_remove) if (p and pending_remove) else None
