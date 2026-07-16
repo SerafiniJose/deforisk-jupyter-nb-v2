@@ -231,7 +231,7 @@
       "model_select_label": "Modelo",
       "model_name_label": "Nombre del modelo",
       "model_description_header_for": "Sobre {label}",
-      "parameters_header": "Parámetros",
+      "advanced_parameters_header": "Parámetros avanzados",
       "training_data_header": "**Datos de entrenamiento**",
       "dataset_select_label": "Conjunto de datos",
       "dataset_select_hint": "Aporta las capas de objetivo y características con las que el modelo entrena.",

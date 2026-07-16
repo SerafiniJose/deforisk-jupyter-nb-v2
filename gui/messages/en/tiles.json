@@ -231,7 +231,7 @@
       "model_select_label": "Model",
       "model_name_label": "Model name",
       "model_description_header_for": "About {label}",
-      "parameters_header": "Parameters",
+      "advanced_parameters_header": "Advanced parameters",
       "training_data_header": "**Training data**",
       "dataset_select_label": "Dataset",
       "dataset_select_hint": "Provides the target and feature layers the model trains on.",

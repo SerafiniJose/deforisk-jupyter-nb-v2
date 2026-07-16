@@ -91,6 +91,21 @@ MODEL_HAS_VARIABLES = {
     k: any(p.get("group") == "variables" for p in MODEL_REGISTRY[k]["params"])
     for k in MODEL_KEYS
 }
+MODEL_HAS_PARAMS = {
+    k: any(p.get("group", "params") == "params" for p in MODEL_REGISTRY[k]["params"])
+    for k in MODEL_KEYS
+}
+
+# Restyle the Advanced-parameters panel to sit in the form's flow: same
+# border/height/label colour as the outlined dense fields, no 24px inset.
+_ADVANCED_PANEL_CSS = """
+.advanced-params .v-expansion-panel { border: 1px solid rgba(0, 0, 0, .38); border-radius: 4px; }
+.theme--dark .advanced-params .v-expansion-panel { border-color: rgba(255, 255, 255, .24); }
+.advanced-params .v-expansion-panel::before { box-shadow: none; }
+.advanced-params .v-expansion-panel-header { min-height: 40px; padding: 0 12px; font-size: 14px; color: rgba(0, 0, 0, .6); }
+.theme--dark .advanced-params .v-expansion-panel-header { color: rgba(255, 255, 255, .7); }
+.advanced-params .v-expansion-panel-content__wrap { padding: 16px 12px 4px; }
+"""
 
 
 @solara.component
@@ -193,28 +208,22 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         on_close=reset,
         replace_message=lambda k: t("tiles.train.confirm_overwrite_message", key=k),
     ):
-        with solara.Row(style="gap:4px;align-items:center;"):
+        solara.Style(_ADVANCED_PANEL_CSS)
+        with solara.Row(style="gap:4px;align-items:center;margin-bottom:12px;"):
+            # hide_details drops the (empty) message strip under the input so
+            # the row centres the info button on the input box itself.
             rv.Select(
                 label=t("tiles.train.model_select_label"),
                 items=[{"text": model_label(k), "value": k} for k in MODEL_KEYS],
                 item_text="text", item_value="value",
                 v_model=selected_key, on_v_model=set_selected_key,
-                dense=True, outlined=True, style_="flex:1 1 auto;",
+                dense=True, outlined=True, hide_details=True,
+                style_="flex:1 1 auto;",
             )
             InfoButton(
                 t("tiles.train.model_description_header_for", label=model_label(selected_key)),
                 t(f"models.{selected_key}.summary_md") + "\n\n" + t(registry["description_key"]),
             )
-
-        with rv.ExpansionPanels(flat=True):
-            with rv.ExpansionPanel():
-                with rv.ExpansionPanelHeader():
-                    solara.Text(t("tiles.train.parameters_header"))
-                with rv.ExpansionPanelContent():
-                    ParamComponent(
-                        params=all_params.get(selected_key, {}),
-                        set_params=_set_model_params,
-                    )
 
         rv.Select(
             label=t("tiles.train.dataset_select_label"), items=dataset_keys,
@@ -252,3 +261,16 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
             exists=storage_key in models,
             label=t("tiles.train.model_name_label"),
         )
+
+        # Every parameter has a working default, so tuning is progressive-
+        # disclosed at the end of the form, collapsed by default.
+        if MODEL_HAS_PARAMS[selected_key]:
+            with rv.ExpansionPanels(flat=True, class_="advanced-params"):
+                with rv.ExpansionPanel():
+                    with rv.ExpansionPanelHeader():
+                        solara.Text(t("tiles.train.advanced_parameters_header"))
+                    with rv.ExpansionPanelContent():
+                        ParamComponent(
+                            params=all_params.get(selected_key, {}),
+                            set_params=_set_model_params,
+                        )
