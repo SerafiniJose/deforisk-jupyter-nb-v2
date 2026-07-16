@@ -31,9 +31,11 @@ def test_app_state_has_no_stale_current_step():
 
 
 def test_train_tile_selects_dataset_and_sample():
+    """Dataset/sample selection lives in ModelFormDialog (Task 7 moved the form
+    out of TrainTile); this regression guard now targets that module."""
     import inspect
-    from gui.tile import train_tile
-    src = inspect.getsource(train_tile)
+    from gui.widget import model_form_dialog
+    src = inspect.getsource(model_form_dialog)
     assert "selected_dataset" in src
     assert "has_sampling" in src
     assert "p.datasets" in src and "p.samples" in src
