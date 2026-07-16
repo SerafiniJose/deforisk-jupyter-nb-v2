@@ -255,7 +255,7 @@ def VariableModal(
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(t("common.cancel"), on_click=on_cancel, text=True, small=True)
-                solara.Button(submit_label, on_click=on_submit, color="primary", small=True)
+                solara.Button(submit_label, on_click=on_submit, color="primary", small=True, icon_name="mdi-plus")
 
 
 # ---------------------------------------------------------------------------
