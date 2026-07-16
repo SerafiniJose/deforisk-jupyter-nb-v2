@@ -186,6 +186,34 @@ def _check_same_grid(start_var, end_var) -> None:
             )
 
 
+def change_output_name(project, op: str, start_key: str, end_key: str):
+    """Registry name generate_change_var will use, or None while invalid.
+
+    Single source of truth for the change-layer naming convention — the
+    Post-process dialog previews it and generate_change_var registers it.
+    """
+    start = project.processed_variables.get(start_key)
+    end = project.processed_variables.get(end_key)
+    if start is None or end is None:
+        return None
+    y1 = getattr(start, "year", None)
+    y2 = getattr(end, "year", None)
+    if y1 is None or y2 is None or y1 >= y2:
+        return None
+    if start.name == end.name:
+        return f"{op}_{start.name}_{y1}_{y2}"
+    return f"{op}_{start.name}_{y1}_{end.name}_{y2}"
+
+
+def postprocess_output_name(project, pp_key: str, step: str):
+    """Name apply_post_processing will register: source variable name + step
+    suffix (mirrors LocalRasterVar._create_post_var's new_var_name)."""
+    var = project.processed_variables.get(pp_key)
+    if var is None:
+        return None
+    return f"{var.name}_{step}"
+
+
 def generate_change_var(project, op: str, start_key: str, end_key: str):
     """Generate a loss/gain change layer from two aligned processed masks.
 
@@ -216,10 +244,7 @@ def generate_change_var(project, op: str, start_key: str, end_key: str):
     if y1 >= y2:
         raise ValueError("The start layer's year must be earlier than the end layer's.")
 
-    if start.name == end.name:
-        name = f"{op}_{start.name}_{y1}_{y2}"
-    else:
-        name = f"{op}_{start.name}_{y1}_{end.name}_{y2}"
+    name = change_output_name(project, op, start_key, end_key)
 
     existing = project.processed_variables.get(name)
     if existing is not None:
