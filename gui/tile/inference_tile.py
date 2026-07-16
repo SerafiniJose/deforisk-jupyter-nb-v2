@@ -250,14 +250,13 @@ def InferenceTile(project, map_=None, sepal_client=None):
         solara.Markdown(t("tiles.inference.header"))
         solara.Text(t("tiles.inference.description"))
 
-        with solara.Row(style="gap:8px;align-items:center;"):
-            solara.Button(
-                t("tiles.inference.new_button"),
-                icon_name="mdi-plus",
-                color="primary",
-                small=True,
-                on_click=lambda: dialog_open.set(True),
-            )
+        solara.Button(
+            t("tiles.inference.new_button"),
+            icon_name="mdi-plus",
+            color="primary",
+            small=True,
+            on_click=lambda: dialog_open.set(True),
+        )
 
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
