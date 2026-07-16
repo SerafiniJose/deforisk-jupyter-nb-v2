@@ -142,6 +142,16 @@ def EvaluationTableDialog(project, eval_key, on_close):
     p = project.value
     record = p.evaluations.get(eval_key) if (p is not None and eval_key) else None
     active_tab, set_active_tab = solara.use_state(0)
+    # solara's DataFrame unsets Vuetify's `table {width: 100%}` so the table
+    # shrink-wraps to its columns while the footer spans the card — restore it
+    # here so the columns spread across the (fixed-width) dialog.
+    # The plotly modebar is likewise hidden via CSS: solara.FigurePlotly wraps
+    # a FigureWidget, which offers no config hook to disable it.
+    solara.Style(
+        ".evaluation-table-dialog .solara-data-table.v-data-table table"
+        " { width: 100%; }"
+        " .evaluation-table-dialog .modebar { display: none; }"
+    )
     with rv.Dialog(
         v_model=eval_key is not None,
         on_v_model=lambda v: None if v else on_close(),
@@ -151,7 +161,7 @@ def EvaluationTableDialog(project, eval_key, on_close):
         max_width="1400px",
         eager=True,
     ):
-        with rv.Card():
+        with rv.Card(class_="evaluation-table-dialog"):
             with rv.CardTitle():
                 solara.Text(
                     t("widgets.evaluation_results.dialog_title", truth_tag=record.truth_tag) if record else t("widgets.evaluation_results.dialog_title_fallback"))
