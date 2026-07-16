@@ -42,7 +42,13 @@
       "unknown_error": "Error desconocido",
       "dialog_title": "Evaluación — {truth_tag}",
       "dialog_title_fallback": "Evaluación",
-      "no_indices_info": "No hay índices almacenados para esta ejecución."
+      "no_indices_info": "No hay índices almacenados para esta ejecución.",
+      "tab_table": "Tabla",
+      "tab_charts": "Gráficos",
+      "tab_figures": "Pred. vs obs.",
+      "csize_select_label": "Tamaño de celda (píxeles)",
+      "no_figures_info": "Esta ejecución no guardó figuras de predicho vs observado.",
+      "missing_figure": "No se encontró el archivo de la figura: {path}"
     },
     "dataset_list": {
       "title": "Conjuntos de datos",

@@ -42,7 +42,13 @@
       "unknown_error": "Unknown error",
       "dialog_title": "Evaluation — {truth_tag}",
       "dialog_title_fallback": "Evaluation",
-      "no_indices_info": "No indices stored for this run."
+      "no_indices_info": "No indices stored for this run.",
+      "tab_table": "Table",
+      "tab_charts": "Charts",
+      "tab_figures": "Pred. vs obs.",
+      "csize_select_label": "Cell size (pixels)",
+      "no_figures_info": "This run stored no predicted-vs-observed figures.",
+      "missing_figure": "Figure file not found: {path}"
     },
     "dataset_list": {
       "title": "Datasets",

@@ -314,3 +314,76 @@ def test_evaluation_tile_wires_record_and_dialog():
     assert "model_copy()" in src
     # eval_indices transient table is gone
     assert "eval_indices" not in src
+
+
+# ---------------------------------------------------------------------------
+# Chart builders (gui/scripts/evaluation_charts.py)
+# ---------------------------------------------------------------------------
+
+
+def _chart_rows():
+    rows = []
+    for model, base in [("glm", 1.0), ("rf", 0.7)]:
+        for csize in (100, 300):
+            rows.append({
+                "prediction": f"{model}__d1", "model": model, "period": "d1",
+                "csize_coarse_grid": csize, "ncell": 40,
+                "MedAE": base * csize / 100, "R2": 0.5, "RMSE": base, "wRMSE": base,
+                "fig_path": f"/tmp/pred_obs_{model}_d1_{csize}.png",
+            })
+    return rows
+
+
+def test_metric_bars_figure_layout():
+    from gui.scripts.evaluation_charts import metric_bars_figure
+
+    fig = metric_bars_figure(_chart_rows(), ["MedAE", "R2"])
+    # one bar trace per (metric, csize): 2 metrics x 2 csizes
+    assert len(fig.data) == 4
+    assert all(tr.type == "bar" for tr in fig.data)
+    # x axis carries the map labels
+    assert list(fig.data[0].x) == ["glm — d1", "rf — d1"]
+    # legend shows one entry per csize (first-metric traces only)
+    assert sum(1 for tr in fig.data if tr.showlegend) == 2
+    # empty metric selection means "all four"
+    fig_all = metric_bars_figure(_chart_rows(), [])
+    assert len(fig_all.data) == 8
+    # nothing chartable -> None
+    assert metric_bars_figure([], ["RMSE"]) is None
+
+
+def test_figure_entries_and_csizes():
+    from gui.scripts.evaluation_charts import figure_entries, record_csizes
+
+    rows = _chart_rows()
+    assert record_csizes(rows) == [100, 300]
+    entries = figure_entries(rows, 300)
+    assert [label for label, _ in entries] == ["glm — d1", "rf — d1"]
+    assert str(entries[0][1]).endswith("pred_obs_glm_d1_300.png")
+
+
+def test_figure_entries_derives_paths_without_fig_path_column():
+    """Real records store indices WITHOUT fig_path (evaluate_against_truth's
+    explicit column list drops it) — entries must be derived from the record's
+    evaluation folder instead of coming up empty."""
+    from pathlib import Path
+
+    from gui.scripts.evaluation_charts import figure_entries
+
+    rows = [{k: v for k, v in r.items() if k != "fig_path"} for r in _chart_rows()]
+    fig_dir = Path("/data/proj/evaluation/loss_2010")
+    entries = figure_entries(rows, 300, fig_dir=fig_dir)
+    assert [label for label, _ in entries] == ["glm — d1", "rf — d1"]
+    assert entries[0][1] == fig_dir / "pred_obs_glm_d1_300.png"
+    # without a fig_dir there is nothing to derive from
+    assert figure_entries(rows, 300) == []
+
+
+def test_evaluation_dialog_has_tabs_and_csize_select():
+    import inspect
+    import gui.widget.evaluation_results as er
+
+    src = inspect.getsource(er)
+    assert "metric_bars_figure" in src and "FigurePlotly" in src
+    assert "figure_entries" in src and "csize_select_label" in src
+    assert "rv.Tabs" in src and "rv.TabsItems" in src

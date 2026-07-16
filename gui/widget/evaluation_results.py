@@ -10,8 +10,11 @@ toggles are unreliable).
 import pandas as pd
 import reacton.ipyvuetify as rv
 import solara
+from solara.lab.components.theming import theme
 
 from gui.i18n import t
+from gui.scripts.evaluation_charts import (
+    figure_entries, metric_bars_figure, record_csizes)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.product_table import ProductTable
@@ -74,18 +77,77 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
 
 
 @solara.component
-def EvaluationTableDialog(project, eval_key, on_close):
-    """Single popup showing the selected saved run's indices table.
+def _ChartsTab(record, eval_key):
+    """Grouped-bar comparison of the run's maps, one subplot per metric."""
+    indices = getattr(record, "indices", None) or []
+    metrics = getattr(record, "metrics", None)
+    fig = solara.use_memo(
+        lambda: metric_bars_figure(indices, metrics, dark=theme.dark),
+        [eval_key, theme.dark],
+    )
+    if fig is None:
+        solara.Info(t("widgets.evaluation_results.no_indices_info"))
+        return
+    solara.FigurePlotly(fig)
 
-    The dialog is sized to fit the table without scrolling: only the metric
-    columns the run selected are shown (``displayed_indices``), the dialog is
-    wide, and pagination is raised high enough that every row fits on one page.
+
+@solara.component
+def _FiguresTab(record):
+    """Predicted-vs-observed PNGs (one per map) at a user-chosen cell size."""
+    from pathlib import Path
+
+    indices = getattr(record, "indices", None) or []
+    # The PNGs live beside the run's indices_all.csv (evaluation/<truth_tag>/).
+    csv_path = getattr(record, "csv_path", None)
+    fig_dir = Path(csv_path).parent if csv_path else None
+    csizes = record_csizes(indices)
+    selected, set_selected = solara.use_state(None)
+    # A stale selection (from a previously opened run) falls back to the first
+    # cell size instead of writing state during render.
+    csize = selected if selected in csizes else (csizes[0] if csizes else None)
+    if csize is None:
+        solara.Info(t("widgets.evaluation_results.no_indices_info"))
+        return
+
+    if len(csizes) > 1:
+        rv.Select(
+            label=t("widgets.evaluation_results.csize_select_label"),
+            items=csizes, v_model=csize, on_v_model=set_selected,
+            dense=True, outlined=True, style_="max-width: 260px;",
+        )
+    entries = figure_entries(indices, csize, fig_dir=fig_dir)
+    with solara.Row(style="flex-wrap: wrap; gap: 16px; align-items: flex-start;"):
+        for label, path in entries:
+            with solara.Column(style="gap: 4px; width: 420px;"):
+                solara.Text(label, style="font-size: 0.85rem; font-weight: 600;")
+                if path.exists():
+                    solara.Image(path, width="420px")
+                else:
+                    solara.Info(t("widgets.evaluation_results.missing_figure",
+                                  path=str(path)))
+    if not entries:
+        solara.Info(t("widgets.evaluation_results.no_figures_info"))
+
+
+@solara.component
+def EvaluationTableDialog(project, eval_key, on_close):
+    """Single popup showing the selected saved run: table, charts, figures.
+
+    Three tabs: the indices table (only the metric columns the run selected —
+    ``displayed_indices``), a grouped-bar chart comparing the maps per metric,
+    and the predicted-vs-observed figures at a user-chosen cell size. The
+    dialog is wide and table pagination is raised high enough that every row
+    fits on one page.
     """
     p = project.value
     record = p.evaluations.get(eval_key) if (p is not None and eval_key) else None
+    active_tab, set_active_tab = solara.use_state(0)
     with rv.Dialog(
         v_model=eval_key is not None,
         on_v_model=lambda v: None if v else on_close(),
+        # An explicit width: a v-dialog otherwise shrink-wraps to its content,
+        # and the tabbed layout no longer pushes it wide like the bare table did.
+        width="90vw",
         max_width="1400px",
         eager=True,
     ):
@@ -95,8 +157,18 @@ def EvaluationTableDialog(project, eval_key, on_close):
                     t("widgets.evaluation_results.dialog_title", truth_tag=record.truth_tag) if record else t("widgets.evaluation_results.dialog_title_fallback"))
             with rv.CardText():
                 if record is not None and record.indices:
-                    rows = rows_for_record(record)
-                    solara.DataFrame(pd.DataFrame(rows), items_per_page=max(len(rows), 1))
+                    with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=False):
+                        rv.Tab(children=[t("widgets.evaluation_results.tab_table")])
+                        rv.Tab(children=[t("widgets.evaluation_results.tab_charts")])
+                        rv.Tab(children=[t("widgets.evaluation_results.tab_figures")])
+                    with rv.TabsItems(v_model=active_tab):
+                        with rv.TabItem():
+                            rows = rows_for_record(record)
+                            solara.DataFrame(pd.DataFrame(rows), items_per_page=max(len(rows), 1))
+                        with rv.TabItem():
+                            _ChartsTab(record=record, eval_key=eval_key)
+                        with rv.TabItem():
+                            _FiguresTab(record=record)
                 elif record is not None:
                     solara.Info(t("widgets.evaluation_results.no_indices_info"))
             with rv.CardActions(style_="justify-content: flex-end;"):
