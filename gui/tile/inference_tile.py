@@ -2,52 +2,24 @@
 
 import asyncio
 import logging
-import re
 import uuid
 
 import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t, plural
+from gui.scripts.artifact_names import default_pred_name as _default_pred_name
+from gui.scripts.artifact_names import prediction_name_exists as _prediction_name_exists
+from gui.scripts.artifact_names import sanitize_key as _sanitize_pred_name
 from gui.scripts.product_rows import job_row_key
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
+from gui.widget.prediction_form_dialog import PredictionFormDialog
 from gui.widget.prediction_import_modal import PredictionImportModal
 
 logger = logging.getLogger("spatial_risk")
-
-
-def _sanitize_pred_name(name: str) -> str:
-    """Normalise a user-typed prediction name to a key/path-safe token.
-
-    Keeps alphanumerics, dash and underscore (so the default ``model__dataset``
-    token survives intact); collapses any other run into one underscore. The
-    result is used as the prediction's registry key, output subfolder and the
-    ``Prediction.name`` the outputs list matches on, so it must be path-safe.
-    """
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "").strip()).strip("_")
-
-
-def _default_pred_name(model_key: str, dataset_name: str) -> str:
-    """Prefilled prediction name for a (model, dataset) selection."""
-    if not model_key or not dataset_name:
-        return ""
-    return _sanitize_pred_name(f"{model_key}__{dataset_name}")
-
-
-def _prediction_name_exists(project, name: str) -> bool:
-    """True if a prediction already uses *name* (as its key or its name field).
-
-    Covers both new name-keyed predictions (``Prediction.name == name``) and the
-    legacy provenance key (``{model}__{dataset}`` matches the default token).
-    """
-    if project is None or not name:
-        return False
-    if name in getattr(project, "predictions", {}):
-        return True
-    return bool(project.filter_predictions(name=name))
 
 
 # Module-level reactives shared across re-renders
@@ -126,32 +98,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
     """
     p = project.value
 
-    # Trained model selection
-    model_keys = sorted(p.models.keys()) if p and p.models else []
-    selected_model, set_selected_model = solara.use_state("")
-
-    # Dataset selection
-    dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
-    selected_dataset, set_selected_dataset = solara.use_state("")
-
-    # Prediction name — names the output so re-runs don't silently overwrite.
-    # Prefilled with the model+dataset default; until the user edits it, the
-    # field tracks the current selection (touched flag freezes their choice).
-    pred_name, set_pred_name = solara.use_state("")
-    pred_name_touched, set_pred_name_touched = solara.use_state(False)
-    default_pred_name = _default_pred_name(selected_model, selected_dataset)
-    effective_pred_name = (
-        _sanitize_pred_name(pred_name) if pred_name_touched else default_pred_name
-    )
-    pred_name_field = pred_name if pred_name_touched else default_pred_name
-    # Only flag the empty-name field as an error once a run has been attempted,
-    # so it doesn't show a red "Required." before the user has done anything.
-    run_attempted, set_run_attempted = solara.use_state(False)
-
-    def set_pred_name_input(v):
-        set_pred_name_touched(True)
-        set_run_attempted(False)
-        set_pred_name(v)
+    dialog_open = solara.use_reactive(False)
 
     # Form messages
     form_error, set_form_error = solara.use_state(None)
@@ -187,57 +134,25 @@ def InferenceTile(project, map_=None, sepal_client=None):
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
-    pending_overwrite, set_pending_overwrite = solara.use_state(None)
-
-    def _launch_inference(name):
+    def _launch_inference(model_key, dataset_key, name):
         """Create the output job row and spawn the worker. Inputs pre-validated."""
         job_id = str(uuid.uuid4())[:8]
         job = {
             "id": job_id,
-            "model_key": selected_model,
-            "dataset_name": selected_dataset,
+            "model_key": model_key,
+            "dataset_name": dataset_key,
             "pred_name": name,
             "status": "running",
             "error": None,
             "output_path": None,
         }
         inference_jobs.set(list(inference_jobs.value) + [job])
+        spawn_in_context(_run_inference, (job_id, model_key, dataset_key, p, name))
+        logger.info("Inference started: %s on %s as '%s' (job=%s)",
+                    model_key, dataset_key, name, job_id)
 
-        spawn_in_context(
-            _run_inference,
-            (job_id, selected_model, selected_dataset, p, name),
-        )
-        logger.info(
-            "Inference started: %s on %s as '%s' (job=%s)",
-            selected_model,
-            selected_dataset,
-            name,
-            job_id,
-        )
-
-    def on_run():
-        set_form_error(None)
-        if p is None:
-            set_form_error(t("tiles.inference.error_no_project"))
-            return
-        if not selected_model or selected_model not in p.models:
-            set_form_error(t("tiles.inference.error_invalid_model"))
-            return
-        if not selected_dataset or selected_dataset not in p.datasets:
-            set_form_error(t("tiles.inference.error_invalid_dataset"))
-            return
-        name = effective_pred_name
-        if not name:
-            set_run_attempted(True)
-            set_form_error(t("tiles.inference.error_name_required"))
-            return
-
-        # An existing prediction with this name would be replaced — confirm first.
-        if _prediction_name_exists(p, name):
-            set_pending_overwrite({"name": name})
-            return
-
-        _launch_inference(name)
+    def on_submit(entry):
+        _launch_inference(entry["model_key"], entry["dataset_key"], entry["name"])
 
     def _forget_on_map(row_key):
         remaining = set(preds_on_map.value)
@@ -334,86 +249,26 @@ def InferenceTile(project, map_=None, sepal_client=None):
             ]
         )
 
-    # Name intentionally left out: the button stays enabled so an empty name can
-    # surface the "Required." error on click (on_run re-validates and bails).
-    can_run = bool(selected_model and selected_dataset)
-
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.inference.header"))
         solara.Text(t("tiles.inference.description"))
 
-        # Trained model selector
-        rv.Select(
-            label=t("tiles.inference.model_select_label"),
-            items=model_keys,
-            v_model=selected_model,
-            on_v_model=set_selected_model,
-            dense=True,
-            outlined=True,
-            no_data_text=t("tiles.inference.model_select_no_data"),
-            hint=t("tiles.inference.model_select_hint"),
-            persistent_hint=True,
-        )
-
-        # Dataset selector
-        rv.Select(
-            label=t("tiles.inference.dataset_select_label"),
-            items=dataset_keys,
-            v_model=selected_dataset,
-            on_v_model=set_selected_dataset,
-            dense=True,
-            outlined=True,
-            no_data_text=t("tiles.inference.dataset_select_no_data"),
-            hint=t("tiles.inference.dataset_select_hint"),
-            persistent_hint=True,
-        )
-
-        # Prediction name — required; names the output so re-runs don't silently
-        # overwrite. The hint shows the resulting registry key and flags when that
-        # name is already taken (running will overwrite it).
-        pred_exists = _prediction_name_exists(p, effective_pred_name)
-        rv.TextField(
-            label=t("tiles.inference.pred_name_label"),
-            v_model=pred_name_field,
-            on_v_model=set_pred_name_input,
-            dense=True,
-            outlined=True,
-            messages=(
-                t("tiles.inference.pred_name_exists_warning", name=effective_pred_name)
-                if pred_exists
-                else (
-                    t("tiles.inference.pred_name_saved_as", name=effective_pred_name)
-                    if effective_pred_name
-                    else (
-                        t("tiles.inference.pred_name_required")
-                        if run_attempted
-                        else ""
-                    )
-                )
-            ),
-            error=run_attempted and not effective_pred_name,
-        )
-
-        # Run button
-        solara.Button(
-            t("tiles.inference.run_button"),
-            icon_name="mdi-play",
-            color="primary",
-            small=True,
-            on_click=on_run,
-            disabled=not can_run,
-        )
-
-        # Import a prediction produced outside the app (e.g. a QGIS export). It is
-        # copied + reprojected into the project and registered like a computed
-        # prediction, so it shows in the outputs list and Step 8 — Evaluation.
-        solara.Button(
-            t("tiles.inference.import_button"),
-            icon_name="mdi-plus",
-            color="primary",
-            small=True,
-            on_click=lambda: import_modal_open.set(True),
-        )
+        with solara.Row(style="gap:8px;align-items:center;"):
+            solara.Button(
+                t("tiles.inference.new_button"),
+                icon_name="mdi-plus",
+                color="primary",
+                small=True,
+                on_click=lambda: dialog_open.set(True),
+            )
+            solara.Button(
+                t("tiles.inference.import_button"),
+                icon_name="mdi-import",
+                color="primary",
+                outlined=True,
+                small=True,
+                on_click=lambda: import_modal_open.set(True),
+            )
 
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
@@ -451,32 +306,11 @@ def InferenceTile(project, map_=None, sepal_client=None):
             confirm_label=t("common.delete"),
         )
 
-        # Overwrite confirmation — shown when the chosen prediction name exists.
-        def _confirm_overwrite():
-            ov = pending_overwrite
-            set_pending_overwrite(None)
-            if ov:
-                _launch_inference(ov["name"])
-
-        ConfirmDialog(
-            open=pending_overwrite is not None,
-            on_cancel=lambda: set_pending_overwrite(None),
-            on_confirm=_confirm_overwrite,
-            title=t("tiles.inference.confirm_overwrite_title"),
-            message=(
-                t(
-                    "tiles.inference.confirm_overwrite_message",
-                    name=pending_overwrite["name"],
-                )
-                if pending_overwrite
-                else ""
-            ),
-            confirm_label=t("tiles.inference.confirm_overwrite_label"),
-        )
-
         # Import-a-local-prediction modal (opened from the top action bar).
         PredictionImportModal(
             open_=import_modal_open,
             on_import=on_import,
             sepal_client=sepal_client,
         )
+
+    PredictionFormDialog(project=project, open_=dialog_open, on_submit=on_submit)
