@@ -21,11 +21,17 @@ def test_sample_set_list_widget_importable():
 
 def test_sampling_tile_has_distance_mode():
     from gui.tile import sampling_tile
+    import gui.widget.sample_form_dialog as dlg
+
     src = inspect.getsource(sampling_tile)
-    # systematic-only spacing mode wired into the form
+    # systematic-only spacing mode still threads through the tile's job spawn
     assert "spacing_m" in src
-    assert "tiles.sampling.systematic_mode_spacing" in src
-    assert 'strategy == "systematic"' in src
+
+    # the mode select and its systematic-only guard now live in the form dialog
+    dlg_src = inspect.getsource(dlg)
+    assert "tiles.sampling.systematic_mode_spacing" in dlg_src
+    assert 'strategy == "systematic"' in dlg_src
+
     # _run_sampling carries spacing_m between n_samples and seed (catches
     # positional-arg reordering vs the spawn_in_context call site)
     params = list(inspect.signature(sampling_tile._run_sampling).parameters)
@@ -54,24 +60,26 @@ def test_toggle_is_offloaded_and_idempotent():
     assert "remove_sample_points_from_map" in remover
 
 
-def test_sampling_tile_design_first_and_autoname():
+def test_sampling_form_dialog_design_first_and_autoname():
     import inspect
     from gui.tile import sampling_tile as st
+    import gui.widget.sample_form_dialog as dlg
 
-    # pure helper is used by the component
-    assert hasattr(st, "_suggest_name")
+    # the tile still exposes the suggestion helper (compat alias)
+    assert callable(st._suggest_name)
+    tile_src = inspect.getsource(st.SamplingTile)
+    # list-first: tile has the New button + dialog, not the form fields
+    assert "SampleFormDialog" in tile_src
+    assert "tiles.sampling.new_button" in tile_src
+    assert "n_samples_label" not in tile_src
 
-    src = inspect.getsource(st.SamplingTile)
-    # name-dirty tracking exists
-    assert "name_dirty" in src
-    # existing-name set includes in-flight jobs, not just persisted samples
-    assert "sampling_jobs" in src and "_suggest_name" in src
-    # contextual raster label keys are referenced
+    src = inspect.getsource(dlg)
+    # shared naming (suggested-until-edited) and the shared frame
+    assert "use_artifact_name" in src and "CreationDialog" in src
+    # contextual raster label preserved
     assert "raster_variable_label_strata" in src
     assert "raster_variable_label_area" in src
-
-    # design (strategy) select is rendered before the raster select.
-    # (Note: "raster_variable_label_" only appears in the hoisted raster_label
-    # computation above on_generate, not at the render call site — the render
-    # references the `raster_label` variable, so we anchor on that instead.)
-    assert src.index("strategy_label") < src.index("label=raster_label")
+    # design (strategy) select renders before the raster select
+    assert src.index("strategy_label") < src.index("raster_variable_label_")
+    # seed is progressive-disclosed under Advanced
+    assert "ExpansionPanel" in src and "seed_label" in src

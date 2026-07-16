@@ -9,35 +9,22 @@ sample and a dataset, then extracts features at the sample points.
 import logging
 import uuid
 
-import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
+from gui.scripts.artifact_names import suggest_name
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
+from gui.widget.sample_form_dialog import SampleFormDialog
 from gui.widget.sample_set_list import SampleSetList
 
 logger = logging.getLogger("spatial_risk")
 
-SAMPLING_STRATEGIES = ["random", "stratified", "systematic"]
-ALLOCATION_METHODS = ["equal", "proportional", "deforisk"]
-
-
-def _systematic_modes():
-    return [
-        {"text": t("tiles.sampling.systematic_mode_n_samples"), "value": "n_samples"},
-        {"text": t("tiles.sampling.systematic_mode_spacing"), "value": "spacing"},
-    ]
-
-
-def _suggest_name(strategy, taken):
-    """Smallest '<strategy>_<n>' (n>=1) not already in `taken`."""
-    n = 1
-    while f"{strategy}_{n}" in taken:
-        n += 1
-    return f"{strategy}_{n}"
+# Compat alias — the shared helper moved to gui/scripts/artifact_names.py
+# (tests/test_sampling_name_suggest.py imports it from here).
+_suggest_name = suggest_name
 
 
 # Module-level reactives shared across re-renders.
@@ -142,19 +129,8 @@ def SamplingTile(project, map_=None):
     # All hooks are called unconditionally before any early return so the hook
     # count is stable across renders (this tile is gated, so it renders before
     # raster variables exist and then again once they do).
-    raster_var, set_raster_var = solara.use_state(raster_keys[0] if raster_keys else "")
-    mask_var, set_mask_var = solara.use_state("")
-    name, set_name = solara.use_state("")
-    name_dirty, set_name_dirty = solara.use_state(False)
-    strategy, set_strategy = solara.use_state("random")
-    allocation, set_allocation = solara.use_state("equal")
-    adapt, set_adapt = solara.use_state(False)
-    n_samples, set_n_samples = solara.use_state(10000)
-    seed, set_seed = solara.use_state(1234)
-    form_error, set_form_error = solara.use_state(None)
-    sys_mode, set_sys_mode = solara.use_state("n_samples")
-    spacing_m, set_spacing_m = solara.use_state(1000)
     pending_remove, set_pending_remove = solara.use_state(None)
+    dialog_open = solara.use_reactive(False)
 
     if p is None:
         return
@@ -164,57 +140,41 @@ def SamplingTile(project, map_=None):
 
     # Names already taken: persisted samples plus still-running jobs (a sample
     # registers asynchronously inside the worker, so p.samples lags a click).
-    existing_names = set(p.samples) | {
+    existing_names = frozenset(p.samples)
+    running_names = frozenset(
         j["name"] for j in sampling_jobs.value if j["status"] == "running"
-    }
-    suggested_name = _suggest_name(strategy, existing_names)
-    # Displayed value: the live suggestion until the user edits the field.
-    displayed_name = name if name_dirty else suggested_name
-    raster_label = t(
-        "tiles.sampling.raster_variable_label_strata"
-        if strategy == "stratified"
-        else "tiles.sampling.raster_variable_label_area"
     )
 
-    def on_generate():
-        set_form_error(None)
-        nm = (displayed_name or "").strip()
-        if not nm:
-            set_form_error(t("tiles.sampling.error_name_required"))
-            return
-        if nm in existing_names:
-            set_form_error(t("tiles.sampling.error_name_exists", name=nm))
-            return
-        if not raster_var or raster_var not in p.processed_variables:
-            set_form_error(t("tiles.sampling.error_invalid_raster"))
-            return
-        if mask_var and mask_var not in p.processed_variables:
-            set_form_error(t("tiles.sampling.error_invalid_mask"))
-            return
+    def _do_remove(key):
+        if map_ is not None and key in samples_on_map.value:
+            _remove_sample_layers(map_, _sample_layer_key(key))
+            samples_on_map.set(samples_on_map.value - {key})
+        cur = project.value
+        if cur is not None and key in cur.samples:
+            cur.delete_sample(key, auto_save=True)
+            project.set(cur.model_copy())
 
-        use_spacing = strategy == "systematic" and sys_mode == "spacing"
-        if use_spacing and (spacing_m is None or spacing_m <= 0):
-            set_form_error(t("tiles.sampling.error_invalid_spacing"))
-            return
-        spacing_arg = spacing_m if use_spacing else None
-        n_samples_arg = None if use_spacing else n_samples
-
+    def on_submit(entry):
+        nm = entry["name"]
+        if entry["replace"]:
+            # Confirmed in the dialog: drop the superseded sample (and its
+            # map layer) before regenerating under the same name.
+            _do_remove(nm)
         job_id = str(uuid.uuid4())[:8]
         sampling_jobs.set(list(sampling_jobs.value) + [{
-            "id": job_id, "name": nm, "strategy": strategy,
-            "raster_var_name": raster_var,
-            "mask_var_name": mask_var,
+            "id": job_id, "name": nm, "strategy": entry["strategy"],
+            "raster_var_name": entry["raster_var"],
+            "mask_var_name": entry["mask_var"],
             "status": "running", "error": None,
             "n_total": None, "class_counts": None,
         }])
         spawn_in_context(
             _run_sampling,
-            (job_id, nm, raster_var, mask_var, strategy, allocation,
-             adapt, n_samples_arg, spacing_arg, seed, project),
+            (job_id, nm, entry["raster_var"], entry["mask_var"], entry["strategy"],
+             entry["allocation"], entry["adapt"], entry["n_samples"],
+             entry["spacing_m"], entry["seed"], project),
         )
-        set_name("")
-        set_name_dirty(False)
-        logger.info("Sampling started: %s (raster=%s, job=%s)", nm, raster_var, job_id)
+        logger.info("Sampling started: %s (raster=%s, job=%s)", nm, entry["raster_var"], job_id)
 
     def on_toggle_map(key):
         if map_ is None:
@@ -237,107 +197,19 @@ def SamplingTile(project, map_=None):
         # Failed job rows only — never touches the sample registry.
         sampling_jobs.set([j for j in sampling_jobs.value if j["id"] != job_id])
 
-    def _do_remove(key):
-        if map_ is not None and key in samples_on_map.value:
-            _remove_sample_layers(map_, _sample_layer_key(key))
-            samples_on_map.set(samples_on_map.value - {key})
-        cur = project.value
-        if cur is not None and key in cur.samples:
-            cur.delete_sample(key, auto_save=True)
-            project.set(cur.model_copy())
-
     with solara.Column(style="gap: 16px;"):
         solara.Markdown(t("tiles.sampling.header"))
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.sampling.description"))
             InfoButton(t("tiles.sampling.info_header"), t("tiles.sampling.info_md"))
 
-        rv.Select(
-            label=t("tiles.sampling.strategy_label"), items=SAMPLING_STRATEGIES, v_model=strategy,
-            on_v_model=set_strategy, dense=True, outlined=True,
-            # Dynamic help: describes the currently selected sampling design.
-            hint=t(f"tiles.sampling.strategy_hint_{strategy}"), persistent_hint=True,
-        )
-
-        def on_name(v):
-            set_name(v)
-            # Once the typed value diverges from the live suggestion, stop
-            # auto-overriding; matching the suggestion leaves it non-dirty.
-            set_name_dirty(v != suggested_name)
-
-        rv.TextField(
-            label=t("tiles.sampling.sample_name_label"), v_model=displayed_name,
-            on_v_model=on_name, dense=True, outlined=True,
-        )
-        rv.Select(
-            label=raster_label, items=raster_keys, v_model=raster_var,
-            on_v_model=set_raster_var, dense=True, outlined=True,
-            hint=t("tiles.sampling.raster_variable_hint"), persistent_hint=True,
-        )
-        rv.Select(
-            label=t("tiles.sampling.mask_variable_label"), items=[""] + raster_keys,
-            v_model=mask_var, on_v_model=set_mask_var, dense=True, outlined=True,
-            hint=t("tiles.sampling.mask_variable_hint"), persistent_hint=True,
-        )
-
-        if strategy == "stratified":
-            rv.Select(
-                label=t("tiles.sampling.allocation_label"), items=ALLOCATION_METHODS, v_model=allocation,
-                on_v_model=set_allocation, dense=True, outlined=True,
-                # Dynamic help: how the selected rule splits points across classes.
-                hint=t(f"tiles.sampling.allocation_hint_{allocation}"), persistent_hint=True,
-            )
-            if allocation == "deforisk":
-                rv.Switch(
-                    label=t("tiles.sampling.adapt_label"),
-                    v_model=adapt, on_v_model=set_adapt,
-                    hint=t("tiles.sampling.adapt_hint"), persistent_hint=True,
-                )
-
-        if strategy == "systematic":
-            rv.Select(
-                label=t("tiles.sampling.define_grid_label"), items=_systematic_modes(),
-                item_text="text", item_value="value",
-                v_model=sys_mode, on_v_model=set_sys_mode,
-                dense=True, outlined=True,
-            )
-
-        if strategy == "systematic" and sys_mode == "spacing":
-            rv.TextField(
-                label=t("tiles.sampling.spacing_label"), type_="number",
-                v_model=str(spacing_m) if spacing_m is not None else "",
-                on_v_model=lambda v: set_spacing_m(int(round(float(v))) if v and v.strip() else None),
-                dense=True, outlined=True, step="1",
-                hint=t("tiles.sampling.spacing_hint"), persistent_hint=True,
-            )
-        else:
-            # deforisk allocation draws N from EACH class, not a split total.
-            _n_hint = (
-                t("tiles.sampling.n_samples_hint_deforisk")
-                if strategy == "stratified" and allocation == "deforisk"
-                else t("tiles.sampling.n_samples_hint")
-            )
-            rv.TextField(
-                label=t("tiles.sampling.n_samples_label"), type_="number",
-                v_model=str(n_samples) if n_samples is not None else "",
-                on_v_model=lambda v: set_n_samples(int(v) if v and v.strip() else None),
-                dense=True, outlined=True,
-                hint=_n_hint, persistent_hint=True,
-            )
-        rv.TextField(
-            label=t("tiles.sampling.seed_label"), type_="number",
-            v_model=str(seed) if seed is not None else "",
-            on_v_model=lambda v: set_seed(int(v) if v and v.strip() else None),
-            dense=True, outlined=True,
-            hint=t("tiles.sampling.seed_hint"), persistent_hint=True,
-        )
-
         solara.Button(
-            t("tiles.sampling.generate_button"), icon_name="mdi-play", color="primary", small=True,
-            on_click=on_generate,
+            t("tiles.sampling.new_button"),
+            icon_name="mdi-plus",
+            color="primary",
+            small=True,
+            on_click=lambda: dialog_open.set(True),
         )
-        if form_error:
-            rv.Alert(type_="error", dense=True, children=[form_error])
 
         SampleSetList(
             project=project,
@@ -357,3 +229,11 @@ def SamplingTile(project, map_=None):
             message=t("tiles.sampling.confirm_remove_message", name=pending_remove or ""),
             confirm_label=t("tiles.sampling.confirm_remove_label"),
         )
+
+    SampleFormDialog(
+        project=project,
+        open_=dialog_open,
+        existing_names=existing_names,
+        running_names=running_names,
+        on_submit=on_submit,
+    )
