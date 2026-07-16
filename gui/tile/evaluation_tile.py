@@ -131,7 +131,6 @@ def EvaluationTile(project):
         eval_jobs.set([j for j in eval_jobs.value if j["id"] != job_id])
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown(t("tiles.evaluation.header"))
         solara.Text(t("tiles.evaluation.description"))
 
         if p is None or not var_items:

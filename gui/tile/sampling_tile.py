@@ -198,7 +198,6 @@ def SamplingTile(project, map_=None):
         sampling_jobs.set([j for j in sampling_jobs.value if j["id"] != job_id])
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown(t("tiles.sampling.header"))
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.sampling.description"))
             InfoButton(t("tiles.sampling.info_header"), t("tiles.sampling.info_md"))

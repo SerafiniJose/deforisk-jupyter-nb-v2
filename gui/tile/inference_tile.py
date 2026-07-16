@@ -247,7 +247,6 @@ def InferenceTile(project, map_=None, sepal_client=None):
         )
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown(t("tiles.inference.header"))
         solara.Text(t("tiles.inference.description"))
 
         solara.Button(

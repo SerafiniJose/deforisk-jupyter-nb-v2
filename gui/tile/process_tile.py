@@ -202,7 +202,6 @@ def ProcessTile(project, processing, process_error, map_=None):
         process_task()
 
     with solara.Column(style="gap:16px;"):
-        solara.Markdown(t("tiles.process.header"))
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.process.description"))
             InfoButton(t("tiles.process.info_header"), t("tiles.process.info_md"))

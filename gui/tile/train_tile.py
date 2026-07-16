@@ -183,7 +183,6 @@ def TrainTile(project):
         )
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown(t("tiles.train.header"))
         solara.Text(t("tiles.train.description"))
 
         solara.Button(

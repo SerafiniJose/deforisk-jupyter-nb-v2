@@ -57,7 +57,6 @@ def PostProcessTile(project, process_error, map_=None):
             process_error.set(t("tiles.postprocess.error_post_processing", exc=exc))
 
     with solara.Column(style="gap:16px;"):
-        solara.Markdown(t("tiles.postprocess.header"))
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.postprocess.description"))
             InfoButton(t("tiles.postprocess.info_header"), t("tiles.postprocess.info_md"))

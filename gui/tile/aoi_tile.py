@@ -23,7 +23,6 @@ def AoiTile(map_, gee_interface, aoi_result, aoi_asset, on_selection, restore_si
     # Key the subtree on the load signal: each project switch remounts AoiView so
     # its (and its children's) mount-time restore effects re-read the current AOI.
     with solara.Column(style="gap: 16px;").key(f"aoi-{restore_signal}"):
-        solara.Markdown(t("tiles.aoi.header"))
         solara.Text(t("tiles.aoi.description"))
 
         AoiView(

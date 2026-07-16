@@ -86,7 +86,6 @@ def DatasetTile(project):
     has_processed = p is not None and bool(p.processed_variables)
 
     with solara.Column(style="gap:16px;"):
-        solara.Markdown(t("tiles.dataset.header"))
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.dataset.description"))
             InfoButton(t("tiles.dataset.info_header"), t("tiles.dataset.info_md"))
