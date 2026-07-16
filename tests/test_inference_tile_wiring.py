@@ -28,3 +28,9 @@ def test_prediction_form_dialog_contract():
     assert "CreationDialog" in src and "ArtifactNameField" in src
     assert "use_artifact_name" in src and "default_pred_name" in src
     assert "prediction_name_exists" in src
+    # unified dialog: source kind slot + import mode
+    assert "tiles.inference.source_label" in src
+    assert "FileInputComponent" in src
+    assert "sepal_client" in src
+    # import previews the resolved (suffixed) key, it never replaces
+    assert "resolve_import_key" in src
