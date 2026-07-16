@@ -41,7 +41,7 @@ def test_chips_order_and_basic_labels():
     chips = project_count_chips(_info(raw_count=9, processed_count=13))
     labels = [c.label for c in chips]
     assert labels[0] == "9 raw"
-    assert labels[1] == "13 processed"
+    assert labels[1] == "13 harmonized"
     assert labels[2].endswith("models")  # "0 models"
     assert labels[3] == "0 predictions"
     # raw / processed are never accented
