@@ -57,7 +57,9 @@
       "empty": "No sample sets generated yet.",
       "col_name": "Name",
       "col_strategy": "Strategy",
-      "col_points": "Points"
+      "col_points": "Points",
+      "col_status": "Status",
+      "unknown_error": "Unknown error."
     },
     "variable_list": {
       "source_title": "Source variables",
@@ -131,6 +133,16 @@
       "status_completed": "completed",
       "status_failed": "failed",
       "status_cancelled": "cancelled"
+    },
+    "artifact_name": {
+      "label": "Name",
+      "required": "Required.",
+      "saved_as": "Will be saved as '{key}'.",
+      "exists_warning": "'{key}' already exists — creating will replace it."
+    },
+    "creation_dialog": {
+      "replace_title": "Replace existing?",
+      "replace_message": "'{key}' already exists and will be replaced. Continue?"
     }
   }
 }

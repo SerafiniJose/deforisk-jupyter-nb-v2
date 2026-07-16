@@ -351,6 +351,8 @@ def InferenceTile(project, map_=None, sepal_client=None):
             dense=True,
             outlined=True,
             no_data_text=t("tiles.inference.model_select_no_data"),
+            hint=t("tiles.inference.model_select_hint"),
+            persistent_hint=True,
         )
 
         # Dataset selector
@@ -362,6 +364,8 @@ def InferenceTile(project, map_=None, sepal_client=None):
             dense=True,
             outlined=True,
             no_data_text=t("tiles.inference.dataset_select_no_data"),
+            hint=t("tiles.inference.dataset_select_hint"),
+            persistent_hint=True,
         )
 
         # Prediction name — required; names the output so re-runs don't silently

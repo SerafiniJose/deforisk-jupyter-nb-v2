@@ -57,7 +57,9 @@
       "empty": "Aún no se generaron conjuntos de muestras.",
       "col_name": "Nombre",
       "col_strategy": "Estrategia",
-      "col_points": "Puntos"
+      "col_points": "Puntos",
+      "col_status": "Estado",
+      "unknown_error": "Error desconocido."
     },
     "variable_list": {
       "source_title": "Variables fuente",
@@ -131,6 +133,16 @@
       "status_completed": "completado",
       "status_failed": "falló",
       "status_cancelled": "cancelado"
+    },
+    "artifact_name": {
+      "label": "Nombre",
+      "required": "Obligatorio.",
+      "saved_as": "Se guardará como '{key}'.",
+      "exists_warning": "'{key}' ya existe — al crearlo se reemplazará."
+    },
+    "creation_dialog": {
+      "replace_title": "¿Reemplazar existente?",
+      "replace_message": "'{key}' ya existe y será reemplazado. ¿Continuar?"
     }
   }
 }
