@@ -18,7 +18,7 @@ IMPORT_DIR_NAME = "imported_predictions"
 IMPORT_DATASET_NAME = "imported"
 
 
-def _sanitize(name: str) -> str:
+def sanitize_import_name(name: str) -> str:
     """Filesystem- and label-safe token from a free-text name.
 
     Spaces collapse to hyphens; characters outside ``[A-Za-z0-9._-]`` are dropped.
@@ -28,6 +28,26 @@ def _sanitize(name: str) -> str:
     token = re.sub(r"\s+", "-", name.strip())
     token = re.sub(r"[^A-Za-z0-9._-]", "", token)
     return token or IMPORT_DATASET_NAME
+
+
+def resolve_import_key(project: Any, name: str, src_suffix: str = "") -> str:
+    """The model_key ``import_prediction`` would assign to *name* right now.
+
+    Pure read — mirrors the import's duplicate disambiguation (suffix ``-2``,
+    ``-3``, … while the registry key or the destination file is taken) so the
+    GUI can preview the key before the copy happens.
+    """
+    dest_dir = Path(project.folders.project_folder) / IMPORT_DIR_NAME
+    base = sanitize_import_name(name)
+    model_key = base
+    suffix = 2
+    while (
+        f"{model_key}__{IMPORT_DATASET_NAME}" in getattr(project, "predictions", {})
+        or (dest_dir / f"{model_key}{src_suffix}").exists()
+    ):
+        model_key = f"{base}-{suffix}"
+        suffix += 1
+    return model_key
 
 
 def import_prediction(
@@ -69,18 +89,7 @@ def import_prediction(
     dest_dir = Path(project.folders.project_folder) / IMPORT_DIR_NAME
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    base = _sanitize(name)
-    # Resolve a model_key that is unique both as a registry key and a filename,
-    # so re-importing the same name produces a distinct entry rather than
-    # silently overwriting the previous one.
-    model_key = base
-    suffix = 2
-    while (
-        f"{model_key}__{IMPORT_DATASET_NAME}" in getattr(project, "predictions", {})
-        or (dest_dir / f"{model_key}{src.suffix}").exists()
-    ):
-        model_key = f"{base}-{suffix}"
-        suffix += 1
+    model_key = resolve_import_key(project, name, src.suffix)
 
     dest = dest_dir / f"{model_key}{src.suffix}"
     shutil.copy2(src, dest)

@@ -74,3 +74,35 @@ def test_import_missing_file_raises(tmp_path):
     proj = _FakeProject(tmp_path / "proj")
     with pytest.raises(FileNotFoundError):
         import_prediction(proj, str(tmp_path / "nope.tif"), name="x", palette="far")
+
+
+def test_sanitize_import_name_is_public():
+    from gui.scripts.prediction_import import sanitize_import_name
+
+    assert sanitize_import_name("my map") == "my-map"
+    assert sanitize_import_name("  a  b  ") == "a-b"
+    assert sanitize_import_name("weird/&chars") == "weirdchars"
+    assert sanitize_import_name("***") == "imported"     # fallback token
+
+
+def test_resolve_import_key_free_name(tmp_path):
+    from gui.scripts.prediction_import import resolve_import_key
+
+    proj = _FakeProject(tmp_path / "proj")
+    assert resolve_import_key(proj, "my map") == "my-map"
+
+
+def test_resolve_import_key_previews_import_disambiguation(tmp_path):
+    from gui.scripts.prediction_import import resolve_import_key
+
+    proj = _FakeProject(tmp_path / "proj")
+    src = _src_raster(tmp_path)
+
+    # Before any import the name is free; after, the preview shows the suffix
+    # import_prediction would actually assign.
+    assert resolve_import_key(proj, "map", src_suffix=src.suffix) == "map"
+    p1 = import_prediction(proj, str(src), name="map", palette="far")
+    assert p1.model_key == "map"
+    assert resolve_import_key(proj, "map", src_suffix=src.suffix) == "map-2"
+    p2 = import_prediction(proj, str(src), name="map", palette="far")
+    assert p2.model_key == "map-2"
