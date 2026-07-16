@@ -3,24 +3,23 @@
 
 Score user-selected maps against ONE explicitly-chosen truth (deforestation
 raster + forest-at-start variable + interval), so maps from different datasets
-are directly comparable. Each run is saved to project.evaluations and shown in a
-list; click a row to view its table. See evaluate_against_truth in
-spatialrisk/evaluation.py.
+are directly comparable. List-first: the form lives in EvaluationFormDialog.
+Each run is saved to project.evaluations and shown in a list; click a row to
+view its table. See evaluate_against_truth in spatialrisk/evaluation.py.
 """
 
 import logging
 import uuid
 from datetime import datetime
 
-import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
-from gui.tile.evaluation_helpers import (
-    ALL_METRICS, build_evaluation_record, build_truth_spec, default_forest_key,
-    map_items, metric_items, parse_csizes, parse_interval, variable_items)
+from gui.tile.evaluation_helpers import build_evaluation_record, map_items, variable_items
+from gui.widget.evaluation_form_dialog import EvaluationFormDialog
+from gui.widget.help import InfoButton
 from gui.widget.evaluation_results import (
     EvaluationResults, EvaluationTableDialog)
 
@@ -68,54 +67,29 @@ def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_a
 
 @solara.component
 def EvaluationTile(project):
+    """Evaluation tab: list saved runs; the New evaluation dialog handles setup."""
     p = project.value
 
-    var_items = variable_items(p)
-    pred_items = map_items(p)
-    n_predictions = len(pred_items)
+    n_predictions = len(map_items(p))
 
-    truth_key, set_truth_key = solara.use_state("")
-    forest_key, set_forest_key = solara.use_state(default_forest_key(p) or "")
-    interval, set_interval = solara.use_state("")
-    selected_maps, set_selected_maps = solara.use_state([])
-    csizes_text, set_csizes_text = solara.use_state("300")
-    selected_metrics, set_selected_metrics = solara.use_state(list(ALL_METRICS))
-    recompute, set_recompute = solara.use_state(True)
-    form_error, set_form_error = solara.use_state(None)
+    dialog_open = solara.use_reactive(False)
     selected_eval, set_selected_eval = solara.use_state(None)
 
-    def on_truth_change(key):
-        set_truth_key(key)
-        ti = parse_interval(p, key)
-        set_interval(str(ti) if ti is not None else "")
-
-    def on_run():
-        if p is None or n_predictions == 0:
-            return
-        spec, err = build_truth_spec(p, truth_key, forest_key, interval)
-        if err:
-            set_form_error(err)
-            return
-        csizes, err = parse_csizes(csizes_text)
-        if err:
-            set_form_error(err)
-            return
-        if not selected_metrics:
-            set_form_error(t("tiles.evaluation.error_select_metric"))
-            return
-        set_form_error(None)
+    def on_submit(entry):
+        """Create the job row and spawn the worker (dialog pre-validated)."""
+        spec = entry["spec"]
         job_id = str(uuid.uuid4())[:8]
         created_at = datetime.now().isoformat(timespec="seconds")
         eval_jobs.set(list(eval_jobs.value) + [{
             "id": job_id, "status": "running", "error": None,
             "truth_tag": spec["truth_tag"],
-            "n_maps": len(selected_maps) or n_predictions,
+            "n_maps": len(entry["prediction_keys"]) or n_predictions,
             "created_at": created_at,
         }])
         spawn_in_context(
             _run_evaluation,
-            (job_id, project, list(selected_maps), spec, recompute, created_at,
-             csizes, list(selected_metrics)),
+            (job_id, project, entry["prediction_keys"], spec, entry["recompute"],
+             created_at, entry["csizes"], entry["metrics"]),
         )
 
     def on_delete(key):
@@ -131,66 +105,27 @@ def EvaluationTile(project):
         eval_jobs.set([j for j in eval_jobs.value if j["id"] != job_id])
 
     with solara.Column(style="gap: 16px;"):
-        solara.Text(t("tiles.evaluation.description"))
+        with solara.Row(style="gap:4px;align-items:center;"):
+            solara.Text(t("tiles.evaluation.description"))
+            InfoButton(t("tiles.evaluation.info_header"), t("tiles.evaluation.info_md"))
 
-        if p is None or not var_items:
+        if p is None or not variable_items(p):
             solara.Info(t("tiles.evaluation.error_no_variables"))
             return
 
-        rv.Select(
-            label=t("tiles.evaluation.truth_label"),
-            items=var_items, item_text="text", item_value="value",
-            v_model=truth_key, on_v_model=on_truth_change,
-            dense=True, outlined=True,
-        )
-        rv.Select(
-            label=t("tiles.evaluation.forest_label"),
-            items=var_items, item_text="text", item_value="value",
-            v_model=forest_key, on_v_model=set_forest_key,
-            dense=True, outlined=True,
-        )
-        rv.TextField(
-            label=t("tiles.evaluation.interval_label"),
-            v_model=interval, on_v_model=set_interval,
-            type="number", dense=True, outlined=True,
-            hint=t("tiles.evaluation.interval_hint"),
-            persistent_hint=True,
-        )
-        rv.Select(
-            label=t("tiles.evaluation.maps_label"),
-            items=pred_items, item_text="text", item_value="value",
-            v_model=selected_maps, on_v_model=set_selected_maps,
-            multiple=True, chips=True, dense=True, outlined=True,
-            no_data_text=t("tiles.evaluation.maps_no_data"),
-        )
-        rv.TextField(
-            label=t("tiles.evaluation.csizes_label"),
-            v_model=csizes_text, on_v_model=set_csizes_text,
-            dense=True, outlined=True,
-            hint=t("tiles.evaluation.csizes_hint"),
-            persistent_hint=True,
-        )
-        rv.Select(
-            label=t("tiles.evaluation.metrics_label"),
-            items=metric_items(), item_text="text", item_value="value",
-            v_model=selected_metrics, on_v_model=set_selected_metrics,
-            multiple=True, chips=True, dense=True, outlined=True,
-        )
-        rv.Switch(label=t("tiles.evaluation.recompute_label"), v_model=recompute,
-                  on_v_model=set_recompute)
-
         solara.Button(
-            t("tiles.evaluation.run_button"),
-            icon_name="mdi-chart-bar", color="primary", small=True,
-            on_click=on_run, disabled=n_predictions == 0,
+            t("tiles.evaluation.new_button"),
+            icon_name="mdi-plus", color="primary", small=True,
+            on_click=lambda: dialog_open.set(True),
+            disabled=n_predictions == 0,
         )
         if n_predictions == 0:
             solara.Info(t("tiles.evaluation.error_no_predictions"))
-        if form_error:
-            rv.Alert(type_="error", dense=True, children=[form_error])
 
         EvaluationResults(eval_jobs=eval_jobs, project=project,
                           on_open=set_selected_eval, on_delete=on_delete,
                           on_dismiss=on_dismiss)
         EvaluationTableDialog(project=project, eval_key=selected_eval,
                               on_close=lambda: set_selected_eval(None))
+
+    EvaluationFormDialog(project=project, open_=dialog_open, on_submit=on_submit)

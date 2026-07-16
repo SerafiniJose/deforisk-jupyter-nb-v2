@@ -197,7 +197,11 @@
     },
     "evaluation": {
       "header": "### Evaluación",
-      "description": "Puntuá los mapas seleccionados contra una verdad elegida (deforestación observada + bosque al inicio + intervalo) para que los mapas de distintos conjuntos de datos sean comparables. Cada ejecución se guarda abajo — hacé clic para ver la tabla. Índices: MedAE / R² / RMSE / wRMSE.",
+      "description": "Puntuá los mapas de predicción contra una verdad elegida para que los mapas de distintos conjuntos de datos sean comparables. Cada ejecución guardada aparece abajo — hacé clic para ver su tabla.",
+      "info_header": "Sobre la evaluación de mapas",
+      "info_md": "Cada evaluación puntúa uno o más mapas de predicción contra una única **verdad** elegida por el usuario, de modo que los mapas entrenados con distintos conjuntos de datos puedan compararse en igualdad de condiciones.\n\nLa verdad se define con tres entradas:\n\n- **Verdad — deforestación observada** — el ráster de la deforestación que realmente ocurrió durante el período de validación.\n- **Bosque al inicio del período** — el ráster de cobertura forestal al inicio de ese período.\n- **Intervalo (años)** — la duración del período (se autocompleta a partir del nombre de la capa de verdad cuando es posible).\n\nPara cada mapa seleccionado, el área se agrega en celdas cuadradas del **tamaño de celda** elegido (en píxeles) y la tasa de deforestación predicha se compara con la observada en cada celda. Índices de precisión:\n\n- **MedAE** — error absoluto mediano\n- **R²** — coeficiente de determinación\n- **RMSE** — raíz del error cuadrático medio\n- **wRMSE** — RMSE ponderado por el área de bosque de cada celda\n\nDejá la selección de mapas vacía para evaluar todas las predicciones registradas. **Recalcular tasa de deforestación** reconstruye las tasas observadas en lugar de reutilizar las almacenadas. Cada ejecución se guarda con el proyecto y se lista en esta pestaña; abrí una fila para ver su tabla completa.",
+      "new_button": "Nueva evaluación",
+      "dialog_title": "Nueva evaluación",
       "truth_label": "Verdad — deforestación observada",
       "forest_label": "Bosque al inicio del período",
       "interval_label": "Intervalo (años)",
