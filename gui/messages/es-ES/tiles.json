@@ -192,7 +192,10 @@
       "confirm_overwrite_title": "¿Sobrescribir predicción existente?",
       "confirm_overwrite_message": "Ya existe una predicción llamada '{name}'. Ejecutar sobrescribirá su(s) ráster(es) y entrada en el registro. Esta acción no se puede deshacer.",
       "confirm_overwrite_label": "Sobrescribir",
-      "error_map_toggle": "No se pudo alternar la predicción en el mapa: {exc}"
+      "error_map_toggle": "No se pudo alternar la predicción en el mapa: {exc}",
+      "source_label": "Origen",
+      "source_model": "Ejecutar un modelo",
+      "source_import": "Importar un ráster"
     },
     "evaluation": {
       "header": "### Evaluación",

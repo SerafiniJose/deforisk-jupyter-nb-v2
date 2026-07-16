@@ -192,7 +192,10 @@
       "confirm_overwrite_title": "Overwrite existing prediction?",
       "confirm_overwrite_message": "A prediction named '{name}' already exists. Running will overwrite its raster(s) and registry entry. This cannot be undone.",
       "confirm_overwrite_label": "Overwrite",
-      "error_map_toggle": "Could not toggle prediction on map: {exc}"
+      "error_map_toggle": "Could not toggle prediction on map: {exc}",
+      "source_label": "Source",
+      "source_model": "Run a model",
+      "source_import": "Import a raster"
     },
     "evaluation": {
       "header": "### Evaluation",
