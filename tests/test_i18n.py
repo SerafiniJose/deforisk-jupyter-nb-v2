@@ -191,3 +191,7 @@ def test_harmonization_rename_values():
     assert i18n.t("tiles.process.run_processing_button") == "Run harmonization"
     assert i18n.t("tiles.postprocess.header") == "### Derived layers"
     assert i18n.t("widgets.variable_list.processed_title") == "Harmonized variables"
+    # keys orphaned by the compact tile were dropped (missing-key behavior)
+    assert i18n.t("tiles.process.auto_utm_button") == "tiles.process.auto_utm_button"
+    assert (i18n.t("tiles.process.run_processing_subtitle")
+            == "tiles.process.run_processing_subtitle")

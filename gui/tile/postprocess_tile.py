@@ -1,4 +1,4 @@
-"""Step 4 — Post-process tile (list-first; form lives in DerivedLayerDialog)."""
+"""Step 4 — Derived layers tile (list-first; form lives in DerivedLayerDialog)."""
 
 import asyncio
 import logging
@@ -19,7 +19,7 @@ logger = logging.getLogger("spatial_risk")
 
 @solara.component
 def PostProcessTile(project, process_error, map_=None):
-    """Change detection (loss/gain) + edge/dist on processed variables."""
+    """Derived layers: change detection (loss/gain) + edge/dist on harmonized variables."""
     dialog_open = solara.use_reactive(False)
     pending_change = solara.use_reactive(None)
     on_toggle_map = use_derived_map_toggle(project, map_, process_error)

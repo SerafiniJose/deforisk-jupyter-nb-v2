@@ -1,4 +1,4 @@
-"""Step 3 — Process tile (mirrors notebooks/2.process_factory.ipynb)."""
+"""Step 3 — Harmonization tile (mirrors notebooks/2.process_factory.ipynb)."""
 
 import asyncio
 import logging
@@ -46,8 +46,50 @@ def base_raster_key(p) -> str:
 
 
 @solara.component
+def BaseProjectionForm(project, base_key, set_base_key, epsg, set_epsg,
+                       resolution, set_resolution, on_auto_utm, on_set_base,
+                       autofill_pending):
+    """Base & projection form (Select, EPSG ⌖ + resolution, full-width Set base).
+
+    A separate component because ``rv.use_event`` is a hook and must run
+    unconditionally every render — ProcessTile early-returns before the form
+    when there are no variables, so the hook cannot live in its body (and no
+    early return may precede the hook here either; ``_raw_raster_keys``
+    already handles a ``None`` project). Receives the ``project`` reactive
+    (not ``.value``): value-equal ``model_copy`` snapshots would suppress
+    child re-renders.
+    """
+    with solara.Column(style="gap:14px;"):
+        rv.Select(
+            label=t("tiles.process.base_raster_label"), items=_raw_raster_keys(project.value),
+            v_model=base_key, on_v_model=set_base_key, dense=True, outlined=True,
+            hint=t("tiles.process.base_raster_hint"),
+        )
+        with solara.Row(style="gap:8px;align-items:flex-start;flex-wrap:nowrap;"):
+            epsg_field = rv.TextField(
+                label=t("tiles.process.epsg_label"), v_model=epsg, on_v_model=set_epsg,
+                dense=True, outlined=True, placeholder=t("tiles.process.epsg_placeholder"),
+                style_="flex:1 1 55%;min-width:0;",
+                hint=t("tiles.process.epsg_hint"),
+                append_icon="mdi-crosshairs-gps",
+            )
+            rv.TextField(
+                label=t("tiles.process.resolution_label"), v_model=resolution,
+                on_v_model=set_resolution, dense=True, outlined=True, type="number",
+                style_="flex:1 1 45%;min-width:0;",
+                hint=t("tiles.process.resolution_hint"),
+            )
+        rv.use_event(epsg_field, "click:append", lambda *_: on_auto_utm())
+        solara.Button(
+            t("tiles.process.set_base_button"), icon_name="mdi-target",
+            color="primary", block=True, on_click=on_set_base,
+            disabled=autofill_pending or not (base_key and epsg.strip()),
+        )
+
+
+@solara.component
 def ProcessTile(project, processing, process_error, map_=None):
-    """Base/projection → run processing (downloading lives in Step 2 — Variables)."""
+    """Base/projection → run harmonization (downloading lives in Step 2 — Variables)."""
     base_key, set_base_key = solara.use_state("")
     epsg, set_epsg = solara.use_state("")
     resolution, set_resolution = solara.use_state("30")
@@ -105,7 +147,9 @@ def ProcessTile(project, processing, process_error, map_=None):
         set_epsg(await asyncio.to_thread(process_actions.auto_utm_epsg, path))
 
     def on_auto_utm():
-        if p is None or not base_key:
+        # The ⌖ icon has no disabled state — gate here (was the old
+        # button's ``disabled=not base_key or autofill_base.pending``).
+        if p is None or not base_key or autofill_base.pending:
             return
         try:
             base = p.raw_variables[base_key]
@@ -173,34 +217,13 @@ def ProcessTile(project, processing, process_error, map_=None):
 
         # A — Base & projection
         solara.Markdown(t("tiles.process.base_projection_header"))
-        with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
-            rv.Select(
-                label=t("tiles.process.base_raster_label"), items=_raw_raster_keys(p),
-                v_model=base_key, on_v_model=set_base_key, dense=True, outlined=True,
-                style_="min-width:200px;flex:1 1 200px;",
-                hint=t("tiles.process.base_raster_hint"), persistent_hint=True,
-            )
-            rv.TextField(
-                label=t("tiles.process.epsg_label"), v_model=epsg, on_v_model=set_epsg,
-                dense=True, outlined=True, placeholder=t("tiles.process.epsg_placeholder"),
-                style_="min-width:130px;max-width:170px;",
-                hint=t("tiles.process.epsg_hint"), persistent_hint=True,
-            )
-            rv.TextField(
-                label=t("tiles.process.resolution_label"), v_model=resolution, on_v_model=set_resolution,
-                dense=True, outlined=True, type="number",
-                style_="min-width:130px;max-width:170px;",
-                hint=t("tiles.process.resolution_hint"), persistent_hint=True,
-            )
-            solara.Button(
-                t("tiles.process.auto_utm_button"), small=True, text=True, on_click=on_auto_utm,
-                disabled=not base_key or autofill_base.pending,
-            )
-            solara.Button(
-                t("tiles.process.set_base_button"), icon_name="mdi-target", color="primary", small=True,
-                on_click=on_set_base,
-                disabled=autofill_base.pending or not (base_key and epsg.strip()),
-            )
+        BaseProjectionForm(
+            project=project, base_key=base_key, set_base_key=set_base_key,
+            epsg=epsg, set_epsg=set_epsg,
+            resolution=resolution, set_resolution=set_resolution,
+            on_auto_utm=on_auto_utm, on_set_base=on_set_base,
+            autofill_pending=autofill_base.pending,
+        )
         if autofill_base.pending:
             solara.Text(
                 t("tiles.process.detecting_projection"),
@@ -219,11 +242,6 @@ def ProcessTile(project, processing, process_error, map_=None):
 
         # B — Run processing
         solara.Markdown(t("tiles.process.run_processing_header"))
-        solara.Text(
-            t("tiles.process.run_processing_subtitle"),
-            style="font-size:0.8rem;",
-            classes=["text--secondary"],
-        )
         if not has_base:
             solara.Text(
                 t("tiles.process.error_no_base"),
@@ -232,7 +250,7 @@ def ProcessTile(project, processing, process_error, map_=None):
             )
         solara.Button(
             t("tiles.process.run_processing_button"), icon_name="mdi-play-circle-outline",
-            color="primary", small=True, on_click=run_processing,
+            color="primary", block=True, on_click=run_processing,
             # `disabled=` is a render-time prop: like `processing` (only set INSIDE
             # the coroutine), it reaches the browser a round-trip after the task
             # starts, so neither actually stops a fast double-click. This is
