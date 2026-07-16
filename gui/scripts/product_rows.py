@@ -146,6 +146,47 @@ def inference_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
     return rows
 
 
+# --- Sampling -----------------------------------------------------------------
+
+def sample_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
+    """Job rows (newest first) then one row per registered sample set."""
+    samples = (getattr(project, "samples", None) or {}) if project is not None else {}
+
+    rows: List[dict] = []
+    for job in _active_jobs_first(jobs):
+        if job.get("status") == "completed" and job.get("name") in samples:
+            continue  # superseded by its product row below
+        rows.append(
+            {
+                "kind": "job",
+                "key": f"job_{job['id']}",
+                "job_id": job["id"],
+                "name": job.get("name", "—"),
+                "strategy": job.get("strategy", "—"),
+                "allocation": None,
+                "n_total": job.get("n_total"),
+                "class_counts": job.get("class_counts"),
+                "status": job.get("status", "running"),
+                "error": job.get("error"),
+            }
+        )
+    for key, s in samples.items():
+        rows.append(
+            {
+                "kind": "sample",
+                "key": key,
+                "name": key,
+                "strategy": getattr(s, "strategy", "—"),
+                "allocation": getattr(s, "allocation", None),
+                "n_total": getattr(s, "n_total", None),
+                "class_counts": getattr(s, "class_counts", None) or {},
+                "status": "ready",
+                "error": None,
+            }
+        )
+    return rows
+
+
 # --- Evaluation ---------------------------------------------------------------
 
 def evaluation_tab_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:

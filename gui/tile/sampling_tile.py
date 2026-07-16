@@ -201,7 +201,8 @@ def SamplingTile(project, map_=None):
 
         job_id = str(uuid.uuid4())[:8]
         sampling_jobs.set(list(sampling_jobs.value) + [{
-            "id": job_id, "name": nm, "raster_var_name": raster_var,
+            "id": job_id, "name": nm, "strategy": strategy,
+            "raster_var_name": raster_var,
             "mask_var_name": mask_var,
             "status": "running", "error": None,
             "n_total": None, "class_counts": None,
@@ -231,6 +232,10 @@ def SamplingTile(project, map_=None):
             return
         samples_pending.set(samples_pending.value | {key})
         spawn_in_context(_toggle_sample_on_map, (key, project, map_, turn_on))
+
+    def on_dismiss(job_id):
+        # Failed job rows only — never touches the sample registry.
+        sampling_jobs.set([j for j in sampling_jobs.value if j["id"] != job_id])
 
     def _do_remove(key):
         if map_ is not None and key in samples_on_map.value:
@@ -334,20 +339,13 @@ def SamplingTile(project, map_=None):
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
 
-        # In-flight job rows.
-        for job in sampling_jobs.value:
-            if job["status"] == "running":
-                rv.Alert(type_="info", dense=True,
-                         children=[t("tiles.sampling.job_running", name=job["name"])])
-            elif job["status"] == "failed":
-                rv.Alert(type_="error", dense=True,
-                         children=[t("tiles.sampling.job_failed", name=job["name"], error=job["error"])])
-
         SampleSetList(
             project=project,
+            sampling_jobs=sampling_jobs,
             on_map=frozenset(samples_on_map.value),
             on_toggle_map=on_toggle_map,
             on_remove=set_pending_remove,
+            on_dismiss=on_dismiss,
             pending=frozenset(samples_pending.value),
         )
 
