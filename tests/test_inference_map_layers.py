@@ -146,22 +146,21 @@ def test_inference_tile_uses_palette_helper_and_overview_option():
 
 
 def test_inference_tile_supports_local_prediction_import():
-    """Step 7 lets the user import a local raster as a prediction: an action-bar
-    button opens PredictionImportModal (file picker + palette choice), and the
-    import script is wired to the registry + reactive. The picker/palette form
-    lives in the modal widget (mirroring Add Variable -> VariableModal)."""
+    """Step 7 lets the user import a local raster as a prediction: the New
+    prediction dialog has an import mode (file picker + palette choice), and
+    the import script is wired to the registry + reactive. The picker/palette
+    form lives in PredictionFormDialog (unified creation dialog)."""
     import inspect
 
     from gui.tile import inference_tile
-    from gui.widget import prediction_import_modal
+    from gui.widget import prediction_form_dialog
 
     src = inspect.getsource(inference_tile)
     assert "import_prediction" in src           # routes through the import adapter
-    assert "PredictionImportModal" in src       # button opens the import modal
     assert "sepal_client" in src                # picker needs the SEPAL client
     # New prediction is published so the outputs list + Evaluation maps update.
     assert "project.set(" in src or "project_reactive.set(" in src
 
-    modal_src = inspect.getsource(prediction_import_modal)
-    assert "FileInputComponent" in modal_src    # local raster file picker
-    assert "_import_palette_items" in modal_src      # palette choice
+    dialog_src = inspect.getsource(prediction_form_dialog)
+    assert "FileInputComponent" in dialog_src   # local raster file picker
+    assert "_import_palette_items" in dialog_src     # palette choice

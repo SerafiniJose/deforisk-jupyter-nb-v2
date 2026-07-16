@@ -17,7 +17,6 @@ from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
 from gui.widget.prediction_form_dialog import PredictionFormDialog
-from gui.widget.prediction_import_modal import PredictionImportModal
 
 logger = logging.getLogger("spatial_risk")
 
@@ -103,21 +102,16 @@ def InferenceTile(project, map_=None, sepal_client=None):
     # Form messages
     form_error, set_form_error = solara.use_state(None)
 
-    # Local-raster import — the form lives in PredictionImportModal; the tile only
-    # owns the dialog's open state and turns its entry into a background job.
-    import_modal_open = solara.use_reactive(False)
+    def _launch_import(name, path, palette):
+        """Spawn a background copy for a raster the dialog validated.
 
-    def on_import(entry):
-        """Spawn a background copy for a raster the modal validated.
-
-        The modal already enforced the required fields; the project-level guard
-        stays here (surfaced via the tile's form error, as the dialog is closed
-        by the time this runs).
+        The dialog enforced the required fields and the no-project guard; the
+        guard is kept here as a race safety net (surfaced via the tile's form
+        error, as the dialog is closed by the time this runs).
         """
         if p is None:
             set_form_error(t("tiles.inference.error_no_project"))
             return
-        name = entry["name"]
         job_id = str(uuid.uuid4())[:8]
         # Placeholder job; _run_import fills in the real model_key on completion.
         inference_jobs.set(list(inference_jobs.value) + [{
@@ -130,7 +124,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
         }])
         spawn_in_context(
             _run_import,
-            (job_id, entry["path"], name, entry["palette"], p, project),
+            (job_id, path, name, palette, p, project),
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
@@ -152,7 +146,10 @@ def InferenceTile(project, map_=None, sepal_client=None):
                     model_key, dataset_key, name, job_id)
 
     def on_submit(entry):
-        _launch_inference(entry["model_key"], entry["dataset_key"], entry["name"])
+        if entry["kind"] == "import":
+            _launch_import(entry["name"], entry["path"], entry["palette"])
+        else:
+            _launch_inference(entry["model_key"], entry["dataset_key"], entry["name"])
 
     def _forget_on_map(row_key):
         remaining = set(preds_on_map.value)
@@ -261,14 +258,6 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 small=True,
                 on_click=lambda: dialog_open.set(True),
             )
-            solara.Button(
-                t("tiles.inference.import_button"),
-                icon_name="mdi-import",
-                color="primary",
-                outlined=True,
-                small=True,
-                on_click=lambda: import_modal_open.set(True),
-            )
 
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
@@ -306,11 +295,6 @@ def InferenceTile(project, map_=None, sepal_client=None):
             confirm_label=t("common.delete"),
         )
 
-        # Import-a-local-prediction modal (opened from the top action bar).
-        PredictionImportModal(
-            open_=import_modal_open,
-            on_import=on_import,
-            sepal_client=sepal_client,
-        )
-
-    PredictionFormDialog(project=project, open_=dialog_open, on_submit=on_submit)
+    PredictionFormDialog(
+        project=project, open_=dialog_open, on_submit=on_submit, sepal_client=sepal_client
+    )

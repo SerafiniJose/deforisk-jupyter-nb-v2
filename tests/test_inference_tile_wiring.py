@@ -15,9 +15,10 @@ def test_inference_tile_is_list_first_with_dialog():
     src = inspect.getsource(InferenceTile)
     assert "PredictionFormDialog" in src
     assert "tiles.inference.new_button" in src
-    # import is a secondary action, not a second primary
-    assert "outlined=True" in src
-    # old inline form + overwrite dialog are gone
+    # single entry point: the import modal and its button are gone
+    assert "PredictionImportModal" not in src
+    assert "import_modal_open" not in src
+    # old inline form + overwrite dialog stay gone
     assert "pred_name_label" not in src
     assert "confirm_overwrite_title" not in src
 
