@@ -10,7 +10,7 @@
       "info_header": "Sobre las variables y sus fuentes de datos",
       "info_md": "Las variables de fuente son las capas de entrada con las que se construye el modelo de riesgo. Se agregan desde dos orígenes:\n\n- **predefined** — capas listas obtenidas de [Google Earth Engine](https://developers.google.com/earth-engine/datasets) y recortadas a tu AOI. Cada una proviene de un conjunto de datos global publicado: elevación y pendiente (NASA SRTM), cobertura forestal (Hansen Global Forest Change o JRC Tropical Moist Forest), áreas protegidas (WDPA), ríos y caminos (OpenStreetMap), pueblos (JRC GHSL) y subjurisdicciones (FAO GAUL). Seleccioná una en el diálogo Añadir variable para ver exactamente cómo se genera y de dónde vienen los datos.\n- **custom** — tus propios datos: un GeoTIFF ráster local, un archivo vectorial local (GeoJSON/GPKG/SHP — rasterizado durante la armonización) o cualquier asset de imagen de GEE al que tengas acceso.\n\nLas variables temporales (p. ej. cobertura forestal) llevan un año, así que la misma capa se puede agregar para varios años. Todas las capas se llevan a una cuadrícula común en el paso Armonización.\n\nLas variables respaldadas por GEE muestran un chip **nube** hasta que se exportan desde Earth Engine y se guardan como GeoTIFF locales — usá **Descargar capas** (o el botón de descarga de la fila) para materializarlas.",
       "add_variable_button": "Nueva variable",
-      "download_button": "Descargar capas ({count})",
+      "download_button": "Descargar todas las capas ({count})",
       "error_download": "La descarga falló: {exc}",
       "source_variables_header": "**VARIABLES DE FUENTE** ({count})",
       "confirm_replace_title": "¿Reemplazar variable?",

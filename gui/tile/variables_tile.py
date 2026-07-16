@@ -443,32 +443,19 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     )
 
     with solara.Column(style="gap: 16px;"):
-        solara.Markdown(t("tiles.variables.header"))
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.variables.description"))
             InfoButton(t("tiles.variables.info_header"), t("tiles.variables.info_md"))
 
         # Action bar
-        with solara.Row(style="gap: 8px; align-items: center;"):
-            solara.Button(
-                t("tiles.variables.add_variable_button"),
-                icon_name="mdi-plus",
-                color="primary",
-                small=True,
-                on_click=lambda: modal_open.set(True),
-            )
-            solara.Button(
-                t("tiles.variables.download_button", count=len(pending_geevars)),
-                icon_name="mdi-cloud-download-outline",
-                color="primary",
-                outlined=True,
-                small=True,
-                on_click=lambda: on_download(None),
-                loading=download_task.pending and pending_download.value is None,
-                disabled=download_task.pending or not pending_geevars,
-            )
-        if download_task.pending:
-            solara.ProgressLinear(True)
+        solara.Button(
+            t("tiles.variables.add_variable_button"),
+            icon_name="mdi-plus",
+            color="primary",
+            small=True,
+            block=True,
+            on_click=lambda: modal_open.set(True),
+        )
 
         # Source variable list (ProductTable renders its own collapsible header)
         SourceVariableList(
@@ -481,6 +468,20 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             download_pending=download_task.pending,
             downloading_key=pending_download.value if download_task.pending else None,
         )
+
+        # Download-all button, below the list
+        solara.Button(
+            t("tiles.variables.download_button", count=len(pending_geevars)),
+            icon_name="mdi-cloud-download-outline",
+            color="primary",
+            outlined=True,
+            small=True,
+            on_click=lambda: on_download(None),
+            loading=download_task.pending and pending_download.value is None,
+            disabled=download_task.pending or not pending_geevars,
+        )
+        if download_task.pending:
+            solara.ProgressLinear(True)
 
     editing_entry = (
         _variable_to_entry(editing_key, p.raw_variables[editing_key], p)
