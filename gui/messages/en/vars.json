@@ -40,7 +40,7 @@
       "predefined_raster_type_label": "Raster type",
       "custom_name_label": "Name",
       "custom_type_label": "Variable type",
-      "custom_type_hint": "Local raster file = GeoTIFF on disk; Google Earth Engine asset = GEE asset; Local vector file = vector file, rasterized during processing.",
+      "custom_type_hint": "Local raster file = GeoTIFF on disk; Google Earth Engine asset = GEE asset; Local vector file = vector file, rasterized during harmonization.",
       "custom_year_label": "Year (optional)",
       "custom_year_hint": "Set for temporal layers so the same variable can be added per year; leave blank for static ones.",
       "custom_file_label": "Select file",

@@ -181,3 +181,13 @@ def test_no_hardcoded_step_numbers_in_messages():
             text = f.read_text()
             hits = re.findall(r"(?:Step|Paso) \d", text)
             assert not hits, (lang, f.name, hits)
+
+
+def test_harmonization_rename_values():
+    # Process -> Harmonization, Post-process -> Derived layers (2026-07-16)
+    assert i18n.t("workflow.tab_process") == "Harmonization"
+    assert i18n.t("workflow.tab_postprocess") == "Derived layers"
+    assert i18n.t("tiles.process.header") == "### Harmonization"
+    assert i18n.t("tiles.process.run_processing_button") == "Run harmonization"
+    assert i18n.t("tiles.postprocess.header") == "### Derived layers"
+    assert i18n.t("widgets.variable_list.processed_title") == "Harmonized variables"
