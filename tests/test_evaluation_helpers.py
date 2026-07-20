@@ -167,6 +167,38 @@ def test_build_evaluation_record_maps_artifacts_from_the_run(tmp_path):
     assert rec.artifacts[0].csize_px == 300
 
 
+def test_build_evaluation_record_prefers_the_dataframes_own_run_id(tmp_path):
+    """csv_path and artifacts must never disagree, even given a stale run_id.
+
+    ``evaluate_against_truth`` stamps ``df.attrs["run_id"]`` with the id it
+    actually used to choose the artifact directory. If a caller passes a
+    different ``run_id`` (e.g. a stale value), the record must still be built
+    from the DataFrame's own id rather than silently producing a ``csv_path``
+    that points at a directory the artifacts do not live in.
+    """
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
+    df = pd.DataFrame([{"model": "GLM", "period": "ds_A", "MedAE": 12.3}])
+    df.attrs["run_id"] = "actual_run"
+    df.attrs["artifacts"] = [EvaluationPlotArtifact(
+        prediction_key="glm__ds_A", model="GLM", period="ds_A", csize_px=300,
+        points_csv="/p/evaluation/t/actual_run/pred_obs_GLM_ds_A_300.csv",
+        png_path="/p/evaluation/t/actual_run/pred_obs_GLM_ds_A_300.png")]
+    spec = {"defor_file": "/x/d.tif", "forest_file": "/x/f.tif",
+            "time_interval": 5, "truth_tag": "t"}
+
+    rec = build_evaluation_record(
+        _fake_project(tmp_path), df, spec, resolved_keys=["glm__ds_A"],
+        run_id="stale_run", created_at="2026-06-22T14:05:33")
+
+    assert rec.run_id == "actual_run"
+    assert rec.csv_path.endswith("evaluation/t/actual_run/indices_all.csv")
+    # csv_path is scoped to the SAME run id the artifacts were written under,
+    # never the stale "run_id" argument
+    assert "stale_run" not in rec.csv_path
+    assert "/t/actual_run/" in rec.artifacts[0].points_csv
+
+
 # --- run artifact directory + deletion ordering ------------------------------
 
 def _record_for(run_id="abcd1234", truth_tag="t"):
@@ -213,6 +245,12 @@ def test_delete_run_artifacts_removes_only_that_run(tmp_path):
 
 def test_delete_run_artifacts_refuses_outside_the_evaluation_folder(tmp_path):
     project = _fake_project(tmp_path)
+    # The evaluation/ folder must exist for "evaluation/../secrets" to even
+    # resolve to an existing directory (is_dir() fails on a missing "evaluation"
+    # component regardless of what ".." points at) — without this, run_artifact_dir
+    # returns None before the escape guard is ever reached, and the assertions
+    # below would pass vacuously.
+    (tmp_path / "evaluation").mkdir()
     escaped = tmp_path / "secrets"
     escaped.mkdir()
     (escaped / "keep.txt").write_text("keep")

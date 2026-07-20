@@ -457,9 +457,23 @@ def run_output_dir(project, truth_tag, run_id=None):
 # evaluation/<truth_tag>/<run_id>/. Notebooks and external scripts still read
 # the un-scoped evaluation/<truth_tag>/<name> paths, so the newest run also
 # publishes a copy there. Those consumers should migrate to
-# ``EvaluationRecord.artifacts`` (or ``run_output_dir``); once they have,
-# DELETE ``_publish_legacy_copy`` and every call to it — the run directory is
-# already self-contained, so nothing else needs to change.
+# ``EvaluationRecord.artifacts`` (or ``run_output_dir``).
+#
+# Every call site below is tagged ``# shim`` so
+# ``grep -n "# shim" spatialrisk/evaluation.py`` lists every site to touch —
+# but grep is not a removal plan by itself. Most tagged calls ARE pure: they
+# publish an already-finished artifact to its legacy path and can simply be
+# deleted along with the function. The defrate-cache pair inside
+# ``_evaluate_one_against_truth`` (the "publish out" call on a cache miss and
+# the "mirror in" call on a cache hit, both tagged below) is NOT pure: the
+# cache backing ``recompute_defrate=False`` is keyed on the SHARED path, so
+# those two calls are load-bearing, not legacy compatibility. Verified:
+# stubbing ``_publish_legacy_copy`` to a no-op and running two evaluations
+# with ``recompute_defrate=False`` on the second makes ``_defrate_per_cat``
+# run TWICE instead of once — the cache silently stops working. Deleting
+# those two calls requires first deciding where the defrate cache lives
+# post-shim (e.g. keyed on ``truth_tag`` at a fixed non-legacy path, or moved
+# onto the record) — that is a design decision, not a delete.
 # --------------------------------------------------------------------------
 def _publish_legacy_copy(src, dst):
     """Copy a run artifact to its legacy shared path. Temporary — see above."""
@@ -489,7 +503,7 @@ def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
 
     label, period = label_for(pred), pred.dataset_name
     riskmap_file = pred.path
-    truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
+    truth_dir = run_output_dir(project, truth_tag)
     truth_dir.mkdir(parents=True, exist_ok=True)
     out_dir = run_output_dir(project, truth_tag, run_id)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -509,10 +523,10 @@ def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
             tab_file_defrate=defrate_csv,
             verbose=False,
         )
-        _publish_legacy_copy(defrate_csv, shared_defrate)   # shim
+        _publish_legacy_copy(defrate_csv, shared_defrate)   # shim — cache write, NOT pure, see banner
     else:
         # Cache hit: mirror it into the run folder so the run is self-contained.
-        _publish_legacy_copy(shared_defrate, defrate_csv)
+        _publish_legacy_copy(shared_defrate, defrate_csv)   # shim — cache mirror, NOT pure, see banner
 
     rows = []
     for csize in csizes:
@@ -651,7 +665,7 @@ def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
     df.attrs["artifacts"] = artifacts
     df.attrs["run_id"] = run_id
 
-    truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
+    truth_dir = run_output_dir(project, truth_tag)
     truth_dir.mkdir(parents=True, exist_ok=True)
     out_dir = run_output_dir(project, truth_tag, run_id)
     out_dir.mkdir(parents=True, exist_ok=True)

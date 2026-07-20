@@ -12,7 +12,7 @@ import re
 import shutil
 from pathlib import Path
 
-from spatialrisk.evaluation import interval_from_target, label_for
+from spatialrisk.evaluation import interval_from_target, label_for, run_output_dir
 
 # Accuracy indices produced by validate_two_layer; value = column key in the
 # stored ``indices`` table, text = display label. All four are always computed.
@@ -157,10 +157,21 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
     ``json.dumps`` happy. ``metrics`` records which accuracy-index columns the
     user chose to show (empty = all).
 
+    The record's run id is taken from ``df.attrs["run_id"]`` when the
+    DataFrame carries one (i.e. it came back from ``evaluate_against_truth``),
+    falling back to the ``run_id`` parameter otherwise (plain/synthetic
+    DataFrames, e.g. in tests, whose ``attrs`` is empty). Preferring the
+    DataFrame's own attr is deliberate: it is the run id that was ACTUALLY
+    used to choose the directory the artifacts were written into, so
+    ``csv_path`` (derived from it here) and ``artifacts`` (also read off
+    ``df.attrs``) can never disagree with each other — even if a caller passes
+    a ``run_id`` that doesn't match the one the DataFrame was produced with.
+
     ``csv_path`` points at THIS run's aggregate CSV inside
-    ``evaluation/<truth_tag>/<run_id>/``, so the existing
-    ``Path(csv_path).parent`` figure-directory derivation keeps resolving to the
-    run's own PNGs. ``artifacts`` comes from ``df.attrs`` (populated by
+    ``evaluation/<truth_tag>/<run_id>/``, resolved through ``run_output_dir``
+    (the one place that layout is defined) so the existing
+    ``Path(csv_path).parent`` figure-directory derivation keeps resolving to
+    the run's own PNGs. ``artifacts`` comes from ``df.attrs`` (populated by
     ``evaluate_against_truth`` when it is given a run id) and stays empty when
     the run was not run-scoped.
     """
@@ -168,11 +179,12 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
 
     truth_tag = spec["truth_tag"]
     indices = json.loads(df.to_json(orient="records"))
-    csv_path = str(
-        Path(project.folders.project_folder) / "evaluation" / truth_tag
-        / str(run_id) / "indices_all.csv"
-    )
-    artifacts = list((getattr(df, "attrs", None) or {}).get("artifacts") or [])
+    attrs = getattr(df, "attrs", None) or {}
+    actual_run_id = attrs.get("run_id")
+    if actual_run_id is None:
+        actual_run_id = run_id
+    csv_path = str(run_output_dir(project, truth_tag, actual_run_id) / "indices_all.csv")
+    artifacts = list(attrs.get("artifacts") or [])
     return EvaluationRecord(
         name=truth_tag,
         truth_tag=truth_tag,
@@ -185,7 +197,7 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
         created_at=created_at,
         indices=indices,
         csv_path=csv_path,
-        run_id=run_id,
+        run_id=actual_run_id,
         artifacts=artifacts,
     )
 
@@ -204,8 +216,7 @@ def run_artifact_dir(project, record):
     run_id = getattr(record, "run_id", None)
     if not truth_tag or not run_id:
         return None
-    candidate = (Path(project.folders.project_folder) / "evaluation"
-                 / str(truth_tag) / str(run_id))
+    candidate = run_output_dir(project, str(truth_tag), str(run_id))
     return candidate if candidate.is_dir() else None
 
 
