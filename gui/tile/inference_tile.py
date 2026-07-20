@@ -34,13 +34,21 @@ def _pred_layer_key(storage_key: str) -> str:
     return f"pred_{storage_key}"
 
 
-def _run_inference(job_id, model_key, dataset_key, project, name=None):
+def _run_inference(job_id, model_key, dataset_key, project, name=None,
+                   project_reactive=None):
     """Run model inference in a background thread."""
     try:
         with writing(project.project_name):
             from gui.scripts.inference_runner import run_inference
 
             run_inference(project, model_key, dataset_key, name=name)
+
+            # Model.apply() registers and saves the prediction on ``project``,
+            # but that mutation alone does not notify Solara subscribers. Publish
+            # a fresh project reference so the Project Summary, inference output
+            # list, and Evaluation tile immediately see the new prediction. The
+            # guard avoids restoring a project that was closed/switched mid-run.
+            publish_if_current(project_reactive, project)
 
             update_job(
                 inference_jobs,
@@ -141,7 +149,10 @@ def InferenceTile(project, map_=None, sepal_client=None):
             "output_path": None,
         }
         inference_jobs.set(list(inference_jobs.value) + [job])
-        spawn_in_context(_run_inference, (job_id, model_key, dataset_key, p, name))
+        spawn_in_context(
+            _run_inference,
+            (job_id, model_key, dataset_key, p, name, project),
+        )
         logger.info("Inference started: %s on %s as '%s' (job=%s)",
                     model_key, dataset_key, name, job_id)
 
