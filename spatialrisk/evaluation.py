@@ -27,6 +27,12 @@ PRED_OBS_Y_LABEL = "Predicted deforestation (ha)"
 _OBS_COL = "ndefor_obs_ha"
 _PRED_COL = "ndefor_pred_ha"
 
+# The columns any predicted-vs-observed renderer needs: the two coordinates,
+# plus the cell id and forest area both charts carry into their labels. A
+# PredObsPlotData may hold MORE than these (compute_validation's frame holds the
+# full 6-column CSV table) but never fewer — see PredObsPlotData.__post_init__.
+PLOT_COLUMNS = ("cell", "nfor_obs_ha", _OBS_COL, _PRED_COL)
+
 # Axis domain used when the data carries no finite value at all (empty result,
 # all-NaN or all-infinite series). A unit range keeps both renderers valid.
 _FALLBACK_AXIS = (0.0, 1.0)
@@ -108,8 +114,19 @@ class PredObsPlotData:
     DataFrame is ambiguous" during reacton's prop diffing. Identity equality also
     makes every freshly computed result re-render, which is the safe default.
 
-    ``points`` is the exact frame persisted to the point CSV, non-finite rows
-    included; renderers must use ``finite_points`` instead.
+    ``points`` is a per-cell frame with non-finite rows still in it; renderers
+    must use ``finite_points`` instead. It arrives by one of two paths, with
+    different widths:
+
+    * from ``compute_validation`` — the full 6-column table, and exactly what
+      ``write_pred_obs_csv`` persists;
+    * from a GUI loader reading a saved point CSV back
+      (``gui.scripts.evaluation_echarts``) — only the 4 columns a chart draws.
+
+    So ``points`` is NOT guaranteed to be CSV-width. Only the 4 columns in
+    ``PLOT_COLUMNS`` are guaranteed, and ``__post_init__`` enforces them; pass a
+    plot_data to ``write_pred_obs_csv`` only when it came from
+    ``compute_validation``.
     """
 
     model: str
@@ -129,8 +146,20 @@ class PredObsPlotData:
         Pure validation only — the dataclass is frozen and this never mutates
         ``self`` (no ``object.__setattr__`` needed). Raises ``ValueError`` if
         ``axis_min``/``axis_max`` are non-finite or form a zero-width/inverted
-        domain, or if ``ncell`` disagrees with the persisted point count.
+        domain, if ``ncell`` disagrees with the persisted point count, or if
+        ``points`` is missing any of ``PLOT_COLUMNS``.
+
+        The column check is what makes the two construction paths (see the class
+        docstring) safe to treat alike: it turns "a renderer will KeyError on
+        this frame" and "this CSV was truncated or renamed upstream" into one
+        error at construction, where the frame's origin is still on the stack.
         """
+        missing = [c for c in PLOT_COLUMNS if c not in self.points.columns]
+        if missing:
+            raise ValueError(
+                f"points is missing required plot column(s) {missing}; "
+                f"got {list(self.points.columns)!r}"
+            )
         if not (np.isfinite(self.axis_min) and np.isfinite(self.axis_max)):
             raise ValueError(
                 f"axis_min/axis_max must be finite, got "
@@ -281,7 +310,14 @@ def compute_validation(
 
 
 def write_pred_obs_csv(plot_data, output_path):
-    """Persist the per-cell point table (the frozen 6-column CSV)."""
+    """Persist the per-cell point table (the frozen 6-column CSV).
+
+    Writes ``plot_data.points`` verbatim, so it produces that 6-column file only
+    for a plot_data built by ``compute_validation``. A GUI-loaded plot_data
+    carries the 4 plotted columns instead (see ``PredObsPlotData``) and would
+    write a narrower file under the same name — don't round-trip one through
+    here.
+    """
     plot_data.points.to_csv(output_path, index=False)
     return output_path
 

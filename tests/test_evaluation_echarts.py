@@ -10,19 +10,30 @@ _values``: the coordinates the chart plots must be the *exact* floats sitting in
 ``pred_obs_*.csv``. That is the whole point of the migration — the interactive
 chart and the archived PNG are two renderings of one frozen table, and any
 rounding, resampling or downsampling between them would make the two disagree.
+
+That assertion reads the expected values with ``float()`` on the raw file TEXT,
+never with a second ``pd.read_csv``. pandas' default C float parser is fast but
+not correctly rounded: it returns ``0.92`` for the text ``0.9199999999999999``.
+Comparing one pandas parse against another is self-consistent with that error
+and so cannot see it — the file's bytes are the only neutral referee.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
 _POINT_COLUMNS = ["cell", "nfor_obs", "ndefor_obs",
                   "nfor_obs_ha", "ndefor_obs_ha", "ndefor_pred_ha"]
 
-# Deliberately awkward floats: values that do NOT survive a round(x, 2) or a
-# float32 trip, so the headline equality assertion can actually fail.
-_OBS = [0.9199999999999999, 12.34567890123, 3.3333333333333335, 250.125]
-_PRED = [1.0700000000000003, 11.98765432109, 4.0000000000000009, 249.875]
+# Deliberately awkward floats. Each does NOT survive a round(x, 2) or a float32
+# trip, and the first, second and fourth are also mis-parsed by pandas' DEFAULT
+# CSV float parser (-> 0.92, 0.3, 123456789.1234568), so the headline equality
+# assertion fails unless the loader reads with float_precision="round_trip".
+_OBS = [0.9199999999999999, 0.30000000000000004,
+        3.3333333333333335, 123456789.12345679]
+_PRED = [1.0700000000000003, 0.7000000000000001,
+         4.000000000000001, 123456789.12345678]
 
 
 def _write_points(path, obs=None, pred=None, forest=None):
@@ -43,6 +54,23 @@ def _write_points(path, obs=None, pred=None, forest=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False)
     return frame
+
+
+def _csv_floats(csv_path, *columns):
+    """Columns of a point CSV parsed with ``float()`` straight from the TEXT.
+
+    The neutral referee for "the chart plots the saved values". A second
+    ``pd.read_csv`` is NOT one: pandas' default float parser is not correctly
+    rounded (text ``0.9199999999999999`` parses to ``0.92``), so a pandas-vs-
+    pandas comparison is self-consistent with its own error. ``float()`` is
+    correctly rounded and is the exact inverse of the round-trippable repr
+    ``to_csv`` writes.
+    """
+    lines = csv_path.read_text().strip().splitlines()
+    header = lines[0].split(",")
+    idx = [header.index(c) for c in columns]
+    return [tuple(float(row[i]) for i in idx)
+            for row in (line.split(",") for line in lines[1:])]
 
 
 def _index_row(model="GLM", period="d1", csize=300, **over):
@@ -93,14 +121,21 @@ def _loaded(tmp_path, **kw):
     Returns ``(csv_frame, plot_data)`` where ``csv_frame`` is an INDEPENDENT
     read of the file on disk — never the pre-save frame. The CSV is the frozen
     artifact both this chart and the archived PNG render, so it, not whatever
-    was in memory before ``to_csv`` rounded it, is what the chart must match.
+    was in memory before ``to_csv`` wrote it, is what the chart must match.
+
+    ``float_precision="round_trip"`` for the same reason the loader uses it: the
+    default parser is not correctly rounded, so a default read here would make
+    this helper's frame disagree with the file's own text by up to 1 ulp and
+    every test built on it would inherit that error. The headline test skips
+    this helper entirely and reads the text with ``float()`` (``_csv_floats``),
+    which is the parser-independent check.
     """
     import pandas as pd
 
     from gui.scripts.evaluation_echarts import load_pred_obs_plot_data
 
     csv_path, record = _saved(tmp_path, **kw)
-    return (pd.read_csv(csv_path),
+    return (pd.read_csv(csv_path, float_precision="round_trip"),
             load_pred_obs_plot_data(record, "GLM", "d1", 300))
 
 
@@ -121,18 +156,24 @@ def test_scatter_coordinates_are_exactly_the_saved_csv_values(tmp_path):
 
     The interactive scatter and the archived PNG are two renderings of the same
     frozen table. Anything that reshapes the numbers on the way to the option —
-    a ``round``, a float32 cast, a downsample — makes the two disagree about
-    what the model predicted, which is the one thing this chart exists to show.
-    """
-    from gui.scripts.evaluation_echarts import pred_obs_scatter_option
+    a ``round``, a float32 cast, a downsample, or a lossy CSV *parse* — makes
+    the two disagree about what the model predicted, which is the one thing this
+    chart exists to show.
 
-    frame, plot_data = _loaded(tmp_path)
+    Expected values come from ``float()`` on the file's own text (see
+    ``_csv_floats``). Comparing against a second ``pd.read_csv`` would compare
+    one lossy parse with an identical lossy parse and pass either way; this
+    assertion fails if the loader drops ``float_precision="round_trip"``.
+    """
+    from gui.scripts.evaluation_echarts import (
+        load_pred_obs_plot_data, pred_obs_scatter_option)
+
+    csv_path, record = _saved(tmp_path)
+    plot_data = load_pred_obs_plot_data(record, "GLM", "d1", 300)
     option = pred_obs_scatter_option(plot_data)
 
     plotted = [(v[0], v[1]) for v in _scatter(option)["data"]]
-    expected = list(zip(frame["ndefor_obs_ha"].tolist(),
-                        frame["ndefor_pred_ha"].tolist()))
-    assert plotted == expected
+    assert plotted == _csv_floats(csv_path, "ndefor_obs_ha", "ndefor_pred_ha")
 
 
 def test_every_saved_point_is_plotted(tmp_path):
@@ -141,18 +182,27 @@ def test_every_saved_point_is_plotted(tmp_path):
     Large mode changes HOW the points are drawn (one batched canvas call), never
     how many there are. Dropping points would quietly redraw the model's error
     distribution, so the count is pinned on both sides of the threshold.
+
+    Point count is deliberately several multiples past the threshold, not
+    ``threshold + 500``: a cap-style downsample ("keep the first N") only shows
+    up when the data is bigger than a cap someone would plausibly pick. The
+    first and last rows are asserted too, so truncation from either end is
+    caught by value and not only by count.
     """
     from gui.scripts.evaluation_echarts import (
         PRED_OBS_LARGE_POINT_COUNT, load_pred_obs_plot_data,
         pred_obs_scatter_option)
 
-    n = PRED_OBS_LARGE_POINT_COUNT + 500
-    csv_path, record = _saved(tmp_path, obs=[float(i) for i in range(n)],
-                              pred=[float(i) * 1.1 for i in range(n)])
+    n = 5 * PRED_OBS_LARGE_POINT_COUNT + 1        # 10001 — past 5000 and 10000
+    obs = [float(i) for i in range(n)]
+    pred = [float(i) * 1.1 for i in range(n)]
+    csv_path, record = _saved(tmp_path, obs=obs, pred=pred)
     plot_data = load_pred_obs_plot_data(record, "GLM", "d1", 300)
-    option = pred_obs_scatter_option(plot_data)
+    values = _scatter(pred_obs_scatter_option(plot_data))["data"]
 
-    assert len(_scatter(option)["data"]) == n
+    assert len(values) == n
+    assert (values[0][0], values[0][1]) == (obs[0], pred[0])
+    assert (values[-1][0], values[-1][1]) == (obs[-1], pred[-1])
     assert csv_path.exists()
 
 
@@ -513,6 +563,59 @@ def test_resolution_matches_on_cell_size(tmp_path):
     assert resolve_points_csv(record, "GLM", "d1", 300).name == "p300.csv"
 
 
+def _two_predictions_one_label(run_dir):
+    """Two artifacts identical in (model, period, csize), different maps."""
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
+    return [
+        EvaluationPlotArtifact(prediction_key=key, model="GLM", period="d1",
+                               csize_px=300,
+                               points_csv=str(run_dir / f"{key}.csv"),
+                               png_path=str(run_dir / f"{key}.png"))
+        for key in ("GLM__d1__a", "GLM__d1__b")
+    ]
+
+
+def test_prediction_key_picks_between_artifacts_sharing_a_label(tmp_path):
+    """``(model, period, csize)`` is the FILE identity, not the map identity.
+
+    Two predictions can carry the same model+period label — the same model rerun
+    against another dataset revision, say — and then only ``prediction_key``
+    tells their artifacts apart. Without it the first match wins, which is the
+    right default for the single-prediction case but the wrong file here.
+    """
+    from gui.scripts.evaluation_echarts import resolve_points_csv
+
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    record = _record(run_dir, artifacts=_two_predictions_one_label(run_dir))
+
+    assert resolve_points_csv(record, "GLM", "d1", 300).name == "GLM__d1__a.csv"
+    assert resolve_points_csv(record, "GLM", "d1", 300,
+                              prediction_key="GLM__d1__b").name == "GLM__d1__b.csv"
+    assert resolve_points_csv(record, "GLM", "d1", 300,
+                              prediction_key="GLM__d1__a").name == "GLM__d1__a.csv"
+
+
+def test_an_unmatched_prediction_key_falls_back_to_the_derived_path(tmp_path):
+    """The fallback fires on ANY miss, not only on a record with no artifacts.
+
+    Documented behavior (see ``resolve_points_csv``): a typed record's
+    ``csv_path`` already sits inside its own run folder, so the derived path
+    stays run-scoped, and a caller narrowing on a key the record never stored
+    still gets the run's own deterministic file instead of nothing.
+    """
+    from gui.scripts.evaluation_charts import pred_obs_artifact_name
+    from gui.scripts.evaluation_echarts import resolve_points_csv
+
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    record = _record(run_dir, artifacts=_two_predictions_one_label(run_dir))
+    resolved = resolve_points_csv(record, "GLM", "d1", 300,
+                                  prediction_key="GLM__d1__nope")
+
+    assert resolved == (Path(record.csv_path).parent
+                        / pred_obs_artifact_name("GLM", "d1", 300, "csv"))
+
+
 def test_a_record_with_nothing_to_derive_from_resolves_to_nothing():
     import types
 
@@ -649,6 +752,67 @@ def test_the_chart_identity_tracks_everything_the_chart_shows(tmp_path):
     _write_points(csv_path, obs=[9.0], pred=[9.5])
     os.utime(csv_path, (1, 1))
     assert base != pred_obs_chart_identity(record, "GLM", "d1", 300)
+
+
+def test_the_chart_identity_moves_when_the_dialog_switches_map(tmp_path):
+    """Same record, same cell size, a different model/period.
+
+    The likeliest interaction in the dialog: the map selector changes only
+    ``model``/``period`` while the record and the cell size stay put. The
+    identity separates the two through the RESOLVED PATH — the file name is
+    built from exactly model, period and csize — so a version that dropped the
+    path would hand one map's digest to the other map's option, which as an
+    ``option_digest`` means the previous map's chart stays on screen.
+    """
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
+    from gui.scripts.evaluation_echarts import pred_obs_chart_identity
+
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    maps = [("GLM", "d1"), ("MW_w11", "d1"), ("GLM", "d2")]
+    artifacts = []
+    for model, period in maps:
+        csv_path = run_dir / f"pred_obs_{model}_{period}_300.csv"
+        _write_points(csv_path)
+        artifacts.append(EvaluationPlotArtifact(
+            prediction_key=f"{model}__{period}", model=model, period=period,
+            csize_px=300, points_csv=str(csv_path),
+            png_path=str(csv_path.with_suffix(".png"))))
+    record = _record(run_dir, artifacts=artifacts)
+
+    identities = [pred_obs_chart_identity(record, model, period, 300)
+                  for model, period in maps]
+    assert len(set(identities)) == len(maps)
+
+
+def test_the_chart_identity_covers_the_labels_and_title_too(tmp_path):
+    """It is passed as ``option_digest``, so it must cover every option input.
+
+    ``labels`` and ``title`` are option inputs like any other — the widget layer
+    (Task 7) fills them with ``t(...)`` output. Used as ``option_digest`` this
+    string REPLACES the adapter's content hash, so text it did not cover would
+    leave the old language's axis titles on screen after a locale switch, with
+    no error anywhere.
+    """
+    from gui.scripts.evaluation_echarts import (
+        pred_obs_chart_identity, pred_obs_scatter_option)
+
+    _, record = _saved(tmp_path)
+    base = pred_obs_chart_identity(record, "GLM", "d1", 300)
+    spanish = {"x_axis": "Observado (ha)", "y_axis": "Predicho (ha)"}
+
+    assert base == pred_obs_chart_identity(record, "GLM", "d1", 300, labels={})
+    assert base != pred_obs_chart_identity(record, "GLM", "d1", 300,
+                                           labels=spanish)
+    assert base != pred_obs_chart_identity(record, "GLM", "d1", 300,
+                                           title="Mi gráfico")
+    assert (pred_obs_chart_identity(record, "GLM", "d1", 300, labels=spanish)
+            != pred_obs_chart_identity(record, "GLM", "d1", 300,
+                                       title="Mi gráfico"))
+    # and the options those identities stand for really do differ
+    _, plot_data = _loaded(tmp_path)
+    assert (pred_obs_scatter_option(plot_data, labels=spanish)
+            != pred_obs_scatter_option(plot_data))
 
 
 def test_the_chart_identity_never_parses_the_file(tmp_path):

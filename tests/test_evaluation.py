@@ -10,6 +10,7 @@ rasterio = pytest.importorskip("rasterio")
 from rasterio.transform import from_origin
 
 from spatialrisk.evaluation import (
+    PLOT_COLUMNS,
     PRED_OBS_X_LABEL,
     PRED_OBS_Y_LABEL,
     PredObsPlotData,
@@ -227,8 +228,19 @@ def test_validate_two_layer_forwards_figsize_and_dpi_to_png(tmp_path):
 
 
 def _points(obs, pred):
-    """Minimal points frame with just the two columns the plot layer reads."""
-    return pd.DataFrame({"ndefor_obs_ha": obs, "ndefor_pred_ha": pred})
+    """Minimal points frame: the four columns every renderer path requires.
+
+    ``pred_obs_axis_bounds`` only reads the two coordinate columns, but
+    ``PredObsPlotData`` requires all of ``PLOT_COLUMNS``, so this builds the
+    narrowest frame the dataclass accepts.
+    """
+    n = len(list(obs))
+    return pd.DataFrame({
+        "cell": list(range(n)),
+        "nfor_obs_ha": [100.0] * n,
+        "ndefor_obs_ha": obs,
+        "ndefor_pred_ha": pred,
+    })
 
 
 def test_pred_obs_axis_bounds_spans_both_series(tmp_path):
@@ -361,6 +373,35 @@ def test_plot_data_rejects_ncell_mismatched_with_points():
 def test_plot_data_accepts_well_formed_bounds_and_ncell():
     # Sanity: the valid baseline itself must construct without raising.
     PredObsPlotData(**_base_plot_data_kwargs())
+
+
+@pytest.mark.parametrize("missing", PLOT_COLUMNS)
+def test_plot_data_rejects_points_missing_a_required_plot_column(missing):
+    """``points`` has two construction paths of different widths.
+
+    ``compute_validation`` builds the full 6-column CSV table; the GUI loader
+    reads back only the plotted columns. Both must carry every column a renderer
+    indexes, so the guard is on the columns rather than on the width — which
+    also turns a truncated or renamed CSV into an error at construction instead
+    of a KeyError inside a render.
+    """
+    kwargs = _base_plot_data_kwargs()
+    kwargs["points"] = kwargs["points"].drop(columns=[missing])
+    with pytest.raises(ValueError, match="missing required plot column"):
+        PredObsPlotData(**kwargs)
+
+
+def test_plot_data_accepts_the_wider_compute_validation_frame(tmp_path):
+    """The other path: 6 columns is MORE than required, never an error."""
+    lay = _varied_validation_fixture(tmp_path)
+    points = compute_validation(**lay, csize_coarse_grid=300).plot_data.points
+
+    assert len(points.columns) == 6
+    data = PredObsPlotData(
+        model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
+        axis_min=1.0, axis_max=4.0, medae=0.0, r2=1.0, ncell=len(points),
+    )
+    assert list(data.points.columns) == list(points.columns)
 
 
 def test_write_pred_obs_csv_matches_golden_bytes(tmp_path):

@@ -11,12 +11,16 @@ ipecharts, so the whole chart is unit-testable without a render harness.
 sitting in ``pred_obs_{model}_{period}_{csize}.csv`` — no rounding, no
 resampling, and no downsampling at any point count. The PNG and this chart must
 never disagree about what a model predicted for a cell, so the numbers travel
-from the CSV to the option untouched. ``PredObsPlotData`` (shared with the PNG
-writer) supplies the axis bounds and the finite-row filter, which is what keeps
-the two figures' domains identical too.
+from the CSV to the option untouched. That exactness depends on HOW the file is
+read: pandas' default CSV float parser is fast but not correctly rounded (it
+returns ``0.92`` for the text ``0.9199999999999999``), so the loader reads with
+``float_precision="round_trip"`` — see ``_load_cached``. ``PredObsPlotData``
+(shared with the PNG writer) supplies the axis bounds and the finite-row filter,
+which is what keeps the two figures' domains identical too.
 
-**Non-finite values.** ``PredObsPlotData.points`` is the exact persisted frame
-and may hold NaN/inf; those are not valid JSON and would break the option on the
+**Non-finite values.** ``PredObsPlotData.points`` here holds the persisted rows
+for the four plotted columns (the loader reads no more than the chart draws) and
+may include NaN/inf; those are not valid JSON and would break the option on the
 wire. Only ``finite_points`` is ever plotted — matching ``save_pred_obs_png``,
 which drops the same rows. The annotation's ``n`` stays the full ``ncell``, also
 matching the PNG.
@@ -24,11 +28,14 @@ matching the PNG.
 **Performance.** Loading is memoized on the artifact's *modification identity*
 (path + size + mtime), not just its path: two runs against the same truth
 produce identically named files, and keying on the name alone would serve one
-run's points under another run's record. ``pred_obs_chart_identity`` exposes
-that same key as a short string so the widget can memoize its option build and
-skip the adapter's per-render option hash (see ``EChartsChart(option_digest=)``).
+run's points under another run's record. ``pred_obs_chart_identity`` wraps that
+same key — plus the theme and the caller's label/title text — into one short
+string, so the widget can memoize its option build and skip the adapter's
+per-render option hash (see ``EChartsChart(option_digest=)``). Because it stands
+in for that hash, it has to cover every option input, not just the file's.
 """
 
+import hashlib
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -55,10 +62,23 @@ PRED_OBS_LARGE_POINT_COUNT = 2000
 # option, so larger chunks mean fewer frames to first complete paint.
 PRED_OBS_PROGRESSIVE_CHUNK = 5000
 
-# How many runs' point tables the loader keeps hot. A dialog shows one map at a
-# time, but users flip between maps and cell sizes; a handful covers that while
-# bounding memory (a 200k-cell run is ~6 MB of float64 columns).
+# Two caches, two very different per-entry costs — so two constants. Measured on
+# a 200k-point run (the realistic upper end), pandas 2.x / CPython 3.11:
+#
+#   _load_cached entry   (4-column DataFrame)      6.4 MB   -> 8 x  6.4 =  51 MB
+#   _scatter_rows entry  (boxed [[float x5], ...]) 48.0 MB  -> 2 x 48.0 =  96 MB
+#
+# The row cache costs 7.5x the frame it is built from: every value becomes a
+# boxed Python float/int inside a per-point list object, which is the price of
+# a JSON-serializable option. Sizing both at 8 would have reserved ~435 MB on a
+# SEPAL deployment for a dialog that shows one chart at a time.
+#
+# The loader stays at 8: cheap, and it is what makes flipping between maps and
+# cell sizes feel instant. The row cache is kept at 2 — enough for a light/dark
+# toggle and an A/B flip between two maps to stay hot, which is the pattern that
+# actually recurs; a third map costs one rebuild, not a wrong chart.
 POINTS_CACHE_SIZE = 8
+SCATTER_ROWS_CACHE_SIZE = 2
 
 # Reference line: red dashed, exactly as the PNG's `plt.plot(p, p, "r--")`.
 REFERENCE_LINE_COLOR = "#ff0000"
@@ -115,14 +135,24 @@ def resolve_points_csv(record, model, period, csize, *,
       run actually wrote under ``evaluation/<truth_tag>/<run_id>/``. Preferred
       always — it is the only path that stays correct after a later run against
       the same truth overwrites the shared folder.
-    * **Legacy** (saved before run-scoping): no artifacts at all, so the path is
-      derived the same way ``figure_entries`` derives the PNG's — the run's
-      folder (``fig_dir``, defaulting to ``Path(record.csv_path).parent``) plus
-      the deterministic name from ``pred_obs_artifact_name``.
+    * **Derived** (the fallback): the path is built the same way
+      ``figure_entries`` builds the PNG's — the run's folder (``fig_dir``,
+      defaulting to ``Path(record.csv_path).parent``) plus the deterministic
+      name from ``pred_obs_artifact_name``.
+
+    The fallback fires on ANY miss, not only on a record with no artifacts at
+    all: an empty list, a list that names other maps, and a matching artifact
+    whose ``points_csv`` is blank all land there. That is deliberate — a typed
+    record's ``csv_path`` already points inside its own run folder, so the
+    derived path stays run-scoped for exactly the records run-scoping protects,
+    and a partially populated artifact list still resolves the maps it omitted
+    instead of blanking them. Narrowing it to ``artifacts == []`` would buy no
+    extra scoping safety and would regress those records to "no chart".
 
     Matching is on ``(model, period, csize)``, which is the file-level identity:
     the file name is built from exactly those three. ``prediction_key`` narrows
-    it further when the caller has one and the artifact records it.
+    it further when the caller has one and the artifact records it — two
+    predictions can share a model+period label while being different maps.
     """
     if csize is None or not model or not period:
         return None
@@ -196,12 +226,23 @@ def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha,
 
     Only the four columns the chart draws are read; the other two exist for the
     archived table, not for the plot.
+
+    ``float_precision="round_trip"`` is load-bearing, not a tuning knob.
+    pandas' default C float parser is not correctly rounded and can land on a
+    neighbouring double: the text ``0.9199999999999999`` parses to ``0.92``, and
+    ``123456789.12345679`` to ``123456789.1234568``. ``to_csv`` writes the full
+    round-trippable repr, so every bit of loss would be on this side of the
+    trip — and since ``save_pred_obs_png`` draws from the in-memory frame, a
+    default parse makes the PNG and this chart differ by up to 1 ulp. The
+    round-trip parser is exactly ``float()`` on the text and costs a few ms per
+    100k rows, once per file (this is memoized).
     """
     import pandas as pd
 
     from spatialrisk.evaluation import pred_obs_axis_bounds, PredObsPlotData
 
-    points = pd.read_csv(path_str, usecols=_POINT_CSV_COLUMNS)[_POINT_CSV_COLUMNS]
+    points = pd.read_csv(path_str, usecols=_POINT_CSV_COLUMNS,
+                         float_precision="round_trip")[_POINT_CSV_COLUMNS]
     axis_min, axis_max = pred_obs_axis_bounds(points)
     return PredObsPlotData(
         model=model, period=period, csize_px=int(csize), csize_ha=csize_ha,
@@ -246,19 +287,41 @@ def load_pred_obs_plot_data(record, model, period, csize, *,
         return None
 
 
-def pred_obs_chart_identity(record, model, period, csize, *, dark=False,
-                            prediction_key=None, fig_dir=None):
-    """Cheap, stable identity of the chart this (record, map, cell size) draws.
+def _text_identity(labels, title):
+    """Short digest of the option's TEXT inputs (``labels`` + ``title``).
 
-    Everything that changes what the scatter shows, folded into one short
-    string: the record, the resolved artifact path, that file's modification
-    identity, the cell size, and the theme. It is derived from a single
-    ``stat()`` — no read, no parse, no option hash — and it is the SAME key the
-    loader memoizes on, so the two can never disagree about what is current.
+    Hashed rather than concatenated only to keep the identity short; these are a
+    dozen tiny strings, so the cost is microseconds.
+    """
+    if not labels and title is None:
+        return "-"
+    payload = repr((sorted((labels or {}).items()), title))
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]
+
+
+def pred_obs_chart_identity(record, model, period, csize, *, dark=False,
+                            labels=None, title=None,
+                            prediction_key=None, fig_dir=None):
+    """Cheap, stable identity of the chart this call would draw.
+
+    Folds in EVERY input of ``pred_obs_scatter_option``: the record, the
+    resolved artifact path, that file's modification identity, the cell size,
+    the theme, and the ``labels``/``title`` text. Everything but the text comes
+    from a single ``stat()`` — no read, no parse, no option hash — and the file
+    half is the SAME key the loader memoizes on, so the two can never disagree
+    about what is current.
 
     Two uses, both in the widget layer: memoize the option build, and hand the
     result to ``EChartsChart(option_digest=...)`` so the adapter skips hashing an
     option that can carry hundreds of thousands of points.
+
+    **Pass the same ``labels`` and ``title`` you pass to
+    ``pred_obs_scatter_option``.** Used as ``option_digest`` this REPLACES the
+    adapter's content hash, so an input the identity misses is an input nothing
+    checks: switching the app's language would leave the previous language's
+    axis titles on screen with no error anywhere. The two signatures share their
+    names and defaults precisely so one call site can pass the same values to
+    both.
     """
     path = resolve_points_csv(record, model, period, csize,
                               prediction_key=prediction_key, fig_dir=fig_dir)
@@ -267,7 +330,7 @@ def pred_obs_chart_identity(record, model, period, csize, *, dark=False,
     size, mtime_ns = _modification_identity(path) or (-1, -1)
     return "|".join(str(part) for part in (
         _record_key(record), path, size, mtime_ns, int(csize),
-        "dark" if dark else "light"))
+        "dark" if dark else "light", _text_identity(labels, title)))
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +352,7 @@ def _plotted_count(plot_data):
     return 0 if plot_data is None else len(plot_data.finite_points)
 
 
-@lru_cache(maxsize=POINTS_CACHE_SIZE)
+@lru_cache(maxsize=SCATTER_ROWS_CACHE_SIZE)
 def _scatter_rows(plot_data):
     """``[[obs, pred, cell, forest_ha, residual], ...]`` for one plot data.
 
@@ -297,6 +360,11 @@ def _scatter_rows(plot_data):
     and the option is rebuilt on every render. ``PredObsPlotData`` is a frozen
     dataclass with ``eq=False``, so it hashes by identity — and the loader hands
     back the same object for an unchanged file, which makes this a hit.
+
+    Kept to ``SCATTER_ROWS_CACHE_SIZE`` (not the loader's size): an entry here
+    costs 7.5x the DataFrame it comes from — 48 MB at 200k points against the
+    frame's 6.4 MB — because every value is a boxed Python scalar in its own
+    list. See the constants block for the measurements.
 
     Values are converted through ``.tolist()`` so they are native Python floats
     and ints, never numpy scalars: the option is serialized to the frontend as
@@ -345,6 +413,12 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
 
     Returns a plain, JSON-serializable option dict, or None when there is
     nothing to draw.
+
+    **Whatever you pass as ``labels``/``title`` here must also be passed to
+    ``pred_obs_chart_identity``** if you use its result as the adapter's
+    ``option_digest``: that digest replaces the content hash, so text it does
+    not cover cannot trigger a re-render. Both functions take these two by the
+    same names and defaults so a single call site can forward them unchanged.
 
     Structure: one ``scatter`` series carrying every point, plus one ``line``
     series drawing the 1:1 reference. Both axes are pinned to the SAME
