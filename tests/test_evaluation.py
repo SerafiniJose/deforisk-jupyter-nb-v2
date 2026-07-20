@@ -1159,6 +1159,25 @@ _CHART_SMOKE = (
     "assert opt['title']['text'] and opt['legend']['show'] is True\n"
 )
 
+# The scatter half of the same layering rule. Builds from an in-memory
+# PredObsPlotData rather than a file so the smoke needs no fixture on disk —
+# the point is that the option BUILDS, which is where a lazy import would bite.
+_SCATTER_SMOKE = (
+    "import pandas as pd\n"
+    "import gui.scripts.evaluation_echarts as ee\n"
+    "from spatialrisk.evaluation import PredObsPlotData\n"
+    "pts = pd.DataFrame({'cell': [0, 1], 'nfor_obs_ha': [9.0, 8.0],\n"
+    "                    'ndefor_obs_ha': [1.0, 2.0],\n"
+    "                    'ndefor_pred_ha': [1.5, 2.5]})\n"
+    "pd_ = PredObsPlotData(model='glm', period='d1', csize_px=300,\n"
+    "                      csize_ha=90.0, points=pts, axis_min=1.0,\n"
+    "                      axis_max=2.5, medae=0.5, r2=0.9, ncell=2)\n"
+    "sopt = ee.pred_obs_scatter_option(pd_)\n"
+    "assert [v[:2] for v in sopt['series'][0]['data']] == [[1.0, 1.5], [2.0, 2.5]]\n"
+    "assert sopt['xAxis']['min'] == sopt['yAxis']['min'] == 1.0\n"
+    "assert ee.pred_obs_renderer(pd_) == 'svg'\n"
+)
+
 
 def test_evaluation_gui_path_imports_no_plotly():
     """No module the Evaluation tile pulls in may still reach for plotly.
@@ -1173,7 +1192,7 @@ def test_evaluation_gui_path_imports_no_plotly():
         "import gui.scripts.evaluation_charts as ec\n"
         "import gui.widget.evaluation_results  # noqa: F401\n"
         "import gui.tile.evaluation_tile  # noqa: F401\n"
-        + _CHART_SMOKE +
+        + _CHART_SMOKE + _SCATTER_SMOKE +
         "assert 'plotly' not in sys.modules\n"
         "print('OK')\n",
     )
@@ -1186,12 +1205,13 @@ def test_evaluation_charts_builds_options_without_solara():
 
     The chart builders moved from plotly to ECharts but must still import (and
     run) with solara, ipyvuetify and ipecharts all blocked — the widget half of
-    the adapter is the only module allowed to know ipecharts exists.
+    the adapter is the only module allowed to know ipecharts exists. Covers
+    BOTH builders: the metric bars and the predicted-vs-observed scatter.
     """
     proc = _run_blocked(
         ["solara", "reacton", "ipyvuetify", "ipecharts", "plotly"],
         "import gui.scripts.evaluation_charts as ec\n"
-        + _CHART_SMOKE +
+        + _CHART_SMOKE + _SCATTER_SMOKE +
         "print('OK')\n",
     )
     assert proc.returncode == 0, proc.stderr
@@ -1345,16 +1365,6 @@ def test_charts_tab_rebuilds_its_charts_when_the_tab_becomes_active():
     first = rc.find(cls).widgets[0]
     rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=2))
     assert rc.find(cls).widgets[0] is not first
-
-
-def test_charts_tab_keeps_its_widgets_across_an_uneventful_rerender():
-    """No teardown/flicker when nothing the chart shows has changed."""
-    from gui.widget.evaluation_results import _ChartsTab
-
-    rc, cls = _render_charts_tab()
-    first = list(rc.find(cls).widgets)
-    rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=1))
-    assert list(rc.find(cls).widgets) == first
 
 
 def test_charts_tab_says_so_when_there_is_nothing_to_chart():

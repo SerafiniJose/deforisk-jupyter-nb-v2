@@ -49,6 +49,17 @@ def record_metrics(rows, selected):
     return [m for m in keys if any(r.get(m) is not None for r in rows)]
 
 
+def pred_obs_artifact_name(model, period, csize, ext):
+    """File name ``_evaluate_one_against_truth`` writes for one map + cell size.
+
+    The PNG and the point CSV are the same stem with a different extension, and
+    both are derived — not stored — for records saved before run-scoping. One
+    definition so the two derivations can never drift apart: ``figure_entries``
+    uses it for ``png``, the scatter loader for ``csv``.
+    """
+    return f"pred_obs_{model}_{period}_{csize}.{ext}"
+
+
 def figure_entries(rows, csize, fig_dir=None):
     """[(label, Path)] of predicted-vs-observed PNGs for one cell size.
 
@@ -65,7 +76,8 @@ def figure_entries(rows, csize, fig_dir=None):
         if r.get("fig_path"):
             path = Path(r["fig_path"])
         elif fig_dir is not None and r.get("model") and r.get("period"):
-            path = Path(fig_dir) / f"pred_obs_{r['model']}_{r['period']}_{csize}.png"
+            path = Path(fig_dir) / pred_obs_artifact_name(
+                r["model"], r["period"], csize, "png")
         else:
             continue
         entries.append((map_label(r), path))

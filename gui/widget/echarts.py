@@ -92,7 +92,7 @@ def _option_digest(option):
 
 @solara.component
 def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
-                 height=DEFAULT_HEIGHT):
+                 height=DEFAULT_HEIGHT, option_digest=None):
     """Render an ECharts option dict as a chart.
 
     Args:
@@ -103,6 +103,9 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
         renderer: ``RENDERER_SVG`` (default, small bar charts) or
             ``RENDERER_CANVAS`` (high-point-count scatter).
         height: CSS pixel height of the chart container.
+        option_digest: optional caller-supplied stand-in for the option hash —
+            see "Skipping the hash" below. ``None`` (the default) keeps the
+            adapter hashing the option itself.
 
     The widget is built inside a ``use_memo`` keyed on a digest of ``option``
     plus the presentation inputs and ``identity``, so a re-render that changes
@@ -134,11 +137,30 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
 
     A wrong ``identity`` now costs at most an unnecessary rebuild; it can no
     longer render stale data.
+
+    **Skipping the hash.** Hashing the option is cheap for a bar chart (1.2 ms
+    at 1k values) and expensive for a dense scatter: 63 ms at 50k points, 239 ms
+    at 200k — per render, in a dialog the user is interacting with. A caller
+    that already knows a cheap, complete identity for its option may pass it as
+    ``option_digest``, and the adapter uses that INSTEAD of hashing (see
+    ``gui.scripts.evaluation_echarts.pred_obs_chart_identity``, derived from one
+    ``stat()``).
+
+    That inverts the contract above, so it is opt-in and the caller takes on the
+    obligation the adapter otherwise carries: **``option_digest`` must change
+    whenever anything in ``option`` changes.** A digest that misses an input
+    renders a stale chart with no error anywhere — precisely the failure mode
+    the default path exists to prevent. Use it only where the option is a pure
+    function of inputs the caller can name exhaustively and cheaply. The
+    presentation inputs (``dark``, ``renderer``, ``height``) stay in the memo
+    key either way, so a digest never has to account for them.
     """
     widget = solara.use_memo(
         lambda: build_chart_widget(
             option, dark=dark, renderer=renderer, height=height),
-        [identity, _option_digest(option), dark, renderer, height],
+        [identity,
+         _option_digest(option) if option_digest is None else option_digest,
+         dark, renderer, height],
     )
     # Handing the widget to a container's `children` is how this app already
     # mounts non-solara widgets (see the SepalMap in solara_app.Page). It puts

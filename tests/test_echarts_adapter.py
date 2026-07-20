@@ -374,6 +374,71 @@ def test_chart_component_survives_an_option_json_cannot_serialize():
     assert _chart_widget(rc) is not first
 
 
+# --------------------------------------------------------------------------
+# option_digest — the caller-supplied identity escape hatch
+# --------------------------------------------------------------------------
+
+def test_chart_component_hashes_the_option_itself_by_default():
+    """No digest supplied = the adapter's own hash decides. Unchanged behaviour.
+
+    Pinned explicitly because every other caller relies on it: the default path
+    must keep owning staleness so a builder can rebuild its dict every render.
+    """
+    from gui.widget.echarts import EChartsChart
+
+    _, rc = _render_chart(option={"series": [{"data": [1]}]})
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a"))
+    assert _chart_widget(rc) is not first
+
+
+def test_a_caller_supplied_digest_replaces_the_option_hash():
+    """The scatter's escape hatch: hashing 200k points costs 239 ms a render.
+
+    A caller that already knows a cheap identity for its option (file mtime, a
+    run id) passes it as ``option_digest`` and the adapter skips json+sha1
+    entirely. Proven by changing the option while holding the digest fixed: the
+    widget must be REUSED, which can only happen if the option was never hashed.
+    """
+    from gui.widget.echarts import EChartsChart
+
+    _, rc = _render_chart(option={"series": [{"data": [1]}]},
+                          option_digest="points@1")
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a",
+                           option_digest="points@1"))
+    assert _chart_widget(rc) is first
+    # ...and the stale option was genuinely never applied
+    assert _chart_widget(rc).option["series"] == [{"data": [1]}]
+
+
+def test_a_changed_caller_digest_rebuilds_the_widget():
+    from gui.widget.echarts import EChartsChart
+
+    _, rc = _render_chart(option={"series": [{"data": [1]}]},
+                          option_digest="points@1")
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a",
+                           option_digest="points@2"))
+    second = _chart_widget(rc)
+    assert second is not first
+    assert second.option["series"] == [{"data": [2]}]
+
+
+def test_the_caller_digest_does_not_override_the_presentation_inputs():
+    """Theme and renderer stay the adapter's business, digest or not."""
+    from gui.widget.echarts import EChartsChart
+
+    _, rc = _render_chart(option={"series": []}, option_digest="points@1",
+                          dark=False)
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"series": []}, identity="run-a",
+                           option_digest="points@1", dark=True))
+    second = _chart_widget(rc)
+    assert second is not first
+    assert second.option["textStyle"]["color"] == "#c3c2b7"
+
+
 def test_chart_component_recreates_its_widget_when_the_identity_changes():
     from gui.widget.echarts import EChartsChart
 
