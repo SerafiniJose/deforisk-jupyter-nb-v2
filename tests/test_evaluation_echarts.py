@@ -763,7 +763,20 @@ def test_the_chart_identity_moves_when_the_dialog_switches_map(tmp_path):
     built from exactly model, period and csize — so a version that dropped the
     path would hand one map's digest to the other map's option, which as an
     ``option_digest`` means the previous map's chart stays on screen.
+
+    The three point CSVs are written with IDENTICAL content (default
+    obs/pred/forest values every time), so they are byte-identical and thus
+    already the same size. Left alone, ``mtime_ns`` from three sequential
+    ``to_csv()`` calls would *usually* differ by OS write-timing jitter alone
+    — which would let this assertion pass even with ``path`` dropped from the
+    identity, since (size, mtime_ns) would then be the accidental
+    discriminator instead. Pinning size (via the identical-content fixture)
+    AND mtime_ns (explicitly, via ``os.utime``) to the SAME values on all
+    three files removes that accident: ``path`` is left as the only thing
+    that can still tell the three identities apart.
     """
+    import os
+
     from spatialrisk.evaluations import EvaluationPlotArtifact
 
     from gui.scripts.evaluation_echarts import pred_obs_chart_identity
@@ -771,14 +784,23 @@ def test_the_chart_identity_moves_when_the_dialog_switches_map(tmp_path):
     run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
     maps = [("GLM", "d1"), ("MW_w11", "d1"), ("GLM", "d2")]
     artifacts = []
+    csv_paths = []
     for model, period in maps:
         csv_path = run_dir / f"pred_obs_{model}_{period}_300.csv"
         _write_points(csv_path)
+        csv_paths.append(csv_path)
         artifacts.append(EvaluationPlotArtifact(
             prediction_key=f"{model}__{period}", model=model, period=period,
             csize_px=300, points_csv=str(csv_path),
             png_path=str(csv_path.with_suffix(".png"))))
     record = _record(run_dir, artifacts=artifacts)
+
+    sizes = {p.stat().st_size for p in csv_paths}
+    assert len(sizes) == 1, "fixture CSVs must be byte-identical in size"
+    pinned_ns = 1_700_000_000_000_000_000
+    for p in csv_paths:
+        os.utime(p, ns=(pinned_ns, pinned_ns))
+        assert p.stat().st_mtime_ns == pinned_ns
 
     identities = [pred_obs_chart_identity(record, model, period, 300)
                   for model, period in maps]
