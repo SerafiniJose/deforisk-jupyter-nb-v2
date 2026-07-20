@@ -119,17 +119,25 @@ def test_validate_two_layer_perfect_prediction(tmp_path):
 
 def _varied_validation_fixture(tmp_path):
     """Three coarse cells with DIFFERENT observed/predicted values and two risk
-    categories, so metrics, axis bounds and the scatter are all non-degenerate.
+    categories, so metrics, axis bounds and the scatter are all non-degenerate,
+    PLUS a zero-forest bottom half (cells 3, 4, 5) that must be dropped by the
+    ``nfor_obs > 0`` filter.
 
     Cell 2 is the 100px-wide remainder column, which makes nfor_obs vary too.
+    The bottom half (rows 300-599) has no forest and no deforestation at all,
+    so cells 3/4/5 get nfor_obs == 0 and are excluded from the result entirely;
+    cells 0/1/2 read the exact same pixel region as before, so the previously
+    pinned golden values are unaffected by this addition.
     """
-    nrow, ncol, pixel = 300, 700, 30.0
+    nrow, ncol, pixel = 600, 700, 30.0
     forest = np.ones((nrow, ncol), dtype="int32")
+    forest[300:600, :] = 0     # bottom half: no forest recorded at all
 
     defor = np.zeros((nrow, ncol), dtype="int32")
     defor[:90, 0:300] = 1      # cell 0
     defor[:150, 300:600] = 1   # cell 1
     defor[:40, 600:700] = 1    # cell 2
+    # bottom half (cells 3, 4, 5) stays all-zero deforestation too.
 
     risk = np.ones((nrow, ncol), dtype="int32")
     risk[:, 350:] = 2          # two categories with different densities
@@ -146,8 +154,13 @@ def _varied_validation_fixture(tmp_path):
     )
 
 
-# Golden values captured from validate_two_layer BEFORE the plot-data refactor.
-# They pin the frozen numerics: metric formulas, round(..., 2), CSV columns/order.
+# Golden values captured from validate_two_layer BEFORE the plot-data refactor
+# (git show 643a441:spatialrisk/evaluation.py), run against the fixture ABOVE
+# (including its zero-forest bottom half). They pin the frozen numerics: metric
+# formulas, round(..., 2), CSV columns/order, and the nfor_obs > 0 drop filter.
+# Re-verified after the fixture gained the zero-forest cells (3, 4, 5): the
+# legacy implementation drops them too, so the surviving-cell values below are
+# byte-identical to what was pinned before the fixture change.
 _GOLDEN_INDICES = {
     "RMSE": 2619.28, "wRMSE": 2964.98, "MedAE": 2250.0, "R2": 0.43,
     "ncell": 3, "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0,
@@ -178,6 +191,39 @@ def test_validate_two_layer_matches_golden_metrics_and_csvs(tmp_path):
     assert (tmp_path / "pred_obs.csv").read_text() == _GOLDEN_POINT_CSV
     assert (tmp_path / "indices.csv").read_text() == _GOLDEN_INDICES_CSV
     assert (tmp_path / "pred_obs.png").stat().st_size > 1000
+
+
+def test_compute_validation_drops_cells_with_zero_forest(tmp_path):
+    """Cells with nfor_obs == 0 (no forest recorded at the start of the period)
+    must be excluded from the result entirely. The fixture's bottom half (cells
+    3, 4, 5) has zero forest and zero deforestation everywhere; only the top
+    row's cells 0/1/2 may survive the filter."""
+    lay = _varied_validation_fixture(tmp_path)
+    result = compute_validation(**lay, csize_coarse_grid=300,
+                                model_name="TEST", period="calibration")
+    assert set(result.plot_data.points["cell"]) == {0, 1, 2}
+    assert result.indices["ncell"] == 3
+
+
+def test_validate_two_layer_forwards_figsize_and_dpi_to_png(tmp_path):
+    """figsize/dpi forwarding is essentially the wrapper's remaining job: a
+    non-default value must actually reach the rendered PNG's pixel dimensions,
+    not just be accepted and silently dropped."""
+    import matplotlib.image as mpimg
+
+    lay = _varied_validation_fixture(tmp_path)
+    fig_path = tmp_path / "pred_obs.png"
+    validate_two_layer(
+        **lay, csize_coarse_grid=300,
+        indices_file_pred=tmp_path / "indices.csv",
+        tab_file_pred=tmp_path / "pred_obs.csv",
+        fig_file_pred=fig_path,
+        model_name="TEST", period="calibration",
+        figsize=(3.0, 3.0), dpi=50,
+    )
+    img = mpimg.imread(fig_path)
+    height, width = img.shape[0], img.shape[1]
+    assert (width, height) == (150, 150)  # figsize(3.0, 3.0) * dpi(50)
 
 
 def _points(obs, pred):
@@ -257,14 +303,64 @@ def test_plot_data_carries_chart_labels():
     data = PredObsPlotData(
         model="GLM", period="calibration", csize_px=300, csize_ha=8100.0,
         points=_points([1.0], [2.0]), axis_min=1.0, axis_max=2.0,
-        medae=1.5, r2=0.42, ncell=7,
+        medae=1.5, r2=0.42, ncell=1,
     )
     assert data.title == (
         "GLM model, calibration period\n"
         "Predicted vs. observed deforestation in 8100.0 ha grid cells."
     )
-    assert data.annotation == "MedAE = 1.50 ha\nR2 = 0.42\nn = 7"
+    assert data.annotation == "MedAE = 1.50 ha\nR2 = 0.42\nn = 1"
     assert (data.x_label, data.y_label) == (PRED_OBS_X_LABEL, PRED_OBS_Y_LABEL)
+
+
+def _base_plot_data_kwargs():
+    """Valid PredObsPlotData kwargs (2 finite points, sane axis bounds), so
+    each __post_init__ test only overrides the one field under test."""
+    return dict(
+        model="M", period="p", csize_px=300, csize_ha=8100.0,
+        points=_points([1.0, 3.0], [2.0, 4.0]),
+        axis_min=1.0, axis_max=4.0, medae=0.0, r2=1.0, ncell=2,
+    )
+
+
+def test_plot_data_rejects_nan_axis_bounds():
+    kwargs = _base_plot_data_kwargs()
+    kwargs["axis_min"] = float("nan")
+    with pytest.raises(ValueError):
+        PredObsPlotData(**kwargs)
+
+
+def test_plot_data_rejects_infinite_axis_bounds():
+    kwargs = _base_plot_data_kwargs()
+    kwargs["axis_max"] = float("inf")
+    with pytest.raises(ValueError):
+        PredObsPlotData(**kwargs)
+
+
+def test_plot_data_rejects_zero_width_axis_domain():
+    kwargs = _base_plot_data_kwargs()
+    kwargs["axis_min"] = kwargs["axis_max"] = 5.0
+    with pytest.raises(ValueError):
+        PredObsPlotData(**kwargs)
+
+
+def test_plot_data_rejects_inverted_axis_domain():
+    kwargs = _base_plot_data_kwargs()
+    kwargs["axis_min"], kwargs["axis_max"] = 4.0, 1.0
+    with pytest.raises(ValueError):
+        PredObsPlotData(**kwargs)
+
+
+def test_plot_data_rejects_ncell_mismatched_with_points():
+    kwargs = _base_plot_data_kwargs()
+    kwargs["ncell"] = 3  # points only has 2 rows
+    with pytest.raises(ValueError):
+        PredObsPlotData(**kwargs)
+
+
+def test_plot_data_accepts_well_formed_bounds_and_ncell():
+    # Sanity: the valid baseline itself must construct without raising.
+    PredObsPlotData(**_base_plot_data_kwargs())
 
 
 def test_write_pred_obs_csv_matches_golden_bytes(tmp_path):
@@ -272,6 +368,22 @@ def test_write_pred_obs_csv_matches_golden_bytes(tmp_path):
     result = compute_validation(**lay, csize_coarse_grid=300)
     out = write_pred_obs_csv(result.plot_data, tmp_path / "points.csv")
     assert _Path(out).read_text() == _GOLDEN_POINT_CSV
+
+
+def test_write_pred_obs_csv_persists_non_finite_rows(tmp_path):
+    """The point CSV is the frozen artifact: ``points`` (not the renderer-safe
+    ``finite_points`` subset) must be what gets written, so non-finite rows
+    survive to disk exactly as computed."""
+    points = _points([1.0, np.nan, 3.0], [1.0, 2.0, np.inf])
+    data = PredObsPlotData(
+        model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
+        axis_min=1.0, axis_max=3.0, medae=0.0, r2=1.0, ncell=3,
+    )
+    assert len(data.finite_points) == 1  # sanity: the renderer subset drops 2 rows
+
+    out = write_pred_obs_csv(data, tmp_path / "points.csv")
+    lines = _Path(out).read_text().strip().splitlines()
+    assert len(lines) == 1 + 3  # header + all 3 rows, non-finite ones included
 
 
 def test_write_indices_csv_matches_golden_bytes(tmp_path):

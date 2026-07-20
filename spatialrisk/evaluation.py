@@ -122,8 +122,37 @@ class PredObsPlotData:
     r2: float
     ncell: int
 
+    def __post_init__(self):
+        """Structural guard for the "no NaN/inf reaches a renderer" invariant.
+
+        Pure validation only — the dataclass is frozen and this never mutates
+        ``self`` (no ``object.__setattr__`` needed). Raises ``ValueError`` if
+        ``axis_min``/``axis_max`` are non-finite or form a zero-width/inverted
+        domain, or if ``ncell`` disagrees with the persisted point count.
+        """
+        if not (np.isfinite(self.axis_min) and np.isfinite(self.axis_max)):
+            raise ValueError(
+                f"axis_min/axis_max must be finite, got "
+                f"({self.axis_min!r}, {self.axis_max!r})"
+            )
+        if self.axis_min >= self.axis_max:
+            raise ValueError(
+                f"axis_min must be strictly less than axis_max (non-degenerate "
+                f"domain), got ({self.axis_min!r}, {self.axis_max!r})"
+            )
+        if self.ncell != len(self.points):
+            raise ValueError(
+                f"ncell ({self.ncell!r}) does not match len(points) "
+                f"({len(self.points)!r})"
+            )
+
     @property
     def title(self):
+        """The chart title, formatted exactly as on the archived PNG.
+
+        English, PNG-formatted text: GUI consumers must build their own
+        translated string via ``t(...)`` rather than reuse this.
+        """
         return (
             f"{self.model} model, {self.period} period\n"
             f"Predicted vs. observed deforestation in {self.csize_ha} ha grid cells."
@@ -131,7 +160,11 @@ class PredObsPlotData:
 
     @property
     def annotation(self):
-        """The 'MedAE / R2 / n' summary block, formatted as on the PNG."""
+        """The 'MedAE / R2 / n' summary block, formatted as on the PNG.
+
+        English, PNG-formatted text: GUI consumers must build their own
+        translated string via ``t(...)`` rather than reuse this.
+        """
         return (f"MedAE = {self.medae:.2f} ha\n"
                 f"R2 = {self.r2:.2f}\n"
                 f"n = {self.ncell:d}")
