@@ -65,6 +65,7 @@
       "col_strategy": "Strategy",
       "col_points": "Points",
       "col_status": "Status",
+      "more_strata": "+{n} more",
       "unknown_error": "Unknown error."
     },
     "variable_list": {
@@ -108,6 +109,7 @@
       "samples_banner": "{total} set(s) · {points} points",
       "col_strategy": "Strategy",
       "col_points_classes": "Points (class counts)",
+      "more_strata": "+{n} more",
       "col_seed": "Seed",
       "models_empty": "No models trained yet.",
       "models_banner": "{total} model(s) · {trained} trained",

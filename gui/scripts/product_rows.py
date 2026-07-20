@@ -148,6 +148,46 @@ def inference_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
 
 # --- Sampling -----------------------------------------------------------------
 
+#: Class counts shown before the label collapses into a "+N more" suffix. A
+#: continuous variable used as strata (altitude, distance…) yields one class per
+#: distinct pixel value, which would otherwise render an unbounded string.
+MAX_DISPLAYED_STRATA = 10
+
+
+def _class_sort_key(item):
+    """Numeric order for numeric class keys, string order for anything else."""
+    key = item[0]
+    try:
+        return (0, float(key), "")
+    except (TypeError, ValueError):
+        return (1, 0.0, str(key))
+
+
+def format_sample_points(
+    n_total: Optional[int],
+    class_counts: Optional[Dict[str, int]],
+    strategy: Optional[str],
+    more_fmt: str = "+{n} more",
+) -> str:
+    """Render the Points cell for a sample set.
+
+    Only stratified sets break the total down by class — for random/systematic
+    the pixel value a point happens to land on carries no meaning. ``more_fmt``
+    is a caller-supplied (translated) template taking ``{n}``.
+    """
+    if n_total is None:
+        return "—"
+    if str(strategy or "").lower() != "stratified" or not class_counts:
+        return str(n_total)
+
+    items = sorted(class_counts.items(), key=_class_sort_key)
+    parts = [f"{k}:{v}" for k, v in items[:MAX_DISPLAYED_STRATA]]
+    hidden = len(items) - len(parts)
+    if hidden > 0:
+        parts.append(more_fmt.format(n=hidden))
+    return f"{n_total} ({', '.join(parts)})"
+
+
 def sample_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
     """Job rows (newest first) then one row per registered sample set."""
     samples = (getattr(project, "samples", None) or {}) if project is not None else {}

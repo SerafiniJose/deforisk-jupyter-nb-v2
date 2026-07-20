@@ -16,6 +16,7 @@ subscribing to the reactive here re-renders on every set instead.
 import solara
 
 from gui.i18n import t
+from gui.scripts.product_rows import format_sample_points
 from gui.scripts.summary_helpers import (
     raw_variable_rows,
     processed_variable_rows,
@@ -152,8 +153,10 @@ def SamplesSummary(project):
     rows = []
     for r in data:
         alloc = f" / {r['allocation']}" if r["allocation"] and r["allocation"] != "—" else ""
-        counts = ", ".join(f"{k}:{v}" for k, v in sorted(r["class_counts"].items()))
-        points_str = f"{r['n_total']} ({counts})" if counts else str(r["n_total"])
+        points_str = format_sample_points(
+            r["n_total"], r["class_counts"], r["strategy"],
+            more_fmt=t("widgets.summary_lists.more_strata"),
+        )
         rows.append(
             {
                 "key": str(r["name"]),

@@ -6,7 +6,7 @@ from typing import Callable, Optional
 import solara
 
 from gui.i18n import t
-from gui.scripts.product_rows import sample_rows
+from gui.scripts.product_rows import format_sample_points, sample_rows
 from gui.widget.product_table import ProductTable
 
 logger = logging.getLogger("spatial_risk")
@@ -40,8 +40,10 @@ def SampleSetList(
         if r["kind"] == "sample":
             key = r["key"]
             alloc = f" / {r['allocation']}" if r["allocation"] else ""
-            counts = ", ".join(f"{k}:{v}" for k, v in sorted((r["class_counts"] or {}).items()))
-            points = f"{r['n_total']} ({counts})" if counts else str(r["n_total"])
+            points = format_sample_points(
+                r["n_total"], r["class_counts"], r["strategy"],
+                more_fmt=t("widgets.sample_set_list.more_strata"),
+            )
             if on_toggle_map is not None:
                 actions.append(
                     {
