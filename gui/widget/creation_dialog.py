@@ -15,6 +15,19 @@ import solara
 from gui.i18n import t
 from gui.widget.confirm_dialog import ConfirmDialog
 
+# Restyle the Advanced-parameters panel to sit in the form's flow: same
+# border/height/label colour as the outlined dense fields, no 24px inset.
+# Injected here so every creation form's `class_="advanced-params"` panel
+# looks identical.
+_ADVANCED_PANEL_CSS = """
+.advanced-params .v-expansion-panel { border: 1px solid rgba(0, 0, 0, .38); border-radius: 4px; }
+.theme--dark .advanced-params .v-expansion-panel { border-color: rgba(255, 255, 255, .24); }
+.advanced-params .v-expansion-panel::before { box-shadow: none; }
+.advanced-params .v-expansion-panel-header { min-height: 40px; padding: 0 12px; font-size: 14px; color: rgba(0, 0, 0, .6); }
+.theme--dark .advanced-params .v-expansion-panel-header { color: rgba(255, 255, 255, .7); }
+.advanced-params .v-expansion-panel-content__wrap { padding: 16px 12px 4px; }
+"""
+
 
 @solara.component
 def CreationDialog(
@@ -80,6 +93,7 @@ def CreationDialog(
             with rv.CardTitle():
                 solara.Text(title)
             with rv.CardText():
+                solara.Style(_ADVANCED_PANEL_CSS)
                 solara.Column(style="gap:4px;", children=children)
                 if error:
                     rv.Alert(type_="error", dense=True, children=[error])

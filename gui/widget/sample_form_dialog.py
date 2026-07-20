@@ -196,8 +196,18 @@ def SampleFormDialog(project, open_, existing_names, running_names, on_submit: C
                 hint=_n_hint, persistent_hint=True,
             )
 
-        # Advanced — optional knobs, collapsed by default (self-managed panels).
-        with rv.ExpansionPanels(flat=True):
+        ArtifactNameField(
+            value=name_value,
+            on_input=on_name_input,
+            storage_key=clean,
+            exists=clean in existing_names,
+            label=t("tiles.sampling.sample_name_label"),
+        )
+
+        # The seed has a working default, so it is progressive-disclosed at the
+        # end of the form, collapsed by default (self-managed panels). Styling
+        # comes from the shared .advanced-params CSS in CreationDialog.
+        with rv.ExpansionPanels(flat=True, class_="advanced-params"):
             with rv.ExpansionPanel():
                 with rv.ExpansionPanelHeader():
                     solara.Text(t("common.advanced"))
@@ -209,11 +219,3 @@ def SampleFormDialog(project, open_, existing_names, running_names, on_submit: C
                         dense=True, outlined=True,
                         hint=t("tiles.sampling.seed_hint"), persistent_hint=True,
                     )
-
-        ArtifactNameField(
-            value=name_value,
-            on_input=on_name_input,
-            storage_key=clean,
-            exists=clean in existing_names,
-            label=t("tiles.sampling.sample_name_label"),
-        )

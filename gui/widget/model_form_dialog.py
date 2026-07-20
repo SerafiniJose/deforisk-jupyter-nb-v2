@@ -96,17 +96,6 @@ MODEL_HAS_PARAMS = {
     for k in MODEL_KEYS
 }
 
-# Restyle the Advanced-parameters panel to sit in the form's flow: same
-# border/height/label colour as the outlined dense fields, no 24px inset.
-_ADVANCED_PANEL_CSS = """
-.advanced-params .v-expansion-panel { border: 1px solid rgba(0, 0, 0, .38); border-radius: 4px; }
-.theme--dark .advanced-params .v-expansion-panel { border-color: rgba(255, 255, 255, .24); }
-.advanced-params .v-expansion-panel::before { box-shadow: none; }
-.advanced-params .v-expansion-panel-header { min-height: 40px; padding: 0 12px; font-size: 14px; color: rgba(0, 0, 0, .6); }
-.theme--dark .advanced-params .v-expansion-panel-header { color: rgba(255, 255, 255, .7); }
-.advanced-params .v-expansion-panel-content__wrap { padding: 16px 12px 4px; }
-"""
-
 
 @solara.component
 def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
@@ -208,7 +197,6 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         on_close=reset,
         replace_message=lambda k: t("tiles.train.confirm_overwrite_message", key=k),
     ):
-        solara.Style(_ADVANCED_PANEL_CSS)
         with solara.Row(style="gap:4px;align-items:center;margin-bottom:12px;"):
             # hide_details drops the (empty) message strip under the input so
             # the row centres the info button on the input box itself.
