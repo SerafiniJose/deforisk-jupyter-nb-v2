@@ -901,22 +901,230 @@ def _chart_rows():
     return rows
 
 
-def test_metric_bars_figure_layout():
-    from gui.scripts.evaluation_charts import metric_bars_figure
+# --- metric_bar_option: one serializable ECharts option per metric ---------
+#
+# These replace the old Plotly object-structure assertions
+# (test_metric_bars_figure_layout). The single multi-subplot figure is gone:
+# each metric now gets its own option dict, laid out two-per-row by the widget.
 
-    fig = metric_bars_figure(_chart_rows(), ["MedAE", "R2"])
-    # one bar trace per (metric, csize): 2 metrics x 2 csizes
-    assert len(fig.data) == 4
-    assert all(tr.type == "bar" for tr in fig.data)
-    # x axis carries the map labels
-    assert list(fig.data[0].x) == ["glm — d1", "rf — d1"]
-    # legend shows one entry per csize (first-metric traces only)
-    assert sum(1 for tr in fig.data if tr.showlegend) == 2
-    # empty metric selection means "all four"
-    fig_all = metric_bars_figure(_chart_rows(), [])
-    assert len(fig_all.data) == 8
-    # nothing chartable -> None
-    assert metric_bars_figure([], ["RMSE"]) is None
+
+def test_metric_bar_option_categories_are_the_map_labels():
+    """x axis = one category per model/period label, sorted (as Plotly did)."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    assert option["xAxis"]["type"] == "category"
+    assert option["xAxis"]["data"] == ["glm — d1", "rf — d1"]
+
+
+def test_metric_bar_option_has_one_bar_series_per_cell_size():
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    assert [s["type"] for s in option["series"]] == ["bar", "bar"]
+    assert [s["name"] for s in option["series"]] == ["csize 100 px", "csize 300 px"]
+
+
+def test_metric_bar_option_series_data_is_the_metric_values_per_label():
+    """Values follow the category order, one list per cell size."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    # _chart_rows: MedAE = base * csize / 100, base 1.0 (glm) / 0.7 (rf)
+    assert option["series"][0]["data"] == [1.0, 0.7]
+    assert option["series"][1]["data"] == [3.0, pytest.approx(2.1)]
+
+
+def test_metric_bar_option_leaves_a_missing_label_csize_pair_empty():
+    """A map evaluated at only one cell size must not shift the other bars."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    rows = [r for r in _chart_rows()
+            if not (r["model"] == "rf" and r["csize_coarse_grid"] == 300)]
+    option = metric_bar_option(rows, "MedAE")
+    assert option["xAxis"]["data"] == ["glm — d1", "rf — d1"]
+    assert option["series"][1]["data"] == [3.0, None]
+
+
+def test_metric_bar_option_title_carries_the_direction_hint():
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    titles = {m: metric_bar_option(_chart_rows(), m)["title"]["text"]
+              for m in ("MedAE", "R2", "RMSE", "wRMSE")}
+    assert titles == {
+        "MedAE": "MedAE (ha) ↓",
+        "R2": "R² ↑",
+        "RMSE": "RMSE (ha) ↓",
+        "wRMSE": "wRMSE (ha) ↓",
+    }
+
+
+def test_metric_bar_option_shows_the_legend_only_for_several_cell_sizes():
+    """Matches the old showlegend=len(csizes) > 1."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    many = metric_bar_option(_chart_rows(), "MedAE")
+    assert many["legend"]["show"] is True
+    assert many["legend"]["data"] == ["csize 100 px", "csize 300 px"]
+
+    one = metric_bar_option(
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE")
+    assert one["legend"]["show"] is False
+
+
+def test_metric_bar_option_colors_bars_from_the_app_palette():
+    """The application-owned Blues ramp, not plotly.colors.sample_colorscale."""
+    from gui.scripts.echarts_options import csize_colors
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    assert [s["itemStyle"]["color"] for s in option["series"]] == csize_colors(2)
+
+    single = metric_bar_option(
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE")
+    assert single["series"][0]["itemStyle"]["color"] == "#2a78d6"
+
+
+def test_metric_bar_option_tooltip_shows_label_value_and_cell_size():
+    """ECharts template tokens: {b} category, {c} value, {a} series name."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    tooltip = metric_bar_option(_chart_rows(), "MedAE")["tooltip"]
+    assert tooltip["trigger"] == "item"
+    assert tooltip["formatter"] == "{b}<br/>MedAE = {c}<br/>{a}"
+    # the series name is what carries "csize N px" into {a}
+    assert metric_bar_option(_chart_rows(), "R2")["series"][1]["name"] == "csize 300 px"
+
+
+def test_metric_bar_option_uses_the_theme_ink_and_grid_colors():
+    """themed_option only sets ink; the grid colour must be wired in here."""
+    from gui.scripts.echarts_options import theme_colors
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    for dark in (False, True):
+        colors = theme_colors(dark)
+        option = metric_bar_option(_chart_rows(), "MedAE", dark=dark)
+        assert option["title"]["textStyle"]["color"] == colors["ink"]
+        assert option["legend"]["textStyle"]["color"] == colors["ink"]
+        assert option["xAxis"]["axisLabel"]["color"] == colors["ink"]
+        assert option["yAxis"]["axisLabel"]["color"] == colors["ink"]
+        assert option["xAxis"]["axisLine"]["lineStyle"]["color"] == colors["grid"]
+        assert option["yAxis"]["splitLine"]["lineStyle"]["color"] == colors["grid"]
+
+
+def test_metric_bar_option_keeps_the_x_axis_gridlines_off():
+    """Plotly parity: update_xaxes(showgrid=False)."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    assert option["xAxis"]["splitLine"]["show"] is False
+
+
+def test_metric_bar_option_is_json_serializable():
+    """EChartsRawWidget hands the dict straight to the frontend."""
+    import json
+
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    json.dumps(metric_bar_option(_chart_rows(), "MedAE"))
+
+
+def test_metric_bar_option_returns_none_when_nothing_is_chartable():
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    assert metric_bar_option([], "RMSE") is None
+    # a metric no row carries has nothing to draw
+    rows = [{k: v for k, v in r.items() if k != "wRMSE"} for r in _chart_rows()]
+    assert metric_bar_option(rows, "wRMSE") is None
+    # an unknown metric key has no title and no data
+    assert metric_bar_option(_chart_rows(), "nope") is None
+    # rows without a cell size cannot be split into series
+    assert metric_bar_option(
+        [{"model": "glm", "period": "d1", "MedAE": 1.0}], "MedAE") is None
+
+
+def test_record_metrics_keeps_the_canonical_order_and_drops_empties():
+    """Unchanged behaviour — the widget builds one option per returned metric."""
+    from gui.scripts.evaluation_charts import record_metrics
+
+    rows = _chart_rows()
+    assert record_metrics(rows, []) == ["MedAE", "R2", "RMSE", "wRMSE"]
+    assert record_metrics(rows, ["R2", "MedAE"]) == ["R2", "MedAE"]
+    assert record_metrics(rows, ["R2", "bogus"]) == ["R2"]
+    stripped = [{k: v for k, v in r.items() if k != "R2"} for r in rows]
+    assert record_metrics(stripped, ["R2", "MedAE"]) == ["MedAE"]
+
+
+# --- chart_identity: the EChartsChart memo key ------------------------------
+#
+# EChartsChart deliberately excludes `option` from its memo key, so a changed
+# option with an unchanged identity renders a STALE chart with no error. These
+# tests pin that the identity moves whenever anything the chart shows moves.
+
+
+def test_chart_identity_is_stable_for_identical_inputs():
+    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
+    assert chart_identity(option, **args) == chart_identity(option, **args)
+
+
+def test_chart_identity_changes_with_the_charted_data():
+    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
+
+    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
+    rows = _chart_rows()
+    bumped = [{**r, "MedAE": r["MedAE"] + 1} for r in rows]
+    assert (chart_identity(metric_bar_option(rows, "MedAE"), **args)
+            != chart_identity(metric_bar_option(bumped, "MedAE"), **args))
+
+
+def test_chart_identity_changes_with_the_cell_sizes():
+    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
+
+    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
+    rows = _chart_rows()
+    one_csize = [r for r in rows if r["csize_coarse_grid"] == 100]
+    assert (chart_identity(metric_bar_option(rows, "MedAE"), **args)
+            != chart_identity(metric_bar_option(one_csize, "MedAE"), **args))
+
+
+def test_chart_identity_changes_with_the_metric():
+    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
+
+    rows = _chart_rows()
+    a = chart_identity(metric_bar_option(rows, "MedAE"),
+                       eval_key="run-a", metric="MedAE", active_tab=1)
+    b = chart_identity(metric_bar_option(rows, "R2"),
+                       eval_key="run-a", metric="R2", active_tab=1)
+    assert a != b
+
+
+def test_chart_identity_changes_with_the_theme():
+    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
+
+    rows = _chart_rows()
+    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
+    assert (chart_identity(metric_bar_option(rows, "MedAE", dark=False), **args)
+            != chart_identity(metric_bar_option(rows, "MedAE", dark=True), **args))
+
+
+def test_chart_identity_changes_with_the_run_and_the_active_tab():
+    """The tab is not in the option at all — it must be folded in explicitly.
+
+    ipecharts sizes a chart on attach and on window resize only, so a chart
+    built while its tab was hidden can be mis-sized; rebuilding on tab entry is
+    the mitigation.
+    """
+    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
+
+    option = metric_bar_option(_chart_rows(), "MedAE")
+    base = chart_identity(option, eval_key="run-a", metric="MedAE", active_tab=1)
+    assert base != chart_identity(
+        option, eval_key="run-b", metric="MedAE", active_tab=1)
+    assert base != chart_identity(
+        option, eval_key="run-a", metric="MedAE", active_tab=2)
 
 
 def test_figure_entries_and_csizes():
@@ -951,6 +1159,239 @@ def test_evaluation_dialog_has_tabs_and_csize_select():
     import gui.widget.evaluation_results as er
 
     src = inspect.getsource(er)
-    assert "metric_bars_figure" in src and "FigurePlotly" in src
+    assert "metric_bar_option" in src and "EChartsChart" in src
     assert "figure_entries" in src and "csize_select_label" in src
     assert "rv.Tabs" in src and "rv.TabsItems" in src
+
+
+def test_evaluation_dialog_drops_the_plotly_modebar_workaround():
+    """The modebar was a FigurePlotly artefact; the table width rule stays."""
+    import inspect
+    import gui.widget.evaluation_results as er
+
+    src = inspect.getsource(er)
+    assert "modebar" not in src
+    assert "width: 100%" in src
+
+
+def _run_blocked(blocked, body):
+    """Run ``body`` in a subprocess where importing ``blocked`` raises."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    code = (
+        "import sys\n"
+        f"BLOCKED = {tuple(blocked)!r}\n"
+        "class Block:\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name.split('.')[0] in BLOCKED:\n"
+        "            raise ImportError('blocked: ' + name)\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, Block())\n"
+        + body
+    )
+    root = Path(__file__).resolve().parents[1]
+    return subprocess.run(
+        [sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
+
+
+_CHART_SMOKE = (
+    "rows = [{'model': m, 'period': 'd1', 'csize_coarse_grid': c,\n"
+    "         'MedAE': 1.0, 'R2': 0.5, 'RMSE': 1.0, 'wRMSE': 1.0}\n"
+    "        for m in ('glm', 'rf') for c in (100, 300)]\n"
+    "opt = ec.metric_bar_option(rows, 'MedAE')\n"
+    "assert opt['series'][0]['itemStyle']['color'].startswith('#')\n"
+    "assert ec.chart_identity(opt, eval_key='k', metric='MedAE', active_tab=1)\n"
+)
+
+
+def test_evaluation_gui_path_imports_no_plotly():
+    """No module the Evaluation tile pulls in may still reach for plotly.
+
+    Blocks 'plotly' at import time in a subprocess and then actually BUILDS a
+    chart option: the old code imported plotly lazily inside the figure
+    builder, so importing the modules alone would not have caught it. The
+    palette call is the one that used to land in plotly.colors.
+    """
+    proc = _run_blocked(
+        ["plotly"],
+        "import gui.scripts.evaluation_charts as ec\n"
+        "import gui.widget.evaluation_results  # noqa: F401\n"
+        "import gui.tile.evaluation_tile  # noqa: F401\n"
+        + _CHART_SMOKE +
+        "assert 'plotly' not in sys.modules\n"
+        "print('OK')\n",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "OK" in proc.stdout
+
+
+def test_evaluation_charts_builds_options_without_solara():
+    """gui/scripts/* is solara-free by the app's layering rule.
+
+    The chart builders moved from plotly to ECharts but must still import (and
+    run) with solara, ipyvuetify and ipecharts all blocked — the widget half of
+    the adapter is the only module allowed to know ipecharts exists.
+    """
+    proc = _run_blocked(
+        ["solara", "reacton", "ipyvuetify", "ipecharts", "plotly"],
+        "import gui.scripts.evaluation_charts as ec\n"
+        + _CHART_SMOKE +
+        "print('OK')\n",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "OK" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# Charts tab — headless render (the evaluation dialog is not covered by any
+# other render test, and EChartsChart's identity contract can only fail here)
+# ---------------------------------------------------------------------------
+
+def _chart_record(metrics=("MedAE", "R2"), rows=None):
+    import types as _t
+
+    return _t.SimpleNamespace(
+        indices=list(_chart_rows() if rows is None else rows),
+        metrics=list(metrics),
+        csv_path="/data/proj/evaluation/loss_2010/indices_all.csv",
+        truth_tag="loss_2010",
+    )
+
+
+def _render_charts_tab(**kwargs):
+    import ipecharts
+    import reacton
+
+    from gui.i18n import t as _t
+
+    _t("common.close")  # warm the translator before the first render
+    from gui.widget.evaluation_results import _ChartsTab
+
+    kwargs.setdefault("record", _chart_record())
+    kwargs.setdefault("eval_key", "run-a")
+    kwargs.setdefault("active_tab", 1)
+    _, rc = reacton.render(_ChartsTab(**kwargs), handle_error=False)
+    return rc, ipecharts.EChartsRawWidget
+
+
+def test_charts_tab_renders_one_chart_per_selected_metric():
+    rc, cls = _render_charts_tab()
+    assert len(rc.find(cls).widgets) == 2
+
+
+def test_charts_tab_renders_all_four_metrics_when_none_were_selected():
+    rc, cls = _render_charts_tab(record=_chart_record(metrics=()))
+    assert len(rc.find(cls).widgets) == 4
+
+
+def test_charts_tab_charts_carry_the_per_metric_options():
+    rc, cls = _render_charts_tab()
+    titles = [w.option["title"]["text"] for w in rc.find(cls).widgets]
+    assert titles == ["MedAE (ha) ↓", "R² ↑"]
+
+
+def test_charts_tab_lays_metrics_out_in_two_columns():
+    import ipyvuetify as vw
+
+    rc, _ = _render_charts_tab()
+    grids = [w for w in rc.find(vw.Html).widgets
+             if "grid-template-columns" in (w.style_ or "")]
+    assert grids and "repeat(2," in grids[0].style_
+
+
+def test_charts_tab_uses_a_single_column_for_a_single_metric():
+    import ipyvuetify as vw
+
+    rc, _ = _render_charts_tab(record=_chart_record(metrics=("R2",)))
+    grids = [w for w in rc.find(vw.Html).widgets
+             if "grid-template-columns" in (w.style_ or "")]
+    assert grids and "repeat(1," in grids[0].style_
+
+
+def test_charts_tab_swaps_the_chart_when_the_metric_selection_changes():
+    """The identity must carry the metric: same run, different selection.
+
+    Position 0 held MedAE; after the re-render it must hold R2. If the metric
+    were missing from the identity, use_memo would hand back the stale MedAE
+    widget with no error at all.
+    """
+    import reacton
+
+    from gui.widget.evaluation_results import _ChartsTab
+
+    rc, cls = _render_charts_tab()
+    assert rc.find(cls).widgets[0].option["title"]["text"] == "MedAE (ha) ↓"
+    rc.render(_ChartsTab(record=_chart_record(metrics=("R2",)),
+                         eval_key="run-a", active_tab=1))
+    assert rc.find(cls).widgets[0].option["title"]["text"] == "R² ↑"
+
+
+def test_charts_tab_rebuilds_the_chart_when_the_charted_values_change():
+    """Same run key, different index rows — the option must reach the widget."""
+    from gui.widget.evaluation_results import _ChartsTab
+
+    rc, cls = _render_charts_tab()
+    first = rc.find(cls).widgets[0]
+    bumped = [{**r, "MedAE": r["MedAE"] + 5} for r in _chart_rows()]
+    rc.render(_ChartsTab(record=_chart_record(rows=bumped),
+                         eval_key="run-a", active_tab=1))
+    second = rc.find(cls).widgets[0]
+    assert second is not first
+    assert second.option["series"][0]["data"] == [6.0, 5.7]
+
+
+def test_charts_tab_rebuilds_its_charts_when_the_tab_becomes_active():
+    """ipecharts sizes on attach only, so re-entering the tab rebuilds."""
+    from gui.widget.evaluation_results import _ChartsTab
+
+    rc, cls = _render_charts_tab(active_tab=1)
+    first = rc.find(cls).widgets[0]
+    rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=2))
+    assert rc.find(cls).widgets[0] is not first
+
+
+def test_charts_tab_keeps_its_widgets_across_an_uneventful_rerender():
+    """No teardown/flicker when nothing the chart shows has changed."""
+    from gui.widget.evaluation_results import _ChartsTab
+
+    rc, cls = _render_charts_tab()
+    first = list(rc.find(cls).widgets)
+    rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=1))
+    assert list(rc.find(cls).widgets) == first
+
+
+def test_charts_tab_says_so_when_there_is_nothing_to_chart():
+    import ipecharts
+
+    rc, _ = _render_charts_tab(record=_chart_record(rows=[]))
+    assert rc.find(ipecharts.EChartsRawWidget).widgets == []
+
+
+def test_evaluation_table_dialog_mounts_with_its_charts():
+    """Mount smoke for the whole dialog — nothing else renders it.
+
+    Catches a prop mismatch between the dialog and _ChartsTab (the tab index is
+    threaded through now), which no source-substring test can see. `eager=True`
+    on the dialog means the tab bodies are built even though nothing is
+    visible headlessly.
+    """
+    import ipecharts
+    import reacton
+    import solara
+
+    from gui.i18n import t as _t
+
+    _t("common.close")  # warm the translator before the first render
+    from gui.widget.evaluation_results import EvaluationTableDialog
+
+    p = types.SimpleNamespace(evaluations={"run-a": _chart_record()})
+    project = solara.reactive(p, equals=lambda a, b: a is b)
+    _, rc = reacton.render(
+        EvaluationTableDialog(
+            project=project, eval_key="run-a", on_close=lambda *_: None),
+        handle_error=False,
+    )
+    assert len(rc.find(ipecharts.EChartsRawWidget).widgets) == 2
+    rc.close()

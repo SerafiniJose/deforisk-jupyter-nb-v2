@@ -13,11 +13,17 @@ import solara
 from solara.lab.components.theming import theme
 
 from gui.i18n import t
+from gui.scripts.echarts_options import RENDERER_SVG
 from gui.scripts.evaluation_charts import (
-    figure_entries, metric_bars_figure, record_csizes)
+    chart_identity, figure_entries, metric_bar_option, record_csizes,
+    record_metrics)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
+from gui.widget.echarts import EChartsChart
 from gui.widget.product_table import ProductTable
+
+# One chart per metric, two per row — the height Plotly gave each subplot row.
+_CHART_HEIGHT = "260px"
 
 
 @solara.component
@@ -77,18 +83,46 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
 
 
 @solara.component
-def _ChartsTab(record, eval_key):
-    """Grouped-bar comparison of the run's maps, one subplot per metric."""
+def _ChartsTab(record, eval_key, active_tab=None):
+    """Grouped-bar comparison of the run's maps, one chart per metric.
+
+    ECharts has no subplots, so the single Plotly figure becomes a CSS grid of
+    independent charts — two columns when there is more than one metric, which
+    is the layout Plotly's ``ncols = 2 if len(metrics) > 1 else 1`` produced.
+
+    The options are rebuilt on every render rather than memoized: they are a
+    few small dicts, and a use_memo whose key missed an input would serve stale
+    charts. Widget reuse is handled where it belongs — ``chart_identity``
+    digests the option, so an uneventful re-render keeps the same widget.
+
+    ``active_tab`` is the dialog's selected tab index. It changes nothing in
+    the options; it is in the identity so the charts are rebuilt when the tab
+    is (re-)entered — see the sizing note on EChartsChart.
+    """
     indices = getattr(record, "indices", None) or []
-    metrics = getattr(record, "metrics", None)
-    fig = solara.use_memo(
-        lambda: metric_bars_figure(indices, metrics, dark=theme.dark),
-        [eval_key, theme.dark],
-    )
-    if fig is None:
+    metrics = record_metrics(indices, getattr(record, "metrics", None))
+    charts = [(m, metric_bar_option(indices, m, dark=theme.dark))
+              for m in metrics]
+    charts = [(m, option) for m, option in charts if option is not None]
+    if not charts:
         solara.Info(t("widgets.evaluation_results.no_indices_info"))
         return
-    solara.FigurePlotly(fig)
+
+    ncols = 2 if len(charts) > 1 else 1
+    with solara.Div(
+        style=f"display: grid; grid-template-columns: repeat({ncols},"
+              " minmax(0, 1fr)); gap: 12px; width: 100%;"
+    ):
+        for metric, option in charts:
+            EChartsChart(
+                option=option,
+                identity=chart_identity(
+                    option, eval_key=eval_key, metric=metric,
+                    active_tab=active_tab),
+                dark=theme.dark,
+                renderer=RENDERER_SVG,
+                height=_CHART_HEIGHT,
+            )
 
 
 @solara.component
@@ -145,12 +179,9 @@ def EvaluationTableDialog(project, eval_key, on_close):
     # solara's DataFrame unsets Vuetify's `table {width: 100%}` so the table
     # shrink-wraps to its columns while the footer spans the card — restore it
     # here so the columns spread across the (fixed-width) dialog.
-    # The plotly modebar is likewise hidden via CSS: solara.FigurePlotly wraps
-    # a FigureWidget, which offers no config hook to disable it.
     solara.Style(
         ".evaluation-table-dialog .solara-data-table.v-data-table table"
         " { width: 100%; }"
-        " .evaluation-table-dialog .modebar { display: none; }"
     )
     with rv.Dialog(
         v_model=eval_key is not None,
@@ -176,7 +207,8 @@ def EvaluationTableDialog(project, eval_key, on_close):
                             rows = rows_for_record(record)
                             solara.DataFrame(pd.DataFrame(rows), items_per_page=max(len(rows), 1))
                         with rv.TabItem():
-                            _ChartsTab(record=record, eval_key=eval_key)
+                            _ChartsTab(record=record, eval_key=eval_key,
+                                       active_tab=active_tab)
                         with rv.TabItem():
                             _FiguresTab(record=record)
                 elif record is not None:
