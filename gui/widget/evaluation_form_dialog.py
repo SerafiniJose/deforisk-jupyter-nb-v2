@@ -108,7 +108,8 @@ def EvaluationFormDialog(project, open_, on_submit: Callable[[dict], None]):
             label=t("tiles.evaluation.maps_label"),
             items=pred_items, item_text="text", item_value="value",
             v_model=selected_maps, on_v_model=set_selected_maps,
-            multiple=True, chips=True, dense=True, outlined=True,
+            multiple=True, chips=True, small_chips=True, deletable_chips=True,
+            dense=True, outlined=True,
             no_data_text=t("tiles.evaluation.maps_no_data"),
         )
         rv.TextField(
@@ -122,7 +123,8 @@ def EvaluationFormDialog(project, open_, on_submit: Callable[[dict], None]):
             label=t("tiles.evaluation.metrics_label"),
             items=metric_items(), item_text="text", item_value="value",
             v_model=selected_metrics, on_v_model=set_selected_metrics,
-            multiple=True, chips=True, dense=True, outlined=True,
+            multiple=True, chips=True, small_chips=True, deletable_chips=True,
+            dense=True, outlined=True,
         )
         rv.Switch(label=t("tiles.evaluation.recompute_label"), v_model=recompute,
                   on_v_model=set_recompute)
