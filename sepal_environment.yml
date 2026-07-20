@@ -36,6 +36,7 @@ dependencies:
     # GUI
     - "starlette<0.53"
     - pysepal
+    - ipecharts>=1.4,<2
     - "pyvectortiles @ git+https://github.com/dfguerrerom/ipy-pmtiles@5c48102761afc2b46e6c432f199a465c730e23f3"
     - pmtiles==3.7.0
     # Install this project (spatialrisk + gui packages)
