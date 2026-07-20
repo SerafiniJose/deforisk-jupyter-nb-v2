@@ -12,6 +12,24 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class EvaluationPlotArtifact(BaseModel):
+    """One run's saved predicted-vs-observed pair for a single map + cell size.
+
+    Records WHERE a run's per-cell data landed, so an interactive chart can be
+    rebuilt from the exact files that run produced rather than from whatever
+    currently sits at the shared ``evaluation/<truth_tag>/`` path (which a later
+    run against the same truth overwrites). Paths are absolute strings, one
+    artifact per prediction per cell size.
+    """
+
+    prediction_key: str
+    model: str
+    period: str
+    csize_px: int
+    points_csv: str
+    png_path: str
+
+
 class EvaluationRecord(BaseModel):
     name: Optional[str] = None
     truth_tag: str
@@ -25,6 +43,10 @@ class EvaluationRecord(BaseModel):
     indices: List[Dict[str, Any]] = Field(default_factory=list)
     csv_path: Optional[str] = None
     run_id: str
+    # Run-scoped artifact paths. Empty is the legacy-compatible default: records
+    # saved before run-scoping have no such files and fall back to deriving the
+    # PNG path from ``Path(csv_path).parent``.
+    artifacts: List[EvaluationPlotArtifact] = Field(default_factory=list)
 
     def storage_key(self) -> str:
         """Deterministic, history-safe registry key: truth + timestamp + run id."""

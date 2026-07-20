@@ -17,7 +17,8 @@ import solara
 from gui.i18n import t
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
-from gui.tile.evaluation_helpers import build_evaluation_record, map_items, variable_items
+from gui.tile.evaluation_helpers import (
+    build_evaluation_record, delete_evaluation_run, map_items, variable_items)
 from gui.widget.evaluation_form_dialog import EvaluationFormDialog
 from gui.widget.help import InfoButton
 from gui.widget.evaluation_results import (
@@ -49,6 +50,10 @@ def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_a
                 csizes=tuple(csizes),
                 recompute_defrate=recompute,
                 auto_save=False,
+                # The job id IS this run's id: artifacts land in their own
+                # evaluation/<truth_tag>/<run_id>/ folder, so a later run
+                # against the same truth cannot overwrite this record's data.
+                run_id=job_id,
             )
             resolved = list(prediction_keys) or list(p.predictions.keys())
             record = build_evaluation_record(
@@ -96,7 +101,16 @@ def EvaluationTile(project):
         cur = project.value
         if cur is None:
             return
-        cur.delete_evaluation(key, auto_save=True)
+        # Commits the manifest FIRST and only then removes this run's artifact
+        # folder, so a failed save can never leave a record pointing at files
+        # that were already deleted.
+        deleted, error = delete_evaluation_run(cur, key)
+        if error:
+            logger.error("Evaluation '%s' removed from the registry but the "
+                         "project save failed (%s) — artifacts kept on disk.",
+                         key, error)
+        if not deleted:
+            return
         project.set(cur.model_copy())
         if selected_eval == key:
             set_selected_eval(None)

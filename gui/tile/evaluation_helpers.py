@@ -9,6 +9,7 @@ logic is unit-testable without a running GUI.
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 from spatialrisk.evaluation import interval_from_target, label_for
@@ -155,6 +156,13 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
     (numpy scalars/NaN become float/None), keeping ``Project.save()``'s
     ``json.dumps`` happy. ``metrics`` records which accuracy-index columns the
     user chose to show (empty = all).
+
+    ``csv_path`` points at THIS run's aggregate CSV inside
+    ``evaluation/<truth_tag>/<run_id>/``, so the existing
+    ``Path(csv_path).parent`` figure-directory derivation keeps resolving to the
+    run's own PNGs. ``artifacts`` comes from ``df.attrs`` (populated by
+    ``evaluate_against_truth`` when it is given a run id) and stays empty when
+    the run was not run-scoped.
     """
     from spatialrisk.evaluations import EvaluationRecord
 
@@ -162,8 +170,9 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
     indices = json.loads(df.to_json(orient="records"))
     csv_path = str(
         Path(project.folders.project_folder) / "evaluation" / truth_tag
-        / "indices_all.csv"
+        / str(run_id) / "indices_all.csv"
     )
+    artifacts = list((getattr(df, "attrs", None) or {}).get("artifacts") or [])
     return EvaluationRecord(
         name=truth_tag,
         truth_tag=truth_tag,
@@ -177,4 +186,73 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
         indices=indices,
         csv_path=csv_path,
         run_id=run_id,
+        artifacts=artifacts,
     )
+
+
+def run_artifact_dir(project, record):
+    """This run's own artifact directory, or None if it has none on disk.
+
+    Returns ``evaluation/<truth_tag>/<run_id>`` when that directory exists.
+    Legacy records (saved before run-scoping) wrote straight into the shared
+    ``evaluation/<truth_tag>/`` folder and therefore have no run directory —
+    they get None, which is what keeps their files out of any cleanup.
+    """
+    if project is None or record is None:
+        return None
+    truth_tag = getattr(record, "truth_tag", None)
+    run_id = getattr(record, "run_id", None)
+    if not truth_tag or not run_id:
+        return None
+    candidate = (Path(project.folders.project_folder) / "evaluation"
+                 / str(truth_tag) / str(run_id))
+    return candidate if candidate.is_dir() else None
+
+
+def delete_run_artifacts(project, record):
+    """Remove ONE run's artifact directory. Returns True if it was removed.
+
+    Guarded twice over: the resolved target must sit strictly inside the
+    project's ``evaluation/`` folder, and its final path component must be the
+    record's run id. That makes it impossible to remove the shared
+    ``evaluation/<truth_tag>/`` folder (whose legacy files must stay
+    recoverable), a sibling run, or anything outside the project.
+
+    Call ONLY after the project manifest commit has succeeded — see
+    ``delete_evaluation_run``.
+    """
+    target_dir = run_artifact_dir(project, record)
+    if target_dir is None:
+        return False
+    try:
+        target = target_dir.resolve()
+        eval_root = (Path(project.folders.project_folder) / "evaluation").resolve()
+    except (OSError, RuntimeError):
+        return False
+    if eval_root not in target.parents or target.name != str(record.run_id):
+        return False
+    shutil.rmtree(target, ignore_errors=True)
+    return not target.exists()
+
+
+def delete_evaluation_run(project, key):
+    """Delete a saved evaluation: registry entry, then commit, THEN artifacts.
+
+    The ordering is load-bearing. Removing the run directory before the manifest
+    is persisted would destroy the data a still-registered record points at if
+    the save then failed, so the files are only unlinked once ``project.save()``
+    has returned successfully. A failed save leaves every artifact on disk.
+
+    Returns ``(deleted, error)``: ``deleted`` is False only when *key* is not
+    registered; ``error`` is the save failure message, or None.
+    """
+    record = project.get_evaluation(key)
+    if record is None:
+        return False, None
+    project.delete_evaluation(key, auto_save=False)
+    try:
+        project.save()
+    except Exception as exc:  # noqa: BLE001 - artifacts must survive a bad save
+        return True, str(exc)
+    delete_run_artifacts(project, record)
+    return True, None

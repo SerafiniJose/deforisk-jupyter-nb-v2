@@ -141,9 +141,135 @@ def test_build_evaluation_record_maps_df_and_paths(tmp_path):
     assert rec.prediction_keys == ["glm__ds_A", "rf__ds_A"]
     assert rec.indices[0]["MedAE"] == 12.3       # JSON-native float, not str
     assert rec.indices[1]["model"] == "RF"
+    # run-scoped: Path(csv_path).parent is this run's OWN figure directory
     assert rec.csv_path.endswith(
-        "evaluation/forest_loss_2015_2020/indices_all.csv")
+        "evaluation/forest_loss_2015_2020/abcd1234/indices_all.csv")
     assert rec.run_id == "abcd1234"
+    assert rec.artifacts == []                   # df carried none
+
+
+def test_build_evaluation_record_maps_artifacts_from_the_run(tmp_path):
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
+    df = pd.DataFrame([{"model": "GLM", "period": "ds_A", "MedAE": 12.3}])
+    df.attrs["artifacts"] = [EvaluationPlotArtifact(
+        prediction_key="glm__ds_A", model="GLM", period="ds_A", csize_px=300,
+        points_csv="/p/evaluation/t/abcd1234/pred_obs_GLM_ds_A_300.csv",
+        png_path="/p/evaluation/t/abcd1234/pred_obs_GLM_ds_A_300.png")]
+    spec = {"defor_file": "/x/d.tif", "forest_file": "/x/f.tif",
+            "time_interval": 5, "truth_tag": "t"}
+
+    rec = build_evaluation_record(
+        _fake_project(tmp_path), df, spec, resolved_keys=["glm__ds_A"],
+        run_id="abcd1234", created_at="2026-06-22T14:05:33")
+    assert len(rec.artifacts) == 1
+    assert rec.artifacts[0].prediction_key == "glm__ds_A"
+    assert rec.artifacts[0].csize_px == 300
+
+
+# --- run artifact directory + deletion ordering ------------------------------
+
+def _record_for(run_id="abcd1234", truth_tag="t"):
+    from spatialrisk.evaluations import EvaluationRecord
+
+    return EvaluationRecord(
+        truth_tag=truth_tag, truth_defor="d", truth_forest="f", time_interval=5,
+        prediction_keys=["k"], csizes=[300], created_at="2026-06-22T14:05:33",
+        indices=[], csv_path=None, run_id=run_id)
+
+
+def _project_with_run_dir(tmp_path, run_id="abcd1234", truth_tag="t"):
+    run_dir = tmp_path / "evaluation" / truth_tag / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "pred_obs.png").write_bytes(b"x")
+    shared = tmp_path / "evaluation" / truth_tag / "pred_obs.png"
+    shared.write_bytes(b"x")           # legacy dual-published copy
+    return _fake_project(tmp_path), run_dir, shared
+
+
+def test_run_artifact_dir_resolves_the_runs_own_folder(tmp_path):
+    project, run_dir, _ = _project_with_run_dir(tmp_path)
+    assert h.run_artifact_dir(project, _record_for()) == run_dir
+
+
+def test_run_artifact_dir_is_none_for_legacy_records(tmp_path):
+    """A pre-Task-4 record has no run directory on disk — nothing to delete."""
+    project = _fake_project(tmp_path)
+    (tmp_path / "evaluation" / "t").mkdir(parents=True)
+    assert h.run_artifact_dir(project, _record_for()) is None
+
+
+def test_delete_run_artifacts_removes_only_that_run(tmp_path):
+    project, run_dir, shared = _project_with_run_dir(tmp_path)
+    other = tmp_path / "evaluation" / "t" / "zzzz9999"
+    other.mkdir()
+    (other / "pred_obs.png").write_bytes(b"y")
+
+    assert h.delete_run_artifacts(project, _record_for()) is True
+    assert not run_dir.exists()
+    assert other.exists()               # a sibling run is untouched
+    assert shared.exists()              # legacy shared files stay recoverable
+
+
+def test_delete_run_artifacts_refuses_outside_the_evaluation_folder(tmp_path):
+    project = _fake_project(tmp_path)
+    escaped = tmp_path / "secrets"
+    escaped.mkdir()
+    (escaped / "keep.txt").write_text("keep")
+    rec = _record_for(run_id="secrets", truth_tag="..")
+
+    assert h.delete_run_artifacts(project, rec) is False
+    assert (escaped / "keep.txt").exists()
+
+
+def test_delete_evaluation_run_removes_artifacts_after_a_successful_commit(tmp_path):
+    project, run_dir, _ = _project_with_run_dir(tmp_path)
+    rec = _record_for()
+    saved = {"n": 0, "dir_at_save": None}
+    project.evaluations = {"key": rec}
+    project.get_evaluation = lambda k: project.evaluations.get(k)
+
+    def delete_evaluation(key, auto_save=False):
+        return project.evaluations.pop(key, None) is not None
+
+    def save():
+        # the artifact directory MUST still exist when the manifest is committed
+        saved["dir_at_save"] = run_dir.exists()
+        saved["n"] += 1
+
+    project.delete_evaluation = delete_evaluation
+    project.save = save
+
+    assert h.delete_evaluation_run(project, "key") == (True, None)
+    assert saved["n"] == 1
+    assert saved["dir_at_save"] is True    # ordering: commit, THEN delete
+    assert not run_dir.exists()
+    assert project.evaluations == {}
+
+
+def test_delete_evaluation_run_keeps_artifacts_when_the_commit_fails(tmp_path):
+    """A failed save must never lose data — the run's files stay on disk."""
+    project, run_dir, _ = _project_with_run_dir(tmp_path)
+    rec = _record_for()
+    project.evaluations = {"key": rec}
+    project.get_evaluation = lambda k: project.evaluations.get(k)
+    project.delete_evaluation = (
+        lambda key, auto_save=False: project.evaluations.pop(key, None) is not None)
+
+    def boom():
+        raise OSError("disk full")
+
+    project.save = boom
+
+    deleted, error = h.delete_evaluation_run(project, "key")
+    assert deleted is True and "disk full" in error
+    assert run_dir.exists()                 # artifacts preserved
+
+
+def test_delete_evaluation_run_unknown_key_is_a_no_op(tmp_path):
+    project = _fake_project(tmp_path)
+    project.get_evaluation = lambda k: None
+    assert h.delete_evaluation_run(project, "missing") == (False, None)
 
 
 # --- cell-size parsing -------------------------------------------------------

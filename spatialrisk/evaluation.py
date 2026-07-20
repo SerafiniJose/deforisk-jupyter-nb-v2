@@ -6,6 +6,7 @@ forestatrisk.validation_udef_arp — no forestatrisk dependency.
 """
 
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -437,22 +438,69 @@ def evaluate_prediction(project, pred, csizes=(300,), recompute_defrate=True):
     return rows
 
 
+def run_output_dir(project, truth_tag, run_id=None):
+    """Directory a run's artifacts are written to.
+
+    ``run_id=None`` reproduces the historical shared layout
+    ``evaluation/<truth_tag>/``; a run id namespaces the output one level
+    deeper, ``evaluation/<truth_tag>/<run_id>/``, so a later run against the
+    same truth cannot overwrite an older saved run's files.
+    """
+    truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
+    return truth_dir if run_id is None else truth_dir / str(run_id)
+
+
+# --------------------------------------------------------------------------
+# TEMPORARY COMPATIBILITY SHIM — REMOVE AFTER ONE RELEASE
+#
+# Run-scoped output moved the canonical artifacts to
+# evaluation/<truth_tag>/<run_id>/. Notebooks and external scripts still read
+# the un-scoped evaluation/<truth_tag>/<name> paths, so the newest run also
+# publishes a copy there. Those consumers should migrate to
+# ``EvaluationRecord.artifacts`` (or ``run_output_dir``); once they have,
+# DELETE ``_publish_legacy_copy`` and every call to it — the run directory is
+# already self-contained, so nothing else needs to change.
+# --------------------------------------------------------------------------
+def _publish_legacy_copy(src, dst):
+    """Copy a run artifact to its legacy shared path. Temporary — see above."""
+    src, dst = Path(src), Path(dst)
+    if not src.exists() or src.resolve() == dst.resolve():
+        return None
+    shutil.copyfile(src, dst)
+    return dst
+
+
 def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
                                 time_interval, truth_tag, csizes=(300,),
-                                recompute_defrate=True):
+                                recompute_defrate=True, run_id=None):
     """Defrate + validate ONE prediction against an explicit shared truth.
 
     Mirrors evaluate_prediction but takes the truth (defor + forest + interval)
     explicitly instead of deriving it from the prediction's own dataset, and
     namespaces all output under evaluation/<truth_tag>/.
+
+    With a ``run_id`` the canonical artifacts go to
+    evaluation/<truth_tag>/<run_id>/ and each returned row carries an
+    ``EvaluationPlotArtifact`` under the private ``artifact`` key (dropped from
+    the aggregate DataFrame by its explicit column list, exactly like
+    ``fig_path``). Without one, behaviour is byte-for-byte what it always was.
     """
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
     label, period = label_for(pred), pred.dataset_name
     riskmap_file = pred.path
     truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
     truth_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = run_output_dir(project, truth_tag, run_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    defrate_csv = truth_dir / f"defrate_cat_{label}_{period}.csv"
-    if recompute_defrate or not defrate_csv.exists():
+    defrate_name = f"defrate_cat_{label}_{period}.csv"
+    defrate_csv = out_dir / defrate_name
+    shared_defrate = truth_dir / defrate_name
+    # The defrate cache is deliberately looked up at the SHARED path: making it
+    # run-scoped would defeat recompute_defrate=False, which exists to skip this
+    # expensive step when a previous run already produced it for this truth.
+    if recompute_defrate or not shared_defrate.exists():
         _defrate_per_cat(
             defor_file=defor_file,
             forest_file=forest_file,
@@ -461,10 +509,16 @@ def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
             tab_file_defrate=defrate_csv,
             verbose=False,
         )
+        _publish_legacy_copy(defrate_csv, shared_defrate)   # shim
+    else:
+        # Cache hit: mirror it into the run folder so the run is self-contained.
+        _publish_legacy_copy(shared_defrate, defrate_csv)
 
     rows = []
     for csize in csizes:
-        fig_path = truth_dir / f"pred_obs_{label}_{period}_{csize}.png"
+        fig_path = out_dir / f"pred_obs_{label}_{period}_{csize}.png"
+        points_csv = out_dir / f"pred_obs_{label}_{period}_{csize}.csv"
+        indices_csv = out_dir / f"indices_{label}_{period}_{csize}.csv"
         idx = validate_two_layer(
             defor_file=defor_file,
             forest_file=forest_file,
@@ -472,16 +526,27 @@ def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
             tab_file_defor=defrate_csv,
             time_interval=time_interval,
             csize_coarse_grid=csize,
-            indices_file_pred=truth_dir / f"indices_{label}_{period}_{csize}.csv",
-            tab_file_pred=truth_dir / f"pred_obs_{label}_{period}_{csize}.csv",
+            indices_file_pred=indices_csv,
+            tab_file_pred=points_csv,
             fig_file_pred=fig_path,
             model_name=label,
             period=period,
         )
-        idx.update({"prediction": pred.storage_key() if hasattr(pred, "storage_key")
-                    else f"{pred.model_key}__{period}",
+        for src in (points_csv, indices_csv, fig_path):     # shim
+            _publish_legacy_copy(src, truth_dir / src.name)
+
+        prediction_key = (pred.storage_key() if hasattr(pred, "storage_key")
+                          else f"{pred.model_key}__{period}")
+        idx.update({"prediction": prediction_key,
                     "model": label, "period": period, "truth": truth_tag,
                     "fig_path": str(fig_path)})
+        if run_id is not None:
+            # Only run-scoped paths are recorded: a shared path is not stable
+            # enough to promise a saved record its own data.
+            idx["artifact"] = EvaluationPlotArtifact(
+                prediction_key=prediction_key, model=label, period=period,
+                csize_px=int(csize), points_csv=str(points_csv),
+                png_path=str(fig_path))
         pred.metrics[f"{truth_tag}__{period}_{csize}"] = {k: idx[k] for k in
                                                           ("RMSE", "wRMSE", "MedAE", "R2", "ncell")}
         rows.append(idx)
@@ -534,7 +599,8 @@ def evaluate_predictions(project, dataset_filter=None, model_filter=None,
 
 def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
                            forest_file, time_interval, truth_tag,
-                           csizes=(300,), recompute_defrate=True, auto_save=True):
+                           csizes=(300,), recompute_defrate=True, auto_save=True,
+                           run_id=None):
     """Score selected maps against ONE common truth.
 
     Unlike evaluate_predictions (which derives each map's truth from its own
@@ -544,6 +610,12 @@ def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
     prediction_keys : list[str] or None
         Registry keys of the maps to score. None = all registered predictions.
         Unknown keys are skipped with a printed warning.
+    run_id : str or None
+        Identifier of THIS run. When given, artifacts are written to
+        evaluation/<truth_tag>/<run_id>/ instead of the shared truth folder, and
+        the returned DataFrame carries the resulting ``EvaluationPlotArtifact``
+        list in ``df.attrs["artifacts"]`` (``attrs`` keeps the public return type
+        a plain DataFrame for notebook callers). None = historical layout.
     """
     if prediction_keys is None:
         selected = dict(project.predictions)
@@ -562,19 +634,30 @@ def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
             rows.extend(_evaluate_one_against_truth(
                 project, pred, defor_file=defor_file, forest_file=forest_file,
                 time_interval=time_interval, truth_tag=truth_tag,
-                csizes=csizes, recompute_defrate=recompute_defrate))
+                csizes=csizes, recompute_defrate=recompute_defrate,
+                run_id=run_id))
         except Exception as exc:  # noqa: BLE001 - skip-and-warn is intentional
             print(f"⚠ skipped {key}: {exc}")
+
+    # Harvest the per-row artifact objects before they are dropped by the
+    # explicit column list below; they travel on df.attrs, not as a column.
+    artifacts = [r.pop("artifact") for r in rows if r.get("artifact") is not None]
 
     cols = ["prediction", "model", "period", "truth", "csize_coarse_grid",
             "csize_coarse_grid_ha", "ncell", "MedAE", "R2", "RMSE", "wRMSE"]
     df = (pd.DataFrame(rows, columns=cols).sort_values(
         ["csize_coarse_grid", "period", "model"]).reset_index(drop=True)
         if rows else pd.DataFrame(columns=cols))
+    df.attrs["artifacts"] = artifacts
+    df.attrs["run_id"] = run_id
 
     truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
     truth_dir.mkdir(parents=True, exist_ok=True)
-    df.to_csv(truth_dir / "indices_all.csv", index=False)
+    out_dir = run_output_dir(project, truth_tag, run_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    aggregate_csv = out_dir / "indices_all.csv"
+    df.to_csv(aggregate_csv, index=False)
+    _publish_legacy_copy(aggregate_csv, truth_dir / "indices_all.csv")  # shim
 
     if auto_save and rows:
         try:

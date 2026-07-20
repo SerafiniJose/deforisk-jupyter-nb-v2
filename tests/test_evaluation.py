@@ -642,6 +642,214 @@ def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys)
     assert (tmp_path / "evaluation" / "t" / "indices_all.csv").exists()
 
 
+# ---------------------------------------------------------------------------
+# Run-scoped, history-safe artifacts (Task 4)
+# ---------------------------------------------------------------------------
+
+
+def _truth_project_and_pred(tmp_path):
+    """Fake project holding ONE prediction, scored against an explicit truth."""
+    pred = _types.SimpleNamespace(
+        model_key="glm_glm_v1", window=None, dataset_name="validation",
+        path=tmp_path / "risk.tif", metrics={},
+        storage_key=lambda: "glm_glm_v1__validation")
+    project = _types.SimpleNamespace(
+        folders=_types.SimpleNamespace(project_folder=tmp_path),
+        predictions={"k1": pred}, save=lambda: None)
+    return project, pred
+
+
+def _fake_defrate(**kw):
+    _Path(kw["tab_file_defrate"]).write_text("cat,defor_dens\n1,0.01\n")
+
+
+def _fake_validate_writing(value):
+    """validate_two_layer stand-in whose three artifacts encode ``value``.
+
+    Lets a test tell one run's files apart from another's byte-for-byte, with
+    the same truth/model/period/cell size — i.e. exactly the collision the
+    run-scoped layout must survive.
+    """
+    def fake_validate(**kw):
+        _Path(kw["tab_file_pred"]).write_text(f"cell,ndefor_obs_ha\n0,{value}\n")
+        _Path(kw["fig_file_pred"]).write_bytes(f"PNG-{value}".encode())
+        _Path(kw["indices_file_pred"]).write_text(f"MedAE\n{value}\n")
+        return {"RMSE": value, "wRMSE": value, "MedAE": value, "R2": 0.9,
+                "ncell": 26, "csize_coarse_grid": kw["csize_coarse_grid"],
+                "csize_coarse_grid_ha": 8100.0}
+    return fake_validate
+
+
+_TRUTH_TAG = "forest_loss_2015_2020"
+
+
+def _run_against_truth(project, tmp_path, run_id, value, monkeypatch, csizes=(300,)):
+    monkeypatch.setattr(ev, "_defrate_per_cat", _fake_defrate)
+    monkeypatch.setattr(ev, "validate_two_layer", _fake_validate_writing(value))
+    return ev.evaluate_against_truth(
+        project, prediction_keys=["k1"], defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif", time_interval=5, truth_tag=_TRUTH_TAG,
+        csizes=csizes, run_id=run_id)
+
+
+def _spec(tmp_path):
+    return {"defor_file": str(tmp_path / "d.tif"),
+            "forest_file": str(tmp_path / "f.tif"),
+            "time_interval": 5, "truth_tag": _TRUTH_TAG}
+
+
+def test_two_runs_same_truth_retain_distinct_artifacts(tmp_path, monkeypatch):
+    """HEADLINE REGRESSION: a later run must not overwrite an older saved run.
+
+    Two runs share truth, model, period AND cell size — under the old shared
+    ``evaluation/<truth_tag>/`` layout the second silently clobbered the first's
+    point CSV and PNG, so reopening the older record showed the newer numbers.
+    """
+    from gui.scripts.evaluation_charts import figure_entries
+    from gui.tile.evaluation_helpers import build_evaluation_record
+
+    project, _pred = _truth_project_and_pred(tmp_path)
+    runs = [("run00001", 11.0), ("run00002", 22.0)]
+    records = []
+    for i, (run_id, value) in enumerate(runs):
+        df = _run_against_truth(project, tmp_path, run_id, value, monkeypatch)
+        records.append(build_evaluation_record(
+            project, df, _spec(tmp_path), resolved_keys=["k1"], run_id=run_id,
+            created_at=f"2026-06-22T14:0{i}:00", csizes=(300,)))
+
+    for record, (run_id, value) in zip(records, runs):
+        assert len(record.artifacts) == 1, "one artifact per map per cell size"
+        art = record.artifacts[0]
+        assert art.prediction_key == "glm_glm_v1__validation"
+        assert art.model == "GLM" and art.period == "validation"
+        assert art.csize_px == 300
+        # each record's own files survived the other run untouched
+        assert _Path(art.points_csv).read_text() == f"cell,ndefor_obs_ha\n0,{value}\n"
+        assert _Path(art.png_path).read_bytes() == f"PNG-{value}".encode()
+        assert run_id in art.points_csv and run_id in art.png_path
+        # ...and the path the Figures tab derives resolves to that same file
+        fig_dir = _Path(record.csv_path).parent
+        entries = figure_entries(record.indices, 300, fig_dir=fig_dir)
+        assert [str(p) for _, p in entries] == [art.png_path]
+        assert entries[0][1].read_bytes() == f"PNG-{value}".encode()
+
+    assert records[0].artifacts[0].png_path != records[1].artifacts[0].png_path
+    assert records[0].csv_path != records[1].csv_path
+
+
+def test_run_scoped_artifacts_live_under_run_directory(tmp_path, monkeypatch):
+    project, _pred = _truth_project_and_pred(tmp_path)
+    _run_against_truth(project, tmp_path, "run00001", 11.0, monkeypatch)
+
+    run_dir = tmp_path / "evaluation" / _TRUTH_TAG / "run00001"
+    assert run_dir.is_dir()
+    for name in ("defrate_cat_GLM_validation.csv",
+                 "pred_obs_GLM_validation_300.csv",
+                 "indices_GLM_validation_300.csv",
+                 "pred_obs_GLM_validation_300.png",
+                 "indices_all.csv"):
+        assert (run_dir / name).exists(), name
+
+
+def test_run_scoped_evaluation_also_publishes_legacy_shared_paths(tmp_path, monkeypatch):
+    """Dual-publish shim: notebooks reading the old shared paths keep working."""
+    project, _pred = _truth_project_and_pred(tmp_path)
+    _run_against_truth(project, tmp_path, "run00001", 11.0, monkeypatch)
+    _run_against_truth(project, tmp_path, "run00002", 22.0, monkeypatch)
+
+    shared = tmp_path / "evaluation" / _TRUTH_TAG
+    for name in ("defrate_cat_GLM_validation.csv",
+                 "pred_obs_GLM_validation_300.csv",
+                 "indices_GLM_validation_300.csv",
+                 "pred_obs_GLM_validation_300.png",
+                 "indices_all.csv"):
+        assert (shared / name).exists(), name
+    # the shared copy tracks the LATEST run
+    assert (shared / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-22.0"
+    # while the older run's own copy is untouched
+    assert (shared.parent / _TRUTH_TAG / "run00001"
+            / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-11.0"
+
+
+def test_evaluate_against_truth_without_run_id_keeps_legacy_layout(tmp_path, monkeypatch):
+    """The notebook path (no run_id) writes exactly where it always did."""
+    project, _pred = _truth_project_and_pred(tmp_path)
+    df = _run_against_truth(project, tmp_path, None, 11.0, monkeypatch)
+
+    shared = tmp_path / "evaluation" / _TRUTH_TAG
+    assert (shared / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-11.0"
+    assert (shared / "indices_all.csv").exists()
+    # no run sub-directory was created, and no artifacts are claimed
+    assert [p for p in shared.iterdir() if p.is_dir()] == []
+    assert df.attrs.get("artifacts", []) == []
+
+
+def test_evaluate_against_truth_threads_run_id_into_each_prediction(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_one(proj, pred, **kw):
+        seen.update(kw)
+        return []
+
+    project, _pred = _truth_project_and_pred(tmp_path)
+    monkeypatch.setattr(ev, "_evaluate_one_against_truth", fake_one)
+    ev.evaluate_against_truth(
+        project, prediction_keys=["k1"], defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif", time_interval=5, truth_tag=_TRUTH_TAG,
+        run_id="run00001")
+    assert seen["run_id"] == "run00001"
+
+
+def test_one_artifact_per_prediction_per_cell_size(tmp_path, monkeypatch):
+    project, _pred = _truth_project_and_pred(tmp_path)
+    df = _run_against_truth(project, tmp_path, "run00001", 11.0, monkeypatch,
+                            csizes=(100, 300))
+    arts = df.attrs["artifacts"]
+    assert sorted(a.csize_px for a in arts) == [100, 300]
+    assert {a.model for a in arts} == {"GLM"}
+    assert len({a.points_csv for a in arts}) == 2
+
+
+def test_legacy_record_without_artifacts_still_shows_its_pngs(tmp_path):
+    """Acceptance: pre-Task-4 records keep loading AND keep displaying figures.
+
+    Such a record has ``artifacts == []`` and a ``csv_path`` pointing at the
+    SHARED evaluation/<truth_tag>/indices_all.csv, so the figure directory is
+    the shared folder and the derived-filename branch must still find the PNG.
+    """
+    from gui.scripts.evaluation_charts import figure_entries
+    from spatialrisk.evaluations import EvaluationRecord
+
+    shared = tmp_path / "evaluation" / _TRUTH_TAG
+    shared.mkdir(parents=True)
+    png = shared / "pred_obs_GLM_validation_300.png"
+    png.write_bytes(b"PNG-legacy")
+
+    record = EvaluationRecord(
+        truth_tag=_TRUTH_TAG, truth_defor="d", truth_forest="f", time_interval=5,
+        prediction_keys=["k1"], csizes=[300], created_at="2026-06-01T10:00:00",
+        indices=[{"model": "GLM", "period": "validation",
+                  "csize_coarse_grid": 300, "MedAE": 1.0}],
+        csv_path=str(shared / "indices_all.csv"), run_id="legacy00")
+
+    assert record.artifacts == []
+    entries = figure_entries(record.indices, 300,
+                             fig_dir=_Path(record.csv_path).parent)
+    assert [p for _, p in entries] == [png]
+    assert entries[0][1].read_bytes() == b"PNG-legacy"
+
+
+def test_evaluation_tile_threads_run_id_and_orders_delete():
+    import inspect
+    import gui.tile.evaluation_tile as et
+
+    src = inspect.getsource(et)
+    # the run id reaches the computation, not just the record builder
+    assert "run_id=job_id" in src
+    # deletion goes through the helper that commits BEFORE removing files
+    assert "delete_evaluation_run" in src
+
+
 def test_evaluation_results_widget_exports_list_and_dialog():
     import inspect
     import gui.widget.evaluation_results as er
