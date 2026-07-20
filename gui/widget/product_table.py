@@ -76,6 +76,22 @@ def action_icon(kind: str, is_on: bool = False) -> str:
     return _ACTION_ICONS[kind]
 
 
+def action_color(kind: str, is_on: bool = False, override=None):
+    """Vuetify colour token for an action icon (None = theme default text).
+
+    Only "on"/primary states name a colour. Everything else returns None so the
+    icon inherits the theme's text colour — a literal grey looked *disabled* on
+    the dark theme, which is exactly what an enabled toggle must not look like.
+    """
+    if override is not None:
+        return override
+    if kind == "map_toggle":
+        return "primary" if is_on else None
+    if kind in ("download", "open"):
+        return "primary"
+    return None
+
+
 def grid_style(widths) -> str:
     """Grid container style for the given column-width list."""
     return GRID_BASE + "grid-template-columns:" + " ".join(widths) + ";"
@@ -141,14 +157,7 @@ def _render_cell(cell: dict, first: bool):
 def _render_action(act: dict):
     kind = act["kind"]
     is_on = act.get("is_on", False)
-    if "color" in act:
-        color = act["color"]
-    elif kind == "map_toggle":
-        color = "primary" if is_on else "grey darken-1"
-    elif kind in ("download", "open"):
-        color = "primary"
-    else:
-        color = None
+    color = action_color(kind, is_on, override=act.get("color"))
     solara.Button(
         "",
         icon_name=action_icon(kind, is_on),

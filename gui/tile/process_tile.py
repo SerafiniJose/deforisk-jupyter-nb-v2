@@ -11,6 +11,7 @@ from gui.scripts import process_actions
 from gui.scripts.solara_threads import publish_if_current
 from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
+from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import DerivedVariableList
 
@@ -94,6 +95,13 @@ def ProcessTile(project, processing, process_error, map_=None):
     epsg, set_epsg = solara.use_state("")
     resolution, set_resolution = solara.use_state("30")
     on_toggle_map = use_derived_map_toggle(project, map_, process_error)
+    pending_remove, set_pending_remove = solara.use_state(None)
+
+    def _do_remove(key: str):
+        """Unregister a harmonized output (the raster stays on disk)."""
+        p = project.value
+        if process_actions.remove_processed_variable(p, key, map_):
+            project.set(p.model_copy())
 
     p = project.value
     has_vars = p is not None and bool(p.raw_variables)
@@ -270,5 +278,15 @@ def ProcessTile(project, processing, process_error, map_=None):
             keys=process_actions.processing_output_keys(p),
             on_toggle_map=on_toggle_map,
             derived_on_map=derived_on_map,
+            on_remove=set_pending_remove,
             title=t("widgets.variable_list.processed_title"),
         )
+
+    ConfirmDialog(
+        open=pending_remove is not None,
+        on_cancel=lambda: set_pending_remove(None),
+        on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
+        title=t("tiles.process.confirm_remove_title"),
+        message=t("tiles.process.confirm_remove_message", name=pending_remove or ""),
+        confirm_label=t("common.remove"),
+    )

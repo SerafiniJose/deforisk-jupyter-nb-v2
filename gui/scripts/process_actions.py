@@ -152,6 +152,25 @@ def processing_output_keys(project) -> List[str]:
     return [k for k in project.processed_variables if k not in postprocess]
 
 
+def remove_processed_variable(project, key: str, map_=None) -> bool:
+    """Unregister a processed variable and drop its map layer.
+
+    Serves both lists that render ``processed_variables`` — Harmonization
+    outputs and Derived layers — so removal behaves identically in either tile.
+    Like the source-variable remove this only unregisters: the raster stays on
+    disk, so re-running harmonization or the derived op simply re-registers it.
+
+    Returns True when an entry was actually removed.
+    """
+    from gui.tile.derived_map import drop_derived_from_map
+
+    if project is None or key not in project.processed_variables:
+        return False
+    del project.processed_variables[key]
+    drop_derived_from_map(key, map_)
+    return True
+
+
 def change_layer_candidates(project) -> List[str]:
     """Sorted keys of processed temporal raster vars (change-detection inputs).
 
