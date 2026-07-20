@@ -16,8 +16,6 @@ Palette and theme colours come from ``gui.scripts.echarts_options`` (the pure
 half of the ECharts adapter), never from plotly.
 """
 
-import hashlib
-import json
 from pathlib import Path
 
 from gui.scripts.echarts_options import csize_colors, theme_colors
@@ -111,6 +109,9 @@ def metric_bar_option(rows, metric, dark=False):
     colors = csize_colors(len(csizes))
     ink, grid = theme_colors(dark)["ink"], theme_colors(dark)["grid"]
     by_key = {(map_label(r), r.get("csize_coarse_grid")): r for r in rows}
+    # One cell size means the legend would restate the title, so it is hidden —
+    # and then the plot must not go on reserving the legend row's height.
+    show_legend = len(csizes) > 1
 
     series = []
     for ci, csize in enumerate(csizes):
@@ -134,8 +135,11 @@ def metric_bar_option(rows, metric, dark=False):
             "textStyle": {"color": ink, "fontSize": 13, "fontWeight": "normal"},
         },
         "textStyle": {"fontSize": 12},
-        "grid": {"left": 8, "right": 12, "top": 52, "bottom": 4,
-                 "containLabel": True},
+        # top clears the title (at y=0) plus, when it is shown, the legend row
+        # placed just under it (top=24). Without a legend the plot starts where
+        # the legend would have begun instead of leaving a blank band.
+        "grid": {"left": 8, "right": 12, "top": 52 if show_legend else 24,
+                 "bottom": 4, "containLabel": True},
         "tooltip": {
             # {b} = category (the map label), {c} = value, {a} = series name
             # (which is "csize N px") — the three fields the Plotly
@@ -146,8 +150,7 @@ def metric_bar_option(rows, metric, dark=False):
             "formatter": "{b}<br/>" + metric + " = {c}<br/>{a}",
         },
         "legend": {
-            # One cell size means the legend would restate the title.
-            "show": len(csizes) > 1,
+            "show": show_legend,
             "data": [s["name"] for s in series],
             "top": 24,
             "right": 0,
@@ -172,24 +175,3 @@ def metric_bar_option(rows, metric, dark=False):
         },
         "series": series,
     }
-
-
-def chart_identity(option, *, eval_key, metric, active_tab):
-    """Memo key for one chart widget — see EChartsChart's ``identity``.
-
-    EChartsChart deliberately leaves ``option`` out of its memo key, so an
-    identity that misses an input renders a STALE chart silently. Rather than
-    re-listing the inputs (and forgetting one), this digests the option itself:
-    the metric title, the categories, the values, the series names and the
-    theme colours are all inside it, so anything the chart shows moves the
-    identity by construction.
-
-    ``eval_key`` and ``active_tab`` are folded in on top because they are NOT
-    in the option: two runs can produce identical charts, and the tab index
-    affects when the widget is attached to the DOM rather than what it draws
-    (ipecharts sizes on attach and window resize only, so re-entering the tab
-    must rebuild).
-    """
-    payload = json.dumps(option, sort_keys=True, default=str)
-    digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
-    return f"{eval_key}|tab{active_tab}|{metric}|{digest}"

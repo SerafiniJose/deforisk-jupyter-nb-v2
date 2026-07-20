@@ -972,6 +972,24 @@ def test_metric_bar_option_shows_the_legend_only_for_several_cell_sizes():
     assert one["legend"]["show"] is False
 
 
+def test_metric_bar_option_reserves_the_legend_row_only_when_it_shows():
+    """A hidden legend must not leave a blank band above the plot.
+
+    grid.top has to clear the title always, and the legend row (placed at
+    top=24) only when there is more than one cell size to name.
+    """
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    with_legend = metric_bar_option(_chart_rows(), "MedAE")
+    assert with_legend["legend"]["show"] is True
+    assert with_legend["grid"]["top"] == 52
+
+    one_csize = metric_bar_option(
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE")
+    assert one_csize["legend"]["show"] is False
+    assert one_csize["grid"]["top"] == with_legend["legend"]["top"] == 24
+
+
 def test_metric_bar_option_colors_bars_from_the_app_palette():
     """The application-owned Blues ramp, not plotly.colors.sample_colorscale."""
     from gui.scripts.echarts_options import csize_colors
@@ -1055,76 +1073,12 @@ def test_record_metrics_keeps_the_canonical_order_and_drops_empties():
     assert record_metrics(stripped, ["R2", "MedAE"]) == ["MedAE"]
 
 
-# --- chart_identity: the EChartsChart memo key ------------------------------
+# --- widget identity --------------------------------------------------------
 #
-# EChartsChart deliberately excludes `option` from its memo key, so a changed
-# option with an unchanged identity renders a STALE chart with no error. These
-# tests pin that the identity moves whenever anything the chart shows moves.
-
-
-def test_chart_identity_is_stable_for_identical_inputs():
-    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
-
-    option = metric_bar_option(_chart_rows(), "MedAE")
-    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
-    assert chart_identity(option, **args) == chart_identity(option, **args)
-
-
-def test_chart_identity_changes_with_the_charted_data():
-    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
-
-    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
-    rows = _chart_rows()
-    bumped = [{**r, "MedAE": r["MedAE"] + 1} for r in rows]
-    assert (chart_identity(metric_bar_option(rows, "MedAE"), **args)
-            != chart_identity(metric_bar_option(bumped, "MedAE"), **args))
-
-
-def test_chart_identity_changes_with_the_cell_sizes():
-    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
-
-    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
-    rows = _chart_rows()
-    one_csize = [r for r in rows if r["csize_coarse_grid"] == 100]
-    assert (chart_identity(metric_bar_option(rows, "MedAE"), **args)
-            != chart_identity(metric_bar_option(one_csize, "MedAE"), **args))
-
-
-def test_chart_identity_changes_with_the_metric():
-    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
-
-    rows = _chart_rows()
-    a = chart_identity(metric_bar_option(rows, "MedAE"),
-                       eval_key="run-a", metric="MedAE", active_tab=1)
-    b = chart_identity(metric_bar_option(rows, "R2"),
-                       eval_key="run-a", metric="R2", active_tab=1)
-    assert a != b
-
-
-def test_chart_identity_changes_with_the_theme():
-    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
-
-    rows = _chart_rows()
-    args = {"eval_key": "run-a", "metric": "MedAE", "active_tab": 1}
-    assert (chart_identity(metric_bar_option(rows, "MedAE", dark=False), **args)
-            != chart_identity(metric_bar_option(rows, "MedAE", dark=True), **args))
-
-
-def test_chart_identity_changes_with_the_run_and_the_active_tab():
-    """The tab is not in the option at all — it must be folded in explicitly.
-
-    ipecharts sizes a chart on attach and on window resize only, so a chart
-    built while its tab was hidden can be mis-sized; rebuilding on tab entry is
-    the mitigation.
-    """
-    from gui.scripts.evaluation_charts import chart_identity, metric_bar_option
-
-    option = metric_bar_option(_chart_rows(), "MedAE")
-    base = chart_identity(option, eval_key="run-a", metric="MedAE", active_tab=1)
-    assert base != chart_identity(
-        option, eval_key="run-b", metric="MedAE", active_tab=1)
-    assert base != chart_identity(
-        option, eval_key="run-a", metric="MedAE", active_tab=2)
+# There is no chart_identity helper any more: EChartsChart digests the option
+# it is handed, so nothing the chart DRAWS has to be re-listed by a caller (see
+# tests/test_echarts_adapter.py). What the option cannot show — the active tab,
+# which run is on screen — is asserted on the rendered tab further down.
 
 
 def test_figure_entries_and_csizes():
@@ -1202,7 +1156,7 @@ _CHART_SMOKE = (
     "        for m in ('glm', 'rf') for c in (100, 300)]\n"
     "opt = ec.metric_bar_option(rows, 'MedAE')\n"
     "assert opt['series'][0]['itemStyle']['color'].startswith('#')\n"
-    "assert ec.chart_identity(opt, eval_key='k', metric='MedAE', active_tab=1)\n"
+    "assert opt['title']['text'] and opt['legend']['show'] is True\n"
 )
 
 
@@ -1290,6 +1244,47 @@ def test_charts_tab_charts_carry_the_per_metric_options():
     rc, cls = _render_charts_tab()
     titles = [w.option["title"]["text"] for w in rc.find(cls).widgets]
     assert titles == ["MedAE (ha) ↓", "R² ↑"]
+
+
+def test_charts_tab_builds_its_options_from_the_live_theme():
+    """The dark theme must reach metric_bar_option, not just the widget.
+
+    themed_option (applied inside the adapter) only sets the top-level ink, so
+    a `dark=` that never reaches the builder leaves the title, the legend, both
+    axis labels and both grid colours on their light values over a dark
+    surface. Asserted on title.textStyle.color specifically: the option's
+    top-level textStyle would still be dark via the adapter and would hide the
+    bug.
+    """
+    from solara.lab.components.theming import theme
+
+    from gui.scripts.echarts_options import theme_colors
+
+    before = theme.dark
+    try:
+        theme.dark = True
+        rc, cls = _render_charts_tab()
+        option = rc.find(cls).widgets[0].option
+        assert option["title"]["textStyle"]["color"] == theme_colors(True)["ink"]
+        assert option["xAxis"]["axisLabel"]["color"] == theme_colors(True)["ink"]
+        assert (option["yAxis"]["splitLine"]["lineStyle"]["color"]
+                == theme_colors(True)["grid"])
+    finally:
+        theme.dark = before
+
+    rc, cls = _render_charts_tab()
+    assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+            == theme_colors(False)["ink"])
+
+
+def test_charts_tab_draws_the_bar_charts_with_the_svg_renderer():
+    """Renderer is a deliberate per-call-site choice, not a default to drift.
+
+    Small bar charts: SVG (crisp text, tiny DOM). Canvas here would be a silent
+    performance/quality change, which is what resolve_renderer exists to stop.
+    """
+    rc, cls = _render_charts_tab()
+    assert {w.renderer for w in rc.find(cls).widgets} == {"svg"}
 
 
 def test_charts_tab_lays_metrics_out_in_two_columns():

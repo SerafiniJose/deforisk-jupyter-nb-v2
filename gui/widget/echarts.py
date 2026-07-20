@@ -18,6 +18,8 @@ builders can import it without dragging solara in. Import that module directly
 rather than reaching through this one.
 """
 
+import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -68,51 +70,75 @@ def build_chart_widget(option, *, dark=False, renderer=RENDERER_SVG,
     )
 
 
+def _option_digest(option):
+    """Short, stable hash of an option dict's *contents*.
+
+    ``EChartsChart`` keys its ``use_memo`` on this instead of on the dict
+    itself: a dict is unhashable, and ``sort_keys`` makes the digest
+    independent of key insertion order, so an option rebuilt from the same data
+    never thrashes the widget.
+
+    ``default=str`` is a safety valve, not a feature. An option value ``json``
+    cannot serialize — a stray numpy scalar, a ``Path`` — must not raise from
+    inside a render; it is hashed via its ``str()`` instead. For a value whose
+    ``repr`` carries its address that digest moves on every render, so the
+    chart is rebuilt each time: still correct, just no longer memoized. Chart
+    builders should keep their options JSON-clean (``metric_bar_option`` has a
+    test pinning exactly that).
+    """
+    payload = json.dumps(option, sort_keys=True, default=str)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
 @solara.component
-def EChartsChart(option, identity, *, dark=False, renderer=RENDERER_SVG,
+def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
                  height=DEFAULT_HEIGHT):
     """Render an ECharts option dict as a chart.
 
     Args:
         option: plain serializable ECharts option dict.
-        identity: string identifying *what* is being charted (e.g. the
-            evaluation key plus the metric selection). The widget is rebuilt
-            whenever this changes.
+        identity: optional string folding in *extrinsic* rebuild triggers —
+            see below. Callers with none can leave it out.
         dark: True for the app's dark theme.
         renderer: ``RENDERER_SVG`` (default, small bar charts) or
             ``RENDERER_CANVAS`` (high-point-count scatter).
         height: CSS pixel height of the chart container.
 
-    The widget is built inside a ``use_memo`` keyed on the identity and the
-    presentation inputs, so a re-render that changes neither reuses the same
-    widget (no chart teardown, no flicker), while a change to either builds a
-    fresh one. Recreating rather than mutating keeps the option dict and the
-    live chart from drifting apart, and leaves no trait observers behind: the
-    widget owns all its own state and is simply replaced.
+    The widget is built inside a ``use_memo`` keyed on a digest of ``option``
+    plus the presentation inputs and ``identity``, so a re-render that changes
+    none of them reuses the same widget (no chart teardown, no flicker), while
+    a change to any of them builds a fresh one. Recreating rather than mutating
+    keeps the option dict and the live chart from drifting apart, and leaves no
+    trait observers behind: the widget owns all its own state and is simply
+    replaced.
 
-    ``option`` is deliberately NOT part of the memo key: callers are expected
-    to fold everything that determines ``option``'s contents into ``identity``
-    instead (see below). Getting that wrong is this component's main footgun —
-    ``identity`` MUST incorporate every input that affects ``option`` (e.g. the
-    selected metrics, the cell size, the record being charted). If ``option``
-    changes but ``identity`` does not, ``use_memo`` returns the stale widget
-    and the chart silently keeps showing the old data — no error, no warning.
+    **Contract:** anything that changes what the chart *draws* is already
+    covered — this component hashes the option itself, so a caller can rebuild
+    its option dict every render and rely on the digest to decide. Callers do
+    NOT need to enumerate the option's inputs anywhere.
 
-    Note for charts inside tabs: ipecharts sizes its chart when the widget is
-    attached to the DOM and on window resize; it does not watch the container
-    for later size changes. A chart mounted while its tab is hidden therefore
-    depends on the tab body attaching only once the tab is first activated.
-    Including the active tab in ``identity`` is intended to force a rebuild on
-    tab entry so sizing does not depend on that attach-time behaviour — but
-    this has NOT been verified in a browser (ipecharts has no ResizeObserver
-    and no after-show handling; it only sizes on after-attach and window
-    resize). Confirm this actually fixes hidden-tab sizing in a browser before
-    relying on it.
+    ``identity`` is for the opposite case: inputs that are NOT visible in the
+    option yet must still force a fresh widget. Two known kinds:
+
+    * **Attach timing.** ipecharts sizes its chart when the widget is attached
+      to the DOM and on window resize; it does not watch the container for
+      later size changes, so a chart mounted while its tab was hidden can be
+      mis-sized. Putting the active tab index in ``identity`` forces a rebuild
+      on tab entry. (Mitigation only — NOT verified in a browser; ipecharts has
+      no ResizeObserver and no after-show handling.)
+    * **Live chart state.** Interaction state (legend toggles, zoom) lives in
+      the chart instance, not in the option. Where reusing a widget across a
+      change of subject would carry that state over — e.g. switching to another
+      evaluation run that happens to draw an identical option — name the
+      subject in ``identity``.
+
+    A wrong ``identity`` now costs at most an unnecessary rebuild; it can no
+    longer render stale data.
     """
     widget = solara.use_memo(
         lambda: build_chart_widget(
             option, dark=dark, renderer=renderer, height=height),
-        [identity, dark, renderer, height],
+        [identity, _option_digest(option), dark, renderer, height],
     )
     # Handing the widget to a container's `children` is how this app already
     # mounts non-solara widgets (see the SepalMap in solara_app.Page). It puts

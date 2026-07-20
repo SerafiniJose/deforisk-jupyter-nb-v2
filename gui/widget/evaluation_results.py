@@ -15,8 +15,7 @@ from solara.lab.components.theming import theme
 from gui.i18n import t
 from gui.scripts.echarts_options import RENDERER_SVG
 from gui.scripts.evaluation_charts import (
-    chart_identity, figure_entries, metric_bar_option, record_csizes,
-    record_metrics)
+    figure_entries, metric_bar_option, record_csizes, record_metrics)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.echarts import EChartsChart
@@ -91,13 +90,14 @@ def _ChartsTab(record, eval_key, active_tab=None):
     is the layout Plotly's ``ncols = 2 if len(metrics) > 1 else 1`` produced.
 
     The options are rebuilt on every render rather than memoized: they are a
-    few small dicts, and a use_memo whose key missed an input would serve stale
-    charts. Widget reuse is handled where it belongs — ``chart_identity``
-    digests the option, so an uneventful re-render keeps the same widget.
+    few small dicts, and EChartsChart hashes the option it is handed, so an
+    equal option reuses the same widget instead of tearing the chart down.
 
-    ``active_tab`` is the dialog's selected tab index. It changes nothing in
-    the options; it is in the identity so the charts are rebuilt when the tab
-    is (re-)entered — see the sizing note on EChartsChart.
+    The identity carries only what the options do NOT show: ``active_tab`` (the
+    dialog's selected tab index) so the charts are rebuilt when the tab is
+    (re-)entered, and ``eval_key`` so switching runs starts from a fresh chart
+    rather than inheriting the previous one's legend toggles — see the contract
+    on EChartsChart.
     """
     indices = getattr(record, "indices", None) or []
     metrics = record_metrics(indices, getattr(record, "metrics", None))
@@ -113,12 +113,10 @@ def _ChartsTab(record, eval_key, active_tab=None):
         style=f"display: grid; grid-template-columns: repeat({ncols},"
               " minmax(0, 1fr)); gap: 12px; width: 100%;"
     ):
-        for metric, option in charts:
+        for _metric, option in charts:
             EChartsChart(
                 option=option,
-                identity=chart_identity(
-                    option, eval_key=eval_key, metric=metric,
-                    active_tab=active_tab),
+                identity=f"{eval_key}|tab{active_tab}",
                 dark=theme.dark,
                 renderer=RENDERER_SVG,
                 height=_CHART_HEIGHT,

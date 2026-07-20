@@ -304,17 +304,74 @@ def test_chart_component_renders_headlessly():
 def test_chart_component_keeps_its_widget_when_nothing_identifying_changed():
     """Re-rendering must not thrash the widget (and the browser canvas).
 
-    The option content must actually change between renders (while identity
-    stays fixed): reacton bails out of a re-render entirely when props are
-    ``==``-equal, so an unchanged option would never re-run the component body
-    and would pass this assertion even with no memoization at all.
+    The props must actually differ between renders: reacton bails out of a
+    re-render entirely when props are ``==``-equal, so passing the very same
+    option would never re-run the component body and would pass this assertion
+    even with no memoization at all. A tuple and a list are unequal in Python
+    but serialize identically, so the body re-runs while the memo's option
+    digest — the thing under test — stays put.
+    """
+    from gui.widget.echarts import EChartsChart
+
+    _, rc = _render_chart(option={"series": [{"data": (1, 2)}]})
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"series": [{"data": [1, 2]}]}, identity="run-a"))
+    assert _chart_widget(rc) is first
+
+
+def test_chart_component_recreates_its_widget_when_the_option_changes():
+    """The adapter owns staleness: a changed option rebuilds on its own.
+
+    ``identity`` is deliberately held fixed. This is the assertion that makes
+    the memo's option digest load-bearing — drop the digest from the ``use_memo``
+    deps and ``use_memo`` hands back the widget built from ``[1]``, which is the
+    silent-stale-chart failure the old design pushed onto every caller.
     """
     from gui.widget.echarts import EChartsChart
 
     _, rc = _render_chart(option={"series": [{"data": [1]}]})
     first = _chart_widget(rc)
     rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a"))
+    second = _chart_widget(rc)
+    assert second is not first
+    assert second.option["series"] == [{"data": [2]}]
+
+
+def test_chart_component_reuses_its_widget_across_a_key_order_change():
+    """The digest sorts keys: an option rebuilt from the same data is the same.
+
+    Chart builders construct their option dict fresh on every render, so a
+    digest sensitive to insertion order would rebuild the widget forever.
+    """
+    from gui.widget.echarts import EChartsChart
+
+    _, rc = _render_chart(option={"series": (), "grid": {"left": 8}})
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"grid": {"left": 8}, "series": []},
+                           identity="run-a"))
     assert _chart_widget(rc) is first
+
+
+def test_chart_component_survives_an_option_json_cannot_serialize():
+    """A stray numpy scalar must not raise out of the digest mid-render.
+
+    ``np.int64`` is not a Python ``int`` subclass, so ``json.dumps`` refuses it
+    outright — exactly the value that leaks in when a builder forwards a pandas
+    cell straight into an option.
+    """
+    import numpy as np
+
+    from gui.widget.echarts import EChartsChart
+
+    option = {"series": [{"data": [np.int64(3)]}], "grid": {"top": np.int64(52)}}
+    _, rc = _render_chart(option=option)
+    assert _chart_widget(rc) is not None
+    # and it still discriminates: a different unserializable value rebuilds
+    first = _chart_widget(rc)
+    rc.render(EChartsChart(option={"series": [{"data": [np.int64(4)]}],
+                                   "grid": {"top": np.int64(52)}},
+                           identity="run-a"))
+    assert _chart_widget(rc) is not first
 
 
 def test_chart_component_recreates_its_widget_when_the_identity_changes():
