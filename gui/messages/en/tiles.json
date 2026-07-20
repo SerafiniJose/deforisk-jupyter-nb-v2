@@ -128,6 +128,7 @@
       "confirm_replace_message": "A sample named '{key}' already exists. Creating will delete it and generate a new one.",
       "raster_variable_label": "Raster variable",
       "raster_variable_hint": "Defines valid pixels and, for stratified sampling, the classes (strata).",
+      "warn_continuous_strata": "'{name}' is a continuous variable. Stratified sampling creates one class per distinct pixel value, so a continuous raster produces hundreds of strata. Prefer a categorical variable, or use random/systematic sampling.",
       "raster_variable_label_strata": "Strata raster",
       "raster_variable_label_area": "Area raster",
       "mask_variable_label": "Mask variable (optional)",

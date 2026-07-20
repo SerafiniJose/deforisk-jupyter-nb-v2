@@ -14,6 +14,24 @@ SAMPLING_STRATEGIES = ["random", "stratified", "systematic"]
 ALLOCATION_METHODS = ["equal", "proportional", "deforisk"]
 
 
+def is_continuous_strata(p, strategy: str, raster_var: str) -> bool:
+    """True when a continuous raster is about to be used as the strata variable.
+
+    Stratified sampling treats every distinct pixel value as its own class, so a
+    continuous variable (altitude, distance…) yields one stratum per value —
+    almost never what the user means. Only an *explicitly* continuous
+    ``raster_type`` warns: the field is optional, and treating "unset" as
+    continuous would flag most variables and train users to ignore the warning.
+    """
+    if p is None or strategy != "stratified" or not raster_var:
+        return False
+    var = getattr(p, "processed_variables", {}).get(raster_var)
+    raster_type = getattr(var, "raster_type", None)
+    if raster_type is None:
+        return False
+    return getattr(raster_type, "value", raster_type) == "continuous"
+
+
 def _systematic_modes():
     return [
         {"text": t("tiles.sampling.systematic_mode_n_samples"), "value": "n_samples"},
@@ -124,6 +142,12 @@ def SampleFormDialog(project, open_, existing_names, running_names, on_submit: C
             on_v_model=set_raster_var, dense=True, outlined=True,
             hint=t("tiles.sampling.raster_variable_hint"), persistent_hint=True,
         )
+        # Advisory only — the user may have a reason, so Generate stays enabled.
+        if is_continuous_strata(p, strategy, raster_var):
+            solara.Warning(
+                t("tiles.sampling.warn_continuous_strata", name=raster_var),
+                dense=True,
+            )
         rv.Select(
             label=t("tiles.sampling.mask_variable_label"), items=[""] + raster_keys,
             v_model=mask_var, on_v_model=set_mask_var, dense=True, outlined=True,

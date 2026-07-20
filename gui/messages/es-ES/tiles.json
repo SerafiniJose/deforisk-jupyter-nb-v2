@@ -128,6 +128,7 @@
       "confirm_replace_message": "Ya existe una muestra llamada '{key}'. Al crearla se eliminará y se generará de nuevo.",
       "raster_variable_label": "Variable ráster",
       "raster_variable_hint": "Define los píxeles válidos y, para muestreo estratificado, las clases (estratos).",
+      "warn_continuous_strata": "'{name}' es una variable continua. El muestreo estratificado crea una clase por cada valor de píxel distinto, así que un ráster continuo genera cientos de estratos. Preferí una variable categórica, o usá muestreo aleatorio/sistemático.",
       "raster_variable_label_strata": "Ráster de estratos",
       "raster_variable_label_area": "Ráster de área",
       "mask_variable_label": "Variable de máscara (opcional)",
