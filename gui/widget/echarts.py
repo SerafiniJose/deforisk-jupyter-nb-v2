@@ -18,6 +18,7 @@ builders can import it without dragging solara in. Import that module directly
 rather than reaching through this one.
 """
 
+import sys
 from pathlib import Path
 
 import reacton.ipyvuetify as rv
@@ -89,12 +90,24 @@ def EChartsChart(option, identity, *, dark=False, renderer=RENDERER_SVG,
     live chart from drifting apart, and leaves no trait observers behind: the
     widget owns all its own state and is simply replaced.
 
+    ``option`` is deliberately NOT part of the memo key: callers are expected
+    to fold everything that determines ``option``'s contents into ``identity``
+    instead (see below). Getting that wrong is this component's main footgun —
+    ``identity`` MUST incorporate every input that affects ``option`` (e.g. the
+    selected metrics, the cell size, the record being charted). If ``option``
+    changes but ``identity`` does not, ``use_memo`` returns the stale widget
+    and the chart silently keeps showing the old data — no error, no warning.
+
     Note for charts inside tabs: ipecharts sizes its chart when the widget is
     attached to the DOM and on window resize; it does not watch the container
     for later size changes. A chart mounted while its tab is hidden therefore
     depends on the tab body attaching only once the tab is first activated.
-    Including the active tab in ``identity`` forces a rebuild on tab entry and
-    makes correct sizing independent of that behaviour.
+    Including the active tab in ``identity`` is intended to force a rebuild on
+    tab entry so sizing does not depend on that attach-time behaviour — but
+    this has NOT been verified in a browser (ipecharts has no ResizeObserver
+    and no after-show handling; it only sizes on after-attach and window
+    resize). Confirm this actually fixes hidden-tab sizing in a browser before
+    relying on it.
     """
     widget = solara.use_memo(
         lambda: build_chart_widget(
@@ -119,8 +132,6 @@ def frontend_asset_dir():
     package (pip wheels) or the one under ``share/jupyter/labextensions``
     (conda packages, and pip after the data files are installed).
     """
-    import sys
-
     import ipecharts
 
     candidates = [

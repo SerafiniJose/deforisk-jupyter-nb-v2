@@ -108,8 +108,20 @@ def themed_option(option, *, dark=False):
     within ``textStyle`` only ``color`` is overridden, so a caller's font size
     survives.
 
-    The input dict is never mutated: callers reuse one option across light and
-    dark renders.
+    Only ``theme_colors()["ink"]`` is applied here, to ``backgroundColor`` and
+    ``textStyle.color``. ``theme_colors()["grid"]`` is NOT applied by this
+    function: grid/axis-line colour is set per-axis (``axisLine``,
+    ``splitLine``, ...) and this adapter has no way to know a caller's axis
+    structure. Chart builders that draw axes must read
+    ``theme_colors(dark)["grid"]`` themselves and wire it into their own axis
+    options.
+
+    The caller's top-level dict is never mutated: callers reuse one option
+    across light and dark renders. This is a shallow copy — only the
+    top-level keys this function touches (``backgroundColor``, ``textStyle``)
+    are copied; nested values such as ``option["series"]`` are shared by
+    reference with the input, so builders should construct fresh nested
+    values themselves rather than relying on this function to isolate them.
     """
     themed = dict(option)
     themed["backgroundColor"] = TRANSPARENT

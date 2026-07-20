@@ -302,12 +302,18 @@ def test_chart_component_renders_headlessly():
 
 
 def test_chart_component_keeps_its_widget_when_nothing_identifying_changed():
-    """Re-rendering must not thrash the widget (and the browser canvas)."""
+    """Re-rendering must not thrash the widget (and the browser canvas).
+
+    The option content must actually change between renders (while identity
+    stays fixed): reacton bails out of a re-render entirely when props are
+    ``==``-equal, so an unchanged option would never re-run the component body
+    and would pass this assertion even with no memoization at all.
+    """
     from gui.widget.echarts import EChartsChart
 
-    _, rc = _render_chart()
+    _, rc = _render_chart(option={"series": [{"data": [1]}]})
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"series": []}, identity="run-a"))
+    rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a"))
     assert _chart_widget(rc) is first
 
 
