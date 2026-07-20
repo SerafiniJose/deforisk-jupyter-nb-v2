@@ -6,7 +6,9 @@ forestatrisk.validation_udef_arp — no forestatrisk dependency.
 """
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -14,6 +16,19 @@ from osgeo import gdal
 
 FAMILY = {"glm": "GLM", "rf": "RF", "icar": "ICAR", "mw": "MW", "jnr": "JNR"}
 FOREST_VAR = "forest_gfc"  # dataset feature used as 'forest at period start'
+
+# Axis titles of the predicted-vs-observed scatter. Deliberately NOT i18n'd:
+# spatialrisk/ must never import gui/, and these strings are baked into the
+# archived PNG. A localized chart supplies its own labels at render time.
+PRED_OBS_X_LABEL = "Observed deforestation (ha)"
+PRED_OBS_Y_LABEL = "Predicted deforestation (ha)"
+
+_OBS_COL = "ndefor_obs_ha"
+_PRED_COL = "ndefor_pred_ha"
+
+# Axis domain used when the data carries no finite value at all (empty result,
+# all-NaN or all-infinite series). A unit range keeps both renderers valid.
+_FALLBACK_AXIS = (0.0, 1.0)
 
 
 def interval_from_target(name):
@@ -47,32 +62,122 @@ def make_square(raster_file, square_size):
     return nsquare, nsquare_x, nsquare_y, x, y, nx, ny
 
 
-def validate_two_layer(
+def _finite_mask(points):
+    """Boolean mask of rows whose observed AND predicted values are finite."""
+    obs = pd.to_numeric(points[_OBS_COL], errors="coerce").to_numpy(dtype="float64")
+    pred = pd.to_numeric(points[_PRED_COL], errors="coerce").to_numpy(dtype="float64")
+    return np.isfinite(obs) & np.isfinite(pred)
+
+
+def pred_obs_axis_bounds(points):
+    """One common finite axis domain spanning BOTH observed and predicted values.
+
+    Matches the legacy ``p = [min over both columns, max over both columns]``
+    whenever the data is well-behaved, but never returns NaN/inf or a zero-width
+    domain (which collapses an ECharts axis and breaks a 1:1 reference line):
+
+    * no finite value at all -> ``(0.0, 1.0)``
+    * constant series at 0   -> ``(0.0, 1.0)``
+    * constant series at v   -> ``(v - |v|, v + |v|)``, i.e. ``(0, 2v)`` for v > 0
+    """
+    values = np.concatenate([
+        pd.to_numeric(points[c], errors="coerce").to_numpy(dtype="float64")
+        for c in (_OBS_COL, _PRED_COL)
+    ])
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return _FALLBACK_AXIS
+
+    lo, hi = float(finite.min()), float(finite.max())
+    if lo == hi:
+        pad = abs(lo)
+        if pad == 0.0:
+            return _FALLBACK_AXIS
+        return (lo - pad, hi + pad)
+    return (lo, hi)
+
+
+@dataclass(frozen=True, eq=False)
+class PredObsPlotData:
+    """Everything a predicted-vs-observed chart needs, with no raster access.
+
+    Shared by the archived matplotlib PNG and the interactive ECharts scatter so
+    the two can never disagree. ``eq=False`` on purpose: the default dataclass
+    ``__eq__`` would compare ``points`` element-wise and raise "truth value of a
+    DataFrame is ambiguous" during reacton's prop diffing. Identity equality also
+    makes every freshly computed result re-render, which is the safe default.
+
+    ``points`` is the exact frame persisted to the point CSV, non-finite rows
+    included; renderers must use ``finite_points`` instead.
+    """
+
+    model: str
+    period: str
+    csize_px: int
+    csize_ha: float
+    points: pd.DataFrame
+    axis_min: float
+    axis_max: float
+    medae: float
+    r2: float
+    ncell: int
+
+    @property
+    def title(self):
+        return (
+            f"{self.model} model, {self.period} period\n"
+            f"Predicted vs. observed deforestation in {self.csize_ha} ha grid cells."
+        )
+
+    @property
+    def annotation(self):
+        """The 'MedAE / R2 / n' summary block, formatted as on the PNG."""
+        return (f"MedAE = {self.medae:.2f} ha\n"
+                f"R2 = {self.r2:.2f}\n"
+                f"n = {self.ncell:d}")
+
+    @property
+    def x_label(self):
+        return PRED_OBS_X_LABEL
+
+    @property
+    def y_label(self):
+        return PRED_OBS_Y_LABEL
+
+    @property
+    def finite_points(self):
+        """Plottable subset: rows where both values are finite (never NaN/inf)."""
+        return self.points[_finite_mask(self.points)]
+
+
+@dataclass(frozen=True, eq=False)
+class ValidationResult:
+    """Source of truth for one validation run: metrics + shared chart input."""
+
+    indices: dict[str, Any]
+    plot_data: PredObsPlotData
+
+
+def compute_validation(
     defor_file,
     forest_file,
     riskmap_file,
     tab_file_defor,
     time_interval,
     csize_coarse_grid=300,
-    indices_file_pred="indices.csv",
-    tab_file_pred="pred_obs.csv",
-    fig_file_pred="pred_obs.png",
     model_name="model",
     period="calibration",
-    figsize=(6.4, 6.4),
-    dpi=100,
 ):
-    """Two-explicit-layer port of forestatrisk.validation_udef_arp.
+    """Per-cell tally + accuracy indices. Pure computation — writes no files.
+
+    Numerics are frozen: same formulas, same ``round(..., 2)``, same dropped
+    cells (``nfor_obs == 0``) and same column order as before the split.
 
     defor_file   : binary deforestation in the period (1 = deforested)
     forest_file  : binary forest at the START of the period (1 = forest)
     riskmap_file : UInt16 categorical risk (categories 1..65535, nodata 0)
     tab_file_defor: per-category defrate CSV (cols 'cat', 'defor_dens')
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     defor_ds = gdal.Open(str(defor_file))
     defor_band = defor_ds.GetRasterBand(1)
     forest_ds = gdal.Open(str(forest_file))
@@ -116,7 +221,6 @@ def validate_two_layer(
     ncell = df.shape[0]
     df["nfor_obs_ha"] = df["nfor_obs"] * pix_area / 10000
     df["ndefor_obs_ha"] = df["ndefor_obs"] * pix_area / 10000
-    df.to_csv(tab_file_pred, index=False)
 
     error_pred = df["ndefor_pred_ha"] - df["ndefor_obs_ha"]
     squared_error = error_pred ** 2
@@ -127,34 +231,101 @@ def validate_two_layer(
     r = np.corrcoef(df["ndefor_pred_ha"], df["ndefor_obs_ha"])[0, 1]
     r_square = round(float(r ** 2), 2)
 
-    title = (
-        f"{model_name} model, {period} period\n"
-        f"Predicted vs. observed deforestation in {csize_ha} ha grid cells."
-    )
-    p = [df[["ndefor_obs_ha", "ndefor_pred_ha"]].min(axis=None),
-         df[["ndefor_obs_ha", "ndefor_pred_ha"]].max(axis=None)]
-    fig = plt.figure(figsize=figsize, dpi=dpi)
-    ax = plt.subplot(111)
-    ax.set_box_aspect(1)
-    plt.scatter(df["ndefor_obs_ha"], df["ndefor_pred_ha"],
-                color=None, marker="o", edgecolor="k")
-    plt.plot(p, p, "r--")
-    plt.title(title)
-    plt.xlabel("Observed deforestation (ha)")
-    plt.ylabel("Predicted deforestation (ha)")
-    t = f"MedAE = {MedAE:.2f} ha\nR2 = {r_square:.2f}\nn = {ncell:d}"
-    y_text = df[["ndefor_obs_ha", "ndefor_pred_ha"]].max(axis=None)
-    plt.text(0, y_text, t, ha="left", va="top")
-    fig.savefig(fig_file_pred)
-    plt.close(fig)
-
     indices = {
         "RMSE": RMSE, "wRMSE": wRMSE, "MedAE": MedAE, "R2": r_square,
         "ncell": ncell, "csize_coarse_grid": csize_coarse_grid,
         "csize_coarse_grid_ha": csize_ha,
     }
-    pd.DataFrame([indices]).to_csv(indices_file_pred, index=False)
-    return indices
+    axis_min, axis_max = pred_obs_axis_bounds(df)
+    plot_data = PredObsPlotData(
+        model=model_name, period=period,
+        csize_px=csize_coarse_grid, csize_ha=csize_ha,
+        points=df, axis_min=axis_min, axis_max=axis_max,
+        medae=MedAE, r2=r_square, ncell=ncell,
+    )
+    return ValidationResult(indices=indices, plot_data=plot_data)
+
+
+def write_pred_obs_csv(plot_data, output_path):
+    """Persist the per-cell point table (the frozen 6-column CSV)."""
+    plot_data.points.to_csv(output_path, index=False)
+    return output_path
+
+
+def write_indices_csv(indices, output_path):
+    """Persist the one-row accuracy-indices table."""
+    pd.DataFrame([indices]).to_csv(output_path, index=False)
+    return output_path
+
+
+def save_pred_obs_png(plot_data, output_path, *, figsize=(6.4, 6.4), dpi=100):
+    """Render the archived predicted-vs-observed scatter to a PNG.
+
+    Byte-identical to the pre-split inline matplotlib block for well-behaved
+    data. Non-finite rows are dropped and the reference line uses the guaranteed
+    finite ``axis_min``/``axis_max``, so degenerate input renders instead of
+    producing a blank or NaN-scaled figure.
+    """
+    import matplotlib
+    matplotlib.use("Agg")   # worker-safe: must precede the pyplot import
+    import matplotlib.pyplot as plt
+
+    points = plot_data.finite_points
+    p = [plot_data.axis_min, plot_data.axis_max]
+
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = plt.subplot(111)
+    ax.set_box_aspect(1)
+    plt.scatter(points[_OBS_COL], points[_PRED_COL],
+                color=None, marker="o", edgecolor="k")
+    plt.plot(p, p, "r--")
+    plt.title(plot_data.title)
+    plt.xlabel(plot_data.x_label)
+    plt.ylabel(plot_data.y_label)
+    plt.text(0, plot_data.axis_max, plot_data.annotation, ha="left", va="top")
+    fig.savefig(output_path)
+    plt.close(fig)
+    return output_path
+
+
+def validate_two_layer(
+    defor_file,
+    forest_file,
+    riskmap_file,
+    tab_file_defor,
+    time_interval,
+    csize_coarse_grid=300,
+    indices_file_pred="indices.csv",
+    tab_file_pred="pred_obs.csv",
+    fig_file_pred="pred_obs.png",
+    model_name="model",
+    period="calibration",
+    figsize=(6.4, 6.4),
+    dpi=100,
+):
+    """Compute + persist one validation run (compatibility wrapper).
+
+    Two-explicit-layer port of forestatrisk.validation_udef_arp. Kept with its
+    original signature and return value (the indices dict) so existing callers
+    and the notebook keep working; the computation now lives in
+    ``compute_validation`` and the artifacts in ``write_pred_obs_csv`` /
+    ``write_indices_csv`` / ``save_pred_obs_png``. Prefer those directly when
+    you also need the chart input.
+    """
+    result = compute_validation(
+        defor_file=defor_file,
+        forest_file=forest_file,
+        riskmap_file=riskmap_file,
+        tab_file_defor=tab_file_defor,
+        time_interval=time_interval,
+        csize_coarse_grid=csize_coarse_grid,
+        model_name=model_name,
+        period=period,
+    )
+    write_pred_obs_csv(result.plot_data, tab_file_pred)
+    save_pred_obs_png(result.plot_data, fig_file_pred, figsize=figsize, dpi=dpi)
+    write_indices_csv(result.indices, indices_file_pred)
+    return result.indices
 
 
 def _defrate_per_cat(**kwargs):

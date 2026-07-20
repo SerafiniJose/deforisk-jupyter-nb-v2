@@ -9,7 +9,21 @@ import pytest
 rasterio = pytest.importorskip("rasterio")
 from rasterio.transform import from_origin
 
-from spatialrisk.evaluation import interval_from_target, label_for, make_square, validate_two_layer
+from spatialrisk.evaluation import (
+    PRED_OBS_X_LABEL,
+    PRED_OBS_Y_LABEL,
+    PredObsPlotData,
+    ValidationResult,
+    compute_validation,
+    interval_from_target,
+    label_for,
+    make_square,
+    pred_obs_axis_bounds,
+    save_pred_obs_png,
+    validate_two_layer,
+    write_indices_csv,
+    write_pred_obs_csv,
+)
 import spatialrisk.evaluation as ev
 
 
@@ -101,6 +115,239 @@ def test_validate_two_layer_perfect_prediction(tmp_path):
     assert idx["R2"] == 1.0
     assert (tmp_path / "indices.csv").exists()
     assert (tmp_path / "pred_obs.png").exists()
+
+
+def _varied_validation_fixture(tmp_path):
+    """Three coarse cells with DIFFERENT observed/predicted values and two risk
+    categories, so metrics, axis bounds and the scatter are all non-degenerate.
+
+    Cell 2 is the 100px-wide remainder column, which makes nfor_obs vary too.
+    """
+    nrow, ncol, pixel = 300, 700, 30.0
+    forest = np.ones((nrow, ncol), dtype="int32")
+
+    defor = np.zeros((nrow, ncol), dtype="int32")
+    defor[:90, 0:300] = 1      # cell 0
+    defor[:150, 300:600] = 1   # cell 1
+    defor[:40, 600:700] = 1    # cell 2
+
+    risk = np.ones((nrow, ncol), dtype="int32")
+    risk[:, 350:] = 2          # two categories with different densities
+
+    tab = tmp_path / "defrate.csv"
+    pd.DataFrame({"cat": [1, 2], "defor_dens": [0.0004, 0.00025]}).to_csv(tab, index=False)
+
+    return dict(
+        defor_file=_write_raster(tmp_path / "defor.tif", defor, pixel),
+        forest_file=_write_raster(tmp_path / "forest.tif", forest, pixel),
+        riskmap_file=_write_raster(tmp_path / "risk.tif", risk, pixel),
+        tab_file_defor=str(tab),
+        time_interval=5,
+    )
+
+
+# Golden values captured from validate_two_layer BEFORE the plot-data refactor.
+# They pin the frozen numerics: metric formulas, round(..., 2), CSV columns/order.
+_GOLDEN_INDICES = {
+    "RMSE": 2619.28, "wRMSE": 2964.98, "MedAE": 2250.0, "R2": 0.43,
+    "ncell": 3, "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0,
+}
+_GOLDEN_POINT_CSV = (
+    "cell,nfor_obs,ndefor_obs,nfor_obs_ha,ndefor_obs_ha,ndefor_pred_ha\n"
+    "0,90000,27000,8100.0,2430.0,180.0\n"
+    "1,90000,45000,8100.0,4050.0,123.75\n"
+    "2,30000,4000,2700.0,360.0,37.5\n"
+)
+_GOLDEN_INDICES_CSV = (
+    "RMSE,wRMSE,MedAE,R2,ncell,csize_coarse_grid,csize_coarse_grid_ha\n"
+    "2619.28,2964.98,2250.0,0.43,3,300,8100.0\n"
+)
+
+
+def test_validate_two_layer_matches_golden_metrics_and_csvs(tmp_path):
+    """Characterization test: numbers and CSV bytes must never move."""
+    lay = _varied_validation_fixture(tmp_path)
+    idx = validate_two_layer(
+        **lay, csize_coarse_grid=300,
+        indices_file_pred=tmp_path / "indices.csv",
+        tab_file_pred=tmp_path / "pred_obs.csv",
+        fig_file_pred=tmp_path / "pred_obs.png",
+        model_name="TEST", period="calibration",
+    )
+    assert idx == _GOLDEN_INDICES
+    assert (tmp_path / "pred_obs.csv").read_text() == _GOLDEN_POINT_CSV
+    assert (tmp_path / "indices.csv").read_text() == _GOLDEN_INDICES_CSV
+    assert (tmp_path / "pred_obs.png").stat().st_size > 1000
+
+
+def _points(obs, pred):
+    """Minimal points frame with just the two columns the plot layer reads."""
+    return pd.DataFrame({"ndefor_obs_ha": obs, "ndefor_pred_ha": pred})
+
+
+def test_pred_obs_axis_bounds_spans_both_series(tmp_path):
+    lo, hi = pred_obs_axis_bounds(_points([2430.0, 4050.0, 360.0], [180.0, 123.75, 37.5]))
+    assert (lo, hi) == (37.5, 4050.0)
+
+
+def test_pred_obs_axis_bounds_empty_falls_back_to_unit_range():
+    assert pred_obs_axis_bounds(_points([], [])) == (0.0, 1.0)
+
+
+def test_pred_obs_axis_bounds_all_nan_falls_back_to_unit_range():
+    assert pred_obs_axis_bounds(_points([np.nan, np.nan], [np.nan, np.nan])) == (0.0, 1.0)
+
+
+def test_pred_obs_axis_bounds_ignores_infinities():
+    lo, hi = pred_obs_axis_bounds(_points([1.0, np.inf], [-np.inf, 4.0]))
+    assert (lo, hi) == (1.0, 4.0)
+
+
+def test_pred_obs_axis_bounds_all_infinite_falls_back_to_unit_range():
+    assert pred_obs_axis_bounds(_points([np.inf, -np.inf], [np.inf, np.inf])) == (0.0, 1.0)
+
+
+def test_pred_obs_axis_bounds_constant_series_is_padded():
+    # A zero-width domain would collapse an ECharts axis; pad it symmetrically.
+    assert pred_obs_axis_bounds(_points([5.0, 5.0], [5.0, 5.0])) == (0.0, 10.0)
+
+
+def test_pred_obs_axis_bounds_all_zero_falls_back_to_unit_range():
+    assert pred_obs_axis_bounds(_points([0.0, 0.0], [0.0, 0.0])) == (0.0, 1.0)
+
+
+def test_finite_points_drops_non_finite_rows_without_touching_points():
+    points = _points([1.0, np.nan, 3.0, np.inf], [1.0, 2.0, np.inf, 4.0])
+    data = PredObsPlotData(
+        model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
+        axis_min=1.0, axis_max=3.0, medae=0.0, r2=1.0, ncell=4,
+    )
+    assert len(data.points) == 4                      # CSV payload untouched
+    assert list(data.finite_points["ndefor_obs_ha"]) == [1.0]
+    assert list(data.finite_points["ndefor_pred_ha"]) == [1.0]
+
+
+def test_compute_validation_returns_indices_and_plot_data(tmp_path):
+    lay = _varied_validation_fixture(tmp_path)
+    result = compute_validation(**lay, csize_coarse_grid=300,
+                                model_name="TEST", period="calibration")
+
+    assert isinstance(result, ValidationResult)
+    assert result.indices == _GOLDEN_INDICES
+
+    pd_ = result.plot_data
+    assert isinstance(pd_, PredObsPlotData)
+    assert (pd_.model, pd_.period) == ("TEST", "calibration")
+    assert (pd_.csize_px, pd_.csize_ha) == (300, 8100.0)
+    assert (pd_.axis_min, pd_.axis_max) == (37.5, 4050.0)
+    assert (pd_.medae, pd_.r2, pd_.ncell) == (2250.0, 0.43, 3)
+    assert list(pd_.points.columns) == [
+        "cell", "nfor_obs", "ndefor_obs", "nfor_obs_ha", "ndefor_obs_ha", "ndefor_pred_ha",
+    ]
+
+
+def test_compute_validation_writes_nothing(tmp_path):
+    lay = _varied_validation_fixture(tmp_path)
+    before = sorted(p.name for p in tmp_path.iterdir())
+    compute_validation(**lay, csize_coarse_grid=300)
+    assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+
+def test_plot_data_carries_chart_labels():
+    data = PredObsPlotData(
+        model="GLM", period="calibration", csize_px=300, csize_ha=8100.0,
+        points=_points([1.0], [2.0]), axis_min=1.0, axis_max=2.0,
+        medae=1.5, r2=0.42, ncell=7,
+    )
+    assert data.title == (
+        "GLM model, calibration period\n"
+        "Predicted vs. observed deforestation in 8100.0 ha grid cells."
+    )
+    assert data.annotation == "MedAE = 1.50 ha\nR2 = 0.42\nn = 7"
+    assert (data.x_label, data.y_label) == (PRED_OBS_X_LABEL, PRED_OBS_Y_LABEL)
+
+
+def test_write_pred_obs_csv_matches_golden_bytes(tmp_path):
+    lay = _varied_validation_fixture(tmp_path)
+    result = compute_validation(**lay, csize_coarse_grid=300)
+    out = write_pred_obs_csv(result.plot_data, tmp_path / "points.csv")
+    assert _Path(out).read_text() == _GOLDEN_POINT_CSV
+
+
+def test_write_indices_csv_matches_golden_bytes(tmp_path):
+    lay = _varied_validation_fixture(tmp_path)
+    result = compute_validation(**lay, csize_coarse_grid=300)
+    out = write_indices_csv(result.indices, tmp_path / "idx.csv")
+    assert _Path(out).read_text() == _GOLDEN_INDICES_CSV
+
+
+def _legacy_pred_obs_png(df, *, model_name, period, csize_ha, MedAE, r_square,
+                         ncell, path, figsize=(6.4, 6.4), dpi=100):
+    """The pre-refactor matplotlib block, verbatim, for byte-equivalence proof."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    title = (
+        f"{model_name} model, {period} period\n"
+        f"Predicted vs. observed deforestation in {csize_ha} ha grid cells."
+    )
+    p = [df[["ndefor_obs_ha", "ndefor_pred_ha"]].min(axis=None),
+         df[["ndefor_obs_ha", "ndefor_pred_ha"]].max(axis=None)]
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = plt.subplot(111)
+    ax.set_box_aspect(1)
+    plt.scatter(df["ndefor_obs_ha"], df["ndefor_pred_ha"],
+                color=None, marker="o", edgecolor="k")
+    plt.plot(p, p, "r--")
+    plt.title(title)
+    plt.xlabel("Observed deforestation (ha)")
+    plt.ylabel("Predicted deforestation (ha)")
+    t = f"MedAE = {MedAE:.2f} ha\nR2 = {r_square:.2f}\nn = {ncell:d}"
+    y_text = df[["ndefor_obs_ha", "ndefor_pred_ha"]].max(axis=None)
+    plt.text(0, y_text, t, ha="left", va="top")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+def test_save_pred_obs_png_is_byte_identical_to_legacy_matplotlib(tmp_path):
+    lay = _varied_validation_fixture(tmp_path)
+    result = compute_validation(**lay, csize_coarse_grid=300,
+                                model_name="TEST", period="calibration")
+
+    legacy = _legacy_pred_obs_png(
+        result.plot_data.points, model_name="TEST", period="calibration",
+        csize_ha=8100.0, MedAE=2250.0, r_square=0.43, ncell=3,
+        path=tmp_path / "legacy.png",
+    )
+    new = save_pred_obs_png(result.plot_data, tmp_path / "new.png")
+
+    assert _Path(new).read_bytes() == _Path(legacy).read_bytes()
+
+
+def test_save_pred_obs_png_handles_degenerate_plot_data(tmp_path):
+    """Empty / NaN / constant input must still render, with a finite axis."""
+    cols = ["cell", "nfor_obs", "ndefor_obs", "nfor_obs_ha",
+            "ndefor_obs_ha", "ndefor_pred_ha"]
+    cases = {
+        "empty": pd.DataFrame(columns=cols),
+        "nan": pd.DataFrame({**{c: [0] for c in cols[:4]},
+                             "ndefor_obs_ha": [np.nan], "ndefor_pred_ha": [np.nan]}),
+        "constant": pd.DataFrame({**{c: [0, 0] for c in cols[:4]},
+                                  "ndefor_obs_ha": [7.0, 7.0],
+                                  "ndefor_pred_ha": [7.0, 7.0]}),
+    }
+    for name, points in cases.items():
+        lo, hi = pred_obs_axis_bounds(points)
+        assert np.isfinite(lo) and np.isfinite(hi) and lo < hi, name
+        data = PredObsPlotData(
+            model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
+            axis_min=lo, axis_max=hi, medae=float("nan"), r2=float("nan"),
+            ncell=len(points),
+        )
+        out = save_pred_obs_png(data, tmp_path / f"{name}.png")
+        assert _Path(out).stat().st_size > 1000, name
 
 
 def _fake_project_with_prediction(tmp_path):
