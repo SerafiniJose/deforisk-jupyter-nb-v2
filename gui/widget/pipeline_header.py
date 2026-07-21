@@ -46,6 +46,61 @@ def count_text(spec, project, aoi_result) -> str:
 
 
 @solara.component
+def _SegmentCell(tip: str, seg_style: str, locked: bool, on_activate):
+    """One segment of the pipeline strip. Its own component so the
+    ``rv.use_event`` click hook is called exactly once at this component's top
+    level — never inside the caller's loop over STEPS (rules of hooks; this is
+    what the validate_hooks startup warning was about). Locked cells keep the
+    handler attached and no-op inside it, so lock/unlock never changes the
+    hook count."""
+    cursor = "" if locked else " cursor: pointer;"
+    with rv.Html(
+        tag="div",
+        style_=f"flex: 1; padding: 7px 0;{cursor}",
+        attributes={"title": tip},
+    ) as cell:
+        rv.Html(tag="div", style_=seg_style)
+    rv.use_event(cell, "click", lambda *_: not locked and on_activate())
+
+
+@solara.component
+def _JumpMenuRow(index: int, label: str, sub_text: str, locked: bool,
+                 active: bool, on_jump):
+    """One row of the step-jump dropdown (same per-row-component rule as
+    ``_SegmentCell``). ``on_jump`` re-checks locked itself — Vuetify's
+    ``pointer-events: none`` on a disabled item is only the first guard."""
+    with rv.ListItem(
+        disabled=locked,
+        link=not locked,
+        color="primary",
+        input_value=active,
+    ) as row:
+        # Number for reachable steps, lock glyph otherwise (mockup: no
+        # status icons).
+        if locked:
+            rv.Icon(
+                children=["mdi-lock-outline"],
+                small=True,
+                style_="margin-right: 10px;",
+            )
+        else:
+            solara.Text(
+                str(index + 1),
+                style="width: 18px; text-align: center;"
+                " font-weight: 600; font-size: 12px;"
+                " margin-right: 10px;",
+            )
+        with rv.ListItemContent():
+            rv.ListItemTitle(children=[label])
+        solara.Text(
+            sub_text,
+            style="font-size: 11px; margin-left: 12px; text-align: right;",
+            classes=["text--secondary"],
+        )
+    rv.use_event(row, "click", lambda *_: on_jump(index))
+
+
+@solara.component
 def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
     """Pipeline map + step navigation. Takes the app_state *reactives* (not
     their values — reacton's prop-equality bailout would eat project-only
@@ -95,28 +150,13 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
         # is purely visual, so the hit area meets the spec's >=20 px.
         with solara.Row(style="gap: 4px; align-items: center;"):
             for i, spec in enumerate(STEPS):
-                if states[i] is StepStatus.LOCKED:
-                    tip = t(spec.lock_reason_key)
-                    cursor = ""
-                else:
-                    tip = f"{t(spec.label_key)} · {count_text(spec, p, aoi)}"
-                    cursor = " cursor: pointer;"
-                with rv.Html(
-                    tag="div",
-                    style_=f"flex: 1; padding: 7px 0;{cursor}",
-                    attributes={"title": tip},
-                ) as cell:
-                    rv.Html(tag="div", style_=_seg_style(i))
-                # Attach the click handler UNCONDITIONALLY so the number of
-                # use_event hook calls stays constant (one per step) across
-                # renders as segments unlock — a conditional call here is a
-                # rules-of-hooks violation on the core progressive-unlock
-                # interaction. Locked steps simply no-op inside the handler.
-                rv.use_event(
-                    cell,
-                    "click",
-                    lambda *_, i=i: states[i] is not StepStatus.LOCKED
-                    and on_navigate(i),
+                locked = states[i] is StepStatus.LOCKED
+                _SegmentCell(
+                    tip=t(spec.lock_reason_key) if locked
+                    else f"{t(spec.label_key)} · {count_text(spec, p, aoi)}",
+                    seg_style=_seg_style(i),
+                    locked=locked,
+                    on_activate=lambda i=i: on_navigate(i),
                 )
 
         active = STEPS[active_step]
@@ -190,38 +230,15 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
                     with rv.List(dense=True, style_="width: 100%; padding: 4px 0;"):
                         for i, spec in enumerate(STEPS):
                             locked = states[i] is StepStatus.LOCKED
-                            with rv.ListItem(
-                                disabled=locked,
-                                link=not locked,
-                                color="primary",
-                                input_value=i == active_step,
-                            ) as row:
-                                # Number for reachable steps, lock glyph
-                                # otherwise (mockup: no status icons).
-                                if locked:
-                                    rv.Icon(
-                                        children=["mdi-lock-outline"],
-                                        small=True,
-                                        style_="margin-right: 10px;",
-                                    )
-                                else:
-                                    solara.Text(
-                                        str(i + 1),
-                                        style="width: 18px; text-align: center;"
-                                        " font-weight: 600; font-size: 12px;"
-                                        " margin-right: 10px;",
-                                    )
-                                with rv.ListItemContent():
-                                    rv.ListItemTitle(children=[t(spec.label_key)])
-                                solara.Text(
-                                    t(spec.lock_reason_key)
-                                    if locked
-                                    else count_text(spec, p, aoi),
-                                    style="font-size: 11px; margin-left: 12px;"
-                                    " text-align: right;",
-                                    classes=["text--secondary"],
-                                )
-                            rv.use_event(row, "click", lambda *_, i=i: _jump(i))
+                            _JumpMenuRow(
+                                index=i,
+                                label=t(spec.label_key),
+                                sub_text=t(spec.lock_reason_key) if locked
+                                else count_text(spec, p, aoi),
+                                locked=locked,
+                                active=i == active_step,
+                                on_jump=_jump,
+                            )
             solara.Button(
                 icon_name="mdi-chevron-right", icon=True, small=True,
                 color="primary", disabled=next_t is None,
