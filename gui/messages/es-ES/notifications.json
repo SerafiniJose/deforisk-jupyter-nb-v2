@@ -1,7 +1,7 @@
 {
   "notifications": {
     "aoi_selected": "AOI seleccionada: {name}",
-    "process_no_base_raster": "Definí un ráster base en el paso Armonización antes de ejecutarla."
+    "process_no_base_raster": "Definí un ráster de referencia en el paso Armonización antes de ejecutarla."
   },
   "dialog": {
     "confirm_default_title": "¿Eliminar?",

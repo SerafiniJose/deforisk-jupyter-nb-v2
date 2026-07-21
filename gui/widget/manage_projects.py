@@ -246,6 +246,11 @@ def ConfirmDeleteProjectDialog(
                         outlined=True,
                         autofocus=True,
                         hide_details=True,
+                        # Vuetify spacing helper (24px, !important) — an inline
+                        # margin would lose to the card text's own utilities.
+                        # The field is outlined, so its floating label sits on
+                        # the top border and needs clear air under the warning.
+                        class_="mt-6",
                     )
                 if busy:
                     rv.ProgressLinear(indeterminate=True)

@@ -27,7 +27,7 @@
     "status_created": "Project '{name}' created.",
     "status_saved": "Saved to {path}{note}",
     "status_saved_note_no_vars": " (note: no variables yet)",
-    "status_saved_note_no_base": " (note: no base raster set yet)",
+    "status_saved_note_no_base": " (note: no reference raster set yet)",
     "error_no_project_to_save": "No project to save. Create or load a project first.",
     "never_saved": "never saved",
     "saved_relative": "saved {time_ago}",

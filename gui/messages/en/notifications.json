@@ -1,7 +1,7 @@
 {
   "notifications": {
     "aoi_selected": "AOI selected: {name}",
-    "process_no_base_raster": "Set a base raster in the Harmonization step before running it."
+    "process_no_base_raster": "Set a reference raster in the Harmonization step before running it."
   },
   "dialog": {
     "confirm_default_title": "Delete?",

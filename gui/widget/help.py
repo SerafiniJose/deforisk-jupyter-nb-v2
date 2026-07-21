@@ -34,6 +34,23 @@ def InfoButton(title: str, markdown: str, icon: str = "mdi-information-outline")
         on_click=lambda: set_open(True),
     )
 
+    InfoPopup(title, markdown, open_, set_open, icon=icon)
+
+
+@solara.component
+def InfoPopup(
+    title: str,
+    markdown: str,
+    open_: bool,
+    set_open,
+    icon: str = "mdi-information-outline",
+):
+    """The 'About …' popup on its own, driven by caller-owned state.
+
+    Use it when the trigger is not a button of ours — e.g. a field's own
+    ``prepend-inner`` icon, whose click arrives as a Vuetify ``click:*`` event
+    (see ``ModelFormDialog``). ``InfoButton`` is this plus the icon button.
+    """
     with rv.Dialog(
         v_model=open_,
         on_v_model=set_open,

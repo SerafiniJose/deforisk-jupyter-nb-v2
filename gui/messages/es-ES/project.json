@@ -27,7 +27,7 @@
     "status_created": "Proyecto '{name}' creado.",
     "status_saved": "Guardado en {path}{note}",
     "status_saved_note_no_vars": " (nota: aún sin variables)",
-    "status_saved_note_no_base": " (nota: aún sin ráster base)",
+    "status_saved_note_no_base": " (nota: aún sin ráster de referencia)",
     "error_no_project_to_save": "No hay proyecto para guardar. Creá o cargá uno primero.",
     "never_saved": "nunca guardado",
     "saved_relative": "guardado {time_ago}",

@@ -26,6 +26,26 @@ _ADVANCED_PANEL_CSS = """
 .advanced-params .v-expansion-panel-header { min-height: 40px; padding: 0 12px; font-size: 14px; color: rgba(0, 0, 0, .6); }
 .theme--dark .advanced-params .v-expansion-panel-header { color: rgba(255, 255, 255, .7); }
 .advanced-params .v-expansion-panel-content__wrap { padding: 16px 12px 4px; }
+
+/* A field's own help icon (`class_="field-info-icon"`). It has to be the
+   prepend-inner icon: that is the only icon slot whose click Vuetify
+   preventDefaults and stops propagating (VInput.genIcon, and only while a
+   click:prepend-inner listener exists), so on a v-select it opens the popup
+   without also dropping the menu open. Vuetify only renders that slot on the
+   left, so park it just clear of the caret — 12px field padding + a 24px
+   caret means 38px of right offset — and reserve room so a long value never
+   runs under it. */
+.field-info-icon .v-input__slot { position: relative; }
+.field-info-icon .v-input__prepend-inner {
+  position: absolute; right: 38px; top: 50%; transform: translateY(-50%);
+  margin: 0 !important; padding: 0 !important; z-index: 1;
+}
+.field-info-icon .v-select__selections { padding-right: 30px; }
+/* VTextField.labelPosition slides the floating label left by the measured
+   prepend-inner width, which here would drag "Model" out of the outline's
+   notch. In LTR it writes that offset to `left` (`{left: offset, right:
+   'auto'}`), inline, so undoing it takes !important on both. */
+.field-info-icon .v-label { left: 0 !important; right: auto !important; }
 """
 
 

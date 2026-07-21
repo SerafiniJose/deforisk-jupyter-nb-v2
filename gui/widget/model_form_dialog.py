@@ -10,7 +10,7 @@ from gui.scripts.artifact_names import sanitize_key, suggest_version
 from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import CreationDialog
-from gui.widget.help import InfoButton
+from gui.widget.help import InfoPopup
 
 
 def model_label(key: str) -> str:
@@ -107,6 +107,7 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
     p = project.value
 
     selected_key, set_selected_key = solara.use_state(MODEL_KEYS[0])
+    info_open, set_info_open = solara.use_state(False)
     all_params, set_all_params = solara.use_state(
         {k: _default_params(k) for k in MODEL_KEYS}
     )
@@ -197,21 +198,34 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         on_close=reset,
         replace_message=lambda k: t("tiles.train.confirm_overwrite_message", key=k),
     ):
-        with solara.Row(style="gap:4px;align-items:center;margin-bottom:12px;"):
-            # hide_details drops the (empty) message strip under the input so
-            # the row centres the info button on the input box itself.
-            rv.Select(
-                label=t("tiles.train.model_select_label"),
-                items=[{"text": model_label(k), "value": k} for k in MODEL_KEYS],
-                item_text="text", item_value="value",
-                v_model=selected_key, on_v_model=set_selected_key,
-                dense=True, outlined=True, hide_details=True,
-                style_="flex:1 1 auto;",
-            )
-            InfoButton(
-                t("tiles.train.model_description_header_for", label=model_label(selected_key)),
-                t(f"models.{selected_key}.summary_md") + "\n\n" + t(registry["description_key"]),
-            )
+        # The model help lives on the select's own icon rather than in a button
+        # beside it: the field then owns its message strip like every other
+        # field in the form, so the gap above the dataset select needs no
+        # hand-tuned margin. It is the *prepend-inner* icon (the only one whose
+        # click Vuetify stops from opening the menu) shifted to the right of
+        # the box by the shared .field-info-icon CSS in creation_dialog.
+        model_select = rv.Select(
+            label=t("tiles.train.model_select_label"),
+            items=[{"text": model_label(k), "value": k} for k in MODEL_KEYS],
+            item_text="text", item_value="value",
+            v_model=selected_key, on_v_model=set_selected_key,
+            dense=True, outlined=True,
+            prepend_inner_icon="mdi-information-outline",
+            class_="field-info-icon",
+            hint=t("tiles.train.model_select_hint"), persistent_hint=True,
+        )
+        # rv.use_event is a hook — call it unconditionally.
+        rv.use_event(
+            model_select,
+            "click:prepend-inner",
+            lambda *_: set_info_open(True),
+        )
+        InfoPopup(
+            t("tiles.train.model_description_header_for", label=model_label(selected_key)),
+            t(f"models.{selected_key}.summary_md") + "\n\n" + t(registry["description_key"]),
+            info_open,
+            set_info_open,
+        )
 
         rv.Select(
             label=t("tiles.train.dataset_select_label"), items=dataset_keys,
