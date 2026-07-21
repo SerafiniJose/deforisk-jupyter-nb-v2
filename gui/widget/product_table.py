@@ -38,6 +38,21 @@ HEADER_CELL = (
 # Full-width line under a failed row (grid rows have no subtitle slot).
 ERROR_LINE = "grid-column:1/-1;padding:0 8px 5px;font-size:0.75rem;"
 
+# Chips live in flexible columns, so a long label (a "Base" tag next to a long
+# variable name, a dataset's target name) squeezes the chip below its content
+# width. Vuetify's `.v-chip__content` then overflows one edge and the label
+# reads as pushed off-centre. Pin the content to the chip's box and truncate
+# the label itself so it stays centred with an ellipsis instead.
+CHIP_CSS = """
+.sr-chip .v-chip__content {
+  width: 100%; min-width: 0; max-width: 100%; justify-content: center;
+}
+"""
+CHIP_LABEL = "min-width:0;overflow:hidden;text-overflow:ellipsis;"
+# Tag chips trailing a name ("ref") are short and carry meaning the row can't
+# convey otherwise: the long, ellipsised name yields the space, not the tag.
+CHIP_NO_SHRINK = "flex:0 0 auto;max-width:none;"
+
 ACTIONS_COL_WIDTH = "112px"
 
 # Vuetify theme tokens, so status chips follow the app accent in light and dark.
@@ -95,13 +110,19 @@ def grid_style(widths) -> str:
     return GRID_BASE + "grid-template-columns:" + " ".join(widths) + ";"
 
 
-def _render_chip(item: dict):
+def _render_chip(item: dict, shrink: bool = True):
+    """One list chip. ``shrink=False`` keeps it at its natural width so a tight
+    column truncates the neighbouring text instead of the chip's own label."""
     children = []
     if item.get("icon"):
         children.append(rv.Icon(children=[item["icon"]], x_small=True, left=True))
-    children.append(str(item.get("value", "")))
+    children.append(
+        rv.Html(tag="span", style_=CHIP_LABEL, children=[str(item.get("value", ""))])
+    )
     rv.Chip(
         children=children,
+        class_="sr-chip",
+        style_="" if shrink else CHIP_NO_SHRINK,
         x_small=True,
         outlined=item.get("outlined", True),
         color=item.get("color"),
@@ -149,7 +170,7 @@ def _render_cell(cell: dict, first: bool):
     with rv.Html(tag="div", style_=wrapper):
         solara.Text(str(cell.get("value", "")), classes=classes, style=style)
         for item in cell.get("chips", []):
-            _render_chip(item)
+            _render_chip(item, shrink=False)
 
 
 def _render_action(act: dict):
@@ -242,6 +263,7 @@ def ProductTable(
     grid = grid_style(widths)
 
     with solara.Column(style="gap:0;width:100%;"):
+        solara.Style(CHIP_CSS)
         with solara.Row(style="align-items:center;gap:8px;padding:4px 0;"):
             solara.Text(
                 f"{title} ({len(rows)})",
