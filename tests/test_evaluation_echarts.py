@@ -666,6 +666,34 @@ def test_resolution_matches_on_cell_size(tmp_path):
     assert resolve_points_csv(record, "GLM", "d1", 300).name == "p300.csv"
 
 
+def test_a_typed_png_path_outside_the_derived_directory_wins(tmp_path):
+    from gui.scripts.evaluation_echarts import resolve_plot_artifact
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
+    elsewhere = tmp_path / "elsewhere" / "pred_obs_GLM_d1_300.png"
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    art = EvaluationPlotArtifact(
+        prediction_key="GLM__d1", model="GLM", period="d1", csize_px=300,
+        points_csv=str(run_dir / "pred_obs_GLM_d1_300.csv"),
+        png_path=str(elsewhere))
+    record = _record(run_dir, artifacts=[art])
+    assert resolve_plot_artifact(
+        record, prediction_key="GLM__d1", model="GLM", period="d1",
+        csize=300, kind="png_path") == elsewhere
+
+
+def test_a_partial_manifest_derives_the_png_for_omitted_maps(tmp_path):
+    """Tier 3: a map the manifest omits falls back to the deterministic name
+    beside the record's own indices CSV."""
+    from gui.scripts.evaluation_echarts import resolve_plot_artifact
+
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    record = _typed_record(run_dir)   # records GLM/d1 only
+    assert resolve_plot_artifact(
+        record, prediction_key="RF__d1", model="RF", period="d1",
+        csize=300, kind="png_path") == run_dir / "pred_obs_RF_d1_300.png"
+
+
 def _two_predictions_one_label(run_dir):
     """Two artifacts identical in (model, period, csize), different maps."""
     from spatialrisk.evaluations import EvaluationPlotArtifact
@@ -699,24 +727,40 @@ def test_prediction_key_picks_between_artifacts_sharing_a_label(tmp_path):
                               prediction_key="GLM__d1__a").name == "GLM__d1__a.csv"
 
 
-def test_an_unmatched_prediction_key_falls_back_to_the_derived_path(tmp_path):
-    """The fallback fires on ANY miss, not only on a record with no artifacts.
+def test_an_exact_prediction_key_beats_the_loose_typed_match(tmp_path):
+    from gui.scripts.evaluation_echarts import resolve_plot_artifact
 
-    Documented behavior (see ``resolve_points_csv``): a typed record's
-    ``csv_path`` already sits inside its own run folder, so the derived path
-    stays run-scoped, and a caller narrowing on a key the record never stored
-    still gets the run's own deterministic file instead of nothing.
-    """
-    from gui.scripts.evaluation_charts import pred_obs_artifact_name
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    art_a, art_b = _two_predictions_one_label(run_dir)
+    record = _record(run_dir, artifacts=[art_a, art_b])
+    assert resolve_plot_artifact(
+        record, prediction_key=art_b.prediction_key, model=art_b.model,
+        period=art_b.period, csize=300, kind="points_csv"
+    ) == Path(art_b.points_csv)
+
+
+def test_an_unmatched_prediction_key_falls_back_to_the_typed_match(tmp_path):
+    """Tier 2 (REPLACES the old fall-straight-to-derivation behavior): a key
+    the manifest does not know still gets the run's own typed file for that
+    (model, period, csize) — older manifests recorded keys under a different
+    scheme, and the run's own file beats a derived path a later run may have
+    overwritten."""
     from gui.scripts.evaluation_echarts import resolve_points_csv
 
     run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
-    record = _record(run_dir, artifacts=_two_predictions_one_label(run_dir))
+    record = _typed_record(run_dir)
     resolved = resolve_points_csv(record, "GLM", "d1", 300,
-                                  prediction_key="GLM__d1__nope")
+                                  prediction_key="not_in_manifest")
+    assert resolved == Path(record.artifacts[0].points_csv)
 
-    assert resolved == (Path(record.csv_path).parent
-                        / pred_obs_artifact_name("GLM", "d1", 300, "csv"))
+
+def test_resolver_rejects_an_unknown_kind(tmp_path):
+    from gui.scripts.evaluation_echarts import resolve_plot_artifact
+
+    record = _typed_record(tmp_path / "evaluation" / "loss_2010" / "run1")
+    with pytest.raises(ValueError):
+        resolve_plot_artifact(record, prediction_key=None, model="GLM",
+                              period="d1", csize=300, kind="fig_path")
 
 
 def test_a_record_with_nothing_to_derive_from_resolves_to_nothing():

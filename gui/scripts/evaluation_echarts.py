@@ -188,30 +188,64 @@ def _record_artifacts(record):
     return list(getattr(record, "artifacts", None) or [])
 
 
-def _artifact_points_csv(record, model, period, csize, prediction_key=None):
-    """Path this run RECORDED for one map + cell size, or None.
+_ARTIFACT_KIND_EXT = {"points_csv": "csv", "png_path": "png"}
 
-    The typed half of ``resolve_points_csv``: it looks only at
-    ``record.artifacts`` and never derives a path. Matching is on
-    ``(model, period, csize)`` — the file-level identity, since the file name is
-    built from exactly those three — narrowed by ``prediction_key`` when the
-    caller has one and the artifact records it.
+
+def _typed_artifact_path(record, model, period, csize, kind,
+                         prediction_key=None):
+    """Recorded path for one map + cell size, or None. Typed tiers only.
+
+    Tier 1 — the artifact whose ``prediction_key`` matches exactly. Tier 2 —
+    any artifact matching ``(model, period, csize)``: older manifests recorded
+    keys under a different scheme, and the run's own file for that map beats a
+    derived path a later run may have overwritten. Two live predictions
+    sharing a model+period are told apart by tier 1; tier 2 is only reached
+    when the manifest does not know the caller's key at all.
     """
-    if csize is None or not model or not period:
-        return None
-    csize = int(csize)
+    matches = []
     for art in _record_artifacts(record):
         if (getattr(art, "model", None) != model
                 or getattr(art, "period", None) != period
-                or int(getattr(art, "csize_px", -1)) != csize):
+                or int(getattr(art, "csize_px", -1)) != int(csize)):
+            continue
+        path = getattr(art, kind, None)
+        if not path:
             continue
         if (prediction_key is not None
-                and getattr(art, "prediction_key", None) != prediction_key):
-            continue
-        points_csv = getattr(art, "points_csv", None)
-        if points_csv:
-            return Path(points_csv)
-    return None
+                and getattr(art, "prediction_key", None) == prediction_key):
+            return Path(path)
+        matches.append(Path(path))
+    return matches[0] if matches else None
+
+
+def resolve_plot_artifact(record, *, prediction_key, model, period, csize,
+                          kind, fallback_dir=None):
+    """Path of ONE map + cell size's artifact, or None.
+
+    ``kind`` selects which of the pair: ``"points_csv"`` (the interactive
+    scatter's table) or ``"png_path"`` (the archived figure). Resolution
+    order: exact typed match by prediction key (tier 1), typed match by
+    (model, period, csize) for older/partial manifests (tier 2), then the
+    deterministic legacy derivation beside the record's own indices CSV
+    (tier 3) — see ``_typed_artifact_path`` and ``pred_obs_artifact_name``.
+    The derived path stays run-scoped for run-scoped records because their
+    ``csv_path`` already points inside the run folder.
+    """
+    if kind not in _ARTIFACT_KIND_EXT:
+        raise ValueError(f"unknown artifact kind: {kind!r}")
+    if csize is None or not model or not period:
+        return None
+    typed = _typed_artifact_path(record, model, period, int(csize), kind,
+                                 prediction_key)
+    if typed is not None:
+        return typed
+    if fallback_dir is None:
+        csv_path = getattr(record, "csv_path", None)
+        if not csv_path:
+            return None
+        fallback_dir = Path(csv_path).parent
+    return Path(fallback_dir) / pred_obs_artifact_name(
+        model, period, int(csize), _ARTIFACT_KIND_EXT[kind])
 
 
 def points_csv_is_expected(record, model, period, csize, *,
@@ -223,55 +257,26 @@ def points_csv_is_expected(record, model, period, csize, *,
     sibling not — and ``resolve_points_csv`` falls back to the derived path for
     the omitted ones on purpose. Asking ``bool(record.artifacts)`` instead would
     treat "this run never recorded a table for this map" as "this run's table
-    went missing" and warn about maps that were never promised.
+    went missing" and warn about maps that were never promised. Typed tiers
+    only — this never reports the tier-3 derivation as "expected".
     """
-    return _artifact_points_csv(
-        record, model, period, csize, prediction_key) is not None
+    if csize is None or not model or not period:
+        return False
+    return _typed_artifact_path(record, model, period, int(csize),
+                                "points_csv", prediction_key) is not None
 
 
 def resolve_points_csv(record, model, period, csize, *,
                        prediction_key=None, fig_dir=None):
     """Path of the point CSV for one map + cell size, or None.
 
-    Two eras of records, one resolution order:
-
-    * **Typed** (run-scoped, Task 4): ``record.artifacts`` names the file this
-      run actually wrote under ``evaluation/<truth_tag>/<run_id>/``. Preferred
-      always — it is the only path that stays correct after a later run against
-      the same truth overwrites the shared folder.
-    * **Derived** (the fallback): the path is built the same way
-      ``figure_entries`` builds the PNG's — the run's folder (``fig_dir``,
-      defaulting to ``Path(record.csv_path).parent``) plus the deterministic
-      name from ``pred_obs_artifact_name``.
-
-    The fallback fires on ANY miss, not only on a record with no artifacts at
-    all: an empty list, a list that names other maps, and a matching artifact
-    whose ``points_csv`` is blank all land there. That is deliberate — a typed
-    record's ``csv_path`` already points inside its own run folder, so the
-    derived path stays run-scoped for exactly the records run-scoping protects,
-    and a partially populated artifact list still resolves the maps it omitted
-    instead of blanking them. Narrowing it to ``artifacts == []`` would buy no
-    extra scoping safety and would regress those records to "no chart".
-
-    Matching is on ``(model, period, csize)``, which is the file-level identity:
-    the file name is built from exactly those three. ``prediction_key`` narrows
-    it further when the caller has one and the artifact records it — two
-    predictions can share a model+period label while being different maps.
+    A thin wrapper over ``resolve_plot_artifact`` (``kind="points_csv"``) —
+    see there for the three-tier resolution order. ``fig_dir`` is this
+    entry point's name for that call's ``fallback_dir``.
     """
-    if csize is None or not model or not period:
-        return None
-    csize = int(csize)
-    recorded = _artifact_points_csv(record, model, period, csize,
-                                    prediction_key)
-    if recorded is not None:
-        return recorded
-
-    if fig_dir is None:
-        csv_path = getattr(record, "csv_path", None)
-        if not csv_path:
-            return None
-        fig_dir = Path(csv_path).parent
-    return Path(fig_dir) / pred_obs_artifact_name(model, period, csize, "csv")
+    return resolve_plot_artifact(
+        record, prediction_key=prediction_key, model=model, period=period,
+        csize=csize, kind="points_csv", fallback_dir=fig_dir)
 
 
 def _index_row_for(record, model, period, csize):
