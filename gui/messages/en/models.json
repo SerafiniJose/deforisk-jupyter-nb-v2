@@ -2,6 +2,7 @@
   "models": {
     "benchmark": {
       "label": "Benchmark (JNR)",
+      "short": "JNR",
       "summary_md": "- **Approach:** non-parametric stratification by distance-to-forest-edge and subjurisdiction — the [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/) baseline.\n- **Training data:** dataset layers only (no point sample).\n- **Output:** a vulnerability-class risk map, used as the baseline other models are compared against.",
       "description": "The JNR Benchmark model implements the Jurisdictional and Nested REDD+ approach for deforestation risk mapping. It stratifies the landscape by distance-to-forest-edge bins and subjurisdictions, assigning historical deforestation rates as vulnerability scores. This non-parametric method requires no feature variables — it relies solely on spatial proximity to the forest edge. It serves as the baseline against which more complex models are compared.",
       "params": {
@@ -15,6 +16,7 @@
     },
     "mw": {
       "label": "Moving Window",
+      "short": "MW",
       "summary_md": "- **Approach:** local deforestation density in a sliding neighbourhood — spatial heuristic, no machine learning ([riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/)).\n- **Training data:** dataset layers only (no point sample).\n- **Output:** one risk raster per window size; smaller windows capture local detail, larger ones a broader trend.",
       "description": "The Moving Window model computes local deforestation rates within spatial windows of specified sizes to produce risk rasters. For each window size, it calculates the proportion of deforested pixels in the neighbourhood, creating a spatial heuristic of event density. No machine learning is involved — the model captures local spatial patterns of forest loss. Multiple window sizes (e.g. 5, 11, 21 pixels) can be evaluated simultaneously.",
       "params": {
@@ -28,6 +30,7 @@
     },
     "glm": {
       "label": "GLM (Logistic Regression)",
+      "short": "GLM",
       "summary_md": "- **Approach:** logistic regression — a linear, highly interpretable model ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html)).\n- **Training data:** a point sample + the dataset's target and features.\n- **Output:** deforestation-probability map plus per-feature coefficients quantifying each predictor's effect.",
       "description": "The Generalized Linear Model uses logistic regression to estimate deforestation probability as a function of spatial predictor variables. It fits a linear combination of features (altitude, slope, distance to roads, etc.) through a logit link function. The model is fast to train, highly interpretable, and produces coefficient estimates that quantify each variable's contribution to deforestation risk. Uses sklearn's LogisticRegression with Patsy formula support.",
       "params": {
@@ -38,6 +41,7 @@
     },
     "rf": {
       "label": "Random Forest",
+      "short": "RF",
       "summary_md": "- **Approach:** ensemble of decision trees — captures non-linear effects and interactions automatically ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html)).\n- **Training data:** a point sample + the dataset's target and features.\n- **Output:** deforestation-probability map plus feature-importance scores.",
       "description": "The Random Forest model is an ensemble method that builds multiple decision trees on random subsets of training data and features. Each tree votes on whether a pixel is at risk of deforestation, and the ensemble averages these votes into a probability. It captures non-linear relationships and variable interactions without requiring explicit feature engineering. Feature importance scores help identify the most influential predictors.",
       "params": {
@@ -49,6 +53,7 @@
     },
     "icar": {
       "label": "iCAR (Bayesian Spatial)",
+      "short": "iCAR",
       "summary_md": "- **Approach:** Bayesian logistic model with a spatial random effect (rho) that absorbs unobserved neighbourhood structure — MCMC-fitted via [forestatrisk](https://ecology.ghislainv.fr/forestatrisk/).\n- **Training data:** a point sample + the dataset's target and features.\n- **Output:** deforestation-probability map plus an interpolated spatial random-effect (rho) raster. The most computationally intensive model, often the most accurate.",
       "description": "The intrinsic Conditional Auto-Regressive (iCAR) model is a Bayesian spatial model that accounts for spatial autocorrelation through a latent random effect (rho). It combines the explanatory power of predictor variables with a spatial smoothing component that captures unobserved neighbourhood effects. Training uses Markov Chain Monte Carlo (MCMC) sampling via the forestatrisk library. This is the most computationally intensive model but often yields the best spatial predictions.",
       "params": {

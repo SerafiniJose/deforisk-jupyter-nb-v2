@@ -5,8 +5,8 @@
       "empty": "Aún no hay modelos — configura y entrena uno arriba.",
       "col_name": "Nombre",
       "col_type": "Tipo",
-      "col_dataset": "Conjunto de datos",
-      "col_sample": "Conjunto de muestras",
+      "col_dataset": "Datos",
+      "col_sample": "Muestra",
       "col_status": "Estado",
       "unknown_error": "Error desconocido"
     },

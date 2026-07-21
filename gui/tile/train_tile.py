@@ -13,7 +13,11 @@ from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY  # re-export: 
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
-from gui.widget.model_form_dialog import ModelDetailsDialog, ModelFormDialog, model_label
+from gui.widget.model_form_dialog import (
+    ModelDetailsDialog,
+    ModelFormDialog,
+    model_short_label,
+)
 from gui.widget.train_model_list import TrainModelList
 
 logger = logging.getLogger("spatial_risk")
@@ -145,7 +149,7 @@ def TrainTile(project):
             "id": job_id,
             "model_name": entry["name"],
             "model_type": entry["model_key"],
-            "model_label": model_label(entry["model_key"]),
+            "model_label": model_short_label(entry["model_key"]),
             "dataset_name": entry["dataset_key"],
             "sample_name": entry["sample_key"] or None,
             "status": "running",
@@ -199,7 +203,7 @@ def TrainTile(project):
         TrainModelList(
             project=project,
             train_jobs=train_jobs,
-            model_labels={k: model_label(k) for k in MODEL_KEYS},
+            model_labels={k: model_short_label(k) for k in MODEL_KEYS},
             on_cancel=on_cancel,
             on_dismiss=on_dismiss,
             on_delete=set_pending_delete,

@@ -2,6 +2,7 @@
   "models": {
     "benchmark": {
       "label": "Referencia (JNR)",
+      "short": "JNR",
       "summary_md": "- **Enfoque:** estratificación no paramétrica por distancia al borde del bosque y subjurisdicción — la línea base de [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/).\n- **Datos de entrenamiento:** solo las capas del conjunto de datos (sin muestra de puntos).\n- **Salida:** un mapa de riesgo por clases de vulnerabilidad, usado como referencia contra la que se comparan los demás modelos.",
       "description": "El modelo de referencia JNR implementa el enfoque de REDD+ Jurisdiccional y Anidado para el mapeo del riesgo de deforestación. Estratifica el paisaje por franjas de distancia al borde del bosque y por subjurisdicciones, asignando tasas históricas de deforestación como puntajes de vulnerabilidad. Este método no paramétrico no requiere variables de características — se basa únicamente en la proximidad espacial al borde del bosque. Sirve como línea base contra la que se comparan modelos más complejos.",
       "params": {
@@ -15,6 +16,7 @@
     },
     "mw": {
       "label": "Ventana móvil",
+      "short": "MW",
       "summary_md": "- **Enfoque:** densidad local de deforestación en una ventana deslizante — heurística espacial, sin aprendizaje automático ([riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/)).\n- **Datos de entrenamiento:** solo las capas del conjunto de datos (sin muestra de puntos).\n- **Salida:** un ráster de riesgo por tamaño de ventana; ventanas pequeñas captan el detalle local, las grandes una tendencia más amplia.",
       "description": "El modelo de ventana móvil calcula tasas locales de deforestación dentro de ventanas espaciales de tamaños dados para producir rásteres de riesgo. Para cada tamaño de ventana calcula la proporción de píxeles deforestados en el vecindario, creando una heurística espacial de densidad de eventos. No involucra aprendizaje automático — el modelo captura patrones espaciales locales de pérdida de bosque. Se pueden evaluar varios tamaños de ventana (p. ej. 5, 11, 21 píxeles) simultáneamente.",
       "params": {
@@ -28,6 +30,7 @@
     },
     "glm": {
       "label": "GLM (Regresión logística)",
+      "short": "GLM",
       "summary_md": "- **Enfoque:** regresión logística — un modelo lineal muy interpretable ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html)).\n- **Datos de entrenamiento:** una muestra de puntos + el objetivo y las características del conjunto de datos.\n- **Salida:** mapa de probabilidad de deforestación más coeficientes por característica que cuantifican el efecto de cada predictor.",
       "description": "El modelo lineal generalizado usa regresión logística para estimar la probabilidad de deforestación en función de variables predictoras espaciales. Ajusta una combinación lineal de características (altitud, pendiente, distancia a caminos, etc.) mediante una función de enlace logit. El modelo es rápido de entrenar, muy interpretable y produce estimaciones de coeficientes que cuantifican la contribución de cada variable al riesgo de deforestación. Usa LogisticRegression de sklearn con soporte de fórmulas de Patsy.",
       "params": {
@@ -38,6 +41,7 @@
     },
     "rf": {
       "label": "Bosque aleatorio",
+      "short": "RF",
       "summary_md": "- **Enfoque:** conjunto de árboles de decisión — capta efectos no lineales e interacciones de forma automática ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html)).\n- **Datos de entrenamiento:** una muestra de puntos + el objetivo y las características del conjunto de datos.\n- **Salida:** mapa de probabilidad de deforestación más puntajes de importancia de características.",
       "description": "El modelo de bosque aleatorio es un método de conjunto que construye múltiples árboles de decisión sobre subconjuntos aleatorios de datos de entrenamiento y características. Cada árbol vota si un píxel está en riesgo de deforestación, y el conjunto promedia esos votos en una probabilidad. Captura relaciones no lineales e interacciones entre variables sin requerir ingeniería de características explícita. Los puntajes de importancia de características ayudan a identificar los predictores más influyentes.",
       "params": {
@@ -49,6 +53,7 @@
     },
     "icar": {
       "label": "iCAR (Espacial bayesiano)",
+      "short": "iCAR",
       "summary_md": "- **Enfoque:** modelo logístico bayesiano con un efecto aleatorio espacial (rho) que absorbe la estructura de vecindad no observada — ajustado por MCMC con [forestatrisk](https://ecology.ghislainv.fr/forestatrisk/).\n- **Datos de entrenamiento:** una muestra de puntos + el objetivo y las características del conjunto de datos.\n- **Salida:** mapa de probabilidad de deforestación más un ráster interpolado del efecto aleatorio espacial (rho). Es el modelo más costoso en cómputo, a menudo el más preciso.",
       "description": "El modelo autorregresivo condicional intrínseco (iCAR) es un modelo espacial bayesiano que da cuenta de la autocorrelación espacial mediante un efecto aleatorio latente (rho). Combina el poder explicativo de las variables predictoras con un componente de suavizado espacial que captura efectos de vecindad no observados. El entrenamiento usa muestreo de Monte Carlo por cadenas de Markov (MCMC) mediante la librería forestatrisk. Es el modelo más costoso en cómputo pero a menudo entrega las mejores predicciones espaciales.",
       "params": {

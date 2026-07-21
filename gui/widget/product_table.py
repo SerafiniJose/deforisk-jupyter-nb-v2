@@ -213,6 +213,7 @@ def ProductTable(
     collapsible: bool = True,
     show_actions: bool = True,
     banner: Optional[str] = None,
+    actions_width: str = ACTIONS_COL_WIDTH,
 ):
     """Uniform product table: collapsible count header + CSS-grid rows.
 
@@ -228,13 +229,15 @@ def ProductTable(
         collapsible: show the collapse chevron (expanded by default).
         show_actions: False = read-only mode (Summary popup).
         banner: optional stats line under the header (Summary popup).
+        actions_width: Actions column width; narrow it for single-action
+            tables so the flexible content columns keep room in the panel.
     """
     collapsed, set_collapsed = solara.use_state(False)
 
     widths = [c.get("width", "minmax(0,1fr)") for c in columns]
     labels = [c["label"] for c in columns]
     if show_actions:
-        widths.append(ACTIONS_COL_WIDTH)
+        widths.append(actions_width)
         labels.append(t("common.actions"))
     grid = grid_style(widths)
 

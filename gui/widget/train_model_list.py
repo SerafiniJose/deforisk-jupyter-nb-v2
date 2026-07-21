@@ -59,15 +59,19 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
             }
         )
 
+    # Six columns in a ~470px panel: every fixed width is lean (short type
+    # chips, single-icon actions) so the three minmax(0,1fr) columns — name,
+    # dataset, sample — keep real room instead of collapsing to slivers.
     ProductTable(
         title=t("widgets.train_model_list.models_title"),
         columns=[
             {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.train_model_list.col_type"), "width": "90px"},
+            {"label": t("widgets.train_model_list.col_type"), "width": "56px"},
             {"label": t("widgets.train_model_list.col_dataset"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.train_model_list.col_sample"), "width": "104px"},
+            {"label": t("widgets.train_model_list.col_sample"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.train_model_list.col_status"), "width": "82px"},
         ],
         rows=rows,
         empty_text=t("widgets.train_model_list.empty"),
+        actions_width="56px",
     )

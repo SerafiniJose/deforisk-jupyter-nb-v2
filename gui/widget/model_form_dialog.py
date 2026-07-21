@@ -18,6 +18,12 @@ def model_label(key: str) -> str:
     return t(MODEL_REGISTRY[key]["label_key"])
 
 
+def model_short_label(key: str) -> str:
+    """Compact type tag for list chips (RF, GLM, iCAR…), by catalog convention
+    ``models.<key>.short`` — the full label overflows narrow table columns."""
+    return t(f"models.{key}.short")
+
+
 def model_labels() -> list:
     """Resolve all model display labels at render time."""
     return [model_label(k) for k in MODEL_KEYS]
