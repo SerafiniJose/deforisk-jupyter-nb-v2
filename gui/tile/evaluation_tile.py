@@ -129,7 +129,7 @@ def EvaluationTile(project):
 
         solara.Button(
             t("tiles.evaluation.new_button"),
-            icon_name="mdi-plus", color="primary", small=True,
+            icon_name="mdi-plus", color="primary", small=True, block=True,
             on_click=lambda: dialog_open.set(True),
             disabled=n_predictions == 0,
         )

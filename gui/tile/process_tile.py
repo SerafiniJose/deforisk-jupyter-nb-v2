@@ -83,7 +83,7 @@ def BaseProjectionForm(project, base_key, set_base_key, epsg, set_epsg,
         rv.use_event(epsg_field, "click:append", lambda *_: on_auto_utm())
         solara.Button(
             t("tiles.process.set_base_button"), icon_name="mdi-target",
-            color="primary", block=True, on_click=on_set_base,
+            color="primary", small=True, block=True, on_click=on_set_base,
             disabled=autofill_pending or not (base_key and epsg.strip()),
         )
 
@@ -257,7 +257,7 @@ def ProcessTile(project, processing, process_error, map_=None):
             )
         solara.Button(
             t("tiles.process.run_processing_button"), icon_name="mdi-play-circle-outline",
-            color="primary", block=True, on_click=run_processing,
+            color="primary", small=True, block=True, on_click=run_processing,
             # `disabled=` is a render-time prop: like `processing` (only set INSIDE
             # the coroutine), it reaches the browser a round-trip after the task
             # starts, so neither actually stops a fast double-click. This is

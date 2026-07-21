@@ -207,6 +207,7 @@ def SamplingTile(project, map_=None):
             icon_name="mdi-plus",
             color="primary",
             small=True,
+            block=True,
             on_click=lambda: dialog_open.set(True),
         )
 
