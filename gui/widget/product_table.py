@@ -45,7 +45,6 @@ ACTIONS_COL_WIDTH = "112px"
 STATUS_COLORS = {
     "running": "info",
     "ready": "success",
-    "trained": "success",
     "completed": "success",
     "failed": "error",
     "cancelled": "grey",
@@ -53,7 +52,6 @@ STATUS_COLORS = {
 STATUS_ICONS = {
     "running": "mdi-loading mdi-spin",
     "ready": "mdi-check-circle",
-    "trained": "mdi-check-circle",
     "completed": "mdi-check-circle",
     "failed": "mdi-alert-circle",
     "cancelled": "mdi-cancel",
@@ -172,6 +170,41 @@ def _render_action(act: dict):
 
 
 @solara.component
+def _Row(row: dict, grid: str, show_actions: bool):
+    """One grid row. Its own component so the ``rv.use_event`` click hook is
+    called exactly once per row instance regardless of how many rows the table
+    renders (hooks must not live in the caller's loop).
+
+    An optional ``row["on_click"]`` makes the content cells clickable. The
+    listener sits on a ``display:contents`` wrapper around the content cells —
+    not the row div — so clicks on the trailing action buttons never bubble
+    into it.
+    """
+    on_click = row.get("on_click")
+    with rv.Html(tag="div", style_=grid + ROW_EXTRA):
+        content = rv.Html(
+            tag="div",
+            style_="display:contents;" + ("cursor:pointer;" if on_click else ""),
+        )
+        with content:
+            for i, cell in enumerate(row.get("cells", [])):
+                _render_cell(cell, first=i == 0)
+        if show_actions:
+            with rv.Html(tag="div", style_=CELL_RIGHT):
+                for act in row.get("actions", []):
+                    _render_action(act)
+        if row.get("error"):
+            rv.Html(
+                tag="span",
+                class_="error--text",
+                style_=ERROR_LINE,
+                children=[str(row["error"])],
+            )
+    # rv.use_event is a hook — call it unconditionally, gate inside the handler.
+    rv.use_event(content, "click", lambda *_: on_click() if on_click else None)
+
+
+@solara.component
 def ProductTable(
     title: str,
     columns: list,
@@ -188,8 +221,9 @@ def ProductTable(
         columns: content columns ``[{"label", "width"?}]``; an Actions column
             is appended automatically when ``show_actions``.
         rows: ``[{"key", "cells": [CellSpec], "actions": [ActionSpec],
-            "error": str|None}]``. See module docstring / spec for CellSpec
-            and ActionSpec shapes.
+            "error": str|None, "on_click": callable|None}]``. ``on_click``
+            makes the row's content cells clickable (actions excluded). See
+            module docstring / spec for CellSpec and ActionSpec shapes.
         empty_text: grey placeholder when there are no rows.
         collapsible: show the collapse chevron (expanded by default).
         show_actions: False = read-only mode (Summary popup).
@@ -249,18 +283,10 @@ def ProductTable(
                             + ("text-align:right;" if is_actions else ""),
                             children=[lbl],
                         )
+                # No .key(row["key"]) here: row keys are display identity, not
+                # guaranteed unique in one table (a temporal variable repeats
+                # per year; summary rows key on name) and reacton raises on
+                # duplicate sibling keys. _Row is stateless, so positional
+                # reconciliation is fine.
                 for row in rows:
-                    with rv.Html(tag="div", style_=grid + ROW_EXTRA):
-                        for i, cell in enumerate(row.get("cells", [])):
-                            _render_cell(cell, first=i == 0)
-                        if show_actions:
-                            with rv.Html(tag="div", style_=CELL_RIGHT):
-                                for act in row.get("actions", []):
-                                    _render_action(act)
-                        if row.get("error"):
-                            rv.Html(
-                                tag="span",
-                                class_="error--text",
-                                style_=ERROR_LINE,
-                                children=[str(row["error"])],
-                            )
+                    _Row(row, grid, show_actions)

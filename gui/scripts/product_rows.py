@@ -46,8 +46,7 @@ def train_rows(
                 "name": job.get("model_name") or job.get("model_label", "—"),
                 "model_label": job.get("model_label", job.get("model_type", "—")),
                 "dataset_name": job.get("dataset_name", "—"),
-                "deviance": job.get("deviance"),
-                "n_samples": job.get("n_samples"),
+                "sample_name": job.get("sample_name") or "—",
                 "status": job.get("status", "running"),
                 "error": job.get("error"),
             }
@@ -61,9 +60,8 @@ def train_rows(
                 "name": key,
                 "model_label": labels.get(model_type, model_type),
                 "dataset_name": getattr(model, "dataset_name", None) or "—",
-                "deviance": getattr(model, "deviance", None),
-                "n_samples": getattr(model, "n_samples", None),
-                "status": "trained",
+                "sample_name": getattr(model, "sample_name", None) or "—",
+                "status": "ready",
                 "error": None,
             }
         )

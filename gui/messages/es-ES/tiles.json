@@ -237,6 +237,7 @@
       "description": "Seleccioná un modelo, configurá sus parámetros y lanzá el entrenamiento.",
       "new_button": "Nuevo modelo",
       "dialog_title": "Nuevo modelo",
+      "details_title": "Detalles del modelo — {key}",
       "model_select_label": "Modelo",
       "model_select_hint": "Seleccione el modelo a entrenar — el ícono ⓘ brinda más información sobre él.",
       "model_name_label": "Nombre del modelo",

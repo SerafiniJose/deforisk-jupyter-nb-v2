@@ -13,7 +13,7 @@ from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY  # re-export: 
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
-from gui.widget.model_form_dialog import ModelFormDialog, model_label
+from gui.widget.model_form_dialog import ModelDetailsDialog, ModelFormDialog, model_label
 from gui.widget.train_model_list import TrainModelList
 
 logger = logging.getLogger("spatial_risk")
@@ -170,6 +170,7 @@ def TrainTile(project):
         train_jobs.set([j for j in train_jobs.value if j["id"] != job_id])
 
     pending_delete, set_pending_delete = solara.use_state(None)
+    details_key, set_details_key = solara.use_state(None)
 
     def _delete_model(key):
         cur = project.value
@@ -202,6 +203,7 @@ def TrainTile(project):
             on_cancel=on_cancel,
             on_dismiss=on_dismiss,
             on_delete=set_pending_delete,
+            on_open=set_details_key,
         )
 
         ConfirmDialog(
@@ -214,3 +216,6 @@ def TrainTile(project):
         )
 
     ModelFormDialog(project=project, open_=dialog_open, on_submit=on_submit)
+    ModelDetailsDialog(
+        project=project, model_key=details_key, on_close=lambda: set_details_key(None)
+    )

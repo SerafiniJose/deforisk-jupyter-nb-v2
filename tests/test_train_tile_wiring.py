@@ -22,6 +22,22 @@ def test_train_tile_is_list_first_with_dialog():
     assert "parameters_header" not in src
     # old overwrite dialog gone (CreationDialog owns the confirm now)
     assert "confirm_overwrite_title" not in src
+    # row click opens the read-only details dialog
+    assert "ModelDetailsDialog" in src
+    assert "on_open=set_details_key" in src
+
+
+def test_model_details_dialog_is_read_only():
+    import inspect
+
+    from gui.widget.model_form_dialog import ModelDetailsDialog
+
+    src = inspect.getsource(ModelDetailsDialog)
+    # Mirrors the creation form's fields, but read-only: no Create action.
+    assert "details_title" in src
+    assert "advanced_parameters_header" in src
+    assert "common.close" in src
+    assert "CreationDialog" not in src and "launch" not in src
 
 
 def test_model_form_dialog_contract():

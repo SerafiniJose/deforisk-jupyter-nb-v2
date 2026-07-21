@@ -6,7 +6,7 @@
       "col_name": "Nombre",
       "col_type": "Tipo",
       "col_dataset": "Conjunto de datos",
-      "col_metrics": "Dev / muestras",
+      "col_sample": "Conjunto de muestras",
       "col_status": "Estado",
       "unknown_error": "Error desconocido"
     },
@@ -148,7 +148,6 @@
     "product_table": {
       "status_running": "en ejecución",
       "status_ready": "listo",
-      "status_trained": "entrenado",
       "status_completed": "completado",
       "status_failed": "falló",
       "status_cancelled": "cancelado"

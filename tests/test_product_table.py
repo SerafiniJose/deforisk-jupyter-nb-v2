@@ -45,7 +45,7 @@ def test_grid_style_builds_template_columns():
 def test_status_maps_cover_all_states():
     from gui.widget.product_table import STATUS_COLORS, STATUS_ICONS
 
-    for status in ("running", "ready", "trained", "completed", "failed", "cancelled"):
+    for status in ("running", "ready", "completed", "failed", "cancelled"):
         assert status in STATUS_ICONS
         assert status in STATUS_COLORS
     assert STATUS_ICONS["running"] == "mdi-loading mdi-spin"
@@ -60,3 +60,29 @@ def test_product_table_component_importable():
     from gui.widget.product_table import ProductTable
 
     assert callable(ProductTable)
+
+
+def test_product_table_renders_duplicate_row_keys():
+    """Rows may share a name (e.g. a temporal variable per year, summary rows
+    keyed by display name) — rendering must not require unique row keys.
+    Regression: reacton raised KeyError "Duplicate key 'forest_gfc'" on project
+    load once rows were mounted with .key(row["key"])."""
+    import solara
+
+    from gui.i18n import t
+    from gui.widget.product_table import ProductTable
+
+    t("common.close")  # prime the catalog: first t() inside a first render
+    # corrupts reacton's widget map (known harness artifact)
+
+    rows = [
+        {"key": "forest_gfc", "cells": [{"type": "text", "value": "forest_gfc"}],
+         "actions": [], "error": None}
+        for _ in range(2)
+    ]
+    box, rc = solara.render(
+        ProductTable(title="Vars", columns=[{"label": "Name"}], rows=rows,
+                     empty_text="none"),
+        handle_error=False,
+    )
+    rc.close()

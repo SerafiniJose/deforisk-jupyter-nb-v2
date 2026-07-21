@@ -237,6 +237,7 @@
       "description": "Select a model, configure its parameters, and launch training.",
       "new_button": "New model",
       "dialog_title": "New model",
+      "details_title": "Model details — {key}",
       "model_select_label": "Model",
       "model_select_hint": "Select the model to train — the ⓘ icon provides more information about it.",
       "model_name_label": "Model name",

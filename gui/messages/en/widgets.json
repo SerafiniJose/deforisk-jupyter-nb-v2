@@ -6,7 +6,7 @@
       "col_name": "Name",
       "col_type": "Type",
       "col_dataset": "Dataset",
-      "col_metrics": "Dev / samples",
+      "col_sample": "Sample set",
       "col_status": "Status",
       "unknown_error": "Unknown error"
     },
@@ -148,7 +148,6 @@
     "product_table": {
       "status_running": "running",
       "status_ready": "ready",
-      "status_trained": "trained",
       "status_completed": "completed",
       "status_failed": "failed",
       "status_cancelled": "cancelled"

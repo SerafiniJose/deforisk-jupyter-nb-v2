@@ -19,7 +19,7 @@ def _proj(models=None, predictions=None, evaluations=None):
 
 
 def _model(**kw):
-    base = dict(model_type="glm", dataset_name="ds1", deviance=12.5, n_samples=100)
+    base = dict(model_type="glm", dataset_name="ds1", sample_name="s1")
     base.update(kw)
     return types.SimpleNamespace(**base)
 
@@ -44,16 +44,28 @@ def test_train_rows_products_only():
     assert rows[0]["key"] == "glm_v1"
     assert rows[0]["name"] == "glm_v1"
     assert rows[0]["model_label"] == "GLM"
-    assert rows[0]["status"] == "trained"
+    assert rows[0]["status"] == "ready"
+    assert rows[0]["sample_name"] == "s1"
+
+
+def test_train_rows_sample_name_defaults_to_dash():
+    # Non-sampling families (mw, benchmark) have no sample; jobs may omit it.
+    p = _proj(models={"mw_v1": _model(model_type="mw", sample_name=None)})
+    jobs = [{"id": "a1", "status": "running", "model_name": "v2",
+             "model_label": "GLM", "dataset_name": "ds1", "error": None}]
+    rows = train_rows(p, jobs)
+    assert rows[0]["sample_name"] == "—"   # job without sample_name
+    assert rows[1]["sample_name"] == "—"   # model with sample_name=None
 
 
 def test_train_rows_running_job_listed_before_products():
     p = _proj(models={"glm_v1": _model()})
     jobs = [{"id": "a1", "status": "running", "model_name": "v2",
-             "model_label": "GLM", "dataset_name": "ds1", "error": None,
-             "deviance": None, "n_samples": None}]
+             "model_label": "GLM", "dataset_name": "ds1", "sample_name": "s1",
+             "error": None}]
     rows = train_rows(p, jobs)
     assert [r["kind"] for r in rows] == ["job", "model"]
+    assert rows[0]["sample_name"] == "s1"
     assert rows[0]["status"] == "running"
     assert rows[0]["job_id"] == "a1"
 

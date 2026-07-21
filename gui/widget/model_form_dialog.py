@@ -9,7 +9,7 @@ from gui.i18n import t
 from gui.scripts.artifact_names import sanitize_key, suggest_version
 from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
-from gui.widget.creation_dialog import CreationDialog
+from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
 from gui.widget.help import InfoPopup
 
 
@@ -276,3 +276,105 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
                             params=all_params.get(selected_key, {}),
                             set_params=_set_model_params,
                         )
+
+
+def _format_value(value) -> str:
+    """Display form for a stored parameter value (lists join like the form)."""
+    if value is None:
+        return "—"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
+
+
+def _ro_field(label: str, value) -> None:
+    """One read-only field in the details dialog (same dense outlined look)."""
+    rv.TextField(
+        label=label, v_model=_format_value(value),
+        readonly=True, dense=True, outlined=True, hide_details=True,
+        class_="mb-2",
+    )
+
+
+@solara.component
+def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
+    """Read-only view of a registered model, mirroring the New-model form.
+
+    Shows the same fields the model was created with (type, dataset, sample,
+    variables, name, advanced parameters) prefilled from the stored model —
+    no Create action, just Close.
+
+    Args:
+        project: solara.Reactive[Project].
+        model_key: project.models key to display, or None (dialog closed).
+        on_close: () -> None; clears the tile's selected key.
+    """
+    p = project.value
+    models = p.models if p and getattr(p, "models", None) else {}
+    model = models.get(model_key) if model_key else None
+
+    mk = getattr(model, "model_type", None)
+    registry = MODEL_REGISTRY.get(mk)
+
+    with rv.Dialog(
+        v_model=model is not None,
+        on_v_model=lambda v: None if v else on_close(),
+        max_width="560px",
+    ):
+        with rv.Card():
+            with rv.CardTitle():
+                solara.Text(t("tiles.train.details_title", key=model_key or ""))
+            with rv.CardText():
+                solara.Style(_ADVANCED_PANEL_CSS)
+                if model is not None:
+                    with solara.Column(style="gap:4px;"):
+                        _ro_field(
+                            t("tiles.train.model_select_label"),
+                            model_label(mk) if registry else mk,
+                        )
+                        _ro_field(
+                            t("tiles.train.dataset_select_label"),
+                            getattr(model, "dataset_name", None),
+                        )
+                        if registry and registry.get("has_sampling"):
+                            _ro_field(
+                                t("tiles.train.sample_select_label"),
+                                getattr(model, "sample_name", None),
+                            )
+
+                        var_defs = [
+                            pd for pd in (registry["params"] if registry else [])
+                            if pd.get("group") == "variables"
+                        ]
+                        if var_defs:
+                            solara.Markdown(t("tiles.train.variables_header"))
+                            for pd in var_defs:
+                                _ro_field(
+                                    t(pd["label_key"]),
+                                    getattr(model, pd["key"], None),
+                                )
+
+                        _ro_field(
+                            t("tiles.train.model_name_label"),
+                            getattr(model, "name", None),
+                        )
+
+                        param_defs = [
+                            pd for pd in (registry["params"] if registry else [])
+                            if pd.get("group", "params") == "params"
+                        ]
+                        if param_defs:
+                            with rv.ExpansionPanels(flat=True, class_="advanced-params"):
+                                with rv.ExpansionPanel():
+                                    with rv.ExpansionPanelHeader():
+                                        solara.Text(t("tiles.train.advanced_parameters_header"))
+                                    with rv.ExpansionPanelContent():
+                                        for pd in param_defs:
+                                            _ro_field(
+                                                t(pd["label_key"]),
+                                                getattr(model, pd["key"], pd["default"]),
+                                            )
+            with rv.CardActions(style_="justify-content: flex-end;"):
+                solara.Button(
+                    t("common.close"), on_click=lambda: on_close(), text=True, small=True
+                )

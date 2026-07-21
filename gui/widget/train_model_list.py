@@ -12,7 +12,7 @@ logger = logging.getLogger("spatial_risk")
 
 
 @solara.component
-def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_delete):
+def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_delete, on_open):
     """Models table: one row per registered model plus in-flight/failed jobs.
 
     Args:
@@ -23,21 +23,23 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
         on_dismiss: callback(job_id) — discard a failed/cancelled job row.
         on_delete: callback(model_key) — delete a registered model (confirmed
             by the tile).
+        on_open: callback(model_key) — open the read-only details dialog for a
+            registered model (row click).
     """
     p = project.value
     data = train_rows(p, train_jobs.value, model_labels)
 
     rows = []
     for r in data:
+        on_click = None
         if r["kind"] == "model":
             actions = [{"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)}]
+            on_click = lambda *_, k=r["key"]: on_open(k)
         elif r["status"] == "running":
             actions = [{"kind": "cancel", "on_click": lambda *_, i=r["job_id"]: on_cancel(i)}]
         else:
             actions = [{"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}]
 
-        dev = f"{r['deviance']:,.2f}" if r.get("deviance") is not None else "—"
-        samp = f"{r['n_samples']:,}" if r.get("n_samples") is not None else "—"
         error = r.get("error")
         if r["status"] == "failed" and not error:
             error = t("widgets.train_model_list.unknown_error")
@@ -48,11 +50,12 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
                     {"type": "text", "value": r["name"]},
                     {"type": "chip", "value": r["model_label"], "color": "primary"},
                     {"type": "text", "value": r["dataset_name"], "size": "0.8rem", "muted": True},
-                    {"type": "text", "value": f"{dev} / {samp}", "size": "0.8rem", "muted": True},
+                    {"type": "text", "value": r["sample_name"], "size": "0.8rem", "muted": True},
                     {"type": "status", "status": r["status"]},
                 ],
                 "actions": actions,
                 "error": error,
+                "on_click": on_click,
             }
         )
 
@@ -62,7 +65,7 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
             {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.train_model_list.col_type"), "width": "90px"},
             {"label": t("widgets.train_model_list.col_dataset"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.train_model_list.col_metrics"), "width": "104px"},
+            {"label": t("widgets.train_model_list.col_sample"), "width": "104px"},
             {"label": t("widgets.train_model_list.col_status"), "width": "82px"},
         ],
         rows=rows,
