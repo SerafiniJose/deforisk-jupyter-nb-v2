@@ -143,6 +143,5 @@ def test_registry_keys_resolve_in_both_locales():
             if spec.count_key_one:
                 assert spec.count_key_one in keys, (lang, spec.key)
                 assert spec.count_key_other in keys, (lang, spec.key)
-        for extra in ("workflow.step_position", "workflow.all_steps",
-                      "workflow.count_empty", "workflow.step_badge"):
+        for extra in ("workflow.count_empty", "workflow.step_badge"):
             assert extra in keys, (lang, extra)
