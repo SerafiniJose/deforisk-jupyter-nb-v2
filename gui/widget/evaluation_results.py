@@ -218,9 +218,24 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # digest stands in for the adapter's content hash, so an input it misses is
     # stale. None here means "nothing drawable" — no data, or data with no
     # finite rows — and is handled by the ladder below, never passed on.
-    option = (pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
-                                      title=None)
-              if plot_data is not None else None)
+    #
+    # Memoized on the SAME key as the load, and for a measured reason. Building
+    # the option materializes one boxed [obs, pred, cell, forest, residual] list
+    # per point; in the render body that ran on every pass, and
+    # ``_scatter_rows``' module-level LRU (size 2) cannot absorb it because this
+    # tab draws one card per map — a third card evicts the first, so a 3-map
+    # dialog scored ZERO cache hits and paid the full rebuild every render
+    # (measured 2026-07-21: 173 ms per pass for 200k/50k/25k-point maps, 0 hits
+    # in 9 calls). The digest already names every input of the option, so
+    # memoizing on it is exact: a theme flip, a language switch, a rewritten
+    # artifact or a cell-size change all move the key.
+    def build_option():
+        if plot_data is None:
+            return None
+        return pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
+                                       title=None)
+
+    option = solara.use_memo(build_option, [digest, tab_active])
     # One stat() for the whole render, not one per rung.
     png_exists = png_path.exists()
 

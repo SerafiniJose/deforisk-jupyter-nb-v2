@@ -139,8 +139,9 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
     longer render stale data.
 
     **Skipping the hash.** Hashing the option is cheap for a bar chart (1.2 ms
-    at 1k values) and expensive for a dense scatter: 63 ms at 50k points, 239 ms
-    at 200k — per render, in a dialog the user is interacting with. A caller
+    at 1k values) and expensive for a dense scatter: re-measured 2026-07-21 on
+    the scatter's real option, 2.9 ms at 2k points, 118 ms at 50k and 470 ms at
+    200k — per render, in a dialog the user is interacting with. A caller
     that already knows a cheap, complete identity for its option may pass it as
     ``option_digest``, and the adapter uses that INSTEAD of hashing (see
     ``gui.scripts.evaluation_echarts.pred_obs_chart_identity``, derived from one

@@ -50,11 +50,28 @@ logger = logging.getLogger("spatial_risk")
 # `large`/`progressive` pipeline. 2000 is ECharts' OWN default for
 # `largeThreshold` and (with `progressiveThreshold` at 3000) the point where its
 # maintainers judged per-item rendering to stop paying off; it is adopted here
-# rather than invented so the number has a source. It is also roughly where one
-# SVG <circle> per point starts to make the DOM the bottleneck.
+# rather than invented so the number has a source.
 #
-# Task 8 measures this on real runs and documents the result — this constant is
-# the single place to change if the measurement says otherwise.
+# MEASURED (2026-07-21, CPython 3.11.10 / pandas 2.x, synthetic point CSVs at
+# 500..200k points; see test_large_mode_engages_at_exactly_2000_plotted_points):
+#
+#     points     read_csv   _scatter_rows   option (rows warm)   option JSON
+#        500        2.6 ms         0.6 ms             0.03 ms       44 KB
+#       1000        2.8 ms         0.7 ms             0.04 ms       87 KB
+#   ->  2000        4.8 ms         1.0 ms             0.03 ms      173 KB
+#       5000       11.6 ms         1.4 ms             0.03 ms      431 KB
+#      50000       40.1 ms        12.8 ms             0.04 ms      4.3 MB
+#     200000      161.5 ms       282   ms             0.03 ms     17.5 MB
+#
+# The conclusion is that NOTHING on the Python side argues for a different
+# number: at 2000 points the whole option costs ~1 ms to build and 173 KB to
+# send, so the cost that decides SVG-vs-canvas is entirely browser-side (one
+# <circle> DOM node per point vs one batched canvas draw), which no headless
+# measurement can settle. 2000 is therefore kept — and kept EQUAL to the
+# `largeThreshold` written into the option below, so ECharts' own switch and
+# this module's renderer choice can never disagree about which mode a given
+# scatter is in. The remaining browser-side confirmation is on the deployed-
+# SEPAL walkthrough list.
 PRED_OBS_LARGE_POINT_COUNT = 2000
 
 # Points per progressive-render chunk once large mode is on. ECharts' default
@@ -62,21 +79,32 @@ PRED_OBS_LARGE_POINT_COUNT = 2000
 # option, so larger chunks mean fewer frames to first complete paint.
 PRED_OBS_PROGRESSIVE_CHUNK = 5000
 
-# Two caches, two very different per-entry costs — so two constants. Measured on
-# a 200k-point run (the realistic upper end), pandas 2.x / CPython 3.11:
+# Two caches, two very different per-entry costs — so two constants. Re-measured
+# 2026-07-21 on a 200k-point run (the realistic upper end), CPython 3.11.10 /
+# pandas 2.x:
 #
 #   _load_cached entry   (4-column DataFrame)      6.4 MB   -> 8 x  6.4 =  51 MB
-#   _scatter_rows entry  (boxed [[float x5], ...]) 48.0 MB  -> 2 x 48.0 =  96 MB
+#   _scatter_rows entry  (boxed [[float x5], ...]) 47.2 MB  -> 2 x 47.2 =  94 MB
 #
-# The row cache costs 7.5x the frame it is built from: every value becomes a
+# The row cache costs 7.4x the frame it is built from: every value becomes a
 # boxed Python float/int inside a per-point list object, which is the price of
-# a JSON-serializable option. Sizing both at 8 would have reserved ~435 MB on a
+# a JSON-serializable option. Sizing both at 8 would have reserved ~430 MB on a
 # SEPAL deployment for a dialog that shows one chart at a time.
 #
 # The loader stays at 8: cheap, and it is what makes flipping between maps and
-# cell sizes feel instant. The row cache is kept at 2 — enough for a light/dark
-# toggle and an A/B flip between two maps to stay hot, which is the pattern that
-# actually recurs; a third map costs one rebuild, not a wrong chart.
+# cell sizes feel instant.
+#
+# The row cache is kept at 2, but it is NOT what protects a multi-map dialog.
+# Measured: three cards drawing 200k/50k/25k-point maps score 0 hits in 9 calls
+# — each card's entry is evicted by the next, so an LRU of 2 is useless the
+# moment a run has three maps, and 234 ms per render pass was being spent
+# rebuilding rows. Raising it to one-entry-per-map is the wrong fix (8 x 47 MB),
+# so the per-render rebuild is instead removed one level up: _PredObsCard
+# memoizes the whole option on `pred_obs_chart_identity` (see
+# gui/widget/evaluation_results.py), which makes the build once-per-card rather
+# than once-per-render regardless of map count. What is left for this cache is
+# the narrow case it can actually serve — the same plot_data rebuilt under a new
+# digest (a light/dark toggle, a language switch) — where 2 is enough.
 POINTS_CACHE_SIZE = 8
 SCATTER_ROWS_CACHE_SIZE = 2
 
@@ -390,15 +418,17 @@ def _plotted_count(plot_data):
 def _scatter_rows(plot_data):
     """``[[obs, pred, cell, forest_ha, residual], ...]`` for one plot data.
 
-    Cached because building it is the only per-point Python work in this module
-    and the option is rebuilt on every render. ``PredObsPlotData`` is a frozen
-    dataclass with ``eq=False``, so it hashes by identity — and the loader hands
-    back the same object for an unchanged file, which makes this a hit.
+    The only per-point Python work in this module, and it is not cheap:
+    measured 1.0 ms at 2k points, 12.8 ms at 50k and 282 ms at 200k.
+    ``PredObsPlotData`` is a frozen dataclass with ``eq=False``, so it hashes by
+    identity — and the loader hands back the same object for an unchanged file,
+    which makes this a hit.
 
     Kept to ``SCATTER_ROWS_CACHE_SIZE`` (not the loader's size): an entry here
-    costs 7.5x the DataFrame it comes from — 48 MB at 200k points against the
+    costs 7.4x the DataFrame it comes from — 47 MB at 200k points against the
     frame's 6.4 MB — because every value is a boxed Python scalar in its own
-    list. See the constants block for the measurements.
+    list. That is also why this cache is not the multi-map dialog's protection;
+    the widget memoizes the finished option instead. See the constants block.
 
     Values are converted through ``.tolist()`` so they are native Python floats
     and ints, never numpy scalars: the option is serialized to the frontend as

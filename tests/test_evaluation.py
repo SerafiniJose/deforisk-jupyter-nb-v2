@@ -503,6 +503,65 @@ def test_save_pred_obs_png_handles_degenerate_plot_data(tmp_path):
         assert _Path(out).stat().st_size > 1000, name
 
 
+def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
+                                                               monkeypatch):
+    """One computed source feeds both renderings — asserted by identity.
+
+    ``validate_two_layer`` computes a single ``PredObsPlotData`` and hands the
+    SAME object to the point-CSV writer and to the PNG writer; the interactive
+    ECharts scatter is then built from the file that object produced. If either
+    renderer ever grew its own computation the archived figure and the
+    on-screen chart could disagree about a cell while every test that looks at
+    one of them in isolation still passed.
+
+    Verified by behaviour, not by ``inspect.getsource``: the two writers are
+    wrapped so the test sees the objects that actually reached them, and the
+    chart option is then built by the GUI loader from the CSV they wrote and
+    compared back against that very frame.
+    """
+    from gui.scripts.evaluation_echarts import (
+        load_pred_obs_plot_data, pred_obs_scatter_option)
+
+    seen = {}
+    real_csv, real_png = ev.write_pred_obs_csv, ev.save_pred_obs_png
+
+    def spy_csv(plot_data, output_path):
+        seen["csv"] = plot_data
+        return real_csv(plot_data, output_path)
+
+    def spy_png(plot_data, output_path, **kw):
+        seen["png"] = plot_data
+        return real_png(plot_data, output_path, **kw)
+
+    monkeypatch.setattr(ev, "write_pred_obs_csv", spy_csv)
+    monkeypatch.setattr(ev, "save_pred_obs_png", spy_png)
+
+    lay = _varied_validation_fixture(tmp_path)
+    validate_two_layer(
+        **lay, csize_coarse_grid=300,
+        indices_file_pred=tmp_path / "indices_TEST_calibration_300.csv",
+        tab_file_pred=tmp_path / "pred_obs_TEST_calibration_300.csv",
+        fig_file_pred=tmp_path / "pred_obs_TEST_calibration_300.png",
+        model_name="TEST", period="calibration",
+    )
+
+    assert seen["csv"] is seen["png"], "two renderings, one PredObsPlotData"
+
+    record = _types.SimpleNamespace(
+        indices=[{"model": "TEST", "period": "calibration",
+                  "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0,
+                  "MedAE": 2250.0, "R2": 0.43}],
+        artifacts=[], run_id="run00001",
+        csv_path=str(tmp_path / "indices_all.csv"))
+    option = pred_obs_scatter_option(
+        load_pred_obs_plot_data(record, "TEST", "calibration", 300))
+
+    shared = seen["png"].finite_points
+    assert [v[:2] for v in option["series"][0]["data"]] == [
+        [o, p] for o, p in zip(shared["ndefor_obs_ha"], shared["ndefor_pred_ha"])
+    ]
+
+
 def _fake_project_with_prediction(tmp_path):
     target = _types.SimpleNamespace(name="forest_loss_2015_2020",
                                     path=tmp_path / "defor.tif")
@@ -944,9 +1003,10 @@ def _chart_rows():
 
 # --- metric_bar_option: one serializable ECharts option per metric ---------
 #
-# These replace the old Plotly object-structure assertions
-# (test_metric_bars_figure_layout). The single multi-subplot figure is gone:
-# each metric now gets its own option dict, laid out two-per-row by the widget.
+# ECharts has no subplot concept, so the Charts tab's single multi-subplot
+# figure became one independent option dict per metric, laid out two-per-row by
+# the widget. The assertions below pin the information design that carried over
+# (metrics, order, titles, one bar series per cell size, one category per map).
 
 
 def test_metric_bar_option_categories_are_the_map_labels():
@@ -1160,13 +1220,35 @@ def test_evaluation_dialog_has_tabs_and_csize_select():
 
 
 def test_evaluation_dialog_drops_the_plotly_modebar_workaround():
-    """The modebar was a FigurePlotly artefact; the table width rule stays."""
-    import inspect
-    import gui.widget.evaluation_results as er
+    """The modebar rule was a FigurePlotly artefact; the table width rule stays.
 
-    src = inspect.getsource(er)
-    assert "modebar" not in src
-    assert "width: 100%" in src
+    Asserted on the CSS the dialog actually RENDERS (``solara.Style`` emits a
+    ``VuetifyTemplate`` carrying its stylesheet inline), not on the module's
+    source text: a stale ``.modebar { display: none }`` would be dead weight
+    shipped to every browser, and only the rendered output can show that it is
+    gone while the table-width rule the dialog still needs survives.
+    """
+    import ipyvuetify as vw
+    import reacton
+    import solara
+
+    from gui.i18n import t as _t
+
+    _t("common.close")  # warm the translator before the first render
+    from gui.widget.evaluation_results import EvaluationTableDialog
+
+    p = types.SimpleNamespace(evaluations={"run-a": _chart_record()})
+    project = solara.reactive(p, equals=lambda a, b: a is b)
+    _, rc = reacton.render(
+        EvaluationTableDialog(
+            project=project, eval_key="run-a", on_close=lambda *_: None),
+        handle_error=False,
+    )
+    css = "\n".join(w.template for w in rc.find(vw.VuetifyTemplate).widgets
+                    if isinstance(getattr(w, "template", None), str))
+    assert "modebar" not in css
+    assert ".evaluation-table-dialog" in css and "width: 100%" in css
+    rc.close()
 
 
 def _run_blocked(blocked, body):
@@ -1879,6 +1961,49 @@ def test_figures_tab_offers_a_png_download(tmp_path):
               if isinstance(c, str)]
     assert _t("widgets.evaluation_results.download_png") in labels
     assert png.read_bytes() == b"PNG-bytes"  # PNG still present on disk
+    rc.close()
+
+
+def test_figures_tab_builds_each_option_once_not_once_per_render(tmp_path):
+    """A multi-map figures tab must not rebuild every option on every render.
+
+    Measured 2026-07-21 (CPython 3.11.10 / pandas 2.x): materializing an
+    option's point rows costs 1.0 ms at 2k points, 12.8 ms at 50k and 282 ms at
+    200k, and ``_scatter_rows``' module-level LRU cannot absorb a third map at
+    ``SCATTER_ROWS_CACHE_SIZE = 2`` — three cards drawing 200k/50k/25k-point
+    maps scored ZERO hits in 9 calls (173-234 ms of pure rebuild per render
+    pass). The fix is one level up: ``_PredObsCard`` memoizes the finished
+    option on ``pred_obs_chart_identity``, which is once-per-card whatever the
+    map count.
+
+    Re-rendered here with a different ``eval_key``. That prop is extrinsic — it
+    only feeds the chart widget's rebuild ``identity`` and is deliberately NOT
+    part of the option's digest — so the cards genuinely re-render while the
+    option memo must hold. Building the option in the render body instead
+    doubles the row builder's miss count, which is what this asserts.
+    """
+    from gui.scripts.evaluation_echarts import _scatter_rows
+    from gui.widget.evaluation_results import _FiguresTab
+
+    models = ("GLM", "MW", "RF")
+    for m in models:
+        _write_points(tmp_path / f"pred_obs_{m}_validation_300.csv",
+                      obs=[1.0, 2.0, 3.0], pred=[1.5, 2.5, 2.0])
+    record = _figures_record(
+        indices=[_fig_index_row(model=m) for m in models],
+        csv_path=tmp_path / "indices_all.csv")
+
+    _scatter_rows.cache_clear()
+    rc, cls = _render_figures_tab(record=record, eval_key="run-a")
+    assert len(rc.find(cls).widgets) == 3
+    after_first = _scatter_rows.cache_info().misses
+    assert after_first == 3, "one row build per map on the first render"
+
+    rc.render(_FiguresTab(record=record, eval_key="run-b", active_tab=2))
+    assert len(rc.find(cls).widgets) == 3
+    assert _scatter_rows.cache_info().misses == after_first, (
+        "the option must be memoized on the chart identity, not rebuilt in the"
+        " render body — an LRU of 2 cannot cover three cards")
     rc.close()
 
 

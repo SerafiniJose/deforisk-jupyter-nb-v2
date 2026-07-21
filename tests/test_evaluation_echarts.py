@@ -496,6 +496,61 @@ def test_a_dense_scatter_switches_to_canvas_and_large_mode(tmp_path):
     assert option["animation"] is False   # animating 200k points helps nobody
 
 
+def test_large_mode_engages_at_exactly_2000_plotted_points(tmp_path):
+    """MEASURED THRESHOLD: 1999 plotted points draw as SVG, 2000 as canvas.
+
+    Task 8 measurement, 2026-07-21, CPython 3.11.10 / pandas 2.x, synthetic
+    round-trippable point CSVs, best of 5 per cell. Cost of producing ONE
+    scatter option at each size:
+
+        points     read_csv   _scatter_rows   option (rows warm)   option JSON
+           500        2.6 ms         0.6 ms             0.03 ms       44 KB
+          1000        2.8 ms         0.7 ms             0.04 ms       87 KB
+      ->  2000        4.8 ms         1.0 ms             0.03 ms      173 KB
+          5000       11.6 ms         1.4 ms             0.03 ms      431 KB
+         10000       12.7 ms         3.2 ms             0.03 ms      861 KB
+         50000       40.1 ms        12.8 ms             0.04 ms      4.3 MB
+        200000      161.5 ms       282   ms             0.03 ms     17.5 MB
+
+    Nothing on the Python side argues for moving the number: at 2000 points the
+    entire option costs ~1 ms to build and 173 KB to send, three orders of
+    magnitude below where per-point work starts to hurt. The switch is a
+    browser-side trade — one <circle> DOM node per point against a single
+    batched canvas draw — which no headless measurement can settle, so
+    ``PRED_OBS_LARGE_POINT_COUNT`` is KEPT at ECharts' own ``largeThreshold``
+    default of 2000, and the option writes that same value into
+    ``largeThreshold`` so the renderer choice and ECharts' internal switch can
+    never disagree about which mode a given scatter is in.
+
+    This test pins the boundary itself, which is the part that is measurable
+    here: the last SVG point count and the first canvas one.
+    """
+    from gui.scripts.echarts_options import RENDERER_CANVAS, RENDERER_SVG
+    from gui.scripts.evaluation_echarts import (
+        PRED_OBS_LARGE_POINT_COUNT, load_pred_obs_plot_data,
+        pred_obs_renderer, pred_obs_scatter_option)
+
+    assert PRED_OBS_LARGE_POINT_COUNT == 2000, "measured/justified above"
+
+    def option_at(n, where):
+        series = [float(i) for i in range(n)]
+        _, record = _saved(tmp_path / where, obs=series, pred=list(series))
+        plot_data = load_pred_obs_plot_data(record, "GLM", "d1", 300)
+        assert len(plot_data.finite_points) == n
+        return plot_data, _scatter(pred_obs_scatter_option(plot_data))
+
+    below, below_scatter = option_at(PRED_OBS_LARGE_POINT_COUNT - 1, "below")
+    at, at_scatter = option_at(PRED_OBS_LARGE_POINT_COUNT, "at")
+
+    assert pred_obs_renderer(below) == RENDERER_SVG
+    assert "large" not in below_scatter and "progressive" not in below_scatter
+
+    assert pred_obs_renderer(at) == RENDERER_CANVAS
+    assert at_scatter["large"] is True
+    # the same number on both switches: ours and ECharts' own
+    assert at_scatter["largeThreshold"] == PRED_OBS_LARGE_POINT_COUNT
+
+
 # ---------------------------------------------------------------------------
 # Artifact resolution — typed record vs legacy derivation
 # ---------------------------------------------------------------------------
