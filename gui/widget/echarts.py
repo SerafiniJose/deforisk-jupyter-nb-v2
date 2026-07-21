@@ -73,9 +73,15 @@ def build_chart_widget(option, *, dark=False, renderer=RENDERER_SVG,
     """
     from ipecharts import EChartsRawWidget
 
+    resolved = resolve_renderer(renderer)
     return EChartsRawWidget(
         option=themed_option(option, dark=dark),
-        renderer=resolve_renderer(renderer),
+        renderer=resolved,
+        # Dirty-rectangle repaints (guide recommendation): on canvas, hover
+        # and zoom redraw only the damaged region instead of the full 200k
+        # point cloud. A browser-side optimization only — it is NOT the large-
+        # mode threshold, and the deployed-SEPAL performance gate still stands.
+        use_dirty_rect=resolved == RENDERER_CANVAS,
         width="auto",
         height=height,
     )

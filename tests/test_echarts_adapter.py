@@ -261,6 +261,20 @@ def test_build_chart_widget_takes_an_explicit_renderer():
     assert widget.renderer == "canvas"
 
 
+def test_build_chart_widget_enables_dirty_rect_only_for_canvas():
+    """Dirty-rectangle repaints only help (and only exist) on canvas; pinning
+    False for SVG keeps the flag from silently riding along if the default
+    renderer ever changes."""
+    from gui.scripts.echarts_options import RENDERER_CANVAS, RENDERER_SVG
+    from gui.widget.echarts import build_chart_widget
+
+    option = {"series": [{"type": "bar", "data": [1, 2]}]}
+    assert build_chart_widget(option,
+                              renderer=RENDERER_CANVAS).use_dirty_rect is True
+    assert build_chart_widget(option,
+                              renderer=RENDERER_SVG).use_dirty_rect is False
+
+
 def test_build_chart_widget_is_full_width_with_an_explicit_height():
     """width='auto' gets echarts-widget-auto-width (100%); height must be real.
 
