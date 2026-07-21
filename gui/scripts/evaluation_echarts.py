@@ -137,8 +137,9 @@ _POINT_FILL = {True: "rgba(66,146,198,0.65)", False: "rgba(42,120,214,0.55)"}
 # Horizontal breathing room on both sides of the plot box, applied equally so
 # the option itself adds no left/right bias. It does NOT centre the box: with
 # `containLabel: True` the grid also reserves room for the axis labels and the
-# y-axis `name` (nameGap 48) on the left and for nothing on the right, so the
-# drawn box sits right of centre by roughly that reserve. ECharts has no aspect
+# y-axis `name` (nameGap 48) on the left, against only the last x-tick label's
+# overflow on the right, so the drawn box sits right of centre by roughly the
+# difference. ECharts has no aspect
 # lock for a cartesian grid — squareness is a container property (see
 # PRED_OBS_SQUARE_HEIGHT), and the option's job is only to not skew it.
 _GRID_INSET = 16
