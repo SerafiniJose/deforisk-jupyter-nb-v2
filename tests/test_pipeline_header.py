@@ -63,8 +63,8 @@ def test_render_smoke_populated_project():
 
 
 def test_jump_menu_is_a_dropdown_not_a_modal():
-    """"All steps" opens a dropdown anchored to its button, not a centred
-    modal — and its rows keep the working click primitives."""
+    """The unified title activator opens a dropdown anchored under it, not a
+    centred modal — and its rows keep the working click primitives."""
     from gui.widget import pipeline_header
 
     src = inspect.getsource(pipeline_header)
@@ -97,3 +97,4 @@ def test_unified_activator_replaces_all_steps_button():
     assert "workflow.step_position" not in src  # old subtitle gone
     assert "mdi-menu-down" in src             # caret affordance kept
     assert "sr-step-jump:hover" in src        # hover tint on the activator
+    assert 'class_="sr-step-jump"' in src   # ...and the class is on the activator
