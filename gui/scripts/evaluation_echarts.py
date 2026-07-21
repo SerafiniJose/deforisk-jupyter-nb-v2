@@ -143,7 +143,10 @@ _POINT_FILL = {True: "rgba(66,146,198,0.65)", False: "rgba(42,120,214,0.55)"}
 # lock for a cartesian grid — squareness is a container property (see
 # PRED_OBS_SQUARE_HEIGHT), and the option's job is only to not skew it.
 _GRID_INSET = 16
-PRED_OBS_SQUARE_HEIGHT = "560px"
+# Side of the square card. Sized so at least three cards fit across the dialog
+# (90vw, capped at 1400px) without the tab scrolling vertically: 3 x 380 + two
+# 16px gaps = 1172, inside the card's usable width.
+PRED_OBS_SQUARE_HEIGHT = "380px"
 
 # English defaults. Every one is overridable via `labels=`: the widget layer
 # owns translation (`t(...)`), and this module must not import gui.i18n's
@@ -671,29 +674,18 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
     option = {
         "textStyle": {"fontSize": 12},
         "animation": not large,  # animating 200k points helps nobody
-        "grid": {"left": _GRID_INSET, "right": _GRID_INSET, "top": 64,
+        # `top` leaves room for the title plus the MedAE/R2/n block below it;
+        # with the toolbox gone, that is all it has to clear.
+        "grid": {"left": _GRID_INSET, "right": _GRID_INSET, "top": 44,
                  "bottom": 8, "containLabel": True},
         "tooltip": {"trigger": "item", "confine": True},
         # Nothing toggleable: one data series, and the reference line must stay.
         "legend": {"show": False},
-        "toolbox": {
-            "show": True,
-            "right": 8,
-            "top": 0,
-            "feature": {
-                # Box zoom. `{}` is "enable with ECharts' defaults" and
-                # overrides nothing: the toolbox feature already acts on every
-                # axis unless `xAxisIndex`/`yAxisIndex` are set to exclude one
-                # (the x-only default belongs to the `dataZoom` COMPONENT, not
-                # to this feature). Both axes is what this chart needs — the
-                # shared domain is its whole premise — so the defaults are kept
-                # deliberately rather than by omission.
-                "dataZoom": {},
-                "restore": {},
-                "saveAsImage": {"pixelRatio": 2},
-            },
-            "iconStyle": {"borderColor": ink},
-        },
+        # No toolbox: its icon row sat immediately under the card's download
+        # button and read as that button's tooltip. Saving is what the card's
+        # PNG download already offers, and the `dataZoom: inside` below keeps
+        # zooming available without any chrome.
+        "toolbox": {"show": False},
         # Wheel/pinch zoom over the plot itself, both axes together so the 1:1
         # line stays at 45 degrees through any zoom.
         "dataZoom": [{"type": "inside", "xAxisIndex": 0, "yAxisIndex": 0}],
@@ -704,7 +696,7 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
             # The PNG's top-left MedAE/R2/n block, in the same corner.
             "type": "text",
             "left": 56,
-            "top": 68,
+            "top": 48,
             "silent": True,
             "style": {"text": pred_obs_annotation(plot_data, labels),
                       "fill": ink, "fontSize": 12, "lineHeight": 16},

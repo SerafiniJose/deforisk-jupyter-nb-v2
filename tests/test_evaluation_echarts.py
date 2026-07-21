@@ -466,13 +466,17 @@ def test_axes_and_annotation_follow_the_theme(tmp_path):
 # Interaction, layout, and the large-point-count switch
 # ---------------------------------------------------------------------------
 
-def test_toolbox_offers_zoom_reset_and_save(tmp_path):
+def test_toolbox_is_hidden(tmp_path):
+    """Its icon row sat under the card's download button and read as a tooltip.
+
+    Zooming survives without it (`dataZoom: inside`), and saving is what the
+    card's own PNG download offers.
+    """
     from gui.scripts.evaluation_echarts import pred_obs_scatter_option
 
     _, plot_data = _loaded(tmp_path)
-    features = pred_obs_scatter_option(plot_data)["toolbox"]["feature"]
 
-    assert set(features) == {"dataZoom", "restore", "saveAsImage"}
+    assert pred_obs_scatter_option(plot_data)["toolbox"]["show"] is False
 
 
 def test_inside_zoom_drives_both_axes_together(tmp_path):

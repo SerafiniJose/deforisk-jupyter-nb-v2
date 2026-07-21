@@ -302,12 +302,20 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
                               " align-items: center; gap: 8px;"):
             solara.Text(label, style="font-size: 0.85rem; font-weight: 600;")
             if png_exists:
-                solara.FileDownload(
+                # An explicit child button rather than FileDownload's default
+                # one: the default is a full-size raised button, which on a
+                # 380px card crowds the chart below it.
+                with solara.FileDownload(
                     lambda p=png_path: p.read_bytes(),
                     filename=png_path.name,
-                    label=t("widgets.evaluation_results.download_png"),
                     mime_type="image/png",
-                )
+                ):
+                    solara.Button(
+                        t("widgets.evaluation_results.download_png"),
+                        icon_name="mdi-cloud-download-outline",
+                        text=True, small=True,
+                        style="font-size: 0.7rem; letter-spacing: 0;",
+                    )
         if option is not None:
             EChartsChart(
                 option=option,
