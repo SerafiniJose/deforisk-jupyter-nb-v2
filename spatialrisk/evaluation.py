@@ -474,6 +474,23 @@ def evaluate_prediction(project, pred, csizes=(300,), recompute_defrate=True):
     return rows
 
 
+def _validate_run_component(value, name):
+    """One path COMPONENT of the evaluation layout — an identifier, not a path.
+
+    ``truth_tag``/``run_id`` are caller-derived (``evaluate_against_truth`` is
+    public), so an absolute value or an embedded ``..`` would resolve outside
+    the project's ``evaluation/`` folder before anything checks it. Rejecting
+    here — before any ``mkdir`` — is the write-side twin of the deletion
+    containment guard in ``gui/tile/evaluation_helpers.delete_run_artifacts``.
+    """
+    text = str(value)
+    if (not text or text in (".", "..") or "/" in text or "\\" in text
+            or Path(text).is_absolute()):
+        raise ValueError(
+            f"{name} must be a plain identifier, got the path-like {value!r}")
+    return text
+
+
 def run_output_dir(project, truth_tag, run_id=None):
     """Directory a run's artifacts are written to.
 
@@ -481,9 +498,23 @@ def run_output_dir(project, truth_tag, run_id=None):
     ``evaluation/<truth_tag>/``; a run id namespaces the output one level
     deeper, ``evaluation/<truth_tag>/<run_id>/``, so a later run against the
     same truth cannot overwrite an older saved run's files.
+
+    Both components are validated as identifiers (see
+    ``_validate_run_component``) and the resolved candidate is re-checked to
+    sit below the resolved ``evaluation/`` root — defense in depth; raises
+    ``ValueError`` before any directory or file exists.
     """
-    truth_dir = Path(project.folders.project_folder) / "evaluation" / truth_tag
-    return truth_dir if run_id is None else truth_dir / str(run_id)
+    eval_root = Path(project.folders.project_folder) / "evaluation"
+    out_dir = eval_root / _validate_run_component(truth_tag, "truth_tag")
+    if run_id is not None:
+        out_dir = out_dir / _validate_run_component(run_id, "run_id")
+    resolved_root = eval_root.resolve(strict=False)
+    resolved = out_dir.resolve(strict=False)
+    if resolved_root not in resolved.parents:
+        raise ValueError(
+            f"evaluation output {resolved} escapes the project's "
+            f"evaluation folder {resolved_root}")
+    return out_dir
 
 
 # --------------------------------------------------------------------------

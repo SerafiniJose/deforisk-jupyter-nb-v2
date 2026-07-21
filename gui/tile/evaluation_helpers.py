@@ -236,7 +236,10 @@ def run_artifact_dir(project, record):
     Returns ``evaluation/<truth_tag>/<run_id>`` when that directory exists.
     Legacy records (saved before run-scoping) wrote straight into the shared
     ``evaluation/<truth_tag>/`` folder and therefore have no run directory —
-    they get None, which is what keeps their files out of any cleanup.
+    they get None, which is what keeps their files out of any cleanup. A
+    record with a path-like stored ``truth_tag``/``run_id`` makes
+    ``run_output_dir`` raise ``ValueError`` (containment check); on this
+    read path that also becomes None rather than propagating.
     """
     if project is None or record is None:
         return None
@@ -244,7 +247,10 @@ def run_artifact_dir(project, record):
     run_id = getattr(record, "run_id", None)
     if not truth_tag or not run_id:
         return None
-    candidate = run_output_dir(project, str(truth_tag), str(run_id))
+    try:
+        candidate = run_output_dir(project, str(truth_tag), str(run_id))
+    except ValueError:
+        return None
     return candidate if candidate.is_dir() else None
 
 
