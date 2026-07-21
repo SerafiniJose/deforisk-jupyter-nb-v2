@@ -744,14 +744,27 @@ def test_an_unmatched_prediction_key_falls_back_to_the_typed_match(tmp_path):
     the manifest does not know still gets the run's own typed file for that
     (model, period, csize) — older manifests recorded keys under a different
     scheme, and the run's own file beats a derived path a later run may have
-    overwritten."""
+    overwritten.
+
+    Uses ``_two_predictions_one_label`` rather than ``_typed_record``: that
+    fixture's artifact is named exactly the tier-3 derivation would produce
+    (``pred_obs_GLM_d1_300.csv``), so it cannot tell the tier-2 fix apart from
+    the OLD fall-straight-to-derivation behavior it replaces — both land on the
+    same path. Here the typed artifacts are named ``GLM__d1__a.csv`` /
+    ``GLM__d1__b.csv``, which diverge from the derived name, so only the tier-2
+    match (not tier-3 derivation) can produce the asserted path.
+    """
+    from gui.scripts.evaluation_charts import pred_obs_artifact_name
     from gui.scripts.evaluation_echarts import resolve_points_csv
 
     run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
-    record = _typed_record(run_dir)
+    record = _record(run_dir, artifacts=_two_predictions_one_label(run_dir))
     resolved = resolve_points_csv(record, "GLM", "d1", 300,
                                   prediction_key="not_in_manifest")
+
     assert resolved == Path(record.artifacts[0].points_csv)
+    assert resolved != (Path(record.csv_path).parent
+                        / pred_obs_artifact_name("GLM", "d1", 300, "csv"))
 
 
 def test_resolver_rejects_an_unknown_kind(tmp_path):
