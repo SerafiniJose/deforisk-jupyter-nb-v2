@@ -339,19 +339,21 @@ def ProjectPanel(on_close=None):
                 t("project.button_new_project"),
                 icon_name="mdi-plus",
                 color="primary",
+                small=True,
+                block=True,
                 on_click=open_new,
-                style="width: 100%;",
             )
             solara.Button(
                 manage_projects_label(saved_count),
                 icon_name="mdi-folder-open-outline",
                 color="primary",
                 outlined=True,
+                small=True,
+                block=True,
                 # Only a *known* zero disables it. A failed scan (None) leaves the
                 # button live, so the user can open the dialog and read why.
                 disabled=saved_count == 0,
                 on_click=open_manage,
-                style="width: 100%;",
             )
         else:
             with solara.Row(style="gap: 8px; align-items: center;"):
