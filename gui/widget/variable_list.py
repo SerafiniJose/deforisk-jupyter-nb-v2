@@ -118,7 +118,7 @@ def SourceVariableList(
     ProductTable(
         title=t("widgets.variable_list.source_title"),
         columns=[
-            {"label": t("widgets.variable_list.source_col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.variable_list.source_col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.variable_list.source_col_type"), "width": "150px"},
             {"label": t("widgets.variable_list.source_col_year"), "width": "44px"},
         ],
@@ -183,7 +183,7 @@ def DerivedVariableList(
     ProductTable(
         title=title or t("widgets.variable_list.derived_title"),
         columns=[
-            {"label": t("widgets.variable_list.derived_col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.variable_list.derived_col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.variable_list.derived_col_source"), "width": "120px"},
             {"label": t("widgets.variable_list.derived_col_status"), "width": "90px"},
         ],

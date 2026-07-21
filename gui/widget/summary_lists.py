@@ -70,7 +70,7 @@ def RawVariablesSummary(project):
         t("widgets.summary_lists.raw_vars_title"),
         t("widgets.summary_lists.vars_banner", total=stats["total"], vector=stats["vector"], raster=stats["raster"]),
         [
-            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_type"), "width": "90px"},
             {"label": t("widgets.summary_lists.col_raster_type"), "width": "110px"},
             {"label": t("widgets.summary_lists.col_year"), "width": "70px"},
@@ -102,7 +102,7 @@ def ProcessedVariablesSummary(project):
         t("widgets.summary_lists.processed_vars_title"),
         t("widgets.summary_lists.vars_banner", total=stats["total"], vector=stats["vector"], raster=stats["raster"]),
         [
-            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_source"), "width": "120px"},
             {"label": t("widgets.summary_lists.col_raster_type"), "width": "110px"},
             {"label": t("widgets.summary_lists.col_year"), "width": "70px"},
@@ -134,7 +134,7 @@ def DatasetsSummary(project):
         t("widgets.summary_lists.datasets_title"),
         t("widgets.summary_lists.datasets_banner", total=stats["total"]),
         [
-            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_target"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.summary_lists.col_feats"), "width": "70px"},
             {"label": t("widgets.summary_lists.col_year"), "width": "70px"},
@@ -172,7 +172,7 @@ def SamplesSummary(project):
         t("widgets.summary_lists.samples_title"),
         t("widgets.summary_lists.samples_banner", total=stats["total"], points=stats["points"]),
         [
-            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_strategy"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.summary_lists.col_points_classes"), "width": "150px"},
             {"label": t("widgets.summary_lists.col_seed"), "width": "60px"},
@@ -214,7 +214,7 @@ def ModelsSummary(project):
         t("widgets.summary_lists.models_title"),
         t("widgets.summary_lists.models_banner", total=stats["total"], trained=stats["trained"]),
         [
-            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_type"), "width": "70px"},
             {"label": t("widgets.summary_lists.col_year"), "width": "60px"},
             {"label": t("widgets.summary_lists.col_samples"), "width": "80px"},
@@ -249,7 +249,7 @@ def PredictionsSummary(project):
         t("widgets.summary_lists.predictions_title"),
         t("widgets.summary_lists.predictions_banner", total=stats["total"], active=stats["active"]),
         [
-            {"label": t("widgets.summary_lists.col_model"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_model"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_dataset"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.summary_lists.col_year"), "width": "70px"},
             {"label": t("widgets.summary_lists.col_window"), "width": "70px"},
@@ -283,7 +283,7 @@ def EvaluationsSummary(project):
         t("widgets.summary_lists.evaluations_title"),
         t("widgets.summary_lists.evaluations_banner", total=stats["total"]),
         [
-            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.summary_lists.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.summary_lists.col_pred_count"), "width": "60px"},
             {"label": t("widgets.summary_lists.col_cell_sizes"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.summary_lists.col_metrics"), "width": "minmax(0,1fr)"},

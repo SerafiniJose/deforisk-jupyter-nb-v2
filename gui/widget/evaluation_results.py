@@ -84,7 +84,7 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
     ProductTable(
         title=t("widgets.evaluation_results.evaluations_title"),
         columns=[
-            {"label": t("widgets.evaluation_results.col_truth"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.evaluation_results.col_truth"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.evaluation_results.col_maps"), "width": "55px"},
             {"label": t("widgets.evaluation_results.col_created"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.evaluation_results.col_status"), "width": "95px"},

@@ -72,7 +72,7 @@ def InferenceOutputList(
     ProductTable(
         title=t("widgets.inference_output_list.predictions_title"),
         columns=[
-            {"label": t("widgets.inference_output_list.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.inference_output_list.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.inference_output_list.col_model"), "width": "90px"},
             {"label": t("widgets.inference_output_list.col_dataset"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.inference_output_list.col_status"), "width": "95px"},

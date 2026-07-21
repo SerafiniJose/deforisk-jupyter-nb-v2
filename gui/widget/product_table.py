@@ -53,6 +53,11 @@ CHIP_LABEL = "min-width:0;overflow:hidden;text-overflow:ellipsis;"
 # convey otherwise: the long, ellipsised name yields the space, not the tag.
 CHIP_NO_SHRINK = "flex:0 0 auto;max-width:none;"
 
+# One x-small icon button is 20px wide; 28px leaves breathing room between
+# them. The 8px tail keeps the right-aligned buttons off the panel edge and
+# gives the "ACTIONS" header label its own space.
+ACTION_BTN_WIDTH = 28
+ACTIONS_MIN_WIDTH = 56
 ACTIONS_COL_WIDTH = "112px"
 
 # Vuetify theme tokens, so status chips follow the app accent in light and dark.
@@ -103,6 +108,26 @@ def action_color(kind: str, is_on: bool = False, override=None):
     if kind in ("download", "open"):
         return "primary"
     return None
+
+
+def actions_width_for(rows) -> str:
+    """Actions-column width that fits the busiest row and no more.
+
+    A fixed width had to assume the maximum any table might use (four buttons),
+    so two-button tables paid ~50px of dead space right where the flexible name
+    column was being ellipsised. Both the header and the data rows read this one
+    computed value, so the columns still line up (they are separate grid
+    containers, hence no ``max-content``).
+    """
+    most = max((len(r.get("actions") or []) for r in rows), default=0)
+    return f"{max(most * ACTION_BTN_WIDTH + 8, ACTIONS_MIN_WIDTH)}px"
+
+
+def name_tooltip(cell: dict) -> dict:
+    """Native ``title`` attributes so an ellipsised name is readable on hover."""
+    if cell.get("type", "text") == "text" and cell.get("value") is not None:
+        return {"title": str(cell["value"])}
+    return {}
 
 
 def grid_style(widths) -> str:
@@ -167,7 +192,9 @@ def _render_cell(cell: dict, first: bool):
     classes = ["text--secondary"] if cell.get("muted") else []
     if cell.get("size"):
         style += f"font-size:{cell['size']};"
-    with rv.Html(tag="div", style_=wrapper):
+    with rv.Html(
+        tag="div", style_=wrapper, attributes=name_tooltip(cell) if first else {}
+    ):
         solara.Text(str(cell.get("value", "")), classes=classes, style=style)
         for item in cell.get("chips", []):
             _render_chip(item, shrink=False)
@@ -234,7 +261,7 @@ def ProductTable(
     collapsible: bool = True,
     show_actions: bool = True,
     banner: Optional[str] = None,
-    actions_width: str = ACTIONS_COL_WIDTH,
+    actions_width: Optional[str] = None,
 ):
     """Uniform product table: collapsible count header + CSS-grid rows.
 
@@ -250,15 +277,15 @@ def ProductTable(
         collapsible: show the collapse chevron (expanded by default).
         show_actions: False = read-only mode (Summary popup).
         banner: optional stats line under the header (Summary popup).
-        actions_width: Actions column width; narrow it for single-action
-            tables so the flexible content columns keep room in the panel.
+        actions_width: Actions column width; defaults to the width the busiest
+            row actually needs so the flexible content columns keep the rest.
     """
     collapsed, set_collapsed = solara.use_state(False)
 
     widths = [c.get("width", "minmax(0,1fr)") for c in columns]
     labels = [c["label"] for c in columns]
     if show_actions:
-        widths.append(actions_width)
+        widths.append(actions_width or actions_width_for(rows))
         labels.append(t("common.actions"))
     grid = grid_style(widths)
 

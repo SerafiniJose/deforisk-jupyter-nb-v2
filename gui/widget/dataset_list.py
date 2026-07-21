@@ -53,7 +53,7 @@ def DatasetList(
     ProductTable(
         title=t("widgets.dataset_list.title"),
         columns=[
-            {"label": t("widgets.dataset_list.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.dataset_list.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.dataset_list.col_target"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.dataset_list.col_feats"), "width": "60px"},
             {"label": t("widgets.dataset_list.col_year"), "width": "60px"},

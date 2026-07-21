@@ -65,7 +65,7 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
     ProductTable(
         title=t("widgets.train_model_list.models_title"),
         columns=[
-            {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.train_model_list.col_type"), "width": "56px"},
             {"label": t("widgets.train_model_list.col_dataset"), "width": "minmax(0,1fr)"},
             {"label": t("widgets.train_model_list.col_sample"), "width": "minmax(0,1fr)"},
@@ -73,5 +73,4 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
         ],
         rows=rows,
         empty_text=t("widgets.train_model_list.empty"),
-        actions_width="82px",
     )

@@ -86,3 +86,29 @@ def test_product_table_renders_duplicate_row_keys():
         handle_error=False,
     )
     rc.close()
+
+
+def test_actions_width_fits_the_widest_row():
+    """The Actions column used to be a flat 112px — room for four buttons even
+    when a table only ever shows two, stealing ~50px from the ellipsised name
+    column beside it. Size it to the busiest row instead."""
+    from gui.widget.product_table import actions_width_for
+
+    two = actions_width_for([{"actions": [1, 2]}, {"actions": [1]}])
+    four = actions_width_for([{"actions": [1, 2]}, {"actions": [1, 2, 3, 4]}])
+    assert two.endswith("px") and four.endswith("px")
+    assert int(two[:-2]) < int(four[:-2])
+    # Two x-small icon buttons (20px each) must still fit, with margin to spare.
+    assert 48 <= int(two[:-2]) <= 72
+    # A table whose rows carry no actions still needs room for the header label.
+    assert int(actions_width_for([{"actions": []}])[:-2]) >= 48
+
+
+def test_name_cell_carries_a_full_text_tooltip():
+    """A truncated name must stay readable on hover."""
+    from gui.widget.product_table import name_tooltip
+
+    assert name_tooltip({"type": "text", "value": "a_very_long_name"}) == {
+        "title": "a_very_long_name"
+    }
+    assert name_tooltip({"type": "status", "status": "ready"}) == {}

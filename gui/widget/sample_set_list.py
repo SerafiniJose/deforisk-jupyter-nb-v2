@@ -85,9 +85,9 @@ def SampleSetList(
     ProductTable(
         title=t("widgets.sample_set_list.title"),
         columns=[
-            {"label": t("widgets.sample_set_list.col_name"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.sample_set_list.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.sample_set_list.col_strategy"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.sample_set_list.col_points"), "width": "minmax(0,1fr)"},
+            {"label": t("widgets.sample_set_list.col_points"), "width": "70px"},
             {"label": t("widgets.sample_set_list.col_status"), "width": "82px"},
         ],
         rows=rows,
