@@ -1441,3 +1441,296 @@ def test_evaluation_table_dialog_mounts_with_its_charts():
     )
     assert len(rc.find(ipecharts.EChartsRawWidget).widgets) == 2
     rc.close()
+
+
+# ---------------------------------------------------------------------------
+# Figures tab — interactive predicted-vs-observed scatter (headless render)
+#
+# The image-only tab is now an explorable scatter, one card per map, that keeps
+# the PNG reachable. These render tests cover the fallback ladder (missing CSV /
+# legacy PNG-only / neither artifact), cell-size switching, lazy loading and
+# theme, none of which a source-substring test can see.
+# ---------------------------------------------------------------------------
+
+_FIG_MODEL = "GLM"
+_FIG_PERIOD = "validation"
+
+
+def _write_points(path, obs, pred):
+    """Write a real 6-column point CSV (the scatter loader reads 4 of them)."""
+    import pandas as pd
+
+    n = len(obs)
+    pd.DataFrame({
+        "cell": list(range(n)),
+        "nfor_obs": [10] * n,
+        "ndefor_obs": [1] * n,
+        "nfor_obs_ha": [9.0] * n,
+        "ndefor_obs_ha": list(obs),
+        "ndefor_pred_ha": list(pred),
+    }).to_csv(path, index=False)
+
+
+def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9):
+    return {"model": _FIG_MODEL, "period": _FIG_PERIOD,
+            "csize_coarse_grid": csize, "csize_coarse_grid_ha": ha,
+            "MedAE": medae, "R2": r2}
+
+
+def _figures_record(*, indices, csv_path, artifacts=()):
+    import types as _t
+
+    return _t.SimpleNamespace(
+        indices=list(indices), metrics=[], csv_path=str(csv_path),
+        truth_tag="loss_2010", run_id="run00001", artifacts=list(artifacts),
+    )
+
+
+def _fig_artifact(points_csv, png_path, csize=300):
+    import types as _t
+
+    return _t.SimpleNamespace(
+        prediction_key="glm__validation", model=_FIG_MODEL, period=_FIG_PERIOD,
+        csize_px=csize, points_csv=str(points_csv), png_path=str(png_path))
+
+
+def _render_figures_tab(**kwargs):
+    import ipecharts
+    import reacton
+
+    from gui.i18n import t as _t
+
+    _t("common.close")  # warm the translator before the first render
+    from gui.widget.evaluation_results import _FiguresTab
+
+    kwargs.setdefault("eval_key", "run-a")
+    kwargs.setdefault("active_tab", 2)  # predicted-vs-observed is the third tab
+    _, rc = reacton.render(_FiguresTab(**kwargs), handle_error=False)
+    return rc, ipecharts.EChartsRawWidget
+
+
+def _scatter_data(widget):
+    """The [obs, pred] pairs the scatter series carries (drops the ride-alongs)."""
+    return [v[:2] for v in widget.option["series"][0]["data"]]
+
+
+def test_figures_tab_renders_the_interactive_scatter(tmp_path):
+    """The primary path: a readable point CSV becomes an ECharts scatter."""
+    from gui.i18n import t as _t
+    from gui.scripts.evaluation_echarts import PRED_OBS_SQUARE_HEIGHT
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0, 3.0], pred=[1.5, 2.5, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, cls = _render_figures_tab(record=record)
+    widgets = rc.find(cls).widgets
+    assert len(widgets) == 1
+    assert _scatter_data(widgets[0]) == [[1.0, 1.5], [2.0, 2.5], [3.0, 2.0]]
+    # small scatter draws with SVG, in a square (height == card width) container
+    assert widgets[0].renderer == "svg"
+    assert widgets[0].height == PRED_OBS_SQUARE_HEIGHT
+    # the translated axis label reached the option, not the PNG's English string
+    assert widgets[0].option["xAxis"]["name"] == _t(
+        "widgets.evaluation_results.chart_x_axis")
+    rc.close()
+
+
+def test_figures_tab_switches_the_cell_size(tmp_path):
+    """The cell-size selector shows for >1 size and reloads that size's points."""
+    import ipyvuetify as vw
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_100.csv",
+                  obs=[1.0], pred=[1.1])
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[2.0], pred=[2.9])
+    record = _figures_record(
+        indices=[_fig_index_row(csize=100), _fig_index_row(csize=300)],
+        csv_path=tmp_path / "indices_all.csv")
+    rc, cls = _render_figures_tab(record=record)
+    sel = rc.find(vw.Select).widgets
+    assert len(sel) == 1
+    assert _scatter_data(rc.find(cls).widgets[0]) == [[1.0, 1.1]]  # first size
+    sel[0].v_model = 300  # user picks the coarser grid
+    assert _scatter_data(rc.find(cls).widgets[0]) == [[2.0, 2.9]]
+    rc.close()
+
+
+def test_figures_tab_hides_the_selector_for_a_single_cell_size(tmp_path):
+    import ipyvuetify as vw
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0], pred=[1.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, _ = _render_figures_tab(record=record)
+    assert rc.find(vw.Select).widgets == []
+    rc.close()
+
+
+def test_figures_tab_missing_csv_falls_back_to_png_with_a_warning(tmp_path):
+    """(a) A NEW record whose point CSV vanished: show the PNG AND warn."""
+    import ipyvuetify as vw
+    import ipywidgets
+
+    png = tmp_path / "pred_obs_GLM_validation_300.png"
+    png.write_bytes(b"PNG-typed")
+    missing_csv = tmp_path / "pred_obs_GLM_validation_300.csv"  # never written
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv",
+        artifacts=[_fig_artifact(missing_csv, png)])
+    rc, cls = _render_figures_tab(record=record)
+    assert rc.find(cls).widgets == []                     # no interactive chart
+    assert rc.find(ipywidgets.Image).widgets              # the saved PNG shows
+    warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
+    assert warnings                                       # non-fatal warning
+    rc.close()
+
+
+def test_figures_tab_legacy_png_only_is_not_treated_as_broken(tmp_path):
+    """(b) A LEGACY record (no artifacts, no CSV) shows its PNG, no warning."""
+    import ipyvuetify as vw
+    import ipywidgets
+
+    png = tmp_path / "pred_obs_GLM_validation_300.png"
+    png.write_bytes(b"PNG-legacy")
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv", artifacts=[])
+    rc, cls = _render_figures_tab(record=record)
+    assert rc.find(cls).widgets == []
+    assert rc.find(ipywidgets.Image).widgets              # PNG shows
+    warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
+    assert warnings == []                                 # legacy: no warning
+    rc.close()
+
+
+def test_figures_tab_missing_both_artifacts_shows_the_resolved_path(tmp_path):
+    """(c) Neither CSV nor PNG: the missing-figure message names the path."""
+    import ipyvuetify as vw
+    import ipywidgets
+
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv", artifacts=[])
+    rc, cls = _render_figures_tab(record=record)
+    assert rc.find(cls).widgets == []
+    assert rc.find(ipywidgets.Image).widgets == []
+    infos = [a for a in rc.find(vw.Alert).widgets if a.type == "info"]
+    text = " ".join(str(c) for a in infos for c in (a.children or []))
+    assert "pred_obs_GLM_validation_300.png" in text
+    rc.close()
+
+
+def test_figures_tab_builds_the_option_from_the_live_theme(tmp_path):
+    """The dark theme must reach the scatter option's own axis colours."""
+    from solara.lab.components.theming import theme
+
+    from gui.scripts.echarts_options import theme_colors
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    before = theme.dark
+    try:
+        theme.dark = True
+        rc, cls = _render_figures_tab(record=record)
+        opt = rc.find(cls).widgets[0].option
+        assert opt["xAxis"]["axisLabel"]["color"] == theme_colors(True)["ink"]
+        assert (opt["xAxis"]["splitLine"]["lineStyle"]["color"]
+                == theme_colors(True)["grid"])
+        rc.close()
+    finally:
+        theme.dark = before
+
+    rc, cls = _render_figures_tab(record=record)
+    assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
+            == theme_colors(False)["ink"])
+    rc.close()
+
+
+def test_figures_tab_defers_point_load_until_its_tab_is_active(tmp_path, monkeypatch):
+    """Point data is parsed only when the tab is active, not on dialog open."""
+    import gui.widget.evaluation_results as er
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0], pred=[1.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    calls = []
+    real = er.load_pred_obs_plot_data
+
+    def spy(*a, **k):
+        calls.append(a)
+        return real(*a, **k)
+
+    monkeypatch.setattr(er, "load_pred_obs_plot_data", spy)
+
+    rc, cls = _render_figures_tab(record=record, active_tab=0)  # some other tab
+    assert calls == []                                          # nothing parsed
+    assert rc.find(cls).widgets == []
+    rc.close()
+
+    rc, cls = _render_figures_tab(record=record, active_tab=2)  # figures active
+    assert calls and len(rc.find(cls).widgets) == 1
+    rc.close()
+
+
+def test_figures_tab_offers_a_png_download(tmp_path):
+    """An explicit action keeps the canonical PNG reachable from the UI."""
+    import ipyvuetify as vw
+
+    from gui.i18n import t as _t
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0], pred=[1.0])
+    png = tmp_path / "pred_obs_GLM_validation_300.png"
+    png.write_bytes(b"PNG-bytes")
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, _ = _render_figures_tab(record=record)
+    labels = [c for b in rc.find(vw.Btn).widgets for c in (b.children or [])
+              if isinstance(c, str)]
+    assert _t("widgets.evaluation_results.download_png") in labels
+    assert png.read_bytes() == b"PNG-bytes"  # PNG still present on disk
+    rc.close()
+
+
+def test_evaluation_table_dialog_shows_the_scatter_on_the_figures_tab(tmp_path):
+    """End-to-end: driving the dialog to the third tab loads the scatter.
+
+    Extends the mount smoke: the figures tab is inactive on open (no scatter),
+    and switching to it parses the point CSV and draws the interactive chart.
+    """
+    import types
+
+    import ipecharts
+    import ipyvuetify as vw
+    import reacton
+    import solara
+
+    from gui.i18n import t as _t
+
+    _t("common.close")  # warm the translator before the first render
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.5, 2.5])
+    from gui.widget.evaluation_results import EvaluationTableDialog
+
+    rec = _figures_record(indices=[_fig_index_row()],
+                          csv_path=tmp_path / "indices_all.csv")
+    p = types.SimpleNamespace(evaluations={"run-a": rec})
+    project = solara.reactive(p, equals=lambda a, b: a is b)
+    _, rc = reacton.render(
+        EvaluationTableDialog(
+            project=project, eval_key="run-a", on_close=lambda *_: None),
+        handle_error=False)
+
+    def scatters():
+        return [w for w in rc.find(ipecharts.EChartsRawWidget).widgets
+                if any(s.get("type") == "scatter"
+                       for s in w.option.get("series", []))]
+
+    assert scatters() == []          # inactive figures tab: no scatter parsed yet
+    rc.find(vw.Tabs).widgets[0].v_model = 2  # user opens Pred. vs obs.
+    assert len(scatters()) == 1
+    assert _scatter_data(scatters()[0]) == [[1.0, 1.5], [2.0, 2.5]]
+    rc.close()

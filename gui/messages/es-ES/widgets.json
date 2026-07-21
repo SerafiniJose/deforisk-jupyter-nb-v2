@@ -48,7 +48,17 @@
       "tab_figures": "Pred. vs obs.",
       "csize_select_label": "Tamaño de celda (píxeles)",
       "no_figures_info": "Esta ejecución no guardó figuras de predicho vs observado.",
-      "missing_figure": "No se encontró el archivo de la figura: {path}"
+      "missing_figure": "No se encontró el archivo de la figura: {path}",
+      "chart_x_axis": "Deforestación observada (ha)",
+      "chart_y_axis": "Deforestación predicha (ha)",
+      "chart_series": "Celdas de cuadrícula",
+      "chart_cell": "Celda",
+      "chart_observed": "Observado",
+      "chart_predicted": "Predicho",
+      "chart_forest": "Bosque",
+      "chart_residual": "Residuo",
+      "chart_unavailable_warning": "Gráfico interactivo no disponible — mostrando la imagen guardada.",
+      "download_png": "Descargar PNG"
     },
     "dataset_list": {
       "title": "Conjuntos de datos",

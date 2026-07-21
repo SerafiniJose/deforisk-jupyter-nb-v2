@@ -15,7 +15,10 @@ from solara.lab.components.theming import theme
 from gui.i18n import t
 from gui.scripts.echarts_options import RENDERER_SVG
 from gui.scripts.evaluation_charts import (
-    figure_entries, metric_bar_option, record_csizes, record_metrics)
+    figure_entries, map_label, metric_bar_option, record_csizes, record_metrics)
+from gui.scripts.evaluation_echarts import (
+    PRED_OBS_SQUARE_HEIGHT, load_pred_obs_plot_data, pred_obs_chart_identity,
+    pred_obs_renderer, pred_obs_scatter_option)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.echarts import EChartsChart
@@ -23,6 +26,11 @@ from gui.widget.product_table import ProductTable
 
 # One chart per metric, two per row — the height Plotly gave each subplot row.
 _CHART_HEIGHT = "260px"
+
+# Dialog tab order: table (0), charts (1), predicted-vs-observed (2). The figures
+# tab loads its point CSVs only when it is the active one, so the scatter for a
+# 200k-point run is never parsed just because the dialog opened on the table.
+_FIGURES_TAB_INDEX = 2
 
 
 @solara.component
@@ -123,13 +131,130 @@ def _ChartsTab(record, eval_key, active_tab=None):
             )
 
 
+def _scatter_labels():
+    """Translated word-labels for the predicted-vs-observed scatter option.
+
+    The chart builder (``pred_obs_scatter_option``) owns English defaults; this
+    is where translation happens, per the app's i18n rule. Only the words that
+    differ by language are overridden — the metric symbols (MedAE, R2, n, ha) are
+    identical across locales and stay on the builder's defaults. Whatever ends up
+    here MUST also be handed to ``pred_obs_chart_identity`` so the option digest
+    reflects a language switch.
+    """
+    return {
+        "x_axis": t("widgets.evaluation_results.chart_x_axis"),
+        "y_axis": t("widgets.evaluation_results.chart_y_axis"),
+        "series": t("widgets.evaluation_results.chart_series"),
+        "cell": t("widgets.evaluation_results.chart_cell"),
+        "observed": t("widgets.evaluation_results.chart_observed"),
+        "predicted": t("widgets.evaluation_results.chart_predicted"),
+        "forest": t("widgets.evaluation_results.chart_forest"),
+        "residual": t("widgets.evaluation_results.chart_residual"),
+    }
+
+
 @solara.component
-def _FiguresTab(record):
-    """Predicted-vs-observed PNGs (one per map) at a user-chosen cell size."""
+def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
+                 is_typed, tab_active, eval_key, active_tab):
+    """One map's card: the interactive scatter, or the PNG fallback ladder.
+
+    The card header always names the map and, when the PNG exists, offers it as
+    a download — the PNG stays the offline/report artifact. Below it, the
+    fallback ladder (all non-fatal):
+
+    * point data loaded  -> the interactive ECharts scatter;
+    * (a) a NEW record (``is_typed``) whose CSV is gone -> PNG **and** a warning;
+    * (b) a LEGACY record (no artifacts) with only a PNG -> the PNG, no warning;
+    * (c) neither artifact on disk -> the missing-figure message with the path.
+
+    ``model``/``period`` come from the record's index row, so a row that lacks
+    them (``row is None``) skips straight to the PNG rungs rather than crashing.
+    """
+    model = row.get("model") if row else None
+    period = row.get("period") if row else None
+    dark = theme.dark
+
+    # One cheap identity (a single stat, no read) serving two purposes: the
+    # load memo's key here, and the chart's `option_digest` below. Computed
+    # unconditionally — it is None for a row with no model/period, which is a
+    # perfectly stable key.
+    digest = pred_obs_chart_identity(
+        record, model, period, csize, dark=dark, labels=labels, title=None,
+        fig_dir=fig_dir)
+
+    def load_points():
+        # Parse the point CSV only when this tab is the active one (see the
+        # loader's lru_cache — the parse is memoized, but it must not run on
+        # dialog open).
+        if not (tab_active and model and period):
+            return None
+        return load_pred_obs_plot_data(
+            record, model, period, csize, fig_dir=fig_dir)
+
+    # The load lives in a use_memo, not in the render body, because it is I/O
+    # with a side effect: a missing artifact makes the loader emit a
+    # `logger.warning`, and the app pipes that logger into a Solara reactive
+    # (gui/scripts/log_bridge.py). A render that logs on EVERY pass turns that
+    # into per-render reactive traffic — which is exactly how this card used to
+    # spin forever. Keyed on `digest` (record + resolved path + that file's
+    # size/mtime + cell size + theme + label text) plus `tab_active`, so a
+    # rewritten or re-pointed artifact still reloads.
+    plot_data = solara.use_memo(load_points, [digest, tab_active])
+
+    with solara.Column(style=f"gap: 6px; width: {PRED_OBS_SQUARE_HEIGHT};"
+                             " max-width: 100%;"):
+        with solara.Row(style="justify-content: space-between;"
+                              " align-items: center; gap: 8px;"):
+            solara.Text(label, style="font-size: 0.85rem; font-weight: 600;")
+            if png_path.exists():
+                solara.FileDownload(
+                    lambda p=png_path: p.read_bytes(),
+                    filename=png_path.name,
+                    label=t("widgets.evaluation_results.download_png"),
+                    mime_type="image/png",
+                )
+        if plot_data is not None:
+            # Same labels/title into the option AND the digest (computed above):
+            # the digest stands in for the adapter's content hash, so an input
+            # it misses is stale.
+            option = pred_obs_scatter_option(
+                plot_data, dark=dark, labels=labels, title=None)
+            EChartsChart(
+                option=option,
+                # Extrinsic rebuild triggers: the run (fresh chart per subject),
+                # the map + cell size, and the active tab — ipecharts sizes on
+                # attach only, so re-entering the tab must rebuild.
+                identity=f"{eval_key}|{label}|{csize}|tab{active_tab}",
+                dark=dark,
+                renderer=pred_obs_renderer(plot_data),
+                height=PRED_OBS_SQUARE_HEIGHT,
+                option_digest=digest,
+            )
+        elif png_path.exists():
+            if is_typed and tab_active:
+                solara.Warning(
+                    t("widgets.evaluation_results.chart_unavailable_warning"))
+            solara.Image(png_path, width=PRED_OBS_SQUARE_HEIGHT)
+        else:
+            solara.Info(t("widgets.evaluation_results.missing_figure",
+                          path=str(png_path)))
+
+
+@solara.component
+def _FiguresTab(record, eval_key=None, active_tab=None):
+    """Interactive predicted-vs-observed scatter (one card per map).
+
+    One chart card per prediction at a user-chosen cell size — the same
+    comparison layout the image-only tab had, now explorable. The point CSV is
+    loaded only when this tab is active (``active_tab == _FIGURES_TAB_INDEX``);
+    each card degrades to the saved PNG (see ``_PredObsCard``) when its CSV is
+    gone, so a moved or legacy run never blocks the table or the image.
+    """
     from pathlib import Path
 
     indices = getattr(record, "indices", None) or []
-    # The PNGs live beside the run's indices_all.csv (evaluation/<truth_tag>/).
+    # The figures live beside the run's indices_all.csv (evaluation/<truth_tag>/
+    # for legacy records, the run sub-folder for run-scoped ones).
     csv_path = getattr(record, "csv_path", None)
     fig_dir = Path(csv_path).parent if csv_path else None
     csizes = record_csizes(indices)
@@ -147,16 +272,31 @@ def _FiguresTab(record):
             items=csizes, v_model=csize, on_v_model=set_selected,
             dense=True, outlined=True, style_="max-width: 260px;",
         )
+
+    # None (the dialog always passes it, but a bare mount may not) counts as
+    # active so a direct render still draws the chart.
+    tab_active = active_tab is None or active_tab == _FIGURES_TAB_INDEX
+    # New records carry run-scoped artifacts; legacy ones do not. Only a new
+    # record is EXPECTED to have a point CSV, so only its absence warrants a
+    # warning (rung a vs b).
+    is_typed = bool(getattr(record, "artifacts", None))
+    labels = _scatter_labels()
+    # figure_entries resolves the canonical PNG path per map (reused, not
+    # reinvented); the index row supplies the model/period the loader needs.
     entries = figure_entries(indices, csize, fig_dir=fig_dir)
+    rows_by_label = {
+        map_label(r): r for r in indices
+        if r.get("csize_coarse_grid") == csize
+        and r.get("model") and r.get("period")
+    }
     with solara.Row(style="flex-wrap: wrap; gap: 16px; align-items: flex-start;"):
-        for label, path in entries:
-            with solara.Column(style="gap: 4px; width: 420px;"):
-                solara.Text(label, style="font-size: 0.85rem; font-weight: 600;")
-                if path.exists():
-                    solara.Image(path, width="420px")
-                else:
-                    solara.Info(t("widgets.evaluation_results.missing_figure",
-                                  path=str(path)))
+        for label, png_path in entries:
+            _PredObsCard(
+                record=record, row=rows_by_label.get(label), label=label,
+                csize=csize, png_path=png_path, fig_dir=fig_dir, labels=labels,
+                is_typed=is_typed, tab_active=tab_active, eval_key=eval_key,
+                active_tab=active_tab,
+            )
     if not entries:
         solara.Info(t("widgets.evaluation_results.no_figures_info"))
 
@@ -208,7 +348,8 @@ def EvaluationTableDialog(project, eval_key, on_close):
                             _ChartsTab(record=record, eval_key=eval_key,
                                        active_tab=active_tab)
                         with rv.TabItem():
-                            _FiguresTab(record=record)
+                            _FiguresTab(record=record, eval_key=eval_key,
+                                        active_tab=active_tab)
                 elif record is not None:
                     solara.Info(t("widgets.evaluation_results.no_indices_info"))
             with rv.CardActions(style_="justify-content: flex-end;"):

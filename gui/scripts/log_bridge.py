@@ -51,7 +51,17 @@ class ReactiveLogHandler(logging.Handler):
             # each snapshot the same buffer and publish one missing the other's
             # record. Do NOT narrow this back to only the buffer build.
             with self._lock:
-                buf = (log_records.value + (item,))[-MAX_RECORDS:]
+                # `.peek()`, never `.value`. Reading a reactive through `.value`
+                # calls `Reactive.get()`, which registers it in Solara's
+                # `thread_local.reactive_used` — i.e. it AUTO-SUBSCRIBES whatever
+                # component happens to be rendering on this thread. A component
+                # that logs during its render would then be subscribed to
+                # `log_records` by that very log call, and the `_publish` below
+                # would force it to re-render, log again, and never stop
+                # ("Too many renders triggered"). A logging handler must be
+                # invisible to its caller's dependency tracking; `.peek()` reads
+                # the same value without subscribing anyone.
+                buf = (log_records.peek() + (item,))[-MAX_RECORDS:]
                 self._publish(buf)
         except Exception:  # a logging handler must never raise into caller code
             pass

@@ -48,7 +48,17 @@
       "tab_figures": "Pred. vs obs.",
       "csize_select_label": "Cell size (pixels)",
       "no_figures_info": "This run stored no predicted-vs-observed figures.",
-      "missing_figure": "Figure file not found: {path}"
+      "missing_figure": "Figure file not found: {path}",
+      "chart_x_axis": "Observed deforestation (ha)",
+      "chart_y_axis": "Predicted deforestation (ha)",
+      "chart_series": "Grid cells",
+      "chart_cell": "Cell",
+      "chart_observed": "Observed",
+      "chart_predicted": "Predicted",
+      "chart_forest": "Forest",
+      "chart_residual": "Residual",
+      "chart_unavailable_warning": "Interactive chart unavailable — showing the saved image instead.",
+      "download_png": "Download PNG"
     },
     "dataset_list": {
       "title": "Datasets",
