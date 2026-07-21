@@ -2,8 +2,9 @@
 
 Replaces the overflowing ``rv.Tabs`` strip: a 9-segment strip mapping the
 pipeline (has-outputs / empty / locked, with a ring on the current step), a
-title row with the active step's name, output count and position, an
-"All steps" jump dropdown, and Back / Next buttons.
+title row with the active step's name, output count and position, a unified
+clickable title (badge + name + count + caret) that opens the jump menu, and
+Back / Next buttons.
 
 Semantics are outputs, not completion — steps are revisitable workspaces,
 never "done". Segment/badge data all derives from the STEPS registry.
@@ -125,82 +126,92 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
                 disabled=prev_t is None,
                 on_click=lambda: prev_t is not None and on_navigate(prev_t),
             )
-            with solara.Column(style="gap: 0px;"):
-                with solara.Row(style="gap: 6px; align-items: center;"):
-                    solara.Text(t(active.label_key), style="font-weight: 700;")
-                    rv.Chip(children=[count_text(active, p, aoi)], x_small=True)
-                solara.Text(
-                    t("workflow.step_position", n=active_step + 1, total=len(STEPS)),
-                    style="font-size: 11px;",
-                    classes=["text--secondary"],
-                )
-            # "All steps" dropdown, anchored under its own button. The auto
-            # margin lives on this wrapper, not the button: the flex child here
-            # is the <v-menu> div, which renders the button into its activator
-            # slot. solara.lab.Menu wires that slot's click in Vue
-            # (@click.native), so no widget-level on_click is involved.
-            with rv.Html(tag="div", style_="margin-left: auto;"):
-                all_steps_btn = solara.Button(
-                    t("workflow.all_steps"),
+            # Unified activator: badge + title + count + caret in ONE clickable
+            # element that opens the jump menu (replaces the old two-line title
+            # column and the separate "ALL STEPS" button). Borderless at rest;
+            # the :hover tint needs real CSS, injected per-render so it tracks
+            # the live theme primary.
+            solara.Style(
+                f".sr-step-jump:hover {{ background: {_rgba(primary, 0.10)}; }}"
+            )
+            with rv.Html(
+                tag="div",
+                class_="sr-step-jump",
+                style_="display: flex; align-items: center; gap: 8px;"
+                " padding: 5px 10px 5px 8px; border-radius: 6px;"
+                " cursor: pointer;",
+            ) as activator:
+                rv.Html(
+                    tag="span",
                     children=[
-                        rv.Icon(children=["mdi-menu-down"], right=True, small=True)
+                        t("workflow.step_badge",
+                          n=active_step + 1, total=len(STEPS))
                     ],
-                    small=True, outlined=True, text=True,
+                    style_=f"background: {primary}; color: #ffffff;"
+                    " font-weight: 600; font-size: 11px; border-radius: 4px;"
+                    " padding: 2px 6px; white-space: nowrap;",
                 )
-                with solara.lab.Menu(
-                    activator=all_steps_btn,
-                    open_value=menu_open,
-                    on_open_value=set_menu_open,
-                    # Locked rows would otherwise dismiss the menu on click
-                    # (Vuetify counts them as content); _jump closes it on a
-                    # real jump instead.
-                    close_on_content_click=False,
-                    # Load-bearing — do NOT set this to False. It makes solara
-                    # pass min-width="auto" to v-menu, and Vuetify's off-screen
-                    # guard then computes max(content_width, parseFloat("auto"))
-                    # = NaN, so its `overflow > 0` test is false and the menu is
-                    # never pulled back into the viewport. This header sits at
-                    # the right edge of the panel, so the dropdown ran off the
-                    # screen. A numeric min-width keeps the clamp working.
-                    use_activator_width=True,
-                ):
-                    with rv.List(dense=True, style_="width: 320px; padding: 4px 0;"):
-                        for i, spec in enumerate(STEPS):
-                            locked = states[i] is StepStatus.LOCKED
-                            with rv.ListItem(
-                                disabled=locked,
-                                link=not locked,
-                                color="primary",
-                                input_value=i == active_step,
-                            ) as row:
-                                # Number for reachable steps, lock glyph
-                                # otherwise (mockup: no status icons).
-                                if locked:
-                                    rv.Icon(
-                                        children=["mdi-lock-outline"],
-                                        small=True,
-                                        style_="margin-right: 10px;",
-                                    )
-                                else:
-                                    solara.Text(
-                                        str(i + 1),
-                                        style="width: 18px; text-align: center;"
-                                        " font-weight: 600; font-size: 12px;"
-                                        " margin-right: 10px;",
-                                    )
-                                with rv.ListItemContent():
-                                    rv.ListItemTitle(children=[t(spec.label_key)])
-                                solara.Text(
-                                    t(spec.lock_reason_key)
-                                    if locked
-                                    else count_text(spec, p, aoi),
-                                    style="font-size: 11px; margin-left: 12px;"
-                                    " text-align: right;",
-                                    classes=["text--secondary"],
+                solara.Text(t(active.label_key), style="font-weight: 700;")
+                rv.Chip(children=[count_text(active, p, aoi)], x_small=True)
+                rv.Icon(children=["mdi-menu-down"], small=True)
+            # solara.lab.Menu renders `activator` into its v-menu activator slot
+            # and wires the click in Vue (@click.native on the slot element — any
+            # element works, verified against solara's menu.vue), so no
+            # widget-level on_click is involved.
+            with solara.lab.Menu(
+                activator=activator,
+                open_value=menu_open,
+                on_open_value=set_menu_open,
+                # Locked rows would otherwise dismiss the menu on click
+                # (Vuetify counts them as content); _jump closes it on a
+                # real jump instead.
+                close_on_content_click=False,
+                # Load-bearing — do NOT set this to False. It makes solara
+                # pass min-width="auto" to v-menu, and Vuetify's off-screen
+                # guard then computes max(content_width, parseFloat("auto"))
+                # = NaN, so its `overflow > 0` test is false and the menu is
+                # never pulled back into the viewport. A numeric min-width
+                # keeps the clamp working.
+                use_activator_width=True,
+            ):
+                with rv.List(dense=True, style_="width: 320px; padding: 4px 0;"):
+                    for i, spec in enumerate(STEPS):
+                        locked = states[i] is StepStatus.LOCKED
+                        with rv.ListItem(
+                            disabled=locked,
+                            link=not locked,
+                            color="primary",
+                            input_value=i == active_step,
+                        ) as row:
+                            # Number for reachable steps, lock glyph
+                            # otherwise (mockup: no status icons).
+                            if locked:
+                                rv.Icon(
+                                    children=["mdi-lock-outline"],
+                                    small=True,
+                                    style_="margin-right: 10px;",
                                 )
-                            rv.use_event(row, "click", lambda *_, i=i: _jump(i))
+                            else:
+                                solara.Text(
+                                    str(i + 1),
+                                    style="width: 18px; text-align: center;"
+                                    " font-weight: 600; font-size: 12px;"
+                                    " margin-right: 10px;",
+                                )
+                            with rv.ListItemContent():
+                                rv.ListItemTitle(children=[t(spec.label_key)])
+                            solara.Text(
+                                t(spec.lock_reason_key)
+                                if locked
+                                else count_text(spec, p, aoi),
+                                style="font-size: 11px; margin-left: 12px;"
+                                " text-align: right;",
+                                classes=["text--secondary"],
+                            )
+                        rv.use_event(row, "click", lambda *_, i=i: _jump(i))
             solara.Button(
                 icon_name="mdi-chevron-right", icon=True, small=True,
                 color="primary", disabled=next_t is None,
+                style="margin-left: auto;",
                 on_click=lambda: next_t is not None and on_navigate(next_t),
             )

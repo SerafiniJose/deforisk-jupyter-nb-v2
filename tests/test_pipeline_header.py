@@ -84,3 +84,16 @@ def test_no_dead_click_patterns():
     assert "rv.use_event(" in src        # segment + dropdown-row clicks
     # Reads reactives inside the component (prop-equality bailout).
     assert "project.value" in src and "aoi_result.value" in src
+
+
+def test_unified_activator_replaces_all_steps_button():
+    """Title + badge + count + caret are ONE menu activator; the separate
+    "ALL STEPS" button and the "Step 7 of 9" subtitle are gone."""
+    from gui.widget import pipeline_header
+
+    src = inspect.getsource(pipeline_header)
+    assert "workflow.step_badge" in src       # n/total badge in the activator
+    assert "workflow.all_steps" not in src    # old button label gone
+    assert "workflow.step_position" not in src  # old subtitle gone
+    assert "mdi-menu-down" in src             # caret affordance kept
+    assert "sr-step-jump:hover" in src        # hover tint on the activator
