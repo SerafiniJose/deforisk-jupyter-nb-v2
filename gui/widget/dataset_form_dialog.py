@@ -140,6 +140,7 @@ def DatasetFormDialog(
             chips=True,
             small_chips=True,
             deletable_chips=True,
+            class_="multi-chips",
             hint=t("tiles.dataset.features_hint"),
             persistent_hint=True,
         )

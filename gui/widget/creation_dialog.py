@@ -46,6 +46,15 @@ _ADVANCED_PANEL_CSS = """
    notch. In LTR it writes that offset to `left` (`{left: offset, right:
    'auto'}`), inline, so undoing it takes !important on both. */
 .field-info-icon .v-label { left: 0 !important; right: auto !important; }
+
+/* Multi-select with chips (`class_="multi-chips"`). A dense field pins its
+   slot to a one-line height, so a second row of chips spills out of the
+   outlined border. Let the slot grow with its content instead and keep the
+   single-row height as the floor. */
+.multi-chips .v-input__slot { height: auto !important; min-height: 40px; }
+.multi-chips .v-select__slot { min-height: 40px; }
+.multi-chips .v-select__selections { flex-wrap: wrap; padding: 3px 0; }
+.multi-chips .v-select__selections .v-chip { margin: 2px 4px 2px 0; }
 """
 
 
