@@ -30,6 +30,7 @@ _CHART_HEIGHT = "260px"
 # Dialog tab order: table (0), charts (1), predicted-vs-observed (2). The figures
 # tab loads its point CSVs only when it is the active one, so the scatter for a
 # 200k-point run is never parsed just because the dialog opened on the table.
+_CHARTS_TAB_INDEX = 1
 _FIGURES_TAB_INDEX = 2
 
 
@@ -101,11 +102,14 @@ def _ChartsTab(record, eval_key, active_tab=None):
     few small dicts, and EChartsChart hashes the option it is handed, so an
     equal option reuses the same widget instead of tearing the chart down.
 
-    The identity carries only what the options do NOT show: ``active_tab`` (the
-    dialog's selected tab index) so the charts are rebuilt when the tab is
-    (re-)entered, and ``eval_key`` so switching runs starts from a fresh chart
-    rather than inheriting the previous one's legend toggles — see the contract
-    on EChartsChart.
+    The identity carries only what the options do NOT show: ``eval_key``, so
+    switching runs starts from a fresh chart rather than inheriting the
+    previous one's legend toggles — see the contract on EChartsChart. The
+    active tab is deliberately NOT in it: that rebuilt every chart on every
+    tab switch, and the fresh widgets attached inside the now-hidden
+    (``display:none``) tab measured width 0 and rendered squished forever
+    (ipecharts sizes on attach only). Instead ``visible`` tells the adapter
+    when this tab is shown, and IT schedules a post-transition resize nudge.
 
     The theme comes from ``use_dark_effective()`` and NOT from reading
     ``solara.lab.theme.dark``: that theme object is an ipyvuetify traitlet
@@ -126,6 +130,8 @@ def _ChartsTab(record, eval_key, active_tab=None):
         return
 
     ncols = 2 if len(charts) > 1 else 1
+    # A bare mount (active_tab=None) counts as shown, matching _PredObsCard.
+    tab_active = active_tab is None or active_tab == _CHARTS_TAB_INDEX
     with solara.Div(
         style=f"display: grid; grid-template-columns: repeat({ncols},"
               " minmax(0, 1fr)); gap: 12px; width: 100%;"
@@ -133,10 +139,11 @@ def _ChartsTab(record, eval_key, active_tab=None):
         for _metric, option in charts:
             EChartsChart(
                 option=option,
-                identity=f"{eval_key}|tab{active_tab}",
+                identity=f"{eval_key}",
                 dark=dark,
                 renderer=RENDERER_SVG,
                 height=_CHART_HEIGHT,
+                visible=tab_active,
             )
 
 
@@ -292,15 +299,17 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
         if option is not None:
             EChartsChart(
                 option=option,
-                # Extrinsic rebuild triggers: the run (fresh chart per subject),
-                # the map + cell size, and the active tab — ipecharts sizes its
-                # chart on attach and does not watch the container afterwards,
-                # so a tab re-entry rebuilds rather than risking a mis-sized
-                # chart. (Mitigation only — NOT verified in a browser.)
-                identity=f"{eval_key}|{label}|{csize}|tab{active_tab}",
+                # Extrinsic rebuild triggers: the run (fresh chart per subject)
+                # and the map + cell size. NOT the active tab — that rebuilt
+                # every scatter on every tab switch, and a widget attached in a
+                # hidden tab measures width 0 and stays squished (ipecharts
+                # sizes on attach only). `visible` hands the adapter the tab
+                # state instead; it schedules the post-transition resize nudge.
+                identity=f"{eval_key}|{label}|{csize}",
                 dark=dark,
                 renderer=pred_obs_renderer(plot_data),
                 height=PRED_OBS_SQUARE_HEIGHT,
+                visible=tab_active,
                 # The digest above stands in for the adapter's content hash,
                 # which at 50k points costs ~118 ms of JSON+sha1 per render
                 # (~470 ms at 200k). Order-of-magnitude, machine-dependent

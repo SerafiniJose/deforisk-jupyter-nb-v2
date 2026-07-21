@@ -1523,14 +1523,47 @@ def test_charts_tab_rebuilds_the_chart_when_the_charted_values_change():
     assert second.option["series"][0]["data"] == [6.0, 5.7]
 
 
-def test_charts_tab_rebuilds_its_charts_when_the_tab_becomes_active():
-    """ipecharts sizes on attach only, so re-entering the tab rebuilds."""
+def test_charts_tab_keeps_its_charts_across_a_tab_switch():
+    """The tab index must NOT be in the chart identity.
+
+    Rebuilding on every tab switch is what squished the charts: the leaving
+    tab's fresh widgets re-attach inside a ``display:none`` v-window-item,
+    ipecharts measures width 0 (it sizes on attach only) and draws its 100px
+    fallback — permanently, since there is no ResizeObserver. The widget must
+    survive the switch; re-measuring on re-entry is the adapter's
+    ``visible``-nudge job, not a teardown's.
+    """
     from gui.widget.evaluation_results import _ChartsTab
 
     rc, cls = _render_charts_tab(active_tab=1)
     first = rc.find(cls).widgets[0]
     rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=2))
-    assert rc.find(cls).widgets[0] is not first
+    assert rc.find(cls).widgets[0] is first
+    rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=1))
+    assert rc.find(cls).widgets[0] is first
+    rc.close()
+
+
+def test_charts_tab_tells_the_adapter_whether_its_tab_is_shown(monkeypatch):
+    """``visible`` must track the active tab — it drives the resize nudge."""
+    import gui.widget.evaluation_results as er
+    from gui.widget.evaluation_results import _ChartsTab
+
+    seen = []
+    real = er.EChartsChart
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("visible"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(er, "EChartsChart", spy)
+    rc, _ = _render_charts_tab(active_tab=1)
+    assert seen and set(seen) == {True}
+
+    seen.clear()
+    rc.render(_ChartsTab(record=_chart_record(), eval_key="run-a", active_tab=2))
+    assert seen and set(seen) == {False}
+    rc.close()
 
 
 def test_charts_tab_says_so_when_there_is_nothing_to_chart():
@@ -1929,18 +1962,20 @@ def test_figures_tab_moves_the_axis_titles_when_the_language_changes(tmp_path):
         "widgets"]["evaluation_results"]["chart_x_axis"]
 
 
-def test_figures_tab_rebuilds_the_scatter_when_the_active_tab_changes(tmp_path):
-    """``active_tab`` belongs in the chart identity, not only in the load gate.
+def test_figures_tab_scatter_survives_tab_changes_without_a_rebuild(tmp_path):
+    """``active_tab`` gates the LOAD; it must stay out of the chart identity.
 
-    ipecharts sizes its chart on attach and does not watch the container
-    afterwards, so a chart that survives a tab change may be mis-sized. Two
-    transitions, both of which must hand back a FRESH widget:
+    A ``|tab{n}`` identity rebuilt every scatter on every tab switch, and the
+    leaving tab's fresh widget re-attached inside a ``display:none`` container
+    where ipecharts measures width 0 and stays squished (it sizes on attach
+    only). The transitions now are:
 
-    * ``None -> 2``: the chart stays mounted across the change, so this is what
-      actually pins ``|tab{active_tab}`` — the option, digest, theme, renderer
-      and height are all identical, and without the tab in the identity
-      use_memo would return the very same widget;
-    * ``2 -> 0 -> 2``, the user-visible round trip.
+    * ``None -> 2``: nothing about the chart changed — the SAME widget is
+      reused, which is exactly what a tab-free identity buys;
+    * ``2 -> 0``: the load gate empties the option, the card drops to the PNG
+      rung (unchanged);
+    * ``0 -> 2``: a fresh chart mounts while the tab is shown; its sizing is
+      the adapter's ``visible``-nudge job.
     """
     from gui.widget.evaluation_results import _FiguresTab
 
@@ -1952,13 +1987,35 @@ def test_figures_tab_rebuilds_the_scatter_when_the_active_tab_changes(tmp_path):
     rc, cls = _render_figures_tab(record=record, active_tab=None)
     mounted = rc.find(cls).widgets[0]
     rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
-    assert rc.find(cls).widgets[0] is not mounted
+    assert rc.find(cls).widgets[0] is mounted  # no teardown while shown
 
-    first = rc.find(cls).widgets[0]
     rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=0))
     assert rc.find(cls).widgets == []          # the card drops the chart
     rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
-    assert rc.find(cls).widgets[0] is not first
+    assert len(rc.find(cls).widgets) == 1      # and remounts it on re-entry
+    rc.close()
+
+
+def test_figures_tab_marks_its_scatter_visible_only_when_shown(tmp_path,
+                                                               monkeypatch):
+    """The card must hand the adapter ``visible=True`` when its tab is active
+    — that flag is what schedules the post-transition resize nudge."""
+    import gui.widget.evaluation_results as er
+
+    seen = []
+    real = er.EChartsChart
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("visible"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(er, "EChartsChart", spy)
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, cls = _render_figures_tab(record=record, active_tab=2)
+    assert seen and set(seen) == {True}
     rc.close()
 
 

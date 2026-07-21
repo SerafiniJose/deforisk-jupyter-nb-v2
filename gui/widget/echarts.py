@@ -21,6 +21,7 @@ rather than reaching through this one.
 import hashlib
 import json
 import sys
+import threading
 from pathlib import Path
 
 import reacton.ipyvuetify as rv
@@ -42,6 +43,16 @@ __all__ = [
 # height renders an empty chart — so the height is always a concrete pixel
 # value. The width is left to stretch (see build_chart_widget).
 DEFAULT_HEIGHT = "360px"
+
+# ipecharts measures its container exactly once, at DOM attach — its frontend
+# has no ResizeObserver. A view that attaches inside a hidden (display:none)
+# or still-transitioning v-window-item measures width 0, falls back to
+# echarts' 100px default, and never recovers. The frontend's `update_classes`
+# handler ends in `chart.resize()` (verified in the 1.4.0 bundle), so toggling
+# a marker DOM class from the kernel forces one client-side re-measure. The
+# delay lets Vuetify's ~300 ms tab/dialog transition finish before measuring.
+_RESIZE_NUDGE_CLASS = "sr-echarts-resize-nudge"
+_RESIZE_NUDGE_DELAY = 0.5  # seconds
 
 
 def build_chart_widget(option, *, dark=False, renderer=RENDERER_SVG,
@@ -92,7 +103,7 @@ def _option_digest(option):
 
 @solara.component
 def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
-                 height=DEFAULT_HEIGHT, option_digest=None):
+                 height=DEFAULT_HEIGHT, option_digest=None, visible=True):
     """Render an ECharts option dict as a chart.
 
     Args:
@@ -106,6 +117,11 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
         option_digest: optional caller-supplied stand-in for the option hash —
             see "Skipping the hash" below. ``None`` (the default) keeps the
             adapter hashing the option itself.
+        visible: whether the chart's container is currently shown. A caller
+            whose chart lives in a tab/dialog passes the tab's active state;
+            each time it is/becomes True the adapter schedules a resize nudge
+            — see "Sizing" below. NOT part of the widget's identity: hiding
+            never tears the chart down.
 
     The widget is built inside a ``use_memo`` keyed on a digest of ``option``
     plus the presentation inputs and ``identity``, so a re-render that changes
@@ -122,22 +138,30 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
     NOT need to enumerate the option's inputs anywhere.
 
     ``identity`` is for the opposite case: inputs that are NOT visible in the
-    option yet must still force a fresh widget. Two known kinds:
+    option yet must still force a fresh widget. One known kind:
 
-    * **Attach timing.** ipecharts sizes its chart when the widget is attached
-      to the DOM and on window resize; it does not watch the container for
-      later size changes, so a chart mounted while its tab was hidden can be
-      mis-sized. Putting the active tab index in ``identity`` forces a rebuild
-      on tab entry. (Mitigation only — NOT verified in a browser; ipecharts has
-      no ResizeObserver and no after-show handling.)
     * **Live chart state.** Interaction state (legend toggles, zoom) lives in
       the chart instance, not in the option. Where reusing a widget across a
       change of subject would carry that state over — e.g. switching to another
       evaluation run that happens to draw an identical option — name the
       subject in ``identity``.
 
-    A wrong ``identity`` now costs at most an unnecessary rebuild; it can no
-    longer render stale data.
+    Do NOT put attach-timing proxies (an active tab index) into ``identity``:
+    that forces a rebuild of every chart on each tab switch, and the ones in
+    the tab being LEFT re-attach inside a ``display:none`` container, measure
+    width 0 and render squished — the exact bug the ``visible`` nudge below
+    exists to prevent. A wrong ``identity`` otherwise costs at most an
+    unnecessary rebuild; it can no longer render stale data.
+
+    **Sizing.** ipecharts measures its container only at DOM attach and has no
+    ResizeObserver, so a view attached while its tab was hidden or mid
+    transition stays mis-sized forever. Whenever ``visible`` is/becomes True,
+    a timer (``_RESIZE_NUDGE_DELAY``, past Vuetify's ~300 ms transition)
+    toggles ``_RESIZE_NUDGE_CLASS`` on the widget: the frontend's
+    ``update_classes`` handler calls ``chart.resize()``, re-measuring the now
+    settled layout. The toggle alternates add/remove so every re-entry is a
+    real trait change. Unmounting (or losing visibility) cancels a pending
+    nudge.
 
     **Skipping the hash.** Hashing the option is cheap for a bar chart (1.2 ms
     at 1k values) and expensive for a dense scatter: re-measured 2026-07-21 on
@@ -183,6 +207,42 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
         return widget.close
 
     solara.use_effect(_dispose_replaced_widget, [widget])
+
+    def _nudge_resize_when_shown():
+        if not visible:
+            return
+        # The trait sync only reaches the browser from a context-bearing
+        # thread; a plain threading.Timer thread has none, so capture the
+        # kernel context here (render thread) and attach it there — the
+        # log_bridge worker-thread pattern. Absent context (headless tests)
+        # the toggle still lands on the trait.
+        try:
+            from solara.server import kernel_context
+            ctx = (kernel_context.get_current_context()
+                   if kernel_context.has_current_context() else None)
+        except Exception:
+            ctx = None
+
+        def nudge():
+            try:
+                if ctx is not None:
+                    from solara.server import kernel_context
+                    if not kernel_context.has_current_context():
+                        kernel_context.set_context_for_thread(
+                            ctx, threading.current_thread())
+                if _RESIZE_NUDGE_CLASS in widget._dom_classes:
+                    widget.remove_class(_RESIZE_NUDGE_CLASS)
+                else:
+                    widget.add_class(_RESIZE_NUDGE_CLASS)
+            except Exception:  # a late nudge on a closed widget must not raise
+                pass
+
+        timer = threading.Timer(_RESIZE_NUDGE_DELAY, nudge)
+        timer.daemon = True
+        timer.start()
+        return timer.cancel
+
+    solara.use_effect(_nudge_resize_when_shown, [widget, visible])
 
     # Handing the widget to a container's `children` is how this app already
     # mounts non-solara widgets (see the SepalMap in solara_app.Page). It puts
