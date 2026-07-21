@@ -24,17 +24,18 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
         on_delete: callback(model_key) — delete a registered model (confirmed
             by the tile).
         on_open: callback(model_key) — open the read-only details dialog for a
-            registered model (row click).
+            registered model (eye action button).
     """
     p = project.value
     data = train_rows(p, train_jobs.value, model_labels)
 
     rows = []
     for r in data:
-        on_click = None
         if r["kind"] == "model":
-            actions = [{"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)}]
-            on_click = lambda *_, k=r["key"]: on_open(k)
+            actions = [
+                {"kind": "open", "on_click": lambda *_, k=r["key"]: on_open(k)},
+                {"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)},
+            ]
         elif r["status"] == "running":
             actions = [{"kind": "cancel", "on_click": lambda *_, i=r["job_id"]: on_cancel(i)}]
         else:
@@ -55,12 +56,11 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
                 ],
                 "actions": actions,
                 "error": error,
-                "on_click": on_click,
             }
         )
 
     # Six columns in a ~470px panel: every fixed width is lean (short type
-    # chips, single-icon actions) so the three minmax(0,1fr) columns — name,
+    # chips, two-icon actions) so the three minmax(0,1fr) columns — name,
     # dataset, sample — keep real room instead of collapsing to slivers.
     ProductTable(
         title=t("widgets.train_model_list.models_title"),
@@ -73,5 +73,5 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
         ],
         rows=rows,
         empty_text=t("widgets.train_model_list.empty"),
-        actions_width="56px",
+        actions_width="82px",
     )
