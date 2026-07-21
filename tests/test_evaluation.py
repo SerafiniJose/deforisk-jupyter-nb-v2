@@ -1369,24 +1369,23 @@ def _chart_record(metrics=("MedAE", "R2"), rows=None):
 
 @contextlib.contextmanager
 def _dark_theme():
-    """Put the app in dark mode the way the FRONTEND does, and restore after.
+    """Put the SESSION theme state in dark mode, and restore after.
 
-    ``solara.lab.theme`` is an ipyvuetify widget: ``dark`` is what Python (and
-    pysepal's toggle) writes, and ``dark_effective`` is what the vuetify
-    frontend syncs BACK once it has resolved ``dark=None`` ("auto") against the
-    host's theme. Components read the resolved one via
-    ``solara.lab.use_dark_effective()``, so a headless test has to set both —
-    nothing here is going to sync ``dark_effective`` for it.
+    The charts follow pysepal's resolved ``ThemeState.dark`` (via
+    ``use_theme_dark``), not solara's internal theme traitlet: the app runs
+    under ``@with_sepal_sessions`` and MapApp's ThemeToggle drives the session
+    state. Headless, ``get_current_theme_state()`` hands back the module-level
+    fallback state — the same object the hook observes.
     """
-    from solara.lab.components.theming import theme
+    from pysepal.solara import get_current_theme_state
 
-    before = (theme.dark, theme.dark_effective)
+    state = get_current_theme_state()
+    before = (state.mode, state.dark)
     try:
-        theme.dark = True
-        theme.dark_effective = True
-        yield
+        state.set_mode("dark")
+        yield state
     finally:
-        theme.dark, theme.dark_effective = before
+        state.mode, state.dark = before
 
 
 def _render_charts_tab(**kwargs):
@@ -1460,9 +1459,9 @@ def test_charts_tab_repaints_when_the_theme_is_toggled_in_place():
     *traitlet* behind a ``Proxy``, not a ``Reactive``: reading ``theme.dark`` in
     a render body sets up no subscription, so a toggle re-renders nothing, and
     reacton's prop-equality bailout blocks the component even when its parent
-    does re-render. ``solara.lab.use_dark_effective()`` observes the trait (and
-    resolves the "auto" setting), which is the pattern
-    ``gui/widget/pipeline_header.py`` already uses.
+    does re-render. ``use_theme_dark()`` observes ``ThemeState.dark`` instead —
+    pysepal's session-scoped state that MapApp's ThemeToggle actually drives —
+    so the flip itself schedules the re-render.
     """
     from gui.scripts.echarts_options import theme_colors
 
@@ -1473,6 +1472,33 @@ def test_charts_tab_repaints_when_the_theme_is_toggled_in_place():
         assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
                 == theme_colors(True)["ink"])
     rc.close()
+
+
+def test_charts_tab_follows_an_auto_mode_theme_resolution():
+    """In auto mode the frontend resolves prefers-color-scheme and pysepal
+    writes the RESOLVED value onto ThemeState.dark — a mounted chart must
+    follow that write, and the dark->light direction too."""
+    from pysepal.solara import get_current_theme_state
+
+    from gui.scripts.echarts_options import theme_colors
+
+    state = get_current_theme_state()
+    before = (state.mode, state.dark)
+    try:
+        state.set_mode("auto")
+        state.set_dark(False)
+        rc, cls = _render_charts_tab()
+        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+                == theme_colors(False)["ink"])
+        state.set_dark(True)      # auto-mode resolution flips to dark
+        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+                == theme_colors(True)["ink"])
+        state.set_dark(False)     # and back — dark -> light
+        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+                == theme_colors(False)["ink"])
+        rc.close()
+    finally:
+        state.mode, state.dark = before
 
 
 def test_charts_tab_draws_the_bar_charts_with_the_svg_renderer():
@@ -2164,8 +2190,9 @@ def test_figures_tab_repaints_the_scatter_when_the_theme_is_toggled_in_place(
     subscription: the toggle re-renders nothing, and reacton's prop-equality
     bailout stops the card even when the dialog above it does re-render — the
     scatter keeps its light ink (``#52514e``) on a dark surface, and
-    ``pred_obs_scatter_option`` is never even called. ``use_dark_effective()``
-    observes the trait, so the flip itself schedules the re-render.
+    ``pred_obs_scatter_option`` is never even called. ``use_theme_dark()``
+    observes pysepal's ``ThemeState.dark`` instead, so the flip itself
+    schedules the re-render.
     """
     from gui.scripts.echarts_options import theme_colors
 

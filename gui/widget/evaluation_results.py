@@ -11,7 +11,7 @@ import pandas as pd
 import logging
 import reacton.ipyvuetify as rv
 import solara
-from solara.lab import use_dark_effective
+from pysepal.solara import use_theme_dark
 
 from gui.i18n import t
 from gui.scripts.echarts_options import RENDERER_SVG
@@ -115,15 +115,16 @@ def _ChartsTab(record, eval_key, active_tab=None):
     (ipecharts sizes on attach only). Instead ``visible`` tells the adapter
     when this tab is shown, and IT schedules a post-transition resize nudge.
 
-    The theme comes from ``use_dark_effective()`` and NOT from reading
-    ``solara.lab.theme.dark``: that theme object is an ipyvuetify traitlet
-    behind a ``Proxy``, not a ``Reactive``, so reading it in a render body
-    subscribes to nothing and a live light/dark toggle would repaint neither
-    these charts nor the scatter below. The hook observes the trait (and
-    resolves ``dark=None``, i.e. "auto", against what the frontend actually
-    shows) — the same pattern ``gui/widget/pipeline_header.py`` uses.
+    The theme comes from pysepal's session-scoped ``use_theme_dark()`` —
+    ``ThemeState.dark`` is the RESOLVED value MapApp's ThemeToggle drives
+    (explicit toggles and live auto-mode resolution alike) under
+    ``@with_sepal_sessions``, and the hook detaches its observer on cleanup.
+    Reading ``solara.lab.theme.dark`` in a render body would subscribe to
+    nothing (an ipyvuetify traitlet behind a Proxy), and solara's own
+    ``use_dark_effective()`` follows solara's internal theme object rather
+    than the session state the app's toggle writes.
     """
-    dark = use_dark_effective()
+    dark = use_theme_dark()
     indices = getattr(record, "indices", None) or []
     metrics = record_metrics(indices, getattr(record, "metrics", None))
     charts = [(m, metric_bar_option(indices, m, dark=dark))
@@ -200,18 +201,18 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     ``model``/``period`` come from the record's index row, so a row that lacks
     them (``row is None``) skips straight to the PNG rungs rather than crashing.
 
-    The theme is read through ``use_dark_effective()``, not off
-    ``solara.lab.theme.dark``. That object is an ipyvuetify traitlet behind a
-    ``Proxy``: reading it here would create no subscription, so a light/dark
-    toggle would re-render nothing — and reacton's prop-equality bailout would
-    then keep this card on the old theme even when the dialog above it does
-    re-render, leaving light ink on a dark surface with no error anywhere. The
-    hook observes the trait and resolves the "auto" setting (see
-    ``gui/widget/pipeline_header.py``, which established the pattern).
+    The theme comes from pysepal's session-scoped ``use_theme_dark()`` —
+    ``ThemeState.dark`` is the RESOLVED value MapApp's ThemeToggle drives
+    (explicit toggles and live auto-mode resolution alike) under
+    ``@with_sepal_sessions``, and the hook detaches its observer on cleanup.
+    Reading ``solara.lab.theme.dark`` in a render body would subscribe to
+    nothing (an ipyvuetify traitlet behind a Proxy), and solara's own
+    ``use_dark_effective()`` follows solara's internal theme object rather
+    than the session state the app's toggle writes.
     """
     model = row.get("model") if row else None
     period = row.get("period") if row else None
-    dark = use_dark_effective()
+    dark = use_theme_dark()
     # The archived PNG's title states the grid cell size in HECTARES; the card
     # otherwise shows only the map label and a selector labelled in pixels, so
     # the interactive twin would drop information the static one carries. The
