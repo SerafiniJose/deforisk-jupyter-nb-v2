@@ -238,7 +238,7 @@
       "new_button": "Nuevo modelo",
       "dialog_title": "Nuevo modelo",
       "model_select_label": "Modelo",
-      "model_select_hint": "El modelo a entrenar — el ícono ⓘ brinda más información sobre él.",
+      "model_select_hint": "Seleccione el modelo a entrenar — el ícono ⓘ brinda más información sobre él.",
       "model_name_label": "Nombre del modelo",
       "model_description_header_for": "Sobre {label}",
       "advanced_parameters_header": "Parámetros avanzados",

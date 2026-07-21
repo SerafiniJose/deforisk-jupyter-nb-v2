@@ -238,7 +238,7 @@
       "new_button": "New model",
       "dialog_title": "New model",
       "model_select_label": "Model",
-      "model_select_hint": "The model to train — the ⓘ icon provides more information about it.",
+      "model_select_hint": "Select the model to train — the ⓘ icon provides more information about it.",
       "model_name_label": "Model name",
       "model_description_header_for": "About {label}",
       "advanced_parameters_header": "Advanced parameters",
