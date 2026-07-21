@@ -8,6 +8,7 @@ toggles are unreliable).
 """
 
 import pandas as pd
+import logging
 import reacton.ipyvuetify as rv
 import solara
 from solara.lab import use_dark_effective
@@ -23,6 +24,8 @@ from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.echarts import EChartsChart
 from gui.widget.product_table import ProductTable
+
+logger = logging.getLogger("spatial_risk")
 
 # One chart per metric, two per row — the height Plotly gave each subplot row.
 _CHART_HEIGHT = "260px"
@@ -277,8 +280,14 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     def build_option():
         if plot_data is None:
             return None
-        return pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
-                                       title=title)
+        try:
+            return pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
+                                           title=title)
+        except Exception:  # noqa: BLE001 - one bad card must not kill the tab
+            # Runs inside use_memo, so this logs once per artifact identity,
+            # not once per render — no reactive log-console traffic.
+            logger.exception("Could not build evaluation scatter")
+            return None
 
     option = solara.use_memo(build_option, [digest, tab_active])
     # One stat() for the whole render, not one per rung.

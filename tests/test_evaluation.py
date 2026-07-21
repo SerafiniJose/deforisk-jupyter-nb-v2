@@ -1641,8 +1641,9 @@ def _write_points(path, obs, pred):
     }).to_csv(path, index=False)
 
 
-def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9, model=_FIG_MODEL):
-    return {"model": model, "period": _FIG_PERIOD,
+def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9, model=_FIG_MODEL,
+                   period=None):
+    return {"model": model, "period": period or _FIG_PERIOD,
             "csize_coarse_grid": csize, "csize_coarse_grid_ha": ha,
             "MedAE": medae, "R2": r2}
 
@@ -1903,6 +1904,31 @@ def test_figures_tab_unplottable_points_fall_back_without_taking_the_tab_down(
     assert len(charts) == 1                       # the sibling still renders
     assert _scatter_data(charts[0]) == [[1.0, 1.5], [2.0, 2.5]]
     assert len(rc.find(ipywidgets.Image).widgets) == 1  # the poisoned card's PNG
+    rc.close()
+
+
+def test_a_failing_option_builder_spares_the_sibling_cards(tmp_path, monkeypatch):
+    """One card's unexpected option-builder failure must not raise out of the
+    render: that card falls back (here: to its missing-figure message) and the
+    healthy sibling keeps its interactive chart."""
+    import gui.widget.evaluation_results as er
+
+    for period in ("validation", "calibration"):
+        _write_points(tmp_path / f"pred_obs_GLM_{period}_300.csv",
+                      obs=[1.0, 2.0], pred=[1.0, 2.0])
+    rows = [_fig_index_row(), _fig_index_row(period="calibration")]
+    record = _figures_record(indices=rows, csv_path=tmp_path / "indices_all.csv")
+
+    real = er.pred_obs_scatter_option
+
+    def boom(plot_data, **kwargs):
+        if plot_data.period == "calibration":
+            raise ValueError("synthetic builder failure")
+        return real(plot_data, **kwargs)
+
+    monkeypatch.setattr(er, "pred_obs_scatter_option", boom)
+    rc, cls = _render_figures_tab(record=record)
+    assert len(rc.find(cls).widgets) == 1   # the healthy sibling still renders
     rc.close()
 
 
