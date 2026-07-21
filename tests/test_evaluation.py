@@ -1630,6 +1630,7 @@ def _write_points(path, obs, pred):
     """Write a real 6-column point CSV (the scatter loader reads 4 of them)."""
     import pandas as pd
 
+    _Path(path).parent.mkdir(parents=True, exist_ok=True)
     n = len(obs)
     pd.DataFrame({
         "cell": list(range(n)),
@@ -1642,10 +1643,11 @@ def _write_points(path, obs, pred):
 
 
 def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9, model=_FIG_MODEL,
-                   period=None):
+                   period=None, prediction=None):
     return {"model": model, "period": period or _FIG_PERIOD,
             "csize_coarse_grid": csize, "csize_coarse_grid_ha": ha,
-            "MedAE": medae, "R2": r2}
+            "MedAE": medae, "R2": r2,
+            "prediction": prediction or f"{model.lower()}__validation"}
 
 
 def _figures_record(*, indices, csv_path, artifacts=()):
@@ -1680,6 +1682,49 @@ def _render_figures_tab(**kwargs):
 def _scatter_data(widget):
     """The [obs, pred] pairs the scatter series carries (drops the ride-alongs)."""
     return [v[:2] for v in widget.option["series"][0]["data"]]
+
+
+def test_two_predictions_with_identical_labels_render_distinct_cards(tmp_path):
+    """rows_by_label used to collapse same-label predictions into one card.
+    Each index row must now get its own card wired to its OWN artifact."""
+    csv_a = tmp_path / "a" / "pred_obs_GLM_validation_300.csv"
+    csv_b = tmp_path / "b" / "pred_obs_GLM_validation_300.csv"
+    _write_points(csv_a, obs=[1.0, 2.0], pred=[1.0, 2.0])
+    _write_points(csv_b, obs=[1.0, 2.0, 3.0], pred=[1.0, 2.0, 3.0])
+    arts = [
+        _fig_artifact(points_csv=csv_a, png_path=csv_a.with_suffix(".png")),
+        types.SimpleNamespace(
+            prediction_key="glm__validation__2", model=_FIG_MODEL,
+            period=_FIG_PERIOD, csize_px=300, points_csv=str(csv_b),
+            png_path=str(csv_b.with_suffix(".png"))),
+    ]
+    rows = [_fig_index_row(), _fig_index_row(prediction="glm__validation__2")]
+    record = _figures_record(indices=rows, csv_path=tmp_path / "indices_all.csv",
+                             artifacts=arts)
+    rc, cls = _render_figures_tab(record=record)
+    widgets = rc.find(cls).widgets
+    assert len(widgets) == 2
+    lengths = sorted(
+        len(next(s for s in w.option["series"] if s["type"] == "scatter")["data"])
+        for w in widgets)
+    assert lengths == [2, 3]    # each card drew ITS prediction's file
+    rc.close()
+
+
+def test_the_figures_tab_shows_the_typed_png_even_outside_the_derived_dir(tmp_path):
+    """png_path resolution goes through the typed artifact, not derivation."""
+    import ipywidgets
+
+    png = tmp_path / "elsewhere" / "archived.png"
+    png.parent.mkdir(parents=True)
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    art = _fig_artifact(points_csv=tmp_path / "gone.csv", png_path=png)
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv",
+                             artifacts=[art])
+    rc, cls = _render_figures_tab(record=record)
+    assert rc.find(ipywidgets.Image).widgets   # the typed PNG shows
+    rc.close()
 
 
 def test_figures_tab_renders_the_interactive_scatter(tmp_path):

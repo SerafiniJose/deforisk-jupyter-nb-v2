@@ -16,10 +16,11 @@ from solara.lab import use_dark_effective
 from gui.i18n import t
 from gui.scripts.echarts_options import RENDERER_SVG
 from gui.scripts.evaluation_charts import (
-    figure_entries, map_label, metric_bar_option, record_csizes, record_metrics)
+    map_label, metric_bar_option, record_csizes, record_metrics)
 from gui.scripts.evaluation_echarts import (
     PRED_OBS_SQUARE_HEIGHT, load_pred_obs_plot_data, points_csv_is_expected,
-    pred_obs_chart_identity, pred_obs_renderer, pred_obs_scatter_option)
+    pred_obs_chart_identity, pred_obs_renderer, pred_obs_scatter_option,
+    resolve_plot_artifact)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.echarts import EChartsChart
@@ -174,7 +175,7 @@ def _scatter_labels():
 
 @solara.component
 def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
-                 eval_key, active_tab):
+                 eval_key, active_tab, prediction_key=None):
     """One map's card: the interactive scatter, or the PNG fallback ladder.
 
     The card header always names the map and, when the PNG exists, offers it as
@@ -233,7 +234,7 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # perfectly stable key.
     digest = pred_obs_chart_identity(
         record, model, period, csize, dark=dark, labels=labels, title=title,
-        fig_dir=fig_dir)
+        prediction_key=prediction_key, fig_dir=fig_dir)
 
     def load_points():
         # Parse the point CSV only when this tab is the active one (see the
@@ -242,7 +243,8 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
         if not (tab_active and model and period):
             return None
         return load_pred_obs_plot_data(
-            record, model, period, csize, fig_dir=fig_dir)
+            record, model, period, csize, prediction_key=prediction_key,
+            fig_dir=fig_dir)
 
     # The load lives in a use_memo, not in the render body, because it is I/O
     # with a side effect: a missing artifact makes the loader LOG (a warning
@@ -314,7 +316,7 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
                 # hidden tab measures width 0 and stays squished (ipecharts
                 # sizes on attach only). `visible` hands the adapter the tab
                 # state instead; it schedules the post-transition resize nudge.
-                identity=f"{eval_key}|{label}|{csize}",
+                identity=f"{eval_key}|{prediction_key or label}|{csize}",
                 dark=dark,
                 renderer=pred_obs_renderer(plot_data),
                 height=PRED_OBS_SQUARE_HEIGHT,
@@ -329,8 +331,9 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
             # Per-ARTIFACT, not per-record: only a map whose point table this
             # run actually recorded is one whose absence is a fault worth
             # reporting (rung a vs b).
-            if tab_active and points_csv_is_expected(record, model, period,
-                                                     csize):
+            if tab_active and points_csv_is_expected(
+                    record, model, period, csize,
+                    prediction_key=prediction_key):
                 solara.Warning(
                     t("widgets.evaluation_results.chart_unavailable_warning"))
             solara.Image(png_path, width=PRED_OBS_SQUARE_HEIGHT)
@@ -373,22 +376,37 @@ def _FiguresTab(record, eval_key=None, active_tab=None):
         )
 
     labels = _scatter_labels()
-    # figure_entries resolves the canonical PNG path per map (reused, not
-    # reinvented); the index row supplies the model/period the loader needs.
-    entries = figure_entries(indices, csize, fig_dir=fig_dir)
-    rows_by_label = {
-        map_label(r): r for r in indices
-        if r.get("csize_coarse_grid") == csize
-        and r.get("model") and r.get("period")
-    }
+    # One card per INDEX ROW (not per display label): two predictions may
+    # share a model+period label while being different maps, and each row
+    # resolves its own artifacts through its prediction key. An in-memory
+    # row's own fig_path (future schema) still takes precedence, matching
+    # the old figure_entries contract.
+    rows = sorted(
+        (r for r in indices
+         if r.get("csize_coarse_grid") == csize
+         and r.get("model") and r.get("period")),
+        key=map_label)
+    shown = 0
     with solara.Row(style="flex-wrap: wrap; gap: 16px; align-items: flex-start;"):
-        for label, png_path in entries:
+        for row in rows:
+            prediction_key = row.get("prediction")
+            if row.get("fig_path"):
+                png_path = Path(row["fig_path"])
+            else:
+                png_path = resolve_plot_artifact(
+                    record, prediction_key=prediction_key, model=row["model"],
+                    period=row["period"], csize=csize, kind="png_path",
+                    fallback_dir=fig_dir)
+            if png_path is None:
+                continue    # nothing recorded AND nothing derivable
+            shown += 1
             _PredObsCard(
-                record=record, row=rows_by_label.get(label), label=label,
-                csize=csize, png_path=png_path, fig_dir=fig_dir, labels=labels,
+                record=record, row=row, label=map_label(row), csize=csize,
+                png_path=png_path, fig_dir=fig_dir, labels=labels,
                 eval_key=eval_key, active_tab=active_tab,
+                prediction_key=prediction_key,
             )
-    if not entries:
+    if not shown:
         solara.Info(t("widgets.evaluation_results.no_figures_info"))
 
 

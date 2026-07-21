@@ -91,6 +91,9 @@ def test_artifacts_survive_real_save_load(tmp_path, monkeypatch):
     assert got.artifacts[0].csize_px == 300
     assert got.artifacts[0].png_path.endswith("pred_obs_GLM_ds_2020_300.png")
     assert got.artifacts[0].prediction_key == "glm_m__ds_2020"
+    # Exact survival, not just a suffix match: pins that save/load round-trips
+    # the stored string rather than re-deriving it from (model, period, csize).
+    assert got.artifacts[0].png_path == rec.artifacts[0].png_path
 
 
 def test_legacy_manifest_without_artifacts_still_loads(tmp_path, monkeypatch):

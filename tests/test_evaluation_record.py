@@ -91,3 +91,20 @@ def test_artifacts_accept_plain_dicts_from_a_loaded_manifest():
     rec = EvaluationRecord(**{**_record().model_dump(mode="json"),
                               "artifacts": [_artifact().model_dump(mode="json")]})
     assert rec.artifacts[0].model == "GLM"
+
+
+def test_typed_artifact_paths_survive_a_serialization_round_trip():
+    from spatialrisk.evaluations import EvaluationPlotArtifact, EvaluationRecord
+
+    rec = EvaluationRecord(
+        truth_tag="loss_2010", truth_defor="/d.tif", truth_forest="/f.tif",
+        time_interval=5, created_at="2026-07-21T10:00:00", run_id="run1",
+        csv_path="/p/evaluation/loss_2010/run1/indices_all.csv",
+        artifacts=[EvaluationPlotArtifact(
+            prediction_key="GLM__d1", model="GLM", period="d1", csize_px=300,
+            points_csv="/p/evaluation/loss_2010/run1/pred_obs_GLM_d1_300.csv",
+            png_path="/elsewhere/archived.png")],
+    )
+    clone = EvaluationRecord.model_validate(rec.model_dump())
+    assert clone.artifacts[0].png_path == "/elsewhere/archived.png"
+    assert clone.artifacts[0].prediction_key == "GLM__d1"
