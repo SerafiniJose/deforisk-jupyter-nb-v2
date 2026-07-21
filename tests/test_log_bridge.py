@@ -94,6 +94,42 @@ def test_emit_from_bare_thread_does_not_raise_and_appends():
     assert "from a bare thread" in msgs
 
 
+def test_emit_during_a_render_does_not_subscribe_the_rendering_component():
+    """A logging handler must stay invisible to reactive dependency tracking.
+
+    ``emit`` reads ``log_records`` with ``.peek()``, never ``.value``: ``.value``
+    goes through ``Reactive.get()``, which registers the reactive in Solara's
+    ``thread_local.reactive_used`` and so AUTO-SUBSCRIBES whatever component is
+    rendering on this thread. A component that logs during its render would then
+    be subscribed to ``log_records`` by that very log call, and the ``.set()``
+    right after it would force it to render again, log again, and never stop.
+
+    This pins the invariant on its own — the app also avoids logging during
+    render (the evaluation card loads inside a ``use_memo``), so either measure
+    alone hides a regression in the other. Here the component logs from its
+    render body deliberately: N ordinary renders must stay N renders.
+    """
+    import reacton
+    import solara
+
+    logger = _fresh_logger()
+    renders = []
+
+    @solara.component
+    def _LoggingComponent(pass_no):
+        renders.append(pass_no)
+        logger.warning("logged from a render body (pass %d)", pass_no)
+        solara.Text(f"pass {pass_no}")
+
+    _, rc = reacton.render(_LoggingComponent(1), handle_error=False)
+    try:
+        assert renders == [1]
+        rc.render(_LoggingComponent(2))  # one ordinary re-render, not a loop
+        assert renders == [1, 2]
+    finally:
+        rc.close()
+
+
 def test_emit_attaches_bound_context_for_contextless_thread(monkeypatch):
     import threading
     from solara.server import kernel_context

@@ -1471,8 +1471,8 @@ def _write_points(path, obs, pred):
     }).to_csv(path, index=False)
 
 
-def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9):
-    return {"model": _FIG_MODEL, "period": _FIG_PERIOD,
+def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9, model=_FIG_MODEL):
+    return {"model": model, "period": _FIG_PERIOD,
             "csize_coarse_grid": csize, "csize_coarse_grid_ha": ha,
             "MedAE": medae, "R2": r2}
 
@@ -1486,12 +1486,13 @@ def _figures_record(*, indices, csv_path, artifacts=()):
     )
 
 
-def _fig_artifact(points_csv, png_path, csize=300):
+def _fig_artifact(points_csv, png_path, csize=300, model=_FIG_MODEL):
     import types as _t
 
     return _t.SimpleNamespace(
-        prediction_key="glm__validation", model=_FIG_MODEL, period=_FIG_PERIOD,
-        csize_px=csize, points_csv=str(points_csv), png_path=str(png_path))
+        prediction_key=f"{model.lower()}__validation", model=model,
+        period=_FIG_PERIOD, csize_px=csize, points_csv=str(points_csv),
+        png_path=str(png_path))
 
 
 def _render_figures_tab(**kwargs):
@@ -1527,7 +1528,7 @@ def test_figures_tab_renders_the_interactive_scatter(tmp_path):
     widgets = rc.find(cls).widgets
     assert len(widgets) == 1
     assert _scatter_data(widgets[0]) == [[1.0, 1.5], [2.0, 2.5], [3.0, 2.0]]
-    # small scatter draws with SVG, in a square (height == card width) container
+    # a small scatter draws with SVG, at the card's fixed pixel height
     assert widgets[0].renderer == "svg"
     assert widgets[0].height == PRED_OBS_SQUARE_HEIGHT
     # the translated axis label reached the option, not the PNG's English string
@@ -1616,7 +1617,193 @@ def test_figures_tab_missing_both_artifacts_shows_the_resolved_path(tmp_path):
     assert rc.find(ipywidgets.Image).widgets == []
     infos = [a for a in rc.find(vw.Alert).widgets if a.type == "info"]
     text = " ".join(str(c) for a in infos for c in (a.children or []))
-    assert "pred_obs_GLM_validation_300.png" in text
+    # The RESOLVED path, not just the file name: the message exists so a user
+    # can go and look for the file, and a bare basename does not say where.
+    assert str(tmp_path / "pred_obs_GLM_validation_300.png") in text
+    rc.close()
+
+
+def test_figures_tab_unreadable_csv_falls_back_to_png_with_a_warning(tmp_path):
+    """(a) again, for a point CSV that EXISTS but cannot be parsed.
+
+    The loader handles two different failures on the same rung — no file, and a
+    file it cannot read (truncated, half-written, columns renamed upstream) —
+    and only the first was covered. Both must land on the PNG, not on a
+    traceback.
+    """
+    import ipyvuetify as vw
+    import ipywidgets
+
+    png = tmp_path / "pred_obs_GLM_validation_300.png"
+    png.write_bytes(b"PNG-typed")
+    csv = tmp_path / "pred_obs_GLM_validation_300.csv"
+    csv.write_text("cell,nfor_obs_ha\n1,9.0\n")  # the plotted columns are gone
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv",
+        artifacts=[_fig_artifact(csv, png)])
+    rc, cls = _render_figures_tab(record=record)
+    assert rc.find(cls).widgets == []                     # no interactive chart
+    assert rc.find(ipywidgets.Image).widgets              # the saved PNG shows
+    warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
+    assert warnings                                       # non-fatal warning
+    rc.close()
+
+
+def test_figures_tab_unplottable_points_fall_back_without_taking_the_tab_down(
+        tmp_path):
+    """A loadable table with NO finite rows must degrade like any missing one.
+
+    ``finite_points`` drops non-finite rows, so an all-NaN point CSV loads fine
+    and then ``pred_obs_scatter_option`` returns None — its documented "nothing
+    to draw". Handing that None to the chart adapter raises
+    ``TypeError: 'NoneType' object is not iterable`` out of this render, which
+    takes the SIBLING map's chart and both cards' PNGs with it. The poisoned
+    card must fall through to its own PNG and leave the tab standing.
+    """
+    import ipywidgets
+
+    nan = float("nan")
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[nan, nan, nan], pred=[nan, nan, nan])
+    (tmp_path / "pred_obs_GLM_validation_300.png").write_bytes(b"PNG-poisoned")
+    _write_points(tmp_path / "pred_obs_RF_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.5, 2.5])
+    (tmp_path / "pred_obs_RF_validation_300.png").write_bytes(b"PNG-good")
+    record = _figures_record(
+        indices=[_fig_index_row(), _fig_index_row(model="RF")],
+        csv_path=tmp_path / "indices_all.csv")
+
+    rc, cls = _render_figures_tab(record=record)
+    charts = rc.find(cls).widgets
+    assert len(charts) == 1                       # the sibling still renders
+    assert _scatter_data(charts[0]) == [[1.0, 1.5], [2.0, 2.5]]
+    assert len(rc.find(ipywidgets.Image).widgets) == 1  # the poisoned card's PNG
+    rc.close()
+
+
+def test_figures_tab_does_not_warn_for_a_map_the_run_never_recorded(tmp_path):
+    """The chart-unavailable warning is per-ARTIFACT, not per-record.
+
+    A run-scoped record may name a point table for one map and not for its
+    sibling; ``resolve_points_csv`` falls back to the derived path for the
+    omitted ones on purpose. Deciding on ``bool(record.artifacts)`` would warn
+    about a map the run never promised a table for.
+    """
+    import ipyvuetify as vw
+    import ipywidgets
+
+    glm_csv = tmp_path / "pred_obs_GLM_validation_300.csv"
+    _write_points(glm_csv, obs=[1.0, 2.0], pred=[1.0, 2.0])
+    glm_png = tmp_path / "pred_obs_GLM_validation_300.png"
+    glm_png.write_bytes(b"PNG-glm")
+    # RF: no artifact entry, no point CSV — only the PNG on disk.
+    (tmp_path / "pred_obs_RF_validation_300.png").write_bytes(b"PNG-rf")
+    record = _figures_record(
+        indices=[_fig_index_row(), _fig_index_row(model="RF")],
+        csv_path=tmp_path / "indices_all.csv",
+        artifacts=[_fig_artifact(glm_csv, glm_png)])
+
+    rc, cls = _render_figures_tab(record=record)
+    assert len(rc.find(cls).widgets) == 1                  # GLM charts
+    assert len(rc.find(ipywidgets.Image).widgets) == 1     # RF shows its PNG
+    warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
+    assert warnings == []                                  # nothing was promised
+    rc.close()
+
+
+def test_figures_tab_moves_the_axis_titles_when_the_language_changes(tmp_path):
+    """The digest must carry the SAME labels the option was built from.
+
+    ``_PredObsCard`` hands ``pred_obs_chart_identity`` the labels it hands
+    ``pred_obs_scatter_option``, and that identity is passed to the adapter as
+    ``option_digest`` — i.e. INSTEAD of hashing the option. Drop ``labels=``
+    from the digest call and a language switch no longer moves the digest, so
+    use_memo returns the previous language's chart: stale axis titles, no error
+    anywhere.
+    """
+    from pysepal.translator import Translator
+
+    from gui import i18n
+    from gui.widget.evaluation_results import _FiguresTab
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    before = i18n._translator.value
+    try:
+        i18n._translator.value = Translator(i18n.MESSAGES_DIR, target="en")
+        rc, cls = _render_figures_tab(record=record)
+        english = rc.find(cls).widgets[0].option["xAxis"]["name"]
+
+        i18n._translator.value = Translator(i18n.MESSAGES_DIR, target="es-ES")
+        rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
+        spanish = rc.find(cls).widgets[0].option["xAxis"]["name"]
+        rc.close()
+    finally:
+        i18n._translator.value = before
+
+    assert english == "Observed deforestation (ha)"
+    assert spanish != english
+    assert spanish == Translator(i18n.MESSAGES_DIR, target="es-ES")[
+        "widgets"]["evaluation_results"]["chart_x_axis"]
+
+
+def test_figures_tab_rebuilds_the_scatter_when_the_active_tab_changes(tmp_path):
+    """``active_tab`` belongs in the chart identity, not only in the load gate.
+
+    ipecharts sizes its chart on attach and does not watch the container
+    afterwards, so a chart that survives a tab change may be mis-sized. Two
+    transitions, both of which must hand back a FRESH widget:
+
+    * ``None -> 2``: the chart stays mounted across the change, so this is what
+      actually pins ``|tab{active_tab}`` — the option, digest, theme, renderer
+      and height are all identical, and without the tab in the identity
+      use_memo would return the very same widget;
+    * ``2 -> 0 -> 2``, the user-visible round trip.
+    """
+    from gui.widget.evaluation_results import _FiguresTab
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+
+    rc, cls = _render_figures_tab(record=record, active_tab=None)
+    mounted = rc.find(cls).widgets[0]
+    rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
+    assert rc.find(cls).widgets[0] is not mounted
+
+    first = rc.find(cls).widgets[0]
+    rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=0))
+    assert rc.find(cls).widgets == []          # the card drops the chart
+    rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
+    assert rc.find(cls).widgets[0] is not first
+    rc.close()
+
+
+def test_figures_tab_hands_the_adapter_its_own_option_digest(tmp_path,
+                                                             monkeypatch):
+    """The scatter supplies ``option_digest``, so the adapter never hashes it.
+
+    Hashing a scatter option costs ~63 ms at 50k points and ~239 ms at 200k —
+    per render, in a dialog the user is interacting with. Dropping the argument
+    is invisible except as latency, so pin it where it is passed.
+    """
+    import gui.widget.echarts as ec
+
+    hashed = []
+    real = ec._option_digest
+    monkeypatch.setattr(
+        ec, "_option_digest", lambda option: (hashed.append(1), real(option))[1])
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, cls = _render_figures_tab(record=record)
+    assert len(rc.find(cls).widgets) == 1   # a chart really was built
+    assert hashed == []                     # and the adapter did not hash it
     rc.close()
 
 

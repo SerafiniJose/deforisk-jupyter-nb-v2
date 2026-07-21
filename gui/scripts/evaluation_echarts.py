@@ -125,6 +125,47 @@ def _record_artifacts(record):
     return list(getattr(record, "artifacts", None) or [])
 
 
+def _artifact_points_csv(record, model, period, csize, prediction_key=None):
+    """Path this run RECORDED for one map + cell size, or None.
+
+    The typed half of ``resolve_points_csv``: it looks only at
+    ``record.artifacts`` and never derives a path. Matching is on
+    ``(model, period, csize)`` — the file-level identity, since the file name is
+    built from exactly those three — narrowed by ``prediction_key`` when the
+    caller has one and the artifact records it.
+    """
+    if csize is None or not model or not period:
+        return None
+    csize = int(csize)
+    for art in _record_artifacts(record):
+        if (getattr(art, "model", None) != model
+                or getattr(art, "period", None) != period
+                or int(getattr(art, "csize_px", -1)) != csize):
+            continue
+        if (prediction_key is not None
+                and getattr(art, "prediction_key", None) != prediction_key):
+            continue
+        points_csv = getattr(art, "points_csv", None)
+        if points_csv:
+            return Path(points_csv)
+    return None
+
+
+def points_csv_is_expected(record, model, period, csize, *,
+                           prediction_key=None):
+    """True when THIS map + cell size has a recorded point-CSV artifact.
+
+    A *per-artifact* question, deliberately not a per-record one. A run-scoped
+    record can carry a partially populated artifact list — one map recorded, its
+    sibling not — and ``resolve_points_csv`` falls back to the derived path for
+    the omitted ones on purpose. Asking ``bool(record.artifacts)`` instead would
+    treat "this run never recorded a table for this map" as "this run's table
+    went missing" and warn about maps that were never promised.
+    """
+    return _artifact_points_csv(
+        record, model, period, csize, prediction_key) is not None
+
+
 def resolve_points_csv(record, model, period, csize, *,
                        prediction_key=None, fig_dir=None):
     """Path of the point CSV for one map + cell size, or None.
@@ -157,17 +198,10 @@ def resolve_points_csv(record, model, period, csize, *,
     if csize is None or not model or not period:
         return None
     csize = int(csize)
-    for art in _record_artifacts(record):
-        if (getattr(art, "model", None) != model
-                or getattr(art, "period", None) != period
-                or int(getattr(art, "csize_px", -1)) != csize):
-            continue
-        if (prediction_key is not None
-                and getattr(art, "prediction_key", None) != prediction_key):
-            continue
-        points_csv = getattr(art, "points_csv", None)
-        if points_csv:
-            return Path(points_csv)
+    recorded = _artifact_points_csv(record, model, period, csize,
+                                    prediction_key)
+    if recorded is not None:
+        return recorded
 
     if fig_dir is None:
         csv_path = getattr(record, "csv_path", None)

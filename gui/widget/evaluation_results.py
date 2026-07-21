@@ -17,8 +17,8 @@ from gui.scripts.echarts_options import RENDERER_SVG
 from gui.scripts.evaluation_charts import (
     figure_entries, map_label, metric_bar_option, record_csizes, record_metrics)
 from gui.scripts.evaluation_echarts import (
-    PRED_OBS_SQUARE_HEIGHT, load_pred_obs_plot_data, pred_obs_chart_identity,
-    pred_obs_renderer, pred_obs_scatter_option)
+    PRED_OBS_SQUARE_HEIGHT, load_pred_obs_plot_data, points_csv_is_expected,
+    pred_obs_chart_identity, pred_obs_renderer, pred_obs_scatter_option)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.echarts import EChartsChart
@@ -155,17 +155,27 @@ def _scatter_labels():
 
 @solara.component
 def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
-                 is_typed, tab_active, eval_key, active_tab):
+                 eval_key, active_tab):
     """One map's card: the interactive scatter, or the PNG fallback ladder.
 
     The card header always names the map and, when the PNG exists, offers it as
     a download — the PNG stays the offline/report artifact. Below it, the
     fallback ladder (all non-fatal):
 
-    * point data loaded  -> the interactive ECharts scatter;
-    * (a) a NEW record (``is_typed``) whose CSV is gone -> PNG **and** a warning;
-    * (b) a LEGACY record (no artifacts) with only a PNG -> the PNG, no warning;
+    * a DRAWABLE option -> the interactive ECharts scatter;
+    * (a) a point CSV this run RECORDED that is gone or unreadable -> PNG
+      **and** a warning;
+    * (b) a map with no recorded point CSV (a legacy record, or a map this run
+      never wrote a table for) and only a PNG -> the PNG, no warning;
     * (c) neither artifact on disk -> the missing-figure message with the path.
+
+    The option is built BEFORE the branch, not inside it, because "point data
+    loaded" and "there is something to draw" are not the same thing: a table
+    whose plotted rows are all non-finite loads fine and yields ``None`` from
+    ``pred_obs_scatter_option`` (see ``finite_points``). Handing that ``None``
+    to the chart adapter would raise out of this render — killing the sibling
+    maps' charts and both PNGs with it — so an unrenderable option simply falls
+    through to the PNG rung like any other missing artifact.
 
     ``model``/``period`` come from the record's index row, so a row that lacks
     them (``row is None``) skips straight to the PNG rungs rather than crashing.
@@ -173,6 +183,9 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     model = row.get("model") if row else None
     period = row.get("period") if row else None
     dark = theme.dark
+    # The dialog always passes an index; a bare mount (None) counts as active so
+    # a direct render still draws the chart.
+    tab_active = active_tab is None or active_tab == _FIGURES_TAB_INDEX
 
     # One cheap identity (a single stat, no read) serving two purposes: the
     # load memo's key here, and the chart's `option_digest` below. Computed
@@ -201,37 +214,50 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # rewritten or re-pointed artifact still reloads.
     plot_data = solara.use_memo(load_points, [digest, tab_active])
 
+    # Same labels/title into the option AND the digest (computed above): the
+    # digest stands in for the adapter's content hash, so an input it misses is
+    # stale. None here means "nothing drawable" — no data, or data with no
+    # finite rows — and is handled by the ladder below, never passed on.
+    option = (pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
+                                      title=None)
+              if plot_data is not None else None)
+    # One stat() for the whole render, not one per rung.
+    png_exists = png_path.exists()
+
     with solara.Column(style=f"gap: 6px; width: {PRED_OBS_SQUARE_HEIGHT};"
                              " max-width: 100%;"):
         with solara.Row(style="justify-content: space-between;"
                               " align-items: center; gap: 8px;"):
             solara.Text(label, style="font-size: 0.85rem; font-weight: 600;")
-            if png_path.exists():
+            if png_exists:
                 solara.FileDownload(
                     lambda p=png_path: p.read_bytes(),
                     filename=png_path.name,
                     label=t("widgets.evaluation_results.download_png"),
                     mime_type="image/png",
                 )
-        if plot_data is not None:
-            # Same labels/title into the option AND the digest (computed above):
-            # the digest stands in for the adapter's content hash, so an input
-            # it misses is stale.
-            option = pred_obs_scatter_option(
-                plot_data, dark=dark, labels=labels, title=None)
+        if option is not None:
             EChartsChart(
                 option=option,
                 # Extrinsic rebuild triggers: the run (fresh chart per subject),
-                # the map + cell size, and the active tab — ipecharts sizes on
-                # attach only, so re-entering the tab must rebuild.
+                # the map + cell size, and the active tab — ipecharts sizes its
+                # chart on attach and does not watch the container afterwards,
+                # so a tab re-entry rebuilds rather than risking a mis-sized
+                # chart. (Mitigation only — NOT verified in a browser.)
                 identity=f"{eval_key}|{label}|{csize}|tab{active_tab}",
                 dark=dark,
                 renderer=pred_obs_renderer(plot_data),
                 height=PRED_OBS_SQUARE_HEIGHT,
+                # The digest above stands in for the adapter's content hash,
+                # which at 50k points costs ~63 ms of JSON+sha1 per render.
                 option_digest=digest,
             )
-        elif png_path.exists():
-            if is_typed and tab_active:
+        elif png_exists:
+            # Per-ARTIFACT, not per-record: only a map whose point table this
+            # run actually recorded is one whose absence is a fault worth
+            # reporting (rung a vs b).
+            if tab_active and points_csv_is_expected(record, model, period,
+                                                     csize):
                 solara.Warning(
                     t("widgets.evaluation_results.chart_unavailable_warning"))
             solara.Image(png_path, width=PRED_OBS_SQUARE_HEIGHT)
@@ -273,13 +299,6 @@ def _FiguresTab(record, eval_key=None, active_tab=None):
             dense=True, outlined=True, style_="max-width: 260px;",
         )
 
-    # None (the dialog always passes it, but a bare mount may not) counts as
-    # active so a direct render still draws the chart.
-    tab_active = active_tab is None or active_tab == _FIGURES_TAB_INDEX
-    # New records carry run-scoped artifacts; legacy ones do not. Only a new
-    # record is EXPECTED to have a point CSV, so only its absence warrants a
-    # warning (rung a vs b).
-    is_typed = bool(getattr(record, "artifacts", None))
     labels = _scatter_labels()
     # figure_entries resolves the canonical PNG path per map (reused, not
     # reinvented); the index row supplies the model/period the loader needs.
@@ -294,8 +313,7 @@ def _FiguresTab(record, eval_key=None, active_tab=None):
             _PredObsCard(
                 record=record, row=rows_by_label.get(label), label=label,
                 csize=csize, png_path=png_path, fig_dir=fig_dir, labels=labels,
-                is_typed=is_typed, tab_active=tab_active, eval_key=eval_key,
-                active_tab=active_tab,
+                eval_key=eval_key, active_tab=active_tab,
             )
     if not entries:
         solara.Info(t("widgets.evaluation_results.no_figures_info"))
