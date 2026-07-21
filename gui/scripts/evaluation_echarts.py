@@ -333,13 +333,40 @@ def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha,
     default parse makes the PNG and this chart differ by up to 1 ulp. The
     round-trip parser is exactly ``float()`` on the text and costs a few ms per
     100k rows, once per file (this is memoized).
+
+    Every column is normalized with ``pd.to_numeric(errors="coerce")`` and the
+    DRAWABLE rows (finite obs AND pred — the same mask ``finite_points``
+    applies) are validated: ``cell`` finite and integral, ``nfor_obs_ha``
+    finite. A violation raises ``ValueError`` here, where the caller already
+    degrades to None; the guide's "validate data before creating charts" rule.
+    Coercion (not ``errors="raise"``) is deliberate: a corrupt value on a row
+    the chart never draws must not cost the run its interactive chart.
     """
+    import numpy as np
     import pandas as pd
 
     from spatialrisk.evaluation import pred_obs_axis_bounds, PredObsPlotData
 
     points = pd.read_csv(path_str, usecols=_POINT_CSV_COLUMNS,
                          float_precision="round_trip")[_POINT_CSV_COLUMNS]
+    # Every plotted/tooltip column is validated HERE, inside the boundary that
+    # already degrades a bad file to the PNG (load_pred_obs_plot_data catches
+    # any raise and returns None). Before this, a malformed value slipped
+    # through the load and raised out of _scatter_rows while the OPTION was
+    # being built — killing the whole Figures render instead of falling back.
+    # Malformed text coerces to NaN so a bad value on a row the chart never
+    # draws (non-finite obs/pred) stays harmless; the drawable rows are then
+    # held to exactly what _scatter_rows will do to them: cell -> int64,
+    # nfor_obs_ha -> finite float64.
+    for col in _POINT_CSV_COLUMNS:
+        points[col] = pd.to_numeric(points[col], errors="coerce")
+    drawable = points[np.isfinite(points["ndefor_obs_ha"])
+                      & np.isfinite(points["ndefor_pred_ha"])]
+    cell = drawable["cell"].to_numpy(dtype="float64")
+    if not np.isfinite(cell).all() or (cell != np.rint(cell)).any():
+        raise ValueError("cell must hold finite integral ids on drawable rows")
+    if not np.isfinite(drawable["nfor_obs_ha"].to_numpy(dtype="float64")).all():
+        raise ValueError("nfor_obs_ha must be finite on drawable rows")
     axis_min, axis_max = pred_obs_axis_bounds(points)
     return PredObsPlotData(
         model=model, period=period, csize_px=int(csize), csize_ha=csize_ha,

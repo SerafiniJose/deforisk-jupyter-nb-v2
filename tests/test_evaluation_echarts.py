@@ -798,6 +798,66 @@ def test_the_option_of_nothing_is_nothing(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Malformed point CSVs must degrade to None (-> the PNG), never raise later
+# ---------------------------------------------------------------------------
+
+def _rewrite_column(csv_path, column, row_index, text):
+    """Corrupt ONE cell of a written point CSV, byte-level (no pandas)."""
+    lines = csv_path.read_text().strip().splitlines()
+    header = lines[0].split(",")
+    cells = lines[1 + row_index].split(",")
+    cells[header.index(column)] = text
+    lines[1 + row_index] = ",".join(cells)
+    csv_path.write_text("\n".join(lines) + "\n")
+
+
+def test_a_text_cell_id_degrades_to_none_instead_of_raising(tmp_path):
+    from gui.scripts.evaluation_echarts import load_pred_obs_plot_data
+
+    csv_path, record = _saved(tmp_path)
+    _rewrite_column(csv_path, "cell", 0, "oops")
+    assert load_pred_obs_plot_data(record, "GLM", "d1", 300) is None
+
+
+def test_a_non_integral_cell_id_degrades_to_none(tmp_path):
+    from gui.scripts.evaluation_echarts import load_pred_obs_plot_data
+
+    csv_path, record = _saved(tmp_path)
+    _rewrite_column(csv_path, "cell", 0, "1.5")
+    assert load_pred_obs_plot_data(record, "GLM", "d1", 300) is None
+
+
+def test_nan_forest_area_on_a_drawable_row_degrades_to_none(tmp_path):
+    from gui.scripts.evaluation_echarts import load_pred_obs_plot_data
+
+    csv_path, record = _saved(tmp_path, forest=[float("nan"), 11.0, 12.0, 13.0])
+    assert load_pred_obs_plot_data(record, "GLM", "d1", 300) is None
+
+
+def test_infinite_forest_area_on_a_drawable_row_degrades_to_none(tmp_path):
+    from gui.scripts.evaluation_echarts import load_pred_obs_plot_data
+
+    csv_path, record = _saved(tmp_path, forest=[float("inf"), 11.0, 12.0, 13.0])
+    assert load_pred_obs_plot_data(record, "GLM", "d1", 300) is None
+
+
+def test_a_bad_value_on_a_non_drawable_row_does_not_block_the_chart(tmp_path):
+    """Validation is scoped to DRAWABLE rows: a corrupt cell id on a row the
+    finite-mask already excludes must not cost the run its interactive chart."""
+    from gui.scripts.evaluation_echarts import (
+        load_pred_obs_plot_data, pred_obs_scatter_option)
+
+    csv_path, record = _saved(
+        tmp_path, obs=[1.0, float("nan")], pred=[1.0, 2.0],
+        forest=[10.0, 11.0])
+    _rewrite_column(csv_path, "cell", 1, "oops")   # row 1 is non-drawable
+    plot_data = load_pred_obs_plot_data(record, "GLM", "d1", 300)
+    assert plot_data is not None
+    assert len(plot_data.finite_points) == 1
+    assert pred_obs_scatter_option(plot_data) is not None
+
+
+# ---------------------------------------------------------------------------
 # Memoization keyed on file modification identity
 # ---------------------------------------------------------------------------
 
