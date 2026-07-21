@@ -1,5 +1,5 @@
+import contextlib
 import types
-import types as _types
 from pathlib import Path as _Path
 
 import numpy as np
@@ -547,7 +547,7 @@ def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
 
     assert seen["csv"] is seen["png"], "two renderings, one PredObsPlotData"
 
-    record = _types.SimpleNamespace(
+    record = types.SimpleNamespace(
         indices=[{"model": "TEST", "period": "calibration",
                   "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0,
                   "MedAE": 2250.0, "R2": 0.43}],
@@ -563,16 +563,16 @@ def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
 
 
 def _fake_project_with_prediction(tmp_path):
-    target = _types.SimpleNamespace(name="forest_loss_2015_2020",
+    target = types.SimpleNamespace(name="forest_loss_2015_2020",
                                     path=tmp_path / "defor.tif")
-    forest = _types.SimpleNamespace(name="forest_gfc", path=tmp_path / "forest.tif")
-    dataset = _types.SimpleNamespace(name="calibration", target=target,
+    forest = types.SimpleNamespace(name="forest_gfc", path=tmp_path / "forest.tif")
+    dataset = types.SimpleNamespace(name="calibration", target=target,
                                      features=[forest])
-    pred = _types.SimpleNamespace(model_key="glm_glm_v1", window=None,
+    pred = types.SimpleNamespace(model_key="glm_glm_v1", window=None,
                                   dataset_name="calibration",
                                   path=tmp_path / "risk.tif", metrics={})
-    project = _types.SimpleNamespace(
-        folders=_types.SimpleNamespace(project_folder=tmp_path),
+    project = types.SimpleNamespace(
+        folders=types.SimpleNamespace(project_folder=tmp_path),
         get_dataset=lambda n: dataset if n == "calibration" else None,
         predictions={"glm_glm_v1__calibration_y2015": pred},
         save=lambda: None,
@@ -626,7 +626,7 @@ def test_evaluate_prediction_runs_defrate_then_validate(tmp_path, monkeypatch):
 def test_evaluate_predictions_filters_and_aggregates(tmp_path, monkeypatch):
     project, pred, dataset = _fake_project_with_prediction(tmp_path)
     # second prediction in a different period that we will filter out
-    pred2 = _types.SimpleNamespace(model_key="rf_rf_v1", window=None,
+    pred2 = types.SimpleNamespace(model_key="rf_rf_v1", window=None,
                                    dataset_name="validation",
                                    path=tmp_path / "risk2.tif", metrics={})
     project.predictions["rf_rf_v1__validation_y2015"] = pred2
@@ -646,12 +646,12 @@ def test_evaluate_predictions_filters_and_aggregates(tmp_path, monkeypatch):
 
 
 def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
-    pred = _types.SimpleNamespace(
+    pred = types.SimpleNamespace(
         model_key="glm_glm_v1", window=None, dataset_name="validation",
         path=tmp_path / "risk.tif", metrics={},
         storage_key=lambda: "glm_glm_v1__validation")
-    project = _types.SimpleNamespace(
-        folders=_types.SimpleNamespace(project_folder=tmp_path))
+    project = types.SimpleNamespace(
+        folders=types.SimpleNamespace(project_folder=tmp_path))
     calls = {}
 
     def fake_defrate(**kw):
@@ -695,15 +695,15 @@ def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
 
 
 def test_evaluate_against_truth_selects_keys_and_namespaces(tmp_path, monkeypatch):
-    p1 = _types.SimpleNamespace(model_key="glm_glm_v1", window=None,
+    p1 = types.SimpleNamespace(model_key="glm_glm_v1", window=None,
                                 dataset_name="calibration", path=tmp_path / "r1.tif",
                                 metrics={}, storage_key=lambda: "glm_glm_v1__calibration")
-    p2 = _types.SimpleNamespace(model_key="rf_rf_v1", window=None,
+    p2 = types.SimpleNamespace(model_key="rf_rf_v1", window=None,
                                 dataset_name="validation", path=tmp_path / "r2.tif",
                                 metrics={}, storage_key=lambda: "rf_rf_v1__validation")
     saved = {"n": 0}
-    project = _types.SimpleNamespace(
-        folders=_types.SimpleNamespace(project_folder=tmp_path),
+    project = types.SimpleNamespace(
+        folders=types.SimpleNamespace(project_folder=tmp_path),
         predictions={"k1": p1, "k2": p2},
         save=lambda: saved.__setitem__("n", saved["n"] + 1))
 
@@ -729,8 +729,8 @@ def test_evaluate_against_truth_selects_keys_and_namespaces(tmp_path, monkeypatc
 
 
 def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys):
-    project = _types.SimpleNamespace(
-        folders=_types.SimpleNamespace(project_folder=tmp_path),
+    project = types.SimpleNamespace(
+        folders=types.SimpleNamespace(project_folder=tmp_path),
         predictions={}, save=lambda: None)
 
     df = ev.evaluate_against_truth(
@@ -749,12 +749,12 @@ def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys)
 
 def _truth_project_and_pred(tmp_path):
     """Fake project holding ONE prediction, scored against an explicit truth."""
-    pred = _types.SimpleNamespace(
+    pred = types.SimpleNamespace(
         model_key="glm_glm_v1", window=None, dataset_name="validation",
         path=tmp_path / "risk.tif", metrics={},
         storage_key=lambda: "glm_glm_v1__validation")
-    project = _types.SimpleNamespace(
-        folders=_types.SimpleNamespace(project_folder=tmp_path),
+    project = types.SimpleNamespace(
+        folders=types.SimpleNamespace(project_folder=tmp_path),
         predictions={"k1": pred}, save=lambda: None)
     return project, pred
 
@@ -1347,14 +1347,34 @@ def test_evaluation_charts_builds_options_without_solara():
 # ---------------------------------------------------------------------------
 
 def _chart_record(metrics=("MedAE", "R2"), rows=None):
-    import types as _t
-
-    return _t.SimpleNamespace(
+    return types.SimpleNamespace(
         indices=list(_chart_rows() if rows is None else rows),
         metrics=list(metrics),
         csv_path="/data/proj/evaluation/loss_2010/indices_all.csv",
         truth_tag="loss_2010",
     )
+
+
+@contextlib.contextmanager
+def _dark_theme():
+    """Put the app in dark mode the way the FRONTEND does, and restore after.
+
+    ``solara.lab.theme`` is an ipyvuetify widget: ``dark`` is what Python (and
+    pysepal's toggle) writes, and ``dark_effective`` is what the vuetify
+    frontend syncs BACK once it has resolved ``dark=None`` ("auto") against the
+    host's theme. Components read the resolved one via
+    ``solara.lab.use_dark_effective()``, so a headless test has to set both —
+    nothing here is going to sync ``dark_effective`` for it.
+    """
+    from solara.lab.components.theming import theme
+
+    before = (theme.dark, theme.dark_effective)
+    try:
+        theme.dark = True
+        theme.dark_effective = True
+        yield
+    finally:
+        theme.dark, theme.dark_effective = before
 
 
 def _render_charts_tab(**kwargs):
@@ -1399,25 +1419,48 @@ def test_charts_tab_builds_its_options_from_the_live_theme():
     top-level textStyle would still be dark via the adapter and would hide the
     bug.
     """
-    from solara.lab.components.theming import theme
-
     from gui.scripts.echarts_options import theme_colors
 
-    before = theme.dark
-    try:
-        theme.dark = True
+    with _dark_theme():
         rc, cls = _render_charts_tab()
         option = rc.find(cls).widgets[0].option
         assert option["title"]["textStyle"]["color"] == theme_colors(True)["ink"]
         assert option["xAxis"]["axisLabel"]["color"] == theme_colors(True)["ink"]
         assert (option["yAxis"]["splitLine"]["lineStyle"]["color"]
                 == theme_colors(True)["grid"])
-    finally:
-        theme.dark = before
+        rc.close()
 
     rc, cls = _render_charts_tab()
     assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
             == theme_colors(False)["ink"])
+    rc.close()
+
+
+def test_charts_tab_repaints_when_the_theme_is_toggled_in_place():
+    """A LIVE theme toggle must reach charts that are already on screen.
+
+    The test above renders twice from scratch, so it can only prove the theme
+    is read at build time — a fresh render reads the current theme whether or
+    not anything subscribed to it. This one flips the theme on a mounted render
+    context and touches nothing else, which is what a user does.
+
+    That distinction is the whole bug. ``solara.lab.theme`` is an ipyvuetify
+    *traitlet* behind a ``Proxy``, not a ``Reactive``: reading ``theme.dark`` in
+    a render body sets up no subscription, so a toggle re-renders nothing, and
+    reacton's prop-equality bailout blocks the component even when its parent
+    does re-render. ``solara.lab.use_dark_effective()`` observes the trait (and
+    resolves the "auto" setting), which is the pattern
+    ``gui/widget/pipeline_header.py`` already uses.
+    """
+    from gui.scripts.echarts_options import theme_colors
+
+    rc, cls = _render_charts_tab()
+    assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+            == theme_colors(False)["ink"])
+    with _dark_theme():
+        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+                == theme_colors(True)["ink"])
+    rc.close()
 
 
 def test_charts_tab_draws_the_bar_charts_with_the_svg_renderer():
@@ -1560,18 +1603,14 @@ def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9, model=_FIG_MODEL):
 
 
 def _figures_record(*, indices, csv_path, artifacts=()):
-    import types as _t
-
-    return _t.SimpleNamespace(
+    return types.SimpleNamespace(
         indices=list(indices), metrics=[], csv_path=str(csv_path),
         truth_tag="loss_2010", run_id="run00001", artifacts=list(artifacts),
     )
 
 
 def _fig_artifact(points_csv, png_path, csize=300, model=_FIG_MODEL):
-    import types as _t
-
-    return _t.SimpleNamespace(
+    return types.SimpleNamespace(
         prediction_key=f"{model.lower()}__validation", model=model,
         period=_FIG_PERIOD, csize_px=csize, points_csv=str(points_csv),
         png_path=str(png_path))
@@ -1868,9 +1907,10 @@ def test_figures_tab_hands_the_adapter_its_own_option_digest(tmp_path,
                                                              monkeypatch):
     """The scatter supplies ``option_digest``, so the adapter never hashes it.
 
-    Hashing a scatter option costs ~63 ms at 50k points and ~239 ms at 200k —
-    per render, in a dialog the user is interacting with. Dropping the argument
-    is invisible except as latency, so pin it where it is passed.
+    Hashing a scatter option costs ~118 ms at 50k points and ~470 ms at 200k
+    (2026-07-21; order-of-magnitude and machine-dependent, not constants) — per
+    render, in a dialog the user is interacting with. Dropping the argument is
+    invisible except as latency, so pin it where it is passed.
     """
     import gui.widget.echarts as ec
 
@@ -1891,29 +1931,55 @@ def test_figures_tab_hands_the_adapter_its_own_option_digest(tmp_path,
 
 def test_figures_tab_builds_the_option_from_the_live_theme(tmp_path):
     """The dark theme must reach the scatter option's own axis colours."""
-    from solara.lab.components.theming import theme
-
     from gui.scripts.echarts_options import theme_colors
 
     _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
                   obs=[1.0, 2.0], pred=[1.0, 2.0])
     record = _figures_record(indices=[_fig_index_row()],
                              csv_path=tmp_path / "indices_all.csv")
-    before = theme.dark
-    try:
-        theme.dark = True
+    with _dark_theme():
         rc, cls = _render_figures_tab(record=record)
         opt = rc.find(cls).widgets[0].option
         assert opt["xAxis"]["axisLabel"]["color"] == theme_colors(True)["ink"]
         assert (opt["xAxis"]["splitLine"]["lineStyle"]["color"]
                 == theme_colors(True)["grid"])
         rc.close()
-    finally:
-        theme.dark = before
 
     rc, cls = _render_figures_tab(record=record)
     assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
             == theme_colors(False)["ink"])
+    rc.close()
+
+
+def test_figures_tab_repaints_the_scatter_when_the_theme_is_toggled_in_place(
+        tmp_path):
+    """A LIVE theme toggle must reach a scatter that is already on screen.
+
+    The sibling test above renders twice from scratch and therefore cannot see
+    this: a fresh render reads the current theme whether or not the component
+    ever subscribed to it. Here the theme flips on a MOUNTED render context and
+    nothing else moves — the user's actual gesture.
+
+    ``solara.lab.theme`` is an ipyvuetify traitlet behind a ``Proxy``, not a
+    ``Reactive``, so ``dark = theme.dark`` in the render body creates no
+    subscription: the toggle re-renders nothing, and reacton's prop-equality
+    bailout stops the card even when the dialog above it does re-render — the
+    scatter keeps its light ink (``#52514e``) on a dark surface, and
+    ``pred_obs_scatter_option`` is never even called. ``use_dark_effective()``
+    observes the trait, so the flip itself schedules the re-render.
+    """
+    from gui.scripts.echarts_options import theme_colors
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row()],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, cls = _render_figures_tab(record=record)
+    assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
+            == theme_colors(False)["ink"])
+    with _dark_theme():
+        assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
+                == theme_colors(True)["ink"])
     rc.close()
 
 
@@ -1965,22 +2031,33 @@ def test_figures_tab_offers_a_png_download(tmp_path):
 
 
 def test_figures_tab_builds_each_option_once_not_once_per_render(tmp_path):
-    """A multi-map figures tab must not rebuild every option on every render.
+    """A multi-map figures tab must not rebuild every option when it re-renders.
 
-    Measured 2026-07-21 (CPython 3.11.10 / pandas 2.x): materializing an
-    option's point rows costs 1.0 ms at 2k points, 12.8 ms at 50k and 282 ms at
-    200k, and ``_scatter_rows``' module-level LRU cannot absorb a third map at
-    ``SCATTER_ROWS_CACHE_SIZE = 2`` — three cards drawing 200k/50k/25k-point
-    maps scored ZERO hits in 9 calls (173-234 ms of pure rebuild per render
-    pass). The fix is one level up: ``_PredObsCard`` memoizes the finished
-    option on ``pred_obs_chart_identity``, which is once-per-card whatever the
-    map count.
+    Measured 2026-07-21 (CPython 3.11.10 / pandas 2.x; order-of-magnitude, not
+    constants): materializing an option's point rows costs 1.0 ms at 2k points,
+    12.8 ms at 50k and 282 ms at 200k, and ``_scatter_rows``' module-level LRU
+    cannot absorb a third map at ``SCATTER_ROWS_CACHE_SIZE = 2`` — calling it
+    for three maps (200k/50k/25k points) in a loop scores ZERO hits in 9 calls,
+    ~234 ms of pure rebuild. The fix is one level up: ``_PredObsCard`` memoizes
+    the finished option on ``pred_obs_chart_identity``, once per card whatever
+    the map count.
 
-    Re-rendered here with a different ``eval_key``. That prop is extrinsic — it
-    only feeds the chart widget's rebuild ``identity`` and is deliberately NOT
-    part of the option's digest — so the cards genuinely re-render while the
-    option memo must hold. Building the option in the render body instead
-    doubles the row builder's miss count, which is what this asserts.
+    Scope, so the claim is not overstated: reacton bails out on ``==``-equal
+    props, so a parent re-render that leaves this card's props alone never
+    re-enters it and never rebuilt anything. The cost this removes is on the
+    passes that DO re-enter — which is why the re-render below has to move an
+    extrinsic prop to happen at all. ``eval_key`` only feeds the chart widget's
+    rebuild ``identity`` and is deliberately NOT part of the option's digest, so
+    the cards genuinely re-render while the option memo must hold. Building the
+    option in the render body instead doubles the row builder's miss count,
+    which is what this asserts.
+
+    The memo also keys on ``tab_active``, so leaving the Pred-vs-obs tab and
+    returning DOES rebuild every card's rows (3 -> 3 -> 6 misses). That is
+    deliberate — see the constants block in ``gui/scripts/evaluation_echarts``:
+    the tab round trip already forces a fresh widget and a fresh option over the
+    wire, and dropping the rows while the tab is hidden is what keeps the memory
+    bounded.
     """
     from gui.scripts.evaluation_echarts import _scatter_rows
     from gui.widget.evaluation_results import _FiguresTab
@@ -2013,8 +2090,6 @@ def test_evaluation_table_dialog_shows_the_scatter_on_the_figures_tab(tmp_path):
     Extends the mount smoke: the figures tab is inactive on open (no scatter),
     and switching to it parses the point CSV and draws the interactive chart.
     """
-    import types
-
     import ipecharts
     import ipyvuetify as vw
     import reacton

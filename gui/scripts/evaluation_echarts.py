@@ -53,7 +53,10 @@ logger = logging.getLogger("spatial_risk")
 # rather than invented so the number has a source.
 #
 # MEASURED (2026-07-21, CPython 3.11.10 / pandas 2.x, synthetic point CSVs at
-# 500..200k points; see test_large_mode_engages_at_exactly_2000_plotted_points):
+# 500..200k points; see test_large_mode_engages_at_exactly_2000_plotted_points).
+# These are order-of-magnitude figures from one dev machine that was also
+# running a dev server, not constants: treat the SHAPE (flat until ~10k, then
+# superlinear) as the finding, not the millisecond values.
 #
 #     points     read_csv   _scatter_rows   option (rows warm)   option JSON
 #        500        2.6 ms         0.6 ms             0.03 ms       44 KB
@@ -67,11 +70,12 @@ logger = logging.getLogger("spatial_risk")
 # number: at 2000 points the whole option costs ~1 ms to build and 173 KB to
 # send, so the cost that decides SVG-vs-canvas is entirely browser-side (one
 # <circle> DOM node per point vs one batched canvas draw), which no headless
-# measurement can settle. 2000 is therefore kept — and kept EQUAL to the
-# `largeThreshold` written into the option below, so ECharts' own switch and
-# this module's renderer choice can never disagree about which mode a given
-# scatter is in. The remaining browser-side confirmation is on the deployed-
-# SEPAL walkthrough list.
+# measurement can settle. 2000 is therefore kept on its provenance alone, and
+# the remaining browser-side confirmation is on the deployed-SEPAL walkthrough
+# list. (Writing the same constant into `largeThreshold` below is tidiness, not
+# an argument for the value: both sides read this constant, so they agree at
+# ANY value, and `large`/`largeThreshold` are only written when large mode is
+# already on — ECharts' own default can never contradict the renderer choice.)
 PRED_OBS_LARGE_POINT_COUNT = 2000
 
 # Points per progressive-render chunk once large mode is on. ECharts' default
@@ -95,16 +99,31 @@ PRED_OBS_PROGRESSIVE_CHUNK = 5000
 # cell sizes feel instant.
 #
 # The row cache is kept at 2, but it is NOT what protects a multi-map dialog.
-# Measured: three cards drawing 200k/50k/25k-point maps score 0 hits in 9 calls
-# — each card's entry is evicted by the next, so an LRU of 2 is useless the
-# moment a run has three maps, and 234 ms per render pass was being spent
-# rebuilding rows. Raising it to one-entry-per-map is the wrong fix (8 x 47 MB),
-# so the per-render rebuild is instead removed one level up: _PredObsCard
-# memoizes the whole option on `pred_obs_chart_identity` (see
-# gui/widget/evaluation_results.py), which makes the build once-per-card rather
-# than once-per-render regardless of map count. What is left for this cache is
-# the narrow case it can actually serve — the same plot_data rebuilt under a new
-# digest (a light/dark toggle, a language switch) — where 2 is enough.
+# Measured by calling `_scatter_rows` directly for three maps (200k/50k/25k
+# points) in a loop: 0 hits in 9 calls, ~234 ms per pass — each card's entry is
+# evicted by the next, so an LRU of 2 is useless the moment a run has three
+# maps. Raising it to one-entry-per-map is the wrong fix (8 x 47 MB), so the
+# rebuild is instead removed one level up: _PredObsCard memoizes the whole
+# option on `pred_obs_chart_identity` (see gui/widget/evaluation_results.py).
+#
+# What that memo does and does NOT buy, stated precisely:
+#   * WITHIN one continuous mount at one tab state it makes the build
+#     once-per-card instead of once-per-re-entering-render, whatever the map
+#     count. (Note reacton bails out on `==`-equal props, so a parent re-render
+#     with unchanged props never re-enters a card in the first place — the
+#     0-hits figure above comes from a direct loop, not from rendering the tab.)
+#   * It does NOT survive leaving the Pred-vs-obs tab and coming back: the memo
+#     keys on [digest, tab_active], so a round trip re-materializes every card's
+#     rows (measured on a 3-card tab: 3 -> 3 -> 6 misses, 0 hits). That is
+#     deliberate, not an oversight. The tab round trip already forces a full
+#     widget rebuild and a fresh multi-MB option over the websocket (the
+#     ipecharts attach-time sizing mitigation, `identity=...|tab{active_tab}`),
+#     and dropping the rows while the tab is hidden is what keeps a 3-map 200k
+#     dialog from holding ~140 MB of boxed floats for its whole lifetime —
+#     which is the same memory argument that keeps this cache at 2.
+# What is left for this cache is the narrow case it can actually serve — the
+# same plot_data rebuilt under a new digest (a light/dark toggle, a language
+# switch) — where 2 is enough.
 POINTS_CACHE_SIZE = 8
 SCATTER_ROWS_CACHE_SIZE = 2
 

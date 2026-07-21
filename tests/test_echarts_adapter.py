@@ -393,7 +393,7 @@ def test_chart_component_hashes_the_option_itself_by_default():
 
 
 def test_a_caller_supplied_digest_replaces_the_option_hash():
-    """The scatter's escape hatch: hashing 200k points costs 239 ms a render.
+    """The scatter's escape hatch: hashing 200k points costs ~470 ms a render.
 
     A caller that already knows a cheap identity for its option (file mtime, a
     run id) passes it as ``option_digest`` and the adapter skips json+sha1

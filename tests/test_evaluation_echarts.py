@@ -500,7 +500,12 @@ def test_large_mode_engages_at_exactly_2000_plotted_points(tmp_path):
     """MEASURED THRESHOLD: 1999 plotted points draw as SVG, 2000 as canvas.
 
     Task 8 measurement, 2026-07-21, CPython 3.11.10 / pandas 2.x, synthetic
-    round-trippable point CSVs, best of 5 per cell. Cost of producing ONE
+    round-trippable point CSVs, best of 5 per cell, on a dev machine that was
+    also running a dev server. Order-of-magnitude figures, NOT constants — the
+    shape is the finding, and the shape is superlinear past ~10k points:
+    ``_scatter_rows`` goes 3.2 ms at 10k to 282 ms at 200k, i.e. 20x the points
+    for ~90x the time (allocator pressure from one boxed list per point, and a
+    second large frame resident during the 200k trial). Cost of producing ONE
     scatter option at each size:
 
         points     read_csv   _scatter_rows   option (rows warm)   option JSON
@@ -518,9 +523,13 @@ def test_large_mode_engages_at_exactly_2000_plotted_points(tmp_path):
     browser-side trade — one <circle> DOM node per point against a single
     batched canvas draw — which no headless measurement can settle, so
     ``PRED_OBS_LARGE_POINT_COUNT`` is KEPT at ECharts' own ``largeThreshold``
-    default of 2000, and the option writes that same value into
-    ``largeThreshold`` so the renderer choice and ECharts' internal switch can
-    never disagree about which mode a given scatter is in.
+    default of 2000: provenance, plus no Python-side signal for moving it.
+
+    (The option also writes that same constant into ``largeThreshold``. That is
+    tidiness only, not a third reason for the value: both sides read the one
+    constant, so they agree at ANY value, and the ``large``/``largeThreshold``
+    keys are written only when large mode is already on — so ECharts' own
+    default cannot contradict ``pred_obs_renderer`` either way.)
 
     This test pins the boundary itself, which is the part that is measurable
     here: the last SVG point count and the first canvas one.
@@ -547,7 +556,7 @@ def test_large_mode_engages_at_exactly_2000_plotted_points(tmp_path):
 
     assert pred_obs_renderer(at) == RENDERER_CANVAS
     assert at_scatter["large"] is True
-    # the same number on both switches: ours and ECharts' own
+    # written from the same constant the renderer choice reads
     assert at_scatter["largeThreshold"] == PRED_OBS_LARGE_POINT_COUNT
 
 

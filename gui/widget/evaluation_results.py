@@ -10,7 +10,7 @@ toggles are unreliable).
 import pandas as pd
 import reacton.ipyvuetify as rv
 import solara
-from solara.lab.components.theming import theme
+from solara.lab import use_dark_effective
 
 from gui.i18n import t
 from gui.scripts.echarts_options import RENDERER_SVG
@@ -106,10 +106,19 @@ def _ChartsTab(record, eval_key, active_tab=None):
     (re-)entered, and ``eval_key`` so switching runs starts from a fresh chart
     rather than inheriting the previous one's legend toggles — see the contract
     on EChartsChart.
+
+    The theme comes from ``use_dark_effective()`` and NOT from reading
+    ``solara.lab.theme.dark``: that theme object is an ipyvuetify traitlet
+    behind a ``Proxy``, not a ``Reactive``, so reading it in a render body
+    subscribes to nothing and a live light/dark toggle would repaint neither
+    these charts nor the scatter below. The hook observes the trait (and
+    resolves ``dark=None``, i.e. "auto", against what the frontend actually
+    shows) — the same pattern ``gui/widget/pipeline_header.py`` uses.
     """
+    dark = use_dark_effective()
     indices = getattr(record, "indices", None) or []
     metrics = record_metrics(indices, getattr(record, "metrics", None))
-    charts = [(m, metric_bar_option(indices, m, dark=theme.dark))
+    charts = [(m, metric_bar_option(indices, m, dark=dark))
               for m in metrics]
     charts = [(m, option) for m, option in charts if option is not None]
     if not charts:
@@ -125,7 +134,7 @@ def _ChartsTab(record, eval_key, active_tab=None):
             EChartsChart(
                 option=option,
                 identity=f"{eval_key}|tab{active_tab}",
-                dark=theme.dark,
+                dark=dark,
                 renderer=RENDERER_SVG,
                 height=_CHART_HEIGHT,
             )
@@ -179,10 +188,19 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
 
     ``model``/``period`` come from the record's index row, so a row that lacks
     them (``row is None``) skips straight to the PNG rungs rather than crashing.
+
+    The theme is read through ``use_dark_effective()``, not off
+    ``solara.lab.theme.dark``. That object is an ipyvuetify traitlet behind a
+    ``Proxy``: reading it here would create no subscription, so a light/dark
+    toggle would re-render nothing — and reacton's prop-equality bailout would
+    then keep this card on the old theme even when the dialog above it does
+    re-render, leaving light ink on a dark surface with no error anywhere. The
+    hook observes the trait and resolves the "auto" setting (see
+    ``gui/widget/pipeline_header.py``, which established the pattern).
     """
     model = row.get("model") if row else None
     period = row.get("period") if row else None
-    dark = theme.dark
+    dark = use_dark_effective()
     # The dialog always passes an index; a bare mount (None) counts as active so
     # a direct render still draws the chart.
     tab_active = active_tab is None or active_tab == _FIGURES_TAB_INDEX
@@ -219,16 +237,23 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # stale. None here means "nothing drawable" — no data, or data with no
     # finite rows — and is handled by the ladder below, never passed on.
     #
-    # Memoized on the SAME key as the load, and for a measured reason. Building
-    # the option materializes one boxed [obs, pred, cell, forest, residual] list
-    # per point; in the render body that ran on every pass, and
-    # ``_scatter_rows``' module-level LRU (size 2) cannot absorb it because this
-    # tab draws one card per map — a third card evicts the first, so a 3-map
-    # dialog scored ZERO cache hits and paid the full rebuild every render
-    # (measured 2026-07-21: 173 ms per pass for 200k/50k/25k-point maps, 0 hits
-    # in 9 calls). The digest already names every input of the option, so
-    # memoizing on it is exact: a theme flip, a language switch, a rewritten
-    # artifact or a cell-size change all move the key.
+    # Memoized on the SAME key as the load. Building the option materializes one
+    # boxed [obs, pred, cell, forest, residual] list per point — 12.8 ms at 50k
+    # and 282 ms at 200k (2026-07-21; machine-dependent, see the table in
+    # gui/scripts/evaluation_echarts.py) — and in the render body that ran on
+    # every pass that RE-ENTERS this card. ``_scatter_rows``' module-level LRU
+    # (size 2) cannot cover the re-entry, because this tab draws one card per
+    # map and a third card evicts the first.
+    #
+    # Scope note, so the justification is not overstated: reacton bails out on
+    # ``==``-equal props, so a parent re-render that changes none of this card's
+    # props never re-enters it and never rebuilt anything to begin with. What
+    # this memo removes is the rebuild on the passes that DO re-enter — a
+    # cell-size change, a tab change, a run switch, a state change in this
+    # component or any un-bailed ancestor. That is cheap and exact rather than
+    # dramatic: the digest already names every input of the option, so a theme
+    # flip, a language switch, a rewritten artifact or a cell-size change all
+    # move the key, and nothing else does.
     def build_option():
         if plot_data is None:
             return None
@@ -264,7 +289,9 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
                 renderer=pred_obs_renderer(plot_data),
                 height=PRED_OBS_SQUARE_HEIGHT,
                 # The digest above stands in for the adapter's content hash,
-                # which at 50k points costs ~63 ms of JSON+sha1 per render.
+                # which at 50k points costs ~118 ms of JSON+sha1 per render
+                # (~470 ms at 200k). Order-of-magnitude, machine-dependent
+                # figures re-measured 2026-07-21 — see gui/widget/echarts.py.
                 option_digest=digest,
             )
         elif png_exists:
