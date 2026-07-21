@@ -511,8 +511,9 @@ def _scatter_rows(plot_data):
     JSON, and a numpy scalar is not JSON-serializable.
 
     The residual (predicted - observed) is precomputed into the value array
-    because ECharts tooltips here are template STRINGS, not callbacks — the
-    option crosses the wire as a dict, so nothing can be computed at hover time.
+    because these tooltips are template STRINGS: nothing is computed at hover
+    time. (An encoded JS function — ipecharts.tools.encode_js_fn — could
+    compute it browser-side, but the template is sufficient and safer.)
     """
     points = plot_data.finite_points
     obs = points["ndefor_obs_ha"].to_numpy(dtype="float64")
@@ -597,9 +598,11 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         },
         "emphasis": {"focus": "series"},
         "tooltip": {
-            # Template string, not a callback: EChartsRawWidget serializes the
-            # option, so no JS function can cross the wire. {c0}..{c4} index the
-            # value array laid out by _scatter_rows.
+            # Template string, not a callback: arbitrary Python callables
+            # cannot cross the widget wire. An explicitly encoded JS function
+            # COULD (ipecharts.tools.encode_js_fn), but the template is
+            # sufficient and safer here. {c0}..{c4} index the value array
+            # laid out by _scatter_rows.
             "formatter": (
                 f"{text['cell']} {{c2}}<br/>"
                 f"{text['observed']} = {{c0}} {text['ha']}<br/>"

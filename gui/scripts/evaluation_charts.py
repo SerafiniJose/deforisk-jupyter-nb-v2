@@ -156,8 +156,9 @@ def metric_bar_option(rows, metric, dark=False):
             # {b} = category (the map label), {c} = value, {a} = series name
             # (which is "csize N px") — the three fields the Plotly
             # hovertemplate showed. A template string, not a JS function:
-            # EChartsRawWidget serializes the option, so callbacks cannot
-            # cross the wire.
+            # arbitrary Python callables cannot cross the widget wire (an
+            # explicitly encoded one — ipecharts.tools.encode_js_fn — could,
+            # but the template is sufficient and safer).
             "trigger": "item",
             "formatter": "{b}<br/>" + metric + " = {c}<br/>{a}",
         },

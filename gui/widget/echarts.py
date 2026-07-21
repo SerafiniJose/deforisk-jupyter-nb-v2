@@ -12,6 +12,16 @@ must assemble object by object. ``EChartsRawWidget`` overrides that trait with
 a plain ``Dict``, taking the option verbatim. Both share one frontend view, so
 the raw path costs nothing and lets the chart builders stay dict-only.
 
+The pysepal ipecharts guide also shows a Solara-native factory,
+``EChartsWidget.element(option=...)``, which would let reacton own the widget
+lifecycle. The installed pin (``ipecharts>=1.4,<2``; 1.4.0 verified 2026-07-21)
+exposes ``.element()`` on neither widget class, so this adapter keeps the
+manual ``use_memo`` + ``use_effect(widget.close)`` lifecycle below (guarded by
+the orphan-widget regression test). Migrate only after pinning a release that
+actually ships ``.element()``, then re-verify: disposal on identity change and
+teardown, hidden-tab attach sizing, option updates / interaction-state reset,
+and large-scatter memory.
+
 The pure half of the adapter — palette, theme colours, option shaping, renderer
 names — lives in ``gui/scripts/echarts_options`` so that solara-free chart
 builders can import it without dragging solara in. Import that module directly
