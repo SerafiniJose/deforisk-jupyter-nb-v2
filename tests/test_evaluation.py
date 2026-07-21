@@ -950,6 +950,18 @@ def test_evaluation_tile_threads_run_id_and_orders_delete():
     assert "delete_evaluation_run" in src
 
 
+def test_evaluation_tile_does_not_publish_a_failed_deletion():
+    """on_delete must return BEFORE project.set when deletion did not commit."""
+    import inspect
+    import gui.tile.evaluation_tile as et
+
+    src = inspect.getsource(et)
+    body = src[src.index("def on_delete"):src.index("def on_dismiss")]
+    assert body.index("if not deleted") < body.index("project.set")
+    # the message reports a failed deletion, not a completed removal
+    assert "could not be deleted" in body
+
+
 def test_evaluation_results_widget_exports_list_and_dialog():
     import inspect
     import gui.widget.evaluation_results as er

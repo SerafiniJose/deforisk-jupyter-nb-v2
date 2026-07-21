@@ -277,21 +277,28 @@ def delete_run_artifacts(project, record):
 def delete_evaluation_run(project, key):
     """Delete a saved evaluation: registry entry, then commit, THEN artifacts.
 
-    The ordering is load-bearing. Removing the run directory before the manifest
-    is persisted would destroy the data a still-registered record points at if
-    the save then failed, so the files are only unlinked once ``project.save()``
-    has returned successfully. A failed save leaves every artifact on disk.
+    Deletion is a transaction. The registry entry is removed without
+    autosaving, the manifest is committed, and only after a successful commit
+    is the run's artifact directory unlinked — a failed save can never leave a
+    record pointing at files that are already gone. When the save DOES fail,
+    the complete pre-deletion registry snapshot is restored on the live
+    project (the whole dict, not a re-insert, so ordering is preserved):
+    nothing stays mutated in memory, and a LATER successful save cannot
+    silently persist the failed deletion.
 
-    Returns ``(deleted, error)``: ``deleted`` is False only when *key* is not
-    registered; ``error`` is the save failure message, or None.
+    Returns ``(deleted, error)``: ``(True, None)`` on success; ``(False,
+    None)`` when *key* is not registered; ``(False, message)`` when the
+    manifest save failed (registry restored, artifacts kept on disk).
     """
     record = project.get_evaluation(key)
     if record is None:
         return False, None
+    snapshot = dict(project.evaluations)
     project.delete_evaluation(key, auto_save=False)
     try:
         project.save()
-    except Exception as exc:  # noqa: BLE001 - artifacts must survive a bad save
-        return True, str(exc)
+    except Exception as exc:  # noqa: BLE001 - roll back; artifacts must survive
+        project.evaluations = snapshot
+        return False, str(exc)
     delete_run_artifacts(project, record)
     return True, None

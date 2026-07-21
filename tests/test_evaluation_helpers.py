@@ -326,7 +326,7 @@ def test_delete_evaluation_run_removes_artifacts_after_a_successful_commit(tmp_p
 
 
 def test_delete_evaluation_run_keeps_artifacts_when_the_commit_fails(tmp_path):
-    """A failed save must never lose data — the run's files stay on disk."""
+    """A failed save must never lose data — files stay AND the registry rolls back."""
     project, run_dir, _ = _project_with_run_dir(tmp_path)
     rec = _record_for()
     project.evaluations = {"key": rec}
@@ -340,8 +340,35 @@ def test_delete_evaluation_run_keeps_artifacts_when_the_commit_fails(tmp_path):
     project.save = boom
 
     deleted, error = h.delete_evaluation_run(project, "key")
-    assert deleted is True and "disk full" in error
-    assert run_dir.exists()                 # artifacts preserved
+    assert deleted is False and "disk full" in error
+    assert run_dir.exists()                    # artifacts preserved
+    assert project.evaluations == {"key": rec}  # registry entry restored
+
+
+def test_delete_evaluation_run_restores_registry_order_and_survives_a_later_save(tmp_path):
+    """The rollback restores the COMPLETE snapshot (order included), so a later
+    successful save cannot silently persist the failed deletion."""
+    project, run_dir, _ = _project_with_run_dir(tmp_path)
+    rec = _record_for()
+    other = _record_for(run_id="zzzz9999")
+    project.evaluations = {"first": other, "key": rec}
+    project.get_evaluation = lambda k: project.evaluations.get(k)
+    project.delete_evaluation = (
+        lambda key, auto_save=False: project.evaluations.pop(key, None) is not None)
+    calls = {"n": 0}
+
+    def save():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("disk full")
+
+    project.save = save
+
+    deleted, error = h.delete_evaluation_run(project, "key")
+    assert deleted is False and "disk full" in error
+    assert list(project.evaluations) == ["first", "key"]  # order preserved
+    project.save()                              # a later save succeeds...
+    assert "key" in project.evaluations         # ...and the run is still there
 
 
 def test_delete_evaluation_run_unknown_key_is_a_no_op(tmp_path):

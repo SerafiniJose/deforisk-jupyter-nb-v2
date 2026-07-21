@@ -106,9 +106,9 @@ def EvaluationTile(project):
         # that were already deleted.
         deleted, error = delete_evaluation_run(cur, key)
         if error:
-            logger.error("Evaluation '%s' removed from the registry but the "
-                         "project save failed (%s) — artifacts kept on disk.",
-                         key, error)
+            logger.error("Evaluation '%s' could not be deleted: saving the "
+                         "project failed (%s). The run and its artifacts "
+                         "were kept.", key, error)
         if not deleted:
             return
         project.set(cur.model_copy())
