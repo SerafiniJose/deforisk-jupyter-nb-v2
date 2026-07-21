@@ -112,8 +112,9 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
     none of them reuses the same widget (no chart teardown, no flicker), while
     a change to any of them builds a fresh one. Recreating rather than mutating
     keeps the option dict and the live chart from drifting apart, and leaves no
-    trait observers behind: the widget owns all its own state and is simply
-    replaced.
+    trait observers behind: the widget owns all its own state, and the
+    ``use_effect`` below closes the one it replaces so nothing outlives the
+    render that dropped it.
 
     **Contract:** anything that changes what the chart *draws* is already
     covered — this component hashes the option itself, so a caller can rebuild
@@ -166,6 +167,23 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
          _option_digest(option) if option_digest is None else option_digest,
          dark, renderer, height],
     )
+
+    # The widget is built by `use_memo`, NOT by reacton, so reacton does not own
+    # it and never disposes it: when the memo key moves (a tab switch alone
+    # rebuilds every chart — see `identity`), the previous widget leaves the
+    # tree while `ipywidgets`' module-level instance registry keeps a STRONG
+    # reference to it for the kernel's lifetime, pinning its whole option — for
+    # the scatter, every point row. Measured before this effect existed: 20 tab
+    # cycles left 20 orphan widgets (+9 MB RSS at 2k points, +84 MB at 20k), and
+    # closing the dialog freed none of them. Returning `widget.close` as the
+    # effect's cleanup makes reacton close each widget when it is replaced and
+    # when the component unmounts, which is the disposal the old
+    # `solara.FigurePlotly` got for free by being reacton-owned.
+    def _dispose_replaced_widget():
+        return widget.close
+
+    solara.use_effect(_dispose_replaced_widget, [widget])
+
     # Handing the widget to a container's `children` is how this app already
     # mounts non-solara widgets (see the SepalMap in solara_app.Page). It puts
     # the exact widget instance in the tree; `solara.display` instead falls

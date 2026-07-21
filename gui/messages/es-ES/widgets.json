@@ -57,6 +57,7 @@
       "chart_predicted": "Predicho",
       "chart_forest": "Bosque",
       "chart_residual": "Residuo",
+      "chart_csize_title": "Celdas de cuadrícula de {csize_ha} ha",
       "chart_unavailable_warning": "Gráfico interactivo no disponible — mostrando la imagen guardada.",
       "download_png": "Descargar PNG"
     },

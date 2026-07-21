@@ -3,6 +3,7 @@ import types as _types
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from gui.tile import evaluation_helpers as h
 from gui.tile.evaluation_helpers import build_evaluation_record
@@ -197,6 +198,45 @@ def test_build_evaluation_record_prefers_the_dataframes_own_run_id(tmp_path):
     # never the stale "run_id" argument
     assert "stale_run" not in rec.csv_path
     assert "/t/actual_run/" in rec.artifacts[0].points_csv
+
+
+def test_a_dataframe_from_an_unscoped_run_is_rejected_not_mis_scoped(tmp_path):
+    """attrs["run_id"] = None means "shared folder", not "no information".
+
+    ``evaluate_against_truth`` stamps the attr unconditionally, ``None``
+    included, and a ``None`` run id puts every artifact straight into
+    ``evaluation/<truth_tag>/``. Testing the attr with ``is None`` instead of a
+    presence sentinel let the ``run_id`` argument win here and produced a
+    ``csv_path`` inside a run directory that was never created — the exact
+    csv_path/artifacts disagreement the function's contract rules out. The frame
+    describes a layout ``EvaluationRecord`` cannot represent (``run_id`` is a
+    required string), so it is refused with a message naming the mismatch rather
+    than resolved by guessing.
+    """
+    df = pd.DataFrame([{"model": "GLM", "period": "ds_A", "MedAE": 12.3}])
+    df.attrs["run_id"] = None          # unscoped run: shared truth folder
+    df.attrs["artifacts"] = []
+    spec = {"defor_file": "/x/d.tif", "forest_file": "/x/f.tif",
+            "time_interval": 5, "truth_tag": "t"}
+
+    with pytest.raises(ValueError, match="WITHOUT a run id"):
+        build_evaluation_record(
+            _fake_project(tmp_path), df, spec, resolved_keys=["glm__ds_A"],
+            run_id="abcd1234", created_at="2026-06-22T14:05:33")
+
+
+def test_a_dataframe_with_no_run_id_attr_falls_back_to_the_argument(tmp_path):
+    """The fallback still exists for frames that never went through evaluate."""
+    df = pd.DataFrame([{"model": "GLM", "period": "ds_A", "MedAE": 12.3}])
+    spec = {"defor_file": "/x/d.tif", "forest_file": "/x/f.tif",
+            "time_interval": 5, "truth_tag": "t"}
+
+    rec = build_evaluation_record(
+        _fake_project(tmp_path), df, spec, resolved_keys=["glm__ds_A"],
+        run_id="abcd1234", created_at="2026-06-22T14:05:33")
+
+    assert rec.run_id == "abcd1234"
+    assert rec.csv_path.endswith("evaluation/t/abcd1234/indices_all.csv")
 
 
 # --- run artifact directory + deletion ordering ------------------------------

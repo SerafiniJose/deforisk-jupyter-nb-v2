@@ -1658,6 +1658,65 @@ def test_figures_tab_renders_the_interactive_scatter(tmp_path):
     rc.close()
 
 
+def test_figures_tab_titles_the_chart_with_the_cell_size_in_hectares(tmp_path):
+    """The PNG states the cell size in ha; the interactive twin must not drop it.
+
+    The card's own header names the map and the selector is labelled in PIXELS,
+    so without this title the hectare figure the archived image carries appears
+    nowhere in the interactive tab. It comes from the record's stored
+    ``csize_coarse_grid_ha`` (never recomputed) and is translated — the PNG's
+    own English sentence (``PredObsPlotData.title``) is deliberately not reused.
+    """
+    from gui.i18n import t as _t
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row(ha=90.0)],
+                             csv_path=tmp_path / "indices_all.csv")
+    rc, cls = _render_figures_tab(record=record)
+    title = rc.find(cls).widgets[0].option["title"]["text"]
+    assert "90.0" in title
+    assert title == _t("widgets.evaluation_results.chart_csize_title",
+                       csize_ha=90.0)
+    rc.close()
+
+
+def test_figures_tab_moves_the_chart_title_when_the_language_changes(tmp_path):
+    """The title is option TEXT, so the digest must carry it too.
+
+    ``pred_obs_chart_identity`` is handed to the adapter as ``option_digest``,
+    i.e. INSTEAD of hashing the option. Pass the title to
+    ``pred_obs_scatter_option`` but not to the identity and a language switch
+    leaves the previous language's title on screen with no error anywhere —
+    the same coupling ``labels=`` has.
+    """
+    from pysepal.translator import Translator
+
+    from gui import i18n
+    from gui.widget.evaluation_results import _FiguresTab
+
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
+                  obs=[1.0, 2.0], pred=[1.0, 2.0])
+    record = _figures_record(indices=[_fig_index_row(ha=90.0)],
+                             csv_path=tmp_path / "indices_all.csv")
+    before = i18n._translator.value
+    try:
+        i18n._translator.value = Translator(i18n.MESSAGES_DIR, target="en")
+        rc, cls = _render_figures_tab(record=record)
+        english = rc.find(cls).widgets[0].option["title"]["text"]
+
+        i18n._translator.value = Translator(i18n.MESSAGES_DIR, target="es-ES")
+        rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
+        spanish = rc.find(cls).widgets[0].option["title"]["text"]
+        rc.close()
+    finally:
+        i18n._translator.value = before
+
+    assert english == "Grid cells of 90.0 ha"
+    assert spanish != english
+    assert "90.0" in spanish
+
+
 def test_figures_tab_switches_the_cell_size(tmp_path):
     """The cell-size selector shows for >1 size and reloads that size's points."""
     import ipyvuetify as vw

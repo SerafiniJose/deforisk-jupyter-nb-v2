@@ -490,10 +490,15 @@ def run_output_dir(project, truth_tag, run_id=None):
 # TEMPORARY COMPATIBILITY SHIM — REMOVE AFTER ONE RELEASE
 #
 # Run-scoped output moved the canonical artifacts to
-# evaluation/<truth_tag>/<run_id>/. Notebooks and external scripts still read
-# the un-scoped evaluation/<truth_tag>/<name> paths, so the newest run also
-# publishes a copy there. Those consumers should migrate to
-# ``EvaluationRecord.artifacts`` (or ``run_output_dir``).
+# evaluation/<truth_tag>/<run_id>/, so the newest run also publishes a copy to
+# the historical un-scoped evaluation/<truth_tag>/<name> paths for anything
+# still reading them by hand. No IN-REPO consumer needs that copy: searched
+# twice, no notebook calls ``evaluate_against_truth`` (6.models_evaluation.ipynb
+# uses ``evaluate_prediction``/``evaluate_predictions``, whose output layout is
+# untouched) and the only non-test caller is the GUI, which reads
+# ``EvaluationRecord.artifacts``. The window is kept deliberately, for a user's
+# own scripts and for saved runs written before run-scoping — but retiring it
+# costs no migration of anything in this repo.
 #
 # Every call site below is tagged ``# shim`` so
 # ``grep -n "# shim" spatialrisk/evaluation.py`` lists every site to touch —

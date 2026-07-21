@@ -19,6 +19,10 @@ from spatialrisk.evaluation import interval_from_target, label_for, run_output_d
 ALL_METRICS = ["MedAE", "R2", "RMSE", "wRMSE"]
 _METRIC_LABELS = {"R2": "R²"}
 
+# "df.attrs has no run_id at all", as distinct from "df.attrs says the run had
+# no run id" — see build_evaluation_record.
+_NO_RUN_ID_ATTR = object()
+
 
 def metric_items():
     """[{text, value}] for the metric selector — one per accuracy index."""
@@ -157,15 +161,32 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
     ``json.dumps`` happy. ``metrics`` records which accuracy-index columns the
     user chose to show (empty = all).
 
-    The record's run id is taken from ``df.attrs["run_id"]`` when the
-    DataFrame carries one (i.e. it came back from ``evaluate_against_truth``),
-    falling back to the ``run_id`` parameter otherwise (plain/synthetic
+    The record's run id is taken from ``df.attrs["run_id"]`` whenever the key is
+    PRESENT (i.e. the frame came back from ``evaluate_against_truth``), falling
+    back to the ``run_id`` parameter only when it is absent (plain/synthetic
     DataFrames, e.g. in tests, whose ``attrs`` is empty). Preferring the
     DataFrame's own attr is deliberate: it is the run id that was ACTUALLY
     used to choose the directory the artifacts were written into, so
     ``csv_path`` (derived from it here) and ``artifacts`` (also read off
     ``df.attrs``) can never disagree with each other — even if a caller passes
     a ``run_id`` that doesn't match the one the DataFrame was produced with.
+
+    The presence test needs a sentinel rather than ``is None``, because
+    ``evaluate_against_truth`` writes ``attrs["run_id"] = run_id``
+    unconditionally, ``None`` included. Treating that ``None`` as "the frame
+    carries nothing" would let the parameter win for a run that was NOT
+    run-scoped — writing its artifacts into the shared truth folder while
+    ``csv_path`` pointed at a run directory that was never created. Not
+    reachable from the GUI (which passes the same id to both calls), but it is
+    the exact disagreement the paragraph above promises cannot happen.
+
+    A frame that declares an UNSCOPED run (``attrs["run_id"] is None``) has no
+    record to build: its artifacts live in the shared truth folder, and
+    ``EvaluationRecord.run_id`` is a required string, so the layout the frame
+    describes is not representable. That combination raises ``ValueError`` here
+    rather than silently choosing one of the two answers — the caller passed a
+    run id to one function and not the other, and only the caller knows which
+    was meant.
 
     ``csv_path`` points at THIS run's aggregate CSV inside
     ``evaluation/<truth_tag>/<run_id>/``, resolved through ``run_output_dir``
@@ -180,9 +201,16 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
     truth_tag = spec["truth_tag"]
     indices = json.loads(df.to_json(orient="records"))
     attrs = getattr(df, "attrs", None) or {}
-    actual_run_id = attrs.get("run_id")
-    if actual_run_id is None:
+    actual_run_id = attrs.get("run_id", _NO_RUN_ID_ATTR)
+    if actual_run_id is _NO_RUN_ID_ATTR:
         actual_run_id = run_id
+    elif actual_run_id is None:
+        raise ValueError(
+            "this DataFrame came from an evaluation run WITHOUT a run id, so "
+            "its artifacts are in the shared evaluation/<truth_tag>/ folder; "
+            f"a record scoped to run_id={run_id!r} would point at a directory "
+            "that was never written. Pass the same run_id to "
+            "evaluate_against_truth and to build_evaluation_record.")
     csv_path = str(run_output_dir(project, truth_tag, actual_run_id) / "indices_all.csv")
     artifacts = list(attrs.get("artifacts") or [])
     return EvaluationRecord(

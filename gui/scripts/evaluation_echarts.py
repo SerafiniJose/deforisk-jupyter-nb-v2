@@ -134,10 +134,13 @@ REFERENCE_LINE_COLOR = "#ff0000"
 # edge; on a dark surface a black edge disappears, so the edge follows the ink.
 _POINT_FILL = {True: "rgba(66,146,198,0.65)", False: "rgba(42,120,214,0.55)"}
 
-# Symmetric horizontal insets keep the plot box centred, so the chart reads as
-# square whenever its container is (see PRED_OBS_SQUARE_HEIGHT). ECharts has no
-# aspect lock for a cartesian grid — squareness is a container property, and the
-# option's job is only to not skew it.
+# Horizontal breathing room on both sides of the plot box, applied equally so
+# the option itself adds no left/right bias. It does NOT centre the box: with
+# `containLabel: True` the grid also reserves room for the axis labels and the
+# y-axis `name` (nameGap 48) on the left and for nothing on the right, so the
+# drawn box sits right of centre by roughly that reserve. ECharts has no aspect
+# lock for a cartesian grid — squareness is a container property (see
+# PRED_OBS_SQUARE_HEIGHT), and the option's job is only to not skew it.
 _GRID_INSET = 16
 PRED_OBS_SQUARE_HEIGHT = "560px"
 
@@ -146,6 +149,11 @@ PRED_OBS_SQUARE_HEIGHT = "560px"
 # machinery into a pure builder. The numeric FORMATS are not overridable — they
 # are frozen to the PNG's ("MedAE = {:.2f} ha", "R2 = {:.2f}", "n = {:d}") so
 # the two figures always quote the same rounded values.
+#
+# The two axis titles restate `spatialrisk.evaluation.PRED_OBS_X_LABEL` /
+# `PRED_OBS_Y_LABEL` (the strings baked into the archived PNG) rather than
+# importing them, so this module stays cheap to import; they are pinned equal by
+# test_default_axis_labels_match_the_archived_pngs.
 DEFAULT_LABELS = {
     "x_axis": "Observed deforestation (ha)",
     "y_axis": "Predicted deforestation (ha)",
@@ -161,6 +169,13 @@ DEFAULT_LABELS = {
     "ha": "ha",
 }
 
+# The four columns the chart draws — a local copy of
+# `spatialrisk.evaluation.PLOT_COLUMNS`, which is what `PredObsPlotData` requires
+# and enforces. Copied rather than imported to keep this module's import cheap;
+# pinned equal (contents AND order) by
+# test_loader_reads_exactly_the_columns_spatialrisk_requires, because a drift
+# would raise inside the loader, be swallowed by its `except Exception`, and
+# degrade every interactive scatter to the PNG with only a log line.
 _POINT_CSV_COLUMNS = ["cell", "nfor_obs_ha", "ndefor_obs_ha", "ndefor_pred_ha"]
 
 
@@ -355,7 +370,16 @@ def load_pred_obs_plot_data(record, model, period, csize, *,
         return None
     identity = _modification_identity(path)
     if identity is None:
-        logger.warning("Evaluation point table is missing: %s", path)
+        # Only an absent table this run PROMISED is a fault. A legacy or
+        # PNG-only record resolves to a derived path that was never written, and
+        # `_PredObsCard` deliberately shows no warning for it — but this logger
+        # feeds the on-map log console at INFO+, so warning here would put in
+        # front of the user exactly the message the UI decided not to show.
+        # Same rung split as the card's (see `points_csv_is_expected`).
+        expected = points_csv_is_expected(record, model, period, csize,
+                                          prediction_key=prediction_key)
+        log = logger.warning if expected else logger.debug
+        log("Evaluation point table is missing: %s", path)
         return None
     row = _index_row_for(record, model, period, csize)
     try:
@@ -602,9 +626,13 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
             "right": 8,
             "top": 0,
             "feature": {
-                # Box zoom over BOTH axes (not ECharts' x-only default): the
-                # shared domain is this chart's whole premise, and an x-only
-                # zoom would silently break it.
+                # Box zoom. `{}` is "enable with ECharts' defaults" and
+                # overrides nothing: the toolbox feature already acts on every
+                # axis unless `xAxisIndex`/`yAxisIndex` are set to exclude one
+                # (the x-only default belongs to the `dataZoom` COMPONENT, not
+                # to this feature). Both axes is what this chart needs — the
+                # shared domain is its whole premise — so the defaults are kept
+                # deliberately rather than by omission.
                 "dataZoom": {},
                 "restore": {},
                 "saveAsImage": {"pixelRatio": 2},

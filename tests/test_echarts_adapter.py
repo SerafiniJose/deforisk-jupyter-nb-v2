@@ -461,6 +461,51 @@ def test_chart_component_recreates_its_widget_when_the_theme_flips():
 
 
 # --------------------------------------------------------------------------
+# Disposal — a replaced widget must not survive in the kernel's registry
+# --------------------------------------------------------------------------
+
+def _live_chart_widgets():
+    """Every EChartsRawWidget ipywidgets still holds a strong reference to.
+
+    ``ipywidgets.widgets.widget._instances`` is the module-level registry behind
+    the deprecated ``Widget.widgets`` property — a plain dict, so an entry is a
+    STRONG reference that lives for the kernel's lifetime unless the widget is
+    closed. Reached directly here to avoid the deprecation warning.
+    """
+    from ipywidgets.widgets.widget import _instances
+
+    return [w for w in list(_instances.values())
+            if isinstance(w, ipecharts.EChartsRawWidget)]
+
+
+def test_replaced_chart_widgets_are_closed_rather_than_orphaned():
+    """A rebuilt chart must not leave its predecessor registered in the kernel.
+
+    The widget is built inside ``use_memo``, so reacton does not own it and will
+    not dispose it. Without an explicit close, every memo-key change (an
+    ordinary tab switch — ``identity`` carries the active tab index) drops a
+    widget out of the tree that the ipywidgets registry keeps alive forever,
+    pinning its whole option: for the scatter, every point row. Measured with
+    the disposal removed: 20 identity changes left 20 orphans (+9 MB RSS at 2k
+    points, +84 MB at 20k) and ``rc.close()`` freed none of them.
+
+    Counted as a delta against the widgets already registered by other tests in
+    the session, so the assertion is about THIS component's churn only.
+    """
+    from gui.widget.echarts import EChartsChart
+
+    before = len(_live_chart_widgets())
+    _, rc = _render_chart(identity="cycle-0")
+    for i in range(1, 21):
+        rc.render(EChartsChart(option={"series": []}, identity=f"cycle-{i}"))
+    live = len(_live_chart_widgets()) - before
+    assert live == 1, f"{live} chart widgets alive after 20 rebuilds (want 1)"
+
+    rc.close()
+    assert len(_live_chart_widgets()) - before == 0
+
+
+# --------------------------------------------------------------------------
 # No CDN — the frontend must ship with the package
 # --------------------------------------------------------------------------
 

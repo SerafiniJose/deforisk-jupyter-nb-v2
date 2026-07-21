@@ -201,6 +201,18 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     model = row.get("model") if row else None
     period = row.get("period") if row else None
     dark = use_dark_effective()
+    # The archived PNG's title states the grid cell size in HECTARES; the card
+    # otherwise shows only the map label and a selector labelled in pixels, so
+    # the interactive twin would drop information the static one carries. The
+    # value is the record's own `csize_coarse_grid_ha` (already rounded to 2 by
+    # `compute_validation` — never recomputed here), and the sentence is
+    # translated rather than reusing `PredObsPlotData.title`, which is the PNG's
+    # frozen English string. Read off the index row, not off plot_data, because
+    # it has to be known before the load: it goes into the digest below.
+    csize_ha = row.get("csize_coarse_grid_ha") if row else None
+    title = (None if csize_ha is None else
+             t("widgets.evaluation_results.chart_csize_title",
+               csize_ha=csize_ha))
     # The dialog always passes an index; a bare mount (None) counts as active so
     # a direct render still draws the chart.
     tab_active = active_tab is None or active_tab == _FIGURES_TAB_INDEX
@@ -210,7 +222,7 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # unconditionally — it is None for a row with no model/period, which is a
     # perfectly stable key.
     digest = pred_obs_chart_identity(
-        record, model, period, csize, dark=dark, labels=labels, title=None,
+        record, model, period, csize, dark=dark, labels=labels, title=title,
         fig_dir=fig_dir)
 
     def load_points():
@@ -223,8 +235,9 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
             record, model, period, csize, fig_dir=fig_dir)
 
     # The load lives in a use_memo, not in the render body, because it is I/O
-    # with a side effect: a missing artifact makes the loader emit a
-    # `logger.warning`, and the app pipes that logger into a Solara reactive
+    # with a side effect: a missing artifact makes the loader LOG (a warning
+    # when this run recorded a table, debug otherwise — rung a vs b, matching
+    # what this card shows), and the app pipes that logger into a Solara reactive
     # (gui/scripts/log_bridge.py). A render that logs on EVERY pass turns that
     # into per-render reactive traffic — which is exactly how this card used to
     # spin forever. Keyed on `digest` (record + resolved path + that file's
@@ -258,7 +271,7 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
         if plot_data is None:
             return None
         return pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
-                                       title=None)
+                                       title=title)
 
     option = solara.use_memo(build_option, [digest, tab_active])
     # One stat() for the whole render, not one per rung.

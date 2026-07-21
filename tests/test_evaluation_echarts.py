@@ -148,6 +148,45 @@ def _refline(option):
 
 
 # ---------------------------------------------------------------------------
+# Cross-layer constants: the GUI's copies must equal spatialrisk's originals
+# ---------------------------------------------------------------------------
+
+def test_loader_reads_exactly_the_columns_spatialrisk_requires():
+    """``_POINT_CSV_COLUMNS`` is a copy of ``PLOT_COLUMNS`` — pin them equal.
+
+    The loader names its ``usecols`` independently of
+    ``spatialrisk.evaluation.PLOT_COLUMNS`` (the GUI module must not grow an
+    import-time dependency on a heavy module just to read a tuple), so nothing
+    but this test keeps them in step. A column added to ``PLOT_COLUMNS`` and not
+    here would make ``PredObsPlotData.__post_init__`` raise inside
+    ``_load_cached``; ``load_pred_obs_plot_data``'s blanket ``except Exception``
+    would swallow it, and EVERY interactive scatter would silently fall back to
+    the PNG with only a log line. Order matters too — the loader re-indexes the
+    frame with this list, and the option's dimensions follow it.
+    """
+    from spatialrisk.evaluation import PLOT_COLUMNS
+
+    from gui.scripts.evaluation_echarts import _POINT_CSV_COLUMNS
+
+    assert _POINT_CSV_COLUMNS == list(PLOT_COLUMNS)
+
+
+def test_default_axis_labels_match_the_archived_pngs():
+    """The English fallbacks are the PNG's axis titles, not a paraphrase.
+
+    The widget layer overrides both with ``t(...)``, so this only bites a caller
+    that passes no labels — but that caller's chart sits next to the archived
+    PNG in the same dialog, and the two must not word the same axis differently.
+    """
+    from spatialrisk.evaluation import PRED_OBS_X_LABEL, PRED_OBS_Y_LABEL
+
+    from gui.scripts.evaluation_echarts import DEFAULT_LABELS
+
+    assert DEFAULT_LABELS["x_axis"] == PRED_OBS_X_LABEL
+    assert DEFAULT_LABELS["y_axis"] == PRED_OBS_Y_LABEL
+
+
+# ---------------------------------------------------------------------------
 # Headline: the plotted coordinates ARE the saved CSV values
 # ---------------------------------------------------------------------------
 
@@ -717,6 +756,36 @@ def test_an_unreadable_file_loads_as_none_instead_of_raising(tmp_path):
     (run_dir / "pred_obs_GLM_d1_300.csv").write_text("not,a,point,table\n1,2,3,4\n")
 
     assert load_pred_obs_plot_data(_typed_record(run_dir), "GLM", "d1", 300) is None
+
+
+def test_only_a_promised_table_warns_when_it_is_missing(tmp_path, caplog):
+    """The log must say what the UI says — no louder.
+
+    ``spatial_risk`` feeds the on-map log console at INFO+, so a WARNING is a
+    user-visible message. ``_PredObsCard`` deliberately shows nothing for a
+    legacy/PNG-only record (rung b): that map was never promised a point table,
+    and its derived path is expected not to exist. Warning about it would put in
+    front of the user precisely the message the UI decided not to show. A NEW
+    record whose RECORDED table has gone missing (rung a) is a real fault and
+    still warns, matching the card's own warning.
+    """
+    import logging
+
+    from gui.scripts.evaluation_echarts import load_pred_obs_plot_data
+
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+
+    with caplog.at_level(logging.DEBUG, logger="spatial_risk"):
+        assert load_pred_obs_plot_data(
+            _record(run_dir), "GLM", "d1", 300) is None      # legacy: no artifact
+    levels = {r.levelno for r in caplog.records}
+    assert levels == {logging.DEBUG}, [r.getMessage() for r in caplog.records]
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="spatial_risk"):
+        assert load_pred_obs_plot_data(
+            _typed_record(run_dir), "GLM", "d1", 300) is None  # recorded, gone
+    assert logging.WARNING in {r.levelno for r in caplog.records}
 
 
 def test_the_option_of_nothing_is_nothing(tmp_path):
