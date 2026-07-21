@@ -1712,7 +1712,14 @@ def _scatter_data(widget):
 
 def test_two_predictions_with_identical_labels_render_distinct_cards(tmp_path):
     """rows_by_label used to collapse same-label predictions into one card.
-    Each index row must now get its own card wired to its OWN artifact."""
+    Each index row must now get its own card wired to its OWN artifact —
+    including the on-chart MedAE annotation, not just the plotted points.
+
+    The two index rows are given DIFFERENT MedAE values so a card that quotes
+    the wrong row's stats (``_index_row_for`` matching on (model, period,
+    csize) alone, ignoring which prediction the card is actually drawing) is
+    caught even when both predictions' points render correctly.
+    """
     csv_a = tmp_path / "a" / "pred_obs_GLM_validation_300.csv"
     csv_b = tmp_path / "b" / "pred_obs_GLM_validation_300.csv"
     _write_points(csv_a, obs=[1.0, 2.0], pred=[1.0, 2.0])
@@ -1724,16 +1731,25 @@ def test_two_predictions_with_identical_labels_render_distinct_cards(tmp_path):
             period=_FIG_PERIOD, csize_px=300, points_csv=str(csv_b),
             png_path=str(csv_b.with_suffix(".png"))),
     ]
-    rows = [_fig_index_row(), _fig_index_row(prediction="glm__validation__2")]
+    rows = [_fig_index_row(medae=1.5),
+            _fig_index_row(prediction="glm__validation__2", medae=9.5)]
     record = _figures_record(indices=rows, csv_path=tmp_path / "indices_all.csv",
                              artifacts=arts)
     rc, cls = _render_figures_tab(record=record)
     widgets = rc.find(cls).widgets
     assert len(widgets) == 2
-    lengths = sorted(
-        len(next(s for s in w.option["series"] if s["type"] == "scatter")["data"])
-        for w in widgets)
-    assert lengths == [2, 3]    # each card drew ITS prediction's file
+    by_point_count = {
+        len(next(s for s in w.option["series"] if s["type"] == "scatter")["data"]): w
+        for w in widgets}
+    assert sorted(by_point_count) == [2, 3]    # each card drew ITS prediction's file
+
+    def annotation_text(widget):
+        return widget.option["graphic"][0]["style"]["text"]
+
+    # csv_a's card (2 points, row medae=1.5) and csv_b's card (3 points, row
+    # medae=9.5) must each quote THEIR OWN row's MedAE, not the sibling's.
+    assert "MedAE = 1.50" in annotation_text(by_point_count[2])
+    assert "MedAE = 9.50" in annotation_text(by_point_count[3])
     rc.close()
 
 

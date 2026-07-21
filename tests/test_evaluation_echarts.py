@@ -767,6 +767,45 @@ def test_an_unmatched_prediction_key_falls_back_to_the_typed_match(tmp_path):
                         / pred_obs_artifact_name("GLM", "d1", 300, "csv"))
 
 
+def test_a_blank_field_on_the_exact_match_derives_instead_of_borrowing_a_sibling(
+        tmp_path):
+    """The exact-key match's blank field must derive (tier 3), never borrow a
+    SIBLING prediction's file for the same slot.
+
+    Two artifacts share (model, period, csize) with different prediction
+    keys. The exact match (``GLM__d1__a``) recorded no PNG this run
+    (``png_path=""``; its ``points_csv`` is populated, so the artifact itself
+    is otherwise real). Before the fix, ``_typed_artifact_path``'s
+    ``if not path: continue`` ran BEFORE the prediction-key comparison, so
+    the exact match was skipped entirely and the loose tier-2 scan served the
+    SIBLING's (``GLM__d1__b``) png_path — a different prediction's file
+    served under this card. After the fix, the blank exact match returns
+    None and ``resolve_plot_artifact`` falls through to the tier-3 derived
+    path instead of ever considering ``GLM__d1__b``.
+    """
+    from spatialrisk.evaluations import EvaluationPlotArtifact
+
+    from gui.scripts.evaluation_charts import pred_obs_artifact_name
+    from gui.scripts.evaluation_echarts import resolve_plot_artifact
+
+    run_dir = tmp_path / "evaluation" / "loss_2010" / "run1"
+    art_a = EvaluationPlotArtifact(
+        prediction_key="GLM__d1__a", model="GLM", period="d1", csize_px=300,
+        points_csv=str(run_dir / "GLM__d1__a.csv"), png_path="")
+    art_b = EvaluationPlotArtifact(
+        prediction_key="GLM__d1__b", model="GLM", period="d1", csize_px=300,
+        points_csv=str(run_dir / "GLM__d1__b.csv"),
+        png_path=str(run_dir / "GLM__d1__b.png"))
+    record = _record(run_dir, artifacts=[art_a, art_b])
+
+    resolved = resolve_plot_artifact(
+        record, prediction_key="GLM__d1__a", model="GLM", period="d1",
+        csize=300, kind="png_path", fallback_dir=run_dir)
+
+    assert resolved != Path(art_b.png_path), "must not borrow the sibling's file"
+    assert resolved == run_dir / pred_obs_artifact_name("GLM", "d1", 300, "png")
+
+
 def test_resolver_rejects_an_unknown_kind(tmp_path):
     from gui.scripts.evaluation_echarts import resolve_plot_artifact
 

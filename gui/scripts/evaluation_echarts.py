@@ -195,27 +195,33 @@ def _typed_artifact_path(record, model, period, csize, kind,
                          prediction_key=None):
     """Recorded path for one map + cell size, or None. Typed tiers only.
 
-    Tier 1 — the artifact whose ``prediction_key`` matches exactly. Tier 2 —
-    any artifact matching ``(model, period, csize)``: older manifests recorded
-    keys under a different scheme, and the run's own file for that map beats a
-    derived path a later run may have overwritten. Two live predictions
-    sharing a model+period are told apart by tier 1; tier 2 is only reached
-    when the manifest does not know the caller's key at all.
+    Tier 1 — the artifact whose ``prediction_key`` matches exactly. Its
+    presence is decided FIRST, before any blank-field check, and answers the
+    whole call on its own: a non-blank ``kind`` returns that path, a blank one
+    returns None (-> ``resolve_plot_artifact``'s tier-3 derivation). It never
+    falls through to tier 2 in either case — an exact match with a blank
+    field is this run's own recorded gap, not license to borrow a SIBLING
+    prediction's file for the same slot. Tier 2 — any artifact matching
+    ``(model, period, csize)``, first non-blank ``kind``: older manifests
+    recorded keys under a different scheme, and the run's own file for that
+    map beats a derived path a later run may have overwritten. Two live
+    predictions sharing a model+period are told apart by tier 1; tier 2 is
+    only reached when NO artifact carries the caller's key at all.
     """
-    matches = []
+    loose = []
     for art in _record_artifacts(record):
         if (getattr(art, "model", None) != model
                 or getattr(art, "period", None) != period
                 or int(getattr(art, "csize_px", -1)) != int(csize)):
             continue
-        path = getattr(art, kind, None)
-        if not path:
-            continue
         if (prediction_key is not None
                 and getattr(art, "prediction_key", None) == prediction_key):
-            return Path(path)
-        matches.append(Path(path))
-    return matches[0] if matches else None
+            path = getattr(art, kind, None)
+            return Path(path) if path else None
+        path = getattr(art, kind, None)
+        if path:
+            loose.append(Path(path))
+    return loose[0] if loose else None
 
 
 def resolve_plot_artifact(record, *, prediction_key, model, period, csize,
@@ -279,13 +285,26 @@ def resolve_points_csv(record, model, period, csize, *,
         csize=csize, kind="points_csv", fallback_dir=fig_dir)
 
 
-def _index_row_for(record, model, period, csize):
-    """The record's stored index row for one map + cell size ({} if absent)."""
-    for row in getattr(record, "indices", None) or []:
-        if (row.get("model") == model and row.get("period") == period
-                and row.get("csize_coarse_grid") == int(csize)):
-            return row
-    return {}
+def _index_row_for(record, model, period, csize, prediction_key=None):
+    """The record's stored index row for one map + cell size ({} if absent).
+
+    Two live predictions can share (model, period, csize) while scoring
+    different maps — the same model rerun against another dataset revision,
+    say — and then only the row's own ``"prediction"`` column tells them
+    apart. When ``prediction_key`` is given, this PREFERS the row whose
+    ``"prediction"`` matches it exactly; only when no row carries that column
+    or none matches does it fall back to the first (model, period, csize)
+    match, so a legacy record without a ``"prediction"`` column behaves
+    exactly as before.
+    """
+    matches = [row for row in getattr(record, "indices", None) or []
+               if row.get("model") == model and row.get("period") == period
+               and row.get("csize_coarse_grid") == int(csize)]
+    if prediction_key is not None:
+        for row in matches:
+            if row.get("prediction") == prediction_key:
+                return row
+    return matches[0] if matches else {}
 
 
 def _modification_identity(path):
@@ -414,7 +433,7 @@ def load_pred_obs_plot_data(record, model, period, csize, *,
         log = logger.warning if expected else logger.debug
         log("Evaluation point table is missing: %s", path)
         return None
-    row = _index_row_for(record, model, period, csize)
+    row = _index_row_for(record, model, period, csize, prediction_key)
     try:
         return _load_cached(str(path), identity[0], identity[1],
                             model, period, int(csize),
