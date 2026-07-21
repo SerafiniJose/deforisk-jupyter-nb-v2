@@ -286,3 +286,22 @@ def test_spawn_in_context_runs_target_without_active_context():
     assert done.wait(timeout=5), "target did not run"
     thread.join(timeout=5)
     assert received == [("x", 42)]
+
+
+def test_prepare_samples_records_dataset_name():
+    """Regression: ML-family models never recorded which dataset they trained
+    on (only MW/JNR set dataset_name in their own fit()), so the models list
+    showed "—" for every GLM/RF/iCAR model."""
+    from spatialrisk.mlmodels import GLMModel
+
+    m = GLMModel()
+    m.dataset = types.SimpleNamespace(
+        name="calibration",
+        target=types.SimpleNamespace(name="tgt"),
+        features=[types.SimpleNamespace(name="x")],
+        year=None,
+        extract_at_points=lambda pts: "df",
+    )
+    m.sample = types.SimpleNamespace(load_points=lambda: None)
+    df, formula = m._prepare_samples(formula="tgt ~ x")
+    assert m.dataset_name == "calibration"

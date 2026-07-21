@@ -133,6 +133,7 @@ class BaseRiskModel(BaseModel):
             self.samples_path = output_csv
 
         self.target_name = self.dataset.target.name
+        self.dataset_name = getattr(self.dataset, "name", None) or self.dataset_name
         self.feature_names = [v.name for v in self.dataset.features]
         if self.dataset.year is not None:
             self.year = self.dataset.year
