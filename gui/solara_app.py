@@ -77,7 +77,8 @@ setup_solara_server(extra_asset_locations=[])
 
 @solara.lab.on_kernel_start
 def on_kernel_start():
-    reset_translator()  # re-read ~/.sepal-ui-config locale on every (re)load
+    reset_translator()  # drop the cached translator; Page rebuilds it from the
+    # session LocaleState (the browser resolves the locale, not the config file)
     return setup_sessions()
 
 
