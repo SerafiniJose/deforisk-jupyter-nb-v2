@@ -118,6 +118,19 @@ def test_page_clears_log_on_switch():
     assert "solara.use_effect(reset_log_on_switch, [project_loaded_signal])" in src
 
 
+def test_page_wires_locale_state_to_locale_select():
+    """Live language switching is pure wiring — nothing else asserts on it, so
+    dropping the bind or the effect would leave the suite green and the feature
+    dead. Guard both halves of the handshake."""
+    import inspect
+    import gui.solara_app as app
+    src = inspect.getsource(app.Page)
+    assert "locale_select.bind_locale_state(locale_state)" in src
+    assert "set_app_locale(change[\"new\"])" in src
+    assert 'locale_state.observe(handler, "locale")' in src
+    assert "solara.use_effect(_bind_locale, [id(locale_state)])" in src
+
+
 def test_notification_compute_is_registry_driven():
     """No more hand-maintained `if tab == N` ladder — the step key comes from
     the STEPS registry, so reordering steps can't desync notifications."""
