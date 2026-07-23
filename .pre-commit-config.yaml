@@ -1,0 +1,54 @@
+# Mirrors openforis/pysepal's lint stack (same pinned hook versions) so this app
+# follows the same conventions as the library it builds on. Adopted 2026-07.
+#
+# Omitted vs pysepal: the `commitizen` commit-msg hook. pysepal uses it to drive
+# its release/versioning automation and ships a matching [tool.commitizen] block;
+# this repo has none, so enabling it would reject every commit. Add it here (and a
+# [tool.commitizen] section to pyproject.toml) only if this repo adopts commitizen
+# versioning too.
+#
+# ruff and its rules come from this repo's own [tool.ruff] in pyproject.toml, not
+# pysepal's — the hook just runs it. Enable auto-fix by adding `fix = true` to that
+# block (pysepal sets it) if you want ruff to repair what it can on commit.
+
+default_install_hook_types: [pre-commit]
+
+repos:
+  - repo: "https://github.com/psf/black"
+    rev: "22.3.0"
+    hooks:
+      - id: black
+        stages: [pre-commit]
+
+  - repo: "https://github.com/kynan/nbstripout"
+    rev: "0.5.0"
+    hooks:
+      - id: nbstripout
+        stages: [pre-commit]
+
+  - repo: "https://github.com/pre-commit/mirrors-prettier"
+    rev: "v2.7.1"
+    hooks:
+      - id: prettier
+        stages: [pre-commit]
+        exclude: CHANGELOG\.md|test_.+\.yml
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: "v0.0.215"
+    hooks:
+      - id: ruff
+        stages: [pre-commit]
+
+  - repo: https://github.com/PyCQA/doc8
+    rev: "v1.1.1"
+    hooks:
+      - id: doc8
+        stages: [pre-commit]
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.4
+    hooks:
+      - id: codespell
+        stages: [pre-commit]
+        additional_dependencies:
+          - tomli
