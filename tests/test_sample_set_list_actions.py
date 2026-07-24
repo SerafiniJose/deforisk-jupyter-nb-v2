@@ -71,6 +71,15 @@ def _project_with_one_sample():
     return solara.reactive(p)
 
 
+def _project_with_two_samples():
+    p = Project(project_name="p")
+    for key in ("rand_1", "rand_2"):
+        p.samples[key] = Sample(
+            name=key, raster_var_name="fcc", strategy="random", n_samples=10
+        )
+    return solara.reactive(p)
+
+
 def _render(project, jobs=None, **kwargs):
     box, _rc = reacton.render(
         SampleSetList(
@@ -123,8 +132,15 @@ def test_job_rows_get_no_open_action():
 
 
 def test_open_action_carries_the_sample_key():
-    """Clicking the eye action calls on_open with that row's sample key."""
+    """Each row's eye action calls on_open with that row's OWN sample key.
+
+    Two samples are required to catch a missing ``k=key`` default-argument
+    capture: with a single sample, a buggy bare closure over the loop
+    variable would still pass by coincidence, since the loop's final value
+    happens to equal the lone row's key.
+    """
     seen = []
-    rows = _captured_rows(_project_with_one_sample(), on_open=seen.append)
-    rows[0]["actions"][0]["on_click"]()
-    assert seen == ["rand_1"]
+    rows = _captured_rows(_project_with_two_samples(), on_open=seen.append)
+    for row in rows:
+        row["actions"][0]["on_click"]()
+    assert seen == ["rand_1", "rand_2"]
