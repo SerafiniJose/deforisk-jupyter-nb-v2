@@ -19,7 +19,7 @@ from gui.scripts.solara_threads import publish_if_current, spawn_in_context, upd
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
-from gui.widget.sample_form_dialog import SampleFormDialog
+from gui.widget.sample_form_dialog import SampleDetailsDialog, SampleFormDialog
 from gui.widget.sample_set_list import SampleSetList
 
 logger = logging.getLogger("spatial_risk")
@@ -40,8 +40,11 @@ def _sample_layer_key(name: str) -> str:
 
 
 def _remove_sample_layers(map_, base_key):
-    """Clear both rendering paths for a sample: PMTiles (base key) and the
-    GeoJSON fallback (base_key__event / base_key__forest)."""
+    """Clear both rendering paths for a sample.
+
+    Clears PMTiles (base key) and the GeoJSON fallback
+    (base_key__event / base_key__forest).
+    """
     from gui.scripts.map_helpers import remove_sample_points_from_map
     from gui.scripts.pmtiles_map import remove_sample_pmtiles_from_map
 
@@ -163,6 +166,7 @@ def SamplingTile(project, map_=None):
     # count is stable across renders (this tile is gated, so it renders before
     # raster variables exist and then again once they do).
     pending_remove, set_pending_remove = solara.use_state(None)
+    details_key, set_details_key = solara.use_state(None)
     dialog_open = solara.use_reactive(False)
     notifications = use_notifications()
 
@@ -280,6 +284,7 @@ def SamplingTile(project, map_=None):
             on_remove=set_pending_remove,
             on_dismiss=on_dismiss,
             pending=frozenset(samples_pending.value),
+            on_open=set_details_key,
         )
 
         ConfirmDialog(
@@ -299,4 +304,10 @@ def SamplingTile(project, map_=None):
         existing_names=existing_names,
         running_names=running_names,
         on_submit=on_submit,
+    )
+
+    SampleDetailsDialog(
+        project=project,
+        sample_key=details_key,
+        on_close=lambda: set_details_key(None),
     )
