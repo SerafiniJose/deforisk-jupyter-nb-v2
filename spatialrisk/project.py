@@ -693,8 +693,13 @@ class Project(BaseModel):
         if self.years is not None:
             data["years"] = self.years
 
-        # Serialize raw variables
+        # Serialize raw variables. GEEVars are session-only: they hold live
+        # ee.Image objects (not JSON-serializable) and load() only ever
+        # reconstructs Local*Var, so a persisted GEEVar could never be read
+        # back. Skip them — they are materialized to local vars before save.
         for var_name, var in self.raw_variables.items():
+            if type(var).__name__ == "GEEVar":
+                continue
             data["raw_variables"][var_name] = var.model_dump(mode="json")
 
         # Serialize processed variables
