@@ -10,6 +10,7 @@ from gui.scripts.artifact_names import sanitize_key, suggest_version
 from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
+from gui.widget.details_fields import ro_field
 from gui.widget.help import InfoPopup
 
 
@@ -19,8 +20,11 @@ def model_label(key: str) -> str:
 
 
 def model_short_label(key: str) -> str:
-    """Compact type tag for list chips (RF, GLM, iCAR…), by catalog convention
-    ``models.<key>.short`` — the full label overflows narrow table columns."""
+    """Compact type tag for list chips (RF, GLM, iCAR…).
+
+    By catalog convention ``models.<key>.short`` — the full label overflows
+    narrow table columns.
+    """
     return t(f"models.{key}.short")
 
 
@@ -35,11 +39,15 @@ def _default_params(model_key: str) -> dict:
 
 
 def _make_param_component(model_key: str, group: str):
-    """Factory: dedicated component for one model's params (see train_tile
-    history: one component *type* per (model, group) so switching models does a
-    clean unmount/mount instead of child-tree reconciliation)."""
+    """Factory: dedicated component for one model's params.
+
+    See train_tile history: one component *type* per (model, group) so
+    switching models does a clean unmount/mount instead of child-tree
+    reconciliation.
+    """
     param_defs = [
-        p for p in MODEL_REGISTRY[model_key]["params"]
+        p
+        for p in MODEL_REGISTRY[model_key]["params"]
         if p.get("group", "params") == group
     ]
     is_variables = group == "variables"
@@ -63,9 +71,12 @@ def _make_param_component(model_key: str, group: str):
                     items=feature_options or [],
                     v_model=current or None,
                     on_v_model=lambda v, k=pkey: _update(k, v),
-                    dense=True, outlined=True, clearable=True,
+                    dense=True,
+                    outlined=True,
+                    clearable=True,
                     no_data_text=t("tiles.train.variables_select_no_data"),
-                    hint=hint, persistent_hint=True,
+                    hint=hint,
+                    persistent_hint=True,
                 )
             elif ptype == "select":
                 rv.Select(
@@ -73,17 +84,21 @@ def _make_param_component(model_key: str, group: str):
                     items=param_def.get("items", []),
                     v_model=current,
                     on_v_model=lambda v, k=pkey: _update(k, v),
-                    dense=True, outlined=True,
-                    hint=hint, persistent_hint=True,
+                    dense=True,
+                    outlined=True,
+                    hint=hint,
+                    persistent_hint=True,
                 )
             else:
                 rv.TextField(
                     label=t(param_def["label_key"]),
                     v_model=str(current) if current is not None else "",
                     on_v_model=lambda v, k=pkey: _update(k, v),
-                    dense=True, outlined=True,
+                    dense=True,
+                    outlined=True,
                     type_="number" if ptype in ("int", "float") else None,
-                    hint=hint, persistent_hint=True,
+                    hint=hint,
+                    persistent_hint=True,
                 )
 
     _Params.__name__ = f"Params_{model_key}_{group}"
@@ -145,7 +160,10 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
     feature_options = []
     if selected_ds_obj:
         feature_options = [v.name for v in selected_ds_obj.features]
-        if selected_ds_obj.target is not None and selected_ds_obj.target.name not in feature_options:
+        if (
+            selected_ds_obj.target is not None
+            and selected_ds_obj.target.name not in feature_options
+        ):
             feature_options.append(selected_ds_obj.target.name)
 
     def reset():
@@ -167,11 +185,15 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
                     continue
                 val = model_params.get(pdef["key"])
                 if not val:
-                    return t("tiles.train.error_select_layer", label=t(pdef["label_key"]))
+                    return t(
+                        "tiles.train.error_select_layer", label=t(pdef["label_key"])
+                    )
                 if val not in feature_options:
                     return t(
                         "tiles.train.error_layer_not_in_dataset",
-                        label=t(pdef["label_key"]), val=val, dataset=selected_dataset,
+                        label=t(pdef["label_key"]),
+                        val=val,
+                        dataset=selected_dataset,
                     )
         return None
 
@@ -213,12 +235,16 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         model_select = rv.Select(
             label=t("tiles.train.model_select_label"),
             items=[{"text": model_label(k), "value": k} for k in MODEL_KEYS],
-            item_text="text", item_value="value",
-            v_model=selected_key, on_v_model=set_selected_key,
-            dense=True, outlined=True,
+            item_text="text",
+            item_value="value",
+            v_model=selected_key,
+            on_v_model=set_selected_key,
+            dense=True,
+            outlined=True,
             prepend_inner_icon="mdi-information-outline",
             class_="field-info-icon",
-            hint=t("tiles.train.model_select_hint"), persistent_hint=True,
+            hint=t("tiles.train.model_select_hint"),
+            persistent_hint=True,
         )
         # rv.use_event is a hook — call it unconditionally.
         rv.use_event(
@@ -227,26 +253,39 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
             lambda *_: set_info_open(True),
         )
         InfoPopup(
-            t("tiles.train.model_description_header_for", label=model_label(selected_key)),
-            t(f"models.{selected_key}.summary_md") + "\n\n" + t(registry["description_key"]),
+            t(
+                "tiles.train.model_description_header_for",
+                label=model_label(selected_key),
+            ),
+            t(f"models.{selected_key}.summary_md")
+            + "\n\n"
+            + t(registry["description_key"]),
             info_open,
             set_info_open,
         )
 
         rv.Select(
-            label=t("tiles.train.dataset_select_label"), items=dataset_keys,
-            v_model=selected_dataset, on_v_model=set_selected_dataset,
-            dense=True, outlined=True,
+            label=t("tiles.train.dataset_select_label"),
+            items=dataset_keys,
+            v_model=selected_dataset,
+            on_v_model=set_selected_dataset,
+            dense=True,
+            outlined=True,
             no_data_text=t("tiles.train.dataset_select_no_data"),
-            hint=t("tiles.train.dataset_select_hint"), persistent_hint=True,
+            hint=t("tiles.train.dataset_select_hint"),
+            persistent_hint=True,
         )
         if needs_sample:
             rv.Select(
-                label=t("tiles.train.sample_select_label"), items=sample_keys,
-                v_model=selected_sample, on_v_model=set_selected_sample,
-                dense=True, outlined=True,
+                label=t("tiles.train.sample_select_label"),
+                items=sample_keys,
+                v_model=selected_sample,
+                on_v_model=set_selected_sample,
+                dense=True,
+                outlined=True,
                 no_data_text=t("tiles.train.sample_select_no_data"),
-                hint=t("tiles.train.sample_select_hint"), persistent_hint=True,
+                hint=t("tiles.train.sample_select_hint"),
+                persistent_hint=True,
             )
 
         if MODEL_HAS_VARIABLES[selected_key]:
@@ -254,7 +293,12 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
             if not selected_dataset:
                 solara.Info(t("tiles.train.variables_info_no_dataset"))
             elif not feature_options:
-                solara.Info(t("tiles.train.variables_info_no_features", dataset=selected_dataset))
+                solara.Info(
+                    t(
+                        "tiles.train.variables_info_no_features",
+                        dataset=selected_dataset,
+                    )
+                )
             VarComponent = VARIABLE_COMPONENTS[selected_key]
             VarComponent(
                 params=all_params.get(selected_key, {}),
@@ -282,24 +326,6 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
                             params=all_params.get(selected_key, {}),
                             set_params=_set_model_params,
                         )
-
-
-def _format_value(value) -> str:
-    """Display form for a stored parameter value (lists join like the form)."""
-    if value is None:
-        return "—"
-    if isinstance(value, (list, tuple)):
-        return ", ".join(str(v) for v in value)
-    return str(value)
-
-
-def _ro_field(label: str, value) -> None:
-    """One read-only field in the details dialog (same dense outlined look)."""
-    rv.TextField(
-        label=label, v_model=_format_value(value),
-        readonly=True, dense=True, outlined=True, hide_details=True,
-        class_="mb-2",
-    )
 
 
 @solara.component
@@ -334,53 +360,64 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                 solara.Style(_ADVANCED_PANEL_CSS)
                 if model is not None:
                     with solara.Column(style="gap:4px;"):
-                        _ro_field(
+                        ro_field(
                             t("tiles.train.model_select_label"),
                             model_label(mk) if registry else mk,
                         )
-                        _ro_field(
+                        ro_field(
                             t("tiles.train.dataset_select_label"),
                             getattr(model, "dataset_name", None),
                         )
                         if registry and registry.get("has_sampling"):
-                            _ro_field(
+                            ro_field(
                                 t("tiles.train.sample_select_label"),
                                 getattr(model, "sample_name", None),
                             )
 
                         var_defs = [
-                            pd for pd in (registry["params"] if registry else [])
+                            pd
+                            for pd in (registry["params"] if registry else [])
                             if pd.get("group") == "variables"
                         ]
                         if var_defs:
                             solara.Markdown(t("tiles.train.variables_header"))
                             for pd in var_defs:
-                                _ro_field(
+                                ro_field(
                                     t(pd["label_key"]),
                                     getattr(model, pd["key"], None),
                                 )
 
-                        _ro_field(
+                        ro_field(
                             t("tiles.train.model_name_label"),
                             getattr(model, "name", None),
                         )
 
                         param_defs = [
-                            pd for pd in (registry["params"] if registry else [])
+                            pd
+                            for pd in (registry["params"] if registry else [])
                             if pd.get("group", "params") == "params"
                         ]
                         if param_defs:
-                            with rv.ExpansionPanels(flat=True, class_="advanced-params"):
+                            with rv.ExpansionPanels(
+                                flat=True, class_="advanced-params"
+                            ):
                                 with rv.ExpansionPanel():
                                     with rv.ExpansionPanelHeader():
-                                        solara.Text(t("tiles.train.advanced_parameters_header"))
+                                        solara.Text(
+                                            t("tiles.train.advanced_parameters_header")
+                                        )
                                     with rv.ExpansionPanelContent():
                                         for pd in param_defs:
-                                            _ro_field(
+                                            ro_field(
                                                 t(pd["label_key"]),
-                                                getattr(model, pd["key"], pd["default"]),
+                                                getattr(
+                                                    model, pd["key"], pd["default"]
+                                                ),
                                             )
             with rv.CardActions(style_="justify-content: flex-end;"):
                 solara.Button(
-                    t("common.close"), on_click=lambda: on_close(), text=True, small=True
+                    t("common.close"),
+                    on_click=lambda: on_close(),
+                    text=True,
+                    small=True,
                 )

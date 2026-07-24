@@ -11,6 +11,8 @@
     "actions": "Actions",
     "advanced": "Advanced",
     "new": "New",
+    "yes": "Yes",
+    "no": "No",
     "_test_fmt": "hello {name}",
     "_test_one": "{n} item",
     "_test_other": "{n} items"
