@@ -195,3 +195,34 @@ def test_harmonization_rename_values():
     assert i18n.t("tiles.process.auto_utm_button") == "tiles.process.auto_utm_button"
     assert (i18n.t("tiles.process.run_processing_subtitle")
             == "tiles.process.run_processing_subtitle")
+
+
+def test_translator_ignores_machine_config(monkeypatch, tmp_path):
+    """The root fix for the 21-test failure: a machine config holding a
+    non-English locale must not leak into translated strings when no
+    pysepal session exists (i.e. under pytest)."""
+    config = tmp_path / ".sepal-ui-config"
+    config.write_text("[sepal-ui]\nlocale = es-ES\n")
+    monkeypatch.setattr("pysepal.conf.config_file", config)
+    monkeypatch.setattr("pysepal.translator.translator.config_file", config)
+
+    i18n.reset_translator()
+    try:
+        translator = i18n.get_translator()
+        assert translator._target == "en"
+    finally:
+        i18n.reset_translator()
+
+
+def test_set_app_locale_swaps_translator_live(monkeypatch):
+    i18n.reset_translator()
+    try:
+        english = i18n.t("app.title")
+        i18n.set_app_locale("es-ES")
+        spanish = i18n.t("app.title")
+        assert i18n.get_translator()._target == "es-ES"
+        assert english != spanish  # app.title is translated in es-ES
+        i18n.set_app_locale("en")
+        assert i18n.t("app.title") == english
+    finally:
+        i18n.reset_translator()

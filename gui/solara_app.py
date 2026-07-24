@@ -14,7 +14,7 @@ from solara.lab.components.theming import theme
 
 from pysepal import mapping as sm
 from pysepal.logger import setup_logging
-from pysepal.sepalwidgets.vue_app import MapApp, ThemeToggle
+from pysepal.sepalwidgets.vue_app import LocaleSelect, MapApp, ThemeToggle
 from pysepal.solara import (
     get_current_gee_interface,
     get_current_sepal_client,
@@ -23,6 +23,7 @@ from pysepal.solara import (
     setup_theme_colors,
     with_sepal_sessions,
 )
+from pysepal.solara.locale import resolve_locale_state
 
 from spatialrisk.project import Project, DATA_DIR
 from gui.store.state_manager import app_state
@@ -55,13 +56,12 @@ from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
-from gui.widget.locale_select import AppLocaleSelect
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
 from gui.widget.notification_area import NotificationArea
 from gui.widget.pipeline_header import PipelineHeader
 from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
 from gui.widget.log_console import LogConsole
-from gui.i18n import t, get_translator, reset_translator
+from gui.i18n import t, get_translator, reset_translator, set_app_locale
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
@@ -77,7 +77,8 @@ setup_solara_server(extra_asset_locations=[])
 
 @solara.lab.on_kernel_start
 def on_kernel_start():
-    reset_translator()  # re-read ~/.sepal-ui-config locale on every (re)load
+    reset_translator()  # drop the cached translator; Page rebuilds it from the
+    # session LocaleState (the browser resolves the locale, not the config file)
     return setup_sessions()
 
 
@@ -617,7 +618,22 @@ def Page():
     gee_interface = get_current_gee_interface()
     sepal_client = get_current_sepal_client()
     theme_toggle = solara.use_memo(lambda: ThemeToggle(), [])
-    locale_select = solara.use_memo(lambda: AppLocaleSelect(translator=get_translator()), [])
+    locale_state = resolve_locale_state()
+    locale_select = solara.use_memo(lambda: LocaleSelect(translator=get_translator()), [])
+
+    def _bind_locale():
+        # Wired here — NOT in on_kernel_start — because @with_sepal_sessions
+        # creates the session's LocaleState only when Page first renders;
+        # kernel-start would bind the process fallback (Codex review P1).
+        locale_select.bind_locale_state(locale_state)
+
+        def handler(change):
+            set_app_locale(change["new"])
+
+        locale_state.observe(handler, "locale")
+        return lambda: locale_state.unobserve(handler, "locale")
+
+    solara.use_effect(_bind_locale, [id(locale_state)])
 
     def _observe_theme():
         handler = lambda e: setattr(theme, "dark", e["new"])

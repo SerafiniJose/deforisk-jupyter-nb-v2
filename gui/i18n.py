@@ -1,9 +1,15 @@
 """Internationalization for the Spatial Risk GUI.
 
-Reuses pysepal's Translator (JSON locale folders with es->en fallback). The
-active translator is rebuilt per kernel start from ~/.sepal-ui-config so a page
-reload applies a newly selected language. No string may be resolved at import
-time — always call t()/plural() inside a component render.
+Reuses pysepal's Translator (JSON locale folders with es-ES->en fallback).
+The active locale comes from the session-scoped ``LocaleState`` (pysepal),
+which the ``LocaleSelect`` widget resolves in the browser (localStorage ->
+legacy config seed -> navigator.language -> "en"). The translator is ALWAYS
+built with an explicit target so pysepal's config-file read path
+(``target=""``) is never taken — translated strings are deterministic under
+pytest regardless of ~/.sepal-ui-config. Locale changes swap the translator
+reactive, live-re-rendering every component that calls t() during render.
+No string may be resolved at import time — always call t()/plural() inside a
+component render.
 """
 
 from pathlib import Path
@@ -17,15 +23,27 @@ MESSAGES_DIR = Path(__file__).parent / "messages"
 _translator = solara.reactive(None)
 
 
+def _current_locale() -> str:
+    from pysepal.solara.locale import resolve_locale_state
+
+    return resolve_locale_state().locale or "en"
+
+
 def get_translator() -> Translator:
     if _translator.value is None:
-        _translator.value = Translator(MESSAGES_DIR)  # target="" -> reads config
+        _translator.value = Translator(MESSAGES_DIR, target=_current_locale())
     return _translator.value
 
 
+def set_app_locale(code: str) -> None:
+    """Swap the active translator to ``code`` (live, no reload)."""
+    _translator.value = Translator(MESSAGES_DIR, target=code or "en")
+
+
 def reset_translator() -> None:
-    """Re-read the configured locale. Call from on_kernel_start."""
-    _translator.value = Translator(MESSAGES_DIR)
+    """Drop the cached translator; it lazily rebuilds from the session
+    LocaleState. Call from on_kernel_start."""
+    _translator.value = None
 
 
 def t(key: str, /, **fmt) -> str:
