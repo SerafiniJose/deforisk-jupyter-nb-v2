@@ -124,6 +124,7 @@
       "error_no_raster": "Creá variables ráster primero (el paso Armonización).",
       "new_button": "Nuevo diseño de muestreo",
       "dialog_title": "Nuevo diseño de muestreo",
+      "details_title": "Detalles de la muestra — {key}",
       "error_name_running": "Se está generando una muestra llamada '{name}' — elige otro nombre.",
       "confirm_replace_message": "Ya existe una muestra llamada '{key}'. Al crearla se eliminará y se generará de nuevo.",
       "raster_variable_label": "Variable ráster",

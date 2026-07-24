@@ -124,6 +124,7 @@
       "error_no_raster": "Create raster variables first (the Harmonization step).",
       "new_button": "New sampling design",
       "dialog_title": "New sampling design",
+      "details_title": "Sample details — {key}",
       "error_name_running": "A sample named '{name}' is currently being generated — pick another name.",
       "confirm_replace_message": "A sample named '{key}' already exists. Creating will delete it and generate a new one.",
       "raster_variable_label": "Raster variable",
