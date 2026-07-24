@@ -16,11 +16,20 @@ from pysepal.solara import use_theme_dark
 from gui.i18n import t
 from gui.scripts.echarts_options import RENDERER_SVG
 from gui.scripts.evaluation_charts import (
-    map_label, metric_bar_option, record_csizes, record_metrics)
+    map_label,
+    metric_bar_option,
+    record_csizes,
+    record_metrics,
+)
 from gui.scripts.evaluation_echarts import (
-    PRED_OBS_SQUARE_HEIGHT, load_pred_obs_plot_data, points_csv_is_expected,
-    pred_obs_chart_identity, pred_obs_renderer, pred_obs_scatter_option,
-    resolve_plot_artifact)
+    PRED_OBS_SQUARE_HEIGHT,
+    load_pred_obs_plot_data,
+    points_csv_is_expected,
+    pred_obs_chart_identity,
+    pred_obs_renderer,
+    pred_obs_scatter_option,
+    resolve_plot_artifact,
+)
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
 from gui.widget.echarts import EChartsChart
@@ -60,7 +69,9 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
                 {"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)},
             ]
         elif r["status"] != "running" and on_dismiss is not None:
-            actions = [{"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}]
+            actions = [
+                {"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}
+            ]
         else:
             actions = []
 
@@ -73,7 +84,12 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
                 "cells": [
                     {"type": "text", "value": r["truth_tag"]},
                     {"type": "chip", "value": str(r["n_maps"])},
-                    {"type": "text", "value": r["created_at"], "size": "0.78rem", "muted": True},
+                    {
+                        "type": "text",
+                        "value": r["created_at"],
+                        "size": "0.78rem",
+                        "muted": True,
+                    },
                     {"type": "status", "status": r["status"]},
                 ],
                 "actions": actions,
@@ -84,9 +100,15 @@ def EvaluationResults(eval_jobs, project, on_open, on_delete, on_dismiss=None):
     ProductTable(
         title=t("widgets.evaluation_results.evaluations_title"),
         columns=[
-            {"label": t("widgets.evaluation_results.col_truth"), "width": "minmax(0,2fr)"},
+            {
+                "label": t("widgets.evaluation_results.col_truth"),
+                "width": "minmax(0,2fr)",
+            },
             {"label": t("widgets.evaluation_results.col_maps"), "width": "55px"},
-            {"label": t("widgets.evaluation_results.col_created"), "width": "minmax(0,1fr)"},
+            {
+                "label": t("widgets.evaluation_results.col_created"),
+                "width": "minmax(0,1fr)",
+            },
             {"label": t("widgets.evaluation_results.col_status"), "width": "95px"},
         ],
         rows=rows,
@@ -127,8 +149,7 @@ def _ChartsTab(record, eval_key, active_tab=None):
     dark = use_theme_dark()
     indices = getattr(record, "indices", None) or []
     metrics = record_metrics(indices, getattr(record, "metrics", None))
-    charts = [(m, metric_bar_option(indices, m, dark=dark))
-              for m in metrics]
+    charts = [(m, metric_bar_option(indices, m, dark=dark)) for m in metrics]
     charts = [(m, option) for m, option in charts if option is not None]
     if not charts:
         solara.Info(t("widgets.evaluation_results.no_indices_info"))
@@ -139,7 +160,7 @@ def _ChartsTab(record, eval_key, active_tab=None):
     tab_active = active_tab is None or active_tab == _CHARTS_TAB_INDEX
     with solara.Div(
         style=f"display: grid; grid-template-columns: repeat({ncols},"
-              " minmax(0, 1fr)); gap: 12px; width: 100%;"
+        " minmax(0, 1fr)); gap: 12px; width: 100%;"
     ):
         for _metric, option in charts:
             EChartsChart(
@@ -175,8 +196,18 @@ def _scatter_labels():
 
 
 @solara.component
-def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
-                 eval_key, active_tab, prediction_key=None):
+def _PredObsCard(
+    record,
+    row,
+    label,
+    csize,
+    png_path,
+    fig_dir,
+    labels,
+    eval_key,
+    active_tab,
+    prediction_key=None,
+):
     """One map's card: the interactive scatter, or the PNG fallback ladder.
 
     The card header always names the map and, when the PNG exists, offers it as
@@ -222,9 +253,11 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # frozen English string. Read off the index row, not off plot_data, because
     # it has to be known before the load: it goes into the digest below.
     csize_ha = row.get("csize_coarse_grid_ha") if row else None
-    title = (None if csize_ha is None else
-             t("widgets.evaluation_results.chart_csize_title",
-               csize_ha=csize_ha))
+    title = (
+        None
+        if csize_ha is None
+        else t("widgets.evaluation_results.chart_csize_title", csize_ha=csize_ha)
+    )
     # The dialog always passes an index; a bare mount (None) counts as active so
     # a direct render still draws the chart.
     tab_active = active_tab is None or active_tab == _FIGURES_TAB_INDEX
@@ -234,8 +267,16 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # unconditionally — it is None for a row with no model/period, which is a
     # perfectly stable key.
     digest = pred_obs_chart_identity(
-        record, model, period, csize, dark=dark, labels=labels, title=title,
-        prediction_key=prediction_key, fig_dir=fig_dir)
+        record,
+        model,
+        period,
+        csize,
+        dark=dark,
+        labels=labels,
+        title=title,
+        prediction_key=prediction_key,
+        fig_dir=fig_dir,
+    )
 
     def load_points():
         # Parse the point CSV only when this tab is the active one (see the
@@ -244,16 +285,16 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
         if not (tab_active and model and period):
             return None
         return load_pred_obs_plot_data(
-            record, model, period, csize, prediction_key=prediction_key,
-            fig_dir=fig_dir)
+            record, model, period, csize, prediction_key=prediction_key, fig_dir=fig_dir
+        )
 
     # The load lives in a use_memo, not in the render body, because it is I/O
     # with a side effect: a missing artifact makes the loader LOG (a warning
     # when this run recorded a table, debug otherwise — rung a vs b, matching
-    # what this card shows), and the app pipes that logger into a Solara reactive
-    # (gui/scripts/log_bridge.py). A render that logs on EVERY pass turns that
-    # into per-render reactive traffic — which is exactly how this card used to
-    # spin forever. Keyed on `digest` (record + resolved path + that file's
+    # what this card shows), and the app pipes that logger into notification
+    # tasks (gui/scripts/notify_bridge.py). A render that logs on EVERY pass
+    # turns that into per-render traffic — which is exactly how this card used
+    # to spin forever. Keyed on `digest` (record + resolved path + that file's
     # size/mtime + cell size + theme + label text) plus `tab_active`, so a
     # rewritten or re-pointed artifact still reloads.
     plot_data = solara.use_memo(load_points, [digest, tab_active])
@@ -284,8 +325,9 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
         if plot_data is None:
             return None
         try:
-            return pred_obs_scatter_option(plot_data, dark=dark, labels=labels,
-                                           title=title)
+            return pred_obs_scatter_option(
+                plot_data, dark=dark, labels=labels, title=title
+            )
         except Exception:  # noqa: BLE001 - one bad card must not kill the tab
             # Runs inside use_memo, so this logs once per artifact identity,
             # not once per render — no reactive log-console traffic.
@@ -296,10 +338,12 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
     # One stat() for the whole render, not one per rung.
     png_exists = png_path.exists()
 
-    with solara.Column(style=f"gap: 6px; width: {PRED_OBS_SQUARE_HEIGHT};"
-                             " max-width: 100%;"):
-        with solara.Row(style="justify-content: space-between;"
-                              " align-items: center; gap: 8px;"):
+    with solara.Column(
+        style=f"gap: 6px; width: {PRED_OBS_SQUARE_HEIGHT};" " max-width: 100%;"
+    ):
+        with solara.Row(
+            style="justify-content: space-between;" " align-items: center; gap: 8px;"
+        ):
             solara.Text(label, style="font-size: 0.85rem; font-weight: 600;")
             if png_exists:
                 # An explicit child button rather than FileDownload's default
@@ -313,7 +357,8 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
                     solara.Button(
                         t("widgets.evaluation_results.download_png"),
                         icon_name="mdi-cloud-download-outline",
-                        text=True, small=True,
+                        text=True,
+                        small=True,
                         style="font-size: 0.7rem; letter-spacing: 0;",
                     )
         if option is not None:
@@ -341,14 +386,16 @@ def _PredObsCard(record, row, label, csize, png_path, fig_dir, labels,
             # run actually recorded is one whose absence is a fault worth
             # reporting (rung a vs b).
             if tab_active and points_csv_is_expected(
-                    record, model, period, csize,
-                    prediction_key=prediction_key):
+                record, model, period, csize, prediction_key=prediction_key
+            ):
                 solara.Warning(
-                    t("widgets.evaluation_results.chart_unavailable_warning"))
+                    t("widgets.evaluation_results.chart_unavailable_warning")
+                )
             solara.Image(png_path, width=PRED_OBS_SQUARE_HEIGHT)
         else:
-            solara.Info(t("widgets.evaluation_results.missing_figure",
-                          path=str(png_path)))
+            solara.Info(
+                t("widgets.evaluation_results.missing_figure", path=str(png_path))
+            )
 
 
 @solara.component
@@ -380,8 +427,12 @@ def _FiguresTab(record, eval_key=None, active_tab=None):
     if len(csizes) > 1:
         rv.Select(
             label=t("widgets.evaluation_results.csize_select_label"),
-            items=csizes, v_model=csize, on_v_model=set_selected,
-            dense=True, outlined=True, style_="max-width: 260px;",
+            items=csizes,
+            v_model=csize,
+            on_v_model=set_selected,
+            dense=True,
+            outlined=True,
+            style_="max-width: 260px;",
         )
 
     labels = _scatter_labels()
@@ -391,10 +442,15 @@ def _FiguresTab(record, eval_key=None, active_tab=None):
     # row's own fig_path (future schema) still takes precedence, matching
     # the old figure_entries contract.
     rows = sorted(
-        (r for r in indices
-         if r.get("csize_coarse_grid") == csize
-         and r.get("model") and r.get("period")),
-        key=map_label)
+        (
+            r
+            for r in indices
+            if r.get("csize_coarse_grid") == csize
+            and r.get("model")
+            and r.get("period")
+        ),
+        key=map_label,
+    )
     shown = 0
     with solara.Row(style="flex-wrap: wrap; gap: 16px; align-items: flex-start;"):
         for row in rows:
@@ -403,16 +459,27 @@ def _FiguresTab(record, eval_key=None, active_tab=None):
                 png_path = Path(row["fig_path"])
             else:
                 png_path = resolve_plot_artifact(
-                    record, prediction_key=prediction_key, model=row["model"],
-                    period=row["period"], csize=csize, kind="png_path",
-                    fallback_dir=fig_dir)
+                    record,
+                    prediction_key=prediction_key,
+                    model=row["model"],
+                    period=row["period"],
+                    csize=csize,
+                    kind="png_path",
+                    fallback_dir=fig_dir,
+                )
             if png_path is None:
-                continue    # nothing recorded AND nothing derivable
+                continue  # nothing recorded AND nothing derivable
             shown += 1
             _PredObsCard(
-                record=record, row=row, label=map_label(row), csize=csize,
-                png_path=png_path, fig_dir=fig_dir, labels=labels,
-                eval_key=eval_key, active_tab=active_tab,
+                record=record,
+                row=row,
+                label=map_label(row),
+                csize=csize,
+                png_path=png_path,
+                fig_dir=fig_dir,
+                labels=labels,
+                eval_key=eval_key,
+                active_tab=active_tab,
                 prediction_key=prediction_key,
             )
     if not shown:
@@ -451,24 +518,38 @@ def EvaluationTableDialog(project, eval_key, on_close):
         with rv.Card(class_="evaluation-table-dialog"):
             with rv.CardTitle():
                 solara.Text(
-                    t("widgets.evaluation_results.dialog_title", truth_tag=record.truth_tag) if record else t("widgets.evaluation_results.dialog_title_fallback"))
+                    t(
+                        "widgets.evaluation_results.dialog_title",
+                        truth_tag=record.truth_tag,
+                    )
+                    if record
+                    else t("widgets.evaluation_results.dialog_title_fallback")
+                )
             with rv.CardText():
                 if record is not None and record.indices:
-                    with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=False):
+                    with rv.Tabs(
+                        v_model=active_tab, on_v_model=set_active_tab, grow=False
+                    ):
                         rv.Tab(children=[t("widgets.evaluation_results.tab_table")])
                         rv.Tab(children=[t("widgets.evaluation_results.tab_charts")])
                         rv.Tab(children=[t("widgets.evaluation_results.tab_figures")])
                     with rv.TabsItems(v_model=active_tab):
                         with rv.TabItem():
                             rows = rows_for_record(record)
-                            solara.DataFrame(pd.DataFrame(rows), items_per_page=max(len(rows), 1))
+                            solara.DataFrame(
+                                pd.DataFrame(rows), items_per_page=max(len(rows), 1)
+                            )
                         with rv.TabItem():
-                            _ChartsTab(record=record, eval_key=eval_key,
-                                       active_tab=active_tab)
+                            _ChartsTab(
+                                record=record, eval_key=eval_key, active_tab=active_tab
+                            )
                         with rv.TabItem():
-                            _FiguresTab(record=record, eval_key=eval_key,
-                                        active_tab=active_tab)
+                            _FiguresTab(
+                                record=record, eval_key=eval_key, active_tab=active_tab
+                            )
                 elif record is not None:
                     solara.Info(t("widgets.evaluation_results.no_indices_info"))
             with rv.CardActions(style_="justify-content: flex-end;"):
-                solara.Button(t("common.close"), on_click=on_close, text=True, small=True)
+                solara.Button(
+                    t("common.close"), on_click=on_close, text=True, small=True
+                )

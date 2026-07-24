@@ -1,7 +1,17 @@
 {
   "notifications": {
     "aoi_selected": "AOI selected: {name}",
-    "process_no_base_raster": "Set a reference raster in the Harmonization step before running it."
+    "process_no_base_raster": "Set a reference raster in the Harmonization step before running it.",
+    "task_training": "Training model '{name}'",
+    "task_inference": "Predicting: {model} on {dataset}",
+    "task_import": "Importing prediction '{name}'",
+    "task_evaluation": "Evaluating predictions ({tag})",
+    "task_sampling": "Generating sample '{name}'",
+    "task_processing": "Harmonizing variables",
+    "task_download_all": "Downloading GEE layers",
+    "task_download_one": "Downloading layer '{name}'",
+    "task_change": "Generating {op} change layer",
+    "task_postprocess": "Applying {step} to '{name}'"
   },
   "dialog": {
     "confirm_default_title": "Delete?",

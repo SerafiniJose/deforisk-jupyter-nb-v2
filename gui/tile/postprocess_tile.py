@@ -1,13 +1,14 @@
 """Step 4 — Derived layers tile (list-first; form lives in DerivedLayerDialog)."""
 
-import asyncio
 import logging
 
 import solara
+from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
 from gui.scripts import process_actions
-from gui.scripts.solara_threads import publish_if_current
+from gui.scripts.notify_bridge import tracked_job
+from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
 from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -25,6 +26,7 @@ def PostProcessTile(project, process_error, map_=None):
     pending_change = solara.use_reactive(None)
     on_toggle_map = use_derived_map_toggle(project, map_, process_error)
     pending_remove, set_pending_remove = solara.use_state(None)
+    notifications = use_notifications()
 
     p = project.value
 
@@ -39,12 +41,20 @@ def PostProcessTile(project, process_error, map_=None):
         if p is None or entry is None:
             return
         process_error.set(None)
+        title = t("notifications.task_change", op=entry["op"])
+
+        def _tracked_change():
+            with tracked_job(notifications, title):
+                process_actions.generate_change_var(
+                    p,
+                    entry["op"],
+                    entry["start_key"],
+                    entry["end_key"],
+                )
+
         with writing(p.project_name):
             try:
-                await asyncio.to_thread(
-                    process_actions.generate_change_var,
-                    p, entry["op"], entry["start_key"], entry["end_key"],
-                )
+                await to_thread_in_context(_tracked_change)
             except Exception as exc:
                 logger.exception("change detection failed")
                 process_error.set(t("tiles.postprocess.error_change", exc=exc))
@@ -58,7 +68,17 @@ def PostProcessTile(project, process_error, map_=None):
             change_task()
             return
         try:
-            process_actions.apply_post_processing(p, entry["pp_key"], entry["op"])
+            # Sync path (edge/dist) — the event-handler thread carries a kernel
+            # context, so tracking works inline without a worker.
+            with tracked_job(
+                notifications,
+                t(
+                    "notifications.task_postprocess",
+                    step=entry["op"],
+                    name=entry["pp_key"],
+                ),
+            ):
+                process_actions.apply_post_processing(p, entry["pp_key"], entry["op"])
             project.set(p.model_copy())
         except Exception as exc:
             process_error.set(t("tiles.postprocess.error_post_processing", exc=exc))
@@ -66,7 +86,9 @@ def PostProcessTile(project, process_error, map_=None):
     with solara.Column(style="gap:16px;"):
         with solara.Row(style="gap:4px;align-items:center;"):
             solara.Text(t("tiles.postprocess.description"))
-            InfoButton(t("tiles.postprocess.info_header"), t("tiles.postprocess.info_md"))
+            InfoButton(
+                t("tiles.postprocess.info_header"), t("tiles.postprocess.info_md")
+            )
         if p is None or not p.processed_variables:
             solara.Info(t("tiles.postprocess.error_no_processed"))
             return
@@ -96,6 +118,8 @@ def PostProcessTile(project, process_error, map_=None):
         on_cancel=lambda: set_pending_remove(None),
         on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
         title=t("tiles.postprocess.confirm_remove_title"),
-        message=t("tiles.postprocess.confirm_remove_message", name=pending_remove or ""),
+        message=t(
+            "tiles.postprocess.confirm_remove_message", name=pending_remove or ""
+        ),
         confirm_label=t("common.remove"),
     )

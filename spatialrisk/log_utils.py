@@ -1,8 +1,9 @@
 """Progress-logging helpers for multi-item operations.
 
 `log_progress` wraps an iterable and emits one INFO line per item on the shared
-``spatial_risk`` logger (so the lines surface in the on-map process log, the
-console, and the log file), then yields the item for the caller's loop body.
+``spatial_risk`` logger (so the lines surface as notification-task milestones
+in the GUI, on the console, and in the log file), then yields the item for the
+caller's loop body.
 """
 
 import logging

@@ -16,6 +16,7 @@ from pysepal import mapping as sm
 from pysepal.logger import setup_logging
 from pysepal.sepalwidgets.vue_app import LocaleSelect, MapApp, ThemeToggle
 from pysepal.solara import (
+    NotificationProvider,
     get_current_gee_interface,
     get_current_sepal_client,
     setup_sessions,
@@ -59,8 +60,7 @@ from gui.tile.summary_tile import ProjectSummaryTile
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
 from gui.widget.notification_area import NotificationArea
 from gui.widget.pipeline_header import PipelineHeader
-from gui.scripts.log_bridge import install_log_console_handler, clear_log_records
-from gui.widget.log_console import LogConsole
+from gui.scripts.notify_bridge import install_task_log_handler
 from gui.i18n import t, get_translator, reset_translator, set_app_locale
 
 logger = setup_logging(logger_name="spatial_risk")
@@ -68,9 +68,9 @@ logger.setLevel(logging.DEBUG)
 logger.debug("Spatial Risk app initialized")
 logger.debug("Solara version: %s", solara.__version__)
 
-# Surface INFO+ milestones in the on-map LogConsole (the LogConsole component
-# binds this session's kernel context on mount; see gui/scripts/log_bridge.py).
-install_log_console_handler()
+# Forward INFO+ milestones from tracked background jobs into the pysepal
+# notification task pill (see gui/scripts/notify_bridge.py).
+install_task_log_handler()
 
 setup_solara_server(extra_asset_locations=[])
 
@@ -99,11 +99,11 @@ def ProjectPanel(on_close=None):
     discard_open, set_discard_open = solara.use_state(False)
     overwrite_open, set_overwrite_open = solara.use_state(False)
 
-    infos = solara.use_reactive([])             # list[ProjectInfo]
+    infos = solara.use_reactive([])  # list[ProjectInfo]
     scan_failed = solara.use_reactive(False)
-    selected = solara.use_reactive(None)        # selected project name
+    selected = solara.use_reactive(None)  # selected project name
     pending_delete = solara.use_reactive(None)  # ProjectInfo being deleted
-    pending_size = solara.use_reactive(0)       # its size on disk, in bytes
+    pending_size = solara.use_reactive(0)  # its size on disk, in bytes
     # Delete failures are owned here rather than read off delete_task.error /
     # .exception: a Task keeps its error until the *next* invoke, so the trash
     # button on project B would open B's confirmation with A's failure under it.
@@ -155,7 +155,9 @@ def ProjectPanel(on_close=None):
             # Restore the saved AOI (sidecar geometry + metadata) so the map can
             # frame it and the downstream tabs unlock. Set before installing the
             # project so the load-zoom effect sees it on the same render.
-            app_state.aoi_result.set(load_aoi(DATA_DIR / loaded.project_name, loaded.aoi))
+            app_state.aoi_result.set(
+                load_aoi(DATA_DIR / loaded.project_name, loaded.aoi)
+            )
             app_state.aoi_asset.set((loaded.aoi or {}).get("asset"))
             app_state.load_project_state(loaded, when)
             app_state.status_message.set(t("project.status_loaded", name=name))
@@ -183,7 +185,9 @@ def ProjectPanel(on_close=None):
         pending_delete.set(None)
 
     target = pending_delete.value
-    target_is_open = target is not None and p is not None and p.project_name == target.name
+    target_is_open = (
+        target is not None and p is not None and p.project_name == target.name
+    )
     # A background task is still saving into this folder. Deleting now would let
     # its auto-save re-create the folder (Project.save() does mkdir(exist_ok=True)).
     # Keyed by name, so it also catches a job orphaned by a project switch.
@@ -232,7 +236,9 @@ def ProjectPanel(on_close=None):
                 app_state.close_project_state()
             if gone:
                 # After close_project_state, which deliberately leaves status alone (§3).
-                app_state.status_message.set(t("project.status_deleted", name=info.name))
+                app_state.status_message.set(
+                    t("project.status_deleted", name=info.name)
+                )
                 pending_delete.set(None)  # closes the confirm dialog; manage stays open
 
     def confirm_delete():
@@ -268,7 +274,9 @@ def ProjectPanel(on_close=None):
         # new_project_state bumps project_loaded_signal, so the shell's
         # on-switch effects clear the previous project's map overlays/tracking
         # and reset the (empty) Train/Inference job lists — no manual reset here.
-        app_state.status_message.set(t("project.status_created", name=validation.cleaned))
+        app_state.status_message.set(
+            t("project.status_created", name=validation.cleaned)
+        )
         set_new_open(False)
         # Dismiss the whole Project popup too, not just the inner New dialog, so
         # a freshly created project returns the user to the map (mirrors do_load).
@@ -287,9 +295,7 @@ def ProjectPanel(on_close=None):
         if delete_task.pending:
             return  # a delete is in flight; nothing else may be staged
         if p is None:
-            app_state.error_message.set(
-                t("project.error_no_project_to_save")
-            )
+            app_state.error_message.set(t("project.error_no_project_to_save"))
             return
         if overwrite_needed(p.project_name, last_saved, existing_names()):
             set_overwrite_open(True)
@@ -317,7 +323,9 @@ def ProjectPanel(on_close=None):
                 note = t("project.status_saved_note_no_vars")
             elif p.base_raster is None:
                 note = t("project.status_saved_note_no_base")
-            app_state.status_message.set(t("project.status_saved", path=path, note=note))
+            app_state.status_message.set(
+                t("project.status_saved", path=path, note=note)
+            )
             app_state.error_message.set(None)
         except Exception as exc:
             app_state.error_message.set(str(exc))
@@ -360,14 +368,20 @@ def ProjectPanel(on_close=None):
             with solara.Row(style="gap: 8px; align-items: center;"):
                 solara.Text(p.project_name, style="font-weight: 600;")
                 rv.Chip(
-                    children=[t("project.chip_unsaved") if dirty else t("project.chip_saved")],
+                    children=[
+                        t("project.chip_unsaved") if dirty else t("project.chip_saved")
+                    ],
                     color="warning" if dirty else "primary",
                     text_color="white",
                     x_small=True,
                 )
             solara.Text(
-                t("project.stats", raw=len(p.raw_variables),
-                  processed=len(p.processed_variables), models=len(p.models)),
+                t(
+                    "project.stats",
+                    raw=len(p.raw_variables),
+                    processed=len(p.processed_variables),
+                    models=len(p.models),
+                ),
                 classes=["text--secondary"],
                 style="font-size: 12px;",
             )
@@ -436,7 +450,10 @@ def ProjectPanel(on_close=None):
                     )
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    t("common.cancel"), on_click=lambda: set_new_open(False), text=True, small=True
+                    t("common.cancel"),
+                    on_click=lambda: set_new_open(False),
+                    text=True,
+                    small=True,
                 )
                 solara.Button(
                     t("common.create"),
@@ -461,7 +478,10 @@ def ProjectPanel(on_close=None):
                 )
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
                 solara.Button(
-                    t("common.cancel"), on_click=lambda: set_discard_open(False), text=True, small=True
+                    t("common.cancel"),
+                    on_click=lambda: set_discard_open(False),
+                    text=True,
+                    small=True,
                 )
                 solara.Button(
                     t("project.dialog_discard_confirm"),
@@ -472,7 +492,10 @@ def ProjectPanel(on_close=None):
 
     # ---- Overwrite confirm (Save over an existing project) --------------
     with rv.Dialog(
-        v_model=overwrite_open, on_v_model=set_overwrite_open, max_width="380px", eager=True
+        v_model=overwrite_open,
+        on_v_model=set_overwrite_open,
+        max_width="380px",
+        eager=True,
     ):
         with rv.Card():
             with rv.CardTitle():
@@ -491,7 +514,10 @@ def ProjectPanel(on_close=None):
                     small=True,
                 )
                 solara.Button(
-                    t("project.dialog_overwrite_confirm"), on_click=_really_save, color="error", small=True
+                    t("project.dialog_overwrite_confirm"),
+                    on_click=_really_save,
+                    color="error",
+                    small=True,
                 )
 
     # ---- Manage dialog + delete confirmation ----------------------------
@@ -589,7 +615,9 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
             TrainTile(project=app_state.project)
 
         with rv.TabItem():
-            InferenceTile(project=app_state.project, map_=map_, sepal_client=sepal_client)
+            InferenceTile(
+                project=app_state.project, map_=map_, sepal_client=sepal_client
+            )
 
         with rv.TabItem():
             EvaluationTile(project=app_state.project)
@@ -619,7 +647,9 @@ def Page():
     sepal_client = get_current_sepal_client()
     theme_toggle = solara.use_memo(lambda: ThemeToggle(), [])
     locale_state = resolve_locale_state()
-    locale_select = solara.use_memo(lambda: LocaleSelect(translator=get_translator()), [])
+    locale_select = solara.use_memo(
+        lambda: LocaleSelect(translator=get_translator()), []
+    )
 
     def _bind_locale():
         # Wired here — NOT in on_kernel_start — because @with_sepal_sessions
@@ -696,15 +726,9 @@ def Page():
 
     solara.use_effect(reset_jobs_on_load, [project_loaded_signal])
 
-    # Each project starts with a fresh process log (consistent with the map /
-    # job-list resets above, keyed on the same project-switch signal).
-    def reset_log_on_switch():
-        clear_log_records()
-
-    solara.use_effect(reset_log_on_switch, [project_loaded_signal])
-
     def _seed_test_aoi():
         import os
+
         if os.getenv("SOLARA_TEST", "false").lower() != "true":
             return
         if app_state.aoi_result.value is not None:
@@ -712,6 +736,7 @@ def Page():
         import geopandas as gpd
         from shapely.geometry import box
         from pysepal.solara.components.aoi import AoiResult
+
         gdf = gpd.GeoDataFrame(
             {"name": ["San Marino"]},
             geometry=[box(12.403, 43.893, 12.517, 43.993)],
@@ -726,13 +751,17 @@ def Page():
 
     def _seed_test_variables():
         import os
+
         if os.getenv("SOLARA_TEST", "false").lower() != "true":
             return
         p = app_state.project.value
         aoi_result = app_state.aoi_result.value
         if p is None or p.raw_variables or aoi_result is None:
             return
-        from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE, get_aoi_ee_feature
+        from gui.scripts.predefined_variables import (
+            PREDEFINED_CATALOGUE,
+            get_aoi_ee_feature,
+        )
         from spatialrisk.variables.gee_var import GEEVar
         from spatialrisk.variables.models import DataType, RasterType
 
@@ -753,7 +782,10 @@ def Page():
             )
 
         # Temporal variables
-        for name, years in [("forest_gfc", [2015, 2020, 2024]), ("towns", [2015, 2020])]:
+        for name, years in [
+            ("forest_gfc", [2015, 2020, 2024]),
+            ("towns", [2015, 2020]),
+        ]:
             cat = PREDEFINED_CATALOGUE[name]
             for year in years:
                 key = f"{name}_{year}"
@@ -773,6 +805,7 @@ def Page():
         # Seed dummy processed variables so the Dataset tab is usable
         from pathlib import Path
         from spatialrisk.variables.local_raster_var import LocalRasterVar
+
         LocalRasterVar.model_rebuild()
 
         for name in ["altitude", "slope", "protected_area", "roads", "rivers", "subj"]:
@@ -784,7 +817,10 @@ def Page():
                 data_type=DataType.raster,
                 project=p,
             )
-        for name, years in [("forest_gfc", [2015, 2020, 2024]), ("towns", [2015, 2020])]:
+        for name, years in [
+            ("forest_gfc", [2015, 2020, 2024]),
+            ("towns", [2015, 2020]),
+        ]:
             cat = PREDEFINED_CATALOGUE[name]
             for yr in years:
                 key = f"{name}_{yr}"
@@ -797,8 +833,11 @@ def Page():
                     project=p,
                 )
 
-        logger.debug("SOLARA_TEST: seeded %d raw + %d processed variables",
-                      len(p.raw_variables), len(p.processed_variables))
+        logger.debug(
+            "SOLARA_TEST: seeded %d raw + %d processed variables",
+            len(p.raw_variables),
+            len(p.processed_variables),
+        )
         app_state.project.set(p.model_copy())
 
     # Test variable seeding disabled for now — Step 2 starts with no variables.
@@ -853,7 +892,13 @@ def Page():
 
     right_panel_content = [
         {
-            "content": [WorkflowTabs(map_=sepal_map, gee_interface=gee_interface, sepal_client=sepal_client)],
+            "content": [
+                WorkflowTabs(
+                    map_=sepal_map,
+                    gee_interface=gee_interface,
+                    sepal_client=sepal_client,
+                )
+            ],
         },
     ]
 
@@ -868,6 +913,12 @@ def Page():
     app_title = compute_app_title(
         app_state.project.value, app_state.project_dirty.value
     )
+
+    # Kernel-scoped notification bus + UI (toasts top-right, task pill
+    # bottom-right). Mounted BEFORE the MapApp element so the bus exists by the
+    # time the workflow tiles first render — their use_notifications() then
+    # resolves a real Notifier instead of a first-render NoopNotifier.
+    NotificationProvider()
 
     map_app_el = MapApp.element(
         app_title=app_title,
@@ -894,9 +945,6 @@ def Page():
             pass
 
     solara.use_effect(_capture_map_app, [map_app_el])
-
-    # Floating, collapsible process-log panel (lower-right, over the map).
-    LogConsole()
 
 
 routes = [

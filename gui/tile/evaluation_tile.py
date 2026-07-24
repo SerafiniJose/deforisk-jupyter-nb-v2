@@ -13,16 +13,21 @@ import uuid
 from datetime import datetime
 
 import solara
+from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
+from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.tile.evaluation_helpers import (
-    build_evaluation_record, delete_evaluation_run, map_items, variable_items)
+    build_evaluation_record,
+    delete_evaluation_run,
+    map_items,
+    variable_items,
+)
 from gui.widget.evaluation_form_dialog import EvaluationFormDialog
 from gui.widget.help import InfoButton
-from gui.widget.evaluation_results import (
-    EvaluationResults, EvaluationTableDialog)
+from gui.widget.evaluation_results import EvaluationResults, EvaluationTableDialog
 
 logger = logging.getLogger("spatial_risk")
 
@@ -30,8 +35,18 @@ logger = logging.getLogger("spatial_risk")
 eval_jobs = solara.reactive([])
 
 
-def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_at,
-                    csizes, metrics):
+def _run_evaluation(
+    job_id,
+    project,
+    prediction_keys,
+    spec,
+    recompute,
+    created_at,
+    csizes,
+    metrics,
+    notifier=None,
+    task_title=None,
+):
     """Background job: evaluate, build + register a record, re-render the list."""
     try:
         from spatialrisk.evaluation import evaluate_against_truth
@@ -39,7 +54,9 @@ def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_a
         p = project.value
         if p is None:
             return  # project was closed/deleted while the job was queued
-        with writing(p.project_name):
+        with tracked_job(notifier, task_title or "Evaluating predictions"), writing(
+            p.project_name
+        ):
             df = evaluate_against_truth(
                 p,
                 prediction_keys=prediction_keys or None,
@@ -57,14 +74,24 @@ def _run_evaluation(job_id, project, prediction_keys, spec, recompute, created_a
             )
             resolved = list(prediction_keys) or list(p.predictions.keys())
             record = build_evaluation_record(
-                p, df, spec, resolved_keys=resolved, run_id=job_id,
-                created_at=created_at, csizes=tuple(csizes), metrics=metrics)
+                p,
+                df,
+                spec,
+                resolved_keys=resolved,
+                run_id=job_id,
+                created_at=created_at,
+                csizes=tuple(csizes),
+                metrics=metrics,
+            )
             p.add_evaluation(record, auto_save=False)
             p.save()
             publish_if_current(project, p)
             update_job(eval_jobs, job_id, status="completed")
-            logger.info("Evaluation saved as project.evaluations['%s'] (%d rows)",
-                        record.storage_key(), len(df))
+            logger.info(
+                "Evaluation saved as project.evaluations['%s'] (%d rows)",
+                record.storage_key(),
+                len(df),
+            )
     except Exception as exc:
         logger.exception("Evaluation failed")
         update_job(eval_jobs, job_id, status="failed", error=str(exc))
@@ -79,22 +106,40 @@ def EvaluationTile(project):
 
     dialog_open = solara.use_reactive(False)
     selected_eval, set_selected_eval = solara.use_state(None)
+    notifications = use_notifications()
 
     def on_submit(entry):
         """Create the job row and spawn the worker (dialog pre-validated)."""
         spec = entry["spec"]
         job_id = str(uuid.uuid4())[:8]
         created_at = datetime.now().isoformat(timespec="seconds")
-        eval_jobs.set(list(eval_jobs.value) + [{
-            "id": job_id, "status": "running", "error": None,
-            "truth_tag": spec["truth_tag"],
-            "n_maps": len(entry["prediction_keys"]) or n_predictions,
-            "created_at": created_at,
-        }])
+        eval_jobs.set(
+            list(eval_jobs.value)
+            + [
+                {
+                    "id": job_id,
+                    "status": "running",
+                    "error": None,
+                    "truth_tag": spec["truth_tag"],
+                    "n_maps": len(entry["prediction_keys"]) or n_predictions,
+                    "created_at": created_at,
+                }
+            ]
+        )
         spawn_in_context(
             _run_evaluation,
-            (job_id, project, entry["prediction_keys"], spec, entry["recompute"],
-             created_at, entry["csizes"], entry["metrics"]),
+            (
+                job_id,
+                project,
+                entry["prediction_keys"],
+                spec,
+                entry["recompute"],
+                created_at,
+                entry["csizes"],
+                entry["metrics"],
+                notifications,
+                t("notifications.task_evaluation", tag=spec["truth_tag"]),
+            ),
         )
 
     def on_delete(key):
@@ -106,9 +151,13 @@ def EvaluationTile(project):
         # that were already deleted.
         deleted, error = delete_evaluation_run(cur, key)
         if error:
-            logger.error("Evaluation '%s' could not be deleted: saving the "
-                         "project failed (%s). The run and its artifacts "
-                         "were kept.", key, error)
+            logger.error(
+                "Evaluation '%s' could not be deleted: saving the "
+                "project failed (%s). The run and its artifacts "
+                "were kept.",
+                key,
+                error,
+            )
         if not deleted:
             return
         project.set(cur.model_copy())
@@ -129,17 +178,27 @@ def EvaluationTile(project):
 
         solara.Button(
             t("tiles.evaluation.new_button"),
-            icon_name="mdi-plus", color="primary", small=True, block=True,
+            icon_name="mdi-plus",
+            color="primary",
+            small=True,
+            block=True,
             on_click=lambda: dialog_open.set(True),
             disabled=n_predictions == 0,
         )
         if n_predictions == 0:
             solara.Info(t("tiles.evaluation.error_no_predictions"))
 
-        EvaluationResults(eval_jobs=eval_jobs, project=project,
-                          on_open=set_selected_eval, on_delete=on_delete,
-                          on_dismiss=on_dismiss)
-        EvaluationTableDialog(project=project, eval_key=selected_eval,
-                              on_close=lambda: set_selected_eval(None))
+        EvaluationResults(
+            eval_jobs=eval_jobs,
+            project=project,
+            on_open=set_selected_eval,
+            on_delete=on_delete,
+            on_dismiss=on_dismiss,
+        )
+        EvaluationTableDialog(
+            project=project,
+            eval_key=selected_eval,
+            on_close=lambda: set_selected_eval(None),
+        )
 
     EvaluationFormDialog(project=project, open_=dialog_open, on_submit=on_submit)

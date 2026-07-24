@@ -7,7 +7,34 @@ thread's kernel context onto the worker thread — exactly what
 ``solara.lab.use_task`` does internally — lets those updates propagate.
 """
 
+import asyncio
 import threading
+
+
+async def to_thread_in_context(fn, *args, **kwargs):
+    """``asyncio.to_thread`` that propagates the caller's Solara kernel context.
+
+    ``to_thread`` runs on a pool thread that has no kernel context, so any
+    reactive publish made there (job status, notification-task milestones)
+    never reaches the browser. This captures the caller's context (the
+    ``use_task`` body runs with one) and attaches it to the pool thread before
+    the work starts — the ``to_thread`` counterpart of ``spawn_in_context``.
+    Pool threads are reused, so the binding persists; harmless under the app's
+    single-user assumption (it is always the same session's context).
+    """
+    from solara.server import kernel_context
+
+    try:
+        ctx = kernel_context.get_current_context()
+    except RuntimeError:
+        ctx = None
+
+    def _with_context():
+        if ctx is not None and not kernel_context.has_current_context():
+            kernel_context.set_context_for_thread(ctx, threading.current_thread())
+        return fn(*args, **kwargs)
+
+    return await asyncio.to_thread(_with_context)
 
 
 def update_job(jobs_reactive, job_id, *, skip_if_cancelled=True, **changes):

@@ -4,12 +4,17 @@ import logging
 import uuid
 
 import solara
+from pysepal.solara.notifications import use_notifications
 
 from spatialrisk.evaluation import interval_from_target
 
 from gui.i18n import t
 from gui.scripts.artifact_names import sanitize_key
-from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY  # re-export: tests import from here
+from gui.scripts.notify_bridge import tracked_job
+from gui.scripts.model_registry import (
+    MODEL_KEYS,
+    MODEL_REGISTRY,
+)  # re-export: tests import from here
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -69,14 +74,26 @@ def build_fit_kwargs(model_key, dataset, project):
     return {}
 
 
-def _run_training(job_id, model_key, param_values, dataset, sample, project,
-                  project_reactive=None, model_name=None):
+def _run_training(
+    job_id,
+    model_key,
+    param_values,
+    dataset,
+    sample,
+    project,
+    project_reactive=None,
+    model_name=None,
+    notifier=None,
+    task_title=None,
+):
     """Run model training in a background thread."""
     registry = MODEL_REGISTRY[model_key]
     model_cls = registry["class"]
 
     try:
-        with writing(project.project_name):
+        with tracked_job(notifier, task_title or f"Training {model_key}"), writing(
+            project.project_name
+        ):
             # Build model kwargs from param_values
             kwargs = {}
             for param_def in registry["params"]:
@@ -85,7 +102,9 @@ def _run_training(job_id, model_key, param_values, dataset, sample, project,
                 if key == "win_size_list" and isinstance(raw, str):
                     kwargs[key] = [int(x.strip()) for x in raw.split(",") if x.strip()]
                 else:
-                    kwargs[key] = _parse_param(str(raw) if raw is not None else None, param_def["type"])
+                    kwargs[key] = _parse_param(
+                        str(raw) if raw is not None else None, param_def["type"]
+                    )
 
             model = model_cls(**kwargs)
             # The user-chosen name drives both the project.models key and the pickle
@@ -139,6 +158,7 @@ def TrainTile(project):
     p = project.value
 
     dialog_open = solara.use_reactive(False)
+    notifications = use_notifications()
 
     def on_submit(entry):
         """Create the job row and spawn the worker (dialog pre-validated)."""
@@ -160,11 +180,26 @@ def TrainTile(project):
         train_jobs.set(list(train_jobs.value) + [job])
         spawn_in_context(
             _run_training,
-            (job_id, entry["model_key"], entry["params"],
-             dataset, sample, p, project, entry["name"]),
+            (
+                job_id,
+                entry["model_key"],
+                entry["params"],
+                dataset,
+                sample,
+                p,
+                project,
+                entry["name"],
+                notifications,
+                t("notifications.task_training", name=entry["name"]),
+            ),
         )
-        logger.info("Training started: %s '%s' on dataset %s (job=%s)",
-                    entry["model_key"], entry["name"], entry["dataset_key"], job_id)
+        logger.info(
+            "Training started: %s '%s' on dataset %s (job=%s)",
+            entry["model_key"],
+            entry["name"],
+            entry["dataset_key"],
+            job_id,
+        )
 
     def on_cancel(job_id):
         _update_job(job_id, skip_if_cancelled=False, status="cancelled")
@@ -213,9 +248,14 @@ def TrainTile(project):
         ConfirmDialog(
             open=pending_delete is not None,
             on_cancel=lambda: set_pending_delete(None),
-            on_confirm=lambda: (_delete_model(pending_delete), set_pending_delete(None)),
+            on_confirm=lambda: (
+                _delete_model(pending_delete),
+                set_pending_delete(None),
+            ),
             title=t("tiles.train.confirm_delete_model_title"),
-            message=t("tiles.train.confirm_delete_model_message", key=pending_delete or ""),
+            message=t(
+                "tiles.train.confirm_delete_model_message", key=pending_delete or ""
+            ),
             confirm_label=t("common.delete"),
         )
 

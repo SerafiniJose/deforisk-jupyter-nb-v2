@@ -10,9 +10,11 @@ import logging
 import uuid
 
 import solara
+from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
 from gui.scripts.artifact_names import suggest_name
+from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -42,6 +44,7 @@ def _remove_sample_layers(map_, base_key):
     GeoJSON fallback (base_key__event / base_key__forest)."""
     from gui.scripts.map_helpers import remove_sample_points_from_map
     from gui.scripts.pmtiles_map import remove_sample_pmtiles_from_map
+
     remove_sample_pmtiles_from_map(map_, base_key)
     remove_sample_points_from_map(map_, base_key)
 
@@ -63,15 +66,16 @@ def _toggle_sample_on_map(key, project_reactive, map_, turn_on):
             if getattr(ss, "pmtiles_path", None):
                 try:
                     from gui.scripts.pmtiles_map import add_sample_pmtiles_on_map
+
                     add_sample_pmtiles_on_map(map_, ss.pmtiles_path, key, base_key)
                     drew = True
                 except Exception:
-                    logger.exception(
-                        "PMTiles add failed for %s; GeoJSON fallback", key)
+                    logger.exception("PMTiles add failed for %s; GeoJSON fallback", key)
             if not drew:
                 if ss.points_path is None:
                     return
                 from gui.scripts.map_helpers import add_sample_points_on_map
+
                 add_sample_points_on_map(map_, ss.points_path, key, base_key)
             samples_on_map.set(samples_on_map.value | {key})
         else:
@@ -87,8 +91,21 @@ def _update_job(job_id, *, skip_if_cancelled=True, **changes):
     update_job(sampling_jobs, job_id, skip_if_cancelled=skip_if_cancelled, **changes)
 
 
-def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
-                  adapt, n_samples, spacing_m, seed, project_reactive):
+def _run_sampling(
+    job_id,
+    name,
+    raster_var,
+    mask_var,
+    strategy,
+    allocation,
+    adapt,
+    n_samples,
+    spacing_m,
+    seed,
+    project_reactive,
+    notifier=None,
+    task_title=None,
+):
     """Generate a Sample in the background and register it on the project."""
     try:
         from spatialrisk.sample import Sample
@@ -96,21 +113,32 @@ def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
         p = project_reactive.value
         if p is None:
             return  # project was closed/deleted while the job was queued
-        with writing(p.project_name):
+        with tracked_job(
+            notifier, task_title or f"Generating sample '{name}'"
+        ), writing(p.project_name):
             folder = p.folders.samples_folder
             sample = Sample(
-                project=p, name=name, raster_var_name=raster_var,
+                project=p,
+                name=name,
+                raster_var_name=raster_var,
                 mask_var_name=mask_var if mask_var else None,
                 strategy=strategy,
                 allocation=allocation if strategy == "stratified" else None,
-                adapt=adapt, n_samples=n_samples, spacing_m=spacing_m, seed=seed,
+                adapt=adapt,
+                n_samples=n_samples,
+                spacing_m=spacing_m,
+                seed=seed,
                 points_path=folder / f"{name}.gpkg",
             )
             sample.generate()
             p.add_sample(sample, auto_save=True)
             publish_if_current(project_reactive, p)
-            _update_job(job_id, status="completed", n_total=sample.n_total,
-                        class_counts=sample.class_counts)
+            _update_job(
+                job_id,
+                status="completed",
+                n_total=sample.n_total,
+                class_counts=sample.class_counts,
+            )
             logger.info("Sample generated: %s (%d points)", name, sample.n_total)
     except Exception as exc:
         logger.exception("Sampling failed for %s", name)
@@ -121,16 +149,22 @@ def _run_sampling(job_id, name, raster_var, mask_var, strategy, allocation,
 def SamplingTile(project, map_=None):
     """Sampling tab: generate persistent samples and add them to the map."""
     p = project.value
-    raster_keys = sorted(
-        k for k, v in p.processed_variables.items()
-        if getattr(v, "data_type", None) == "raster"
-    ) if p else []
+    raster_keys = (
+        sorted(
+            k
+            for k, v in p.processed_variables.items()
+            if getattr(v, "data_type", None) == "raster"
+        )
+        if p
+        else []
+    )
 
     # All hooks are called unconditionally before any early return so the hook
     # count is stable across renders (this tile is gated, so it renders before
     # raster variables exist and then again once they do).
     pending_remove, set_pending_remove = solara.use_state(None)
     dialog_open = solara.use_reactive(False)
+    notifications = use_notifications()
 
     if p is None:
         return
@@ -161,25 +195,48 @@ def SamplingTile(project, map_=None):
             # map layer) before regenerating under the same name.
             _do_remove(nm)
         job_id = str(uuid.uuid4())[:8]
-        sampling_jobs.set(list(sampling_jobs.value) + [{
-            "id": job_id, "name": nm, "strategy": entry["strategy"],
-            "raster_var_name": entry["raster_var"],
-            "mask_var_name": entry["mask_var"],
-            "status": "running", "error": None,
-            "n_total": None, "class_counts": None,
-        }])
+        sampling_jobs.set(
+            list(sampling_jobs.value)
+            + [
+                {
+                    "id": job_id,
+                    "name": nm,
+                    "strategy": entry["strategy"],
+                    "raster_var_name": entry["raster_var"],
+                    "mask_var_name": entry["mask_var"],
+                    "status": "running",
+                    "error": None,
+                    "n_total": None,
+                    "class_counts": None,
+                }
+            ]
+        )
         spawn_in_context(
             _run_sampling,
-            (job_id, nm, entry["raster_var"], entry["mask_var"], entry["strategy"],
-             entry["allocation"], entry["adapt"], entry["n_samples"],
-             entry["spacing_m"], entry["seed"], project),
+            (
+                job_id,
+                nm,
+                entry["raster_var"],
+                entry["mask_var"],
+                entry["strategy"],
+                entry["allocation"],
+                entry["adapt"],
+                entry["n_samples"],
+                entry["spacing_m"],
+                entry["seed"],
+                project,
+                notifications,
+                t("notifications.task_sampling", name=nm),
+            ),
         )
-        logger.info("Sampling started: %s (raster=%s, job=%s)", nm, entry["raster_var"], job_id)
+        logger.info(
+            "Sampling started: %s (raster=%s, job=%s)", nm, entry["raster_var"], job_id
+        )
 
     def on_toggle_map(key):
         if map_ is None:
             return
-        if key in samples_pending.value:        # idempotent: ignore re-clicks
+        if key in samples_pending.value:  # idempotent: ignore re-clicks
             return
         cur = project.value
         if cur is None:
@@ -188,7 +245,11 @@ def SamplingTile(project, map_=None):
         if ss is None:
             return
         turn_on = key not in samples_on_map.value
-        if turn_on and ss.points_path is None and getattr(ss, "pmtiles_path", None) is None:
+        if (
+            turn_on
+            and ss.points_path is None
+            and getattr(ss, "pmtiles_path", None) is None
+        ):
             return
         samples_pending.set(samples_pending.value | {key})
         spawn_in_context(_toggle_sample_on_map, (key, project, map_, turn_on))
@@ -226,7 +287,9 @@ def SamplingTile(project, map_=None):
             on_cancel=lambda: set_pending_remove(None),
             on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
             title=t("tiles.sampling.confirm_remove_title"),
-            message=t("tiles.sampling.confirm_remove_message", name=pending_remove or ""),
+            message=t(
+                "tiles.sampling.confirm_remove_message", name=pending_remove or ""
+            ),
             confirm_label=t("tiles.sampling.confirm_remove_label"),
         )
 
