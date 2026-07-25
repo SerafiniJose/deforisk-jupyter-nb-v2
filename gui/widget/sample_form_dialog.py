@@ -328,7 +328,14 @@ def SampleDetailsDialog(project, sample_key, on_close: Callable[[], None]):
                                 )
 
                         if spacing_m is not None:
-                            ro_field(t("tiles.sampling.spacing_label"), spacing_m)
+                            ro_field(
+                                t("tiles.sampling.spacing_label"),
+                                (
+                                    int(spacing_m)
+                                    if float(spacing_m).is_integer()
+                                    else spacing_m
+                                ),
+                            )
                         else:
                             ro_field(
                                 t("tiles.sampling.n_samples_label"),

@@ -83,6 +83,25 @@ def test_stratified_deforisk_shows_allocation_and_adapt():
     assert values[t("tiles.sampling.seed_label")] == "42"
 
 
+def test_stratified_deforisk_field_order_is_exact():
+    """Pins the exact field set and order for the stratified/deforisk scenario.
+
+    Nothing extra (n_total, class_counts, crs, created_at) can sneak in, and
+    the allocation/adapt conditionals must render in the form's order.
+    """
+    box = _render(_project_with(_stratified_deforisk()), "strat_1")
+    assert _labels(box) == [
+        t("tiles.sampling.strategy_label"),
+        t("tiles.sampling.raster_variable_label_strata"),
+        t("tiles.sampling.mask_variable_label"),
+        t("tiles.sampling.allocation_label"),
+        t("tiles.sampling.adapt_label"),
+        t("tiles.sampling.n_samples_label"),
+        t("tiles.sampling.sample_name_label"),
+        t("tiles.sampling.seed_label"),
+    ]
+
+
 def test_random_sample_hides_allocation_and_adapt_and_uses_the_area_label():
     """Random strategy has no strata, so allocation/adapt/strata label are absent."""
     s = Sample(name="rand_1", raster_var_name="fcc", strategy="random", n_samples=1000)
@@ -91,6 +110,24 @@ def test_random_sample_hides_allocation_and_adapt_and_uses_the_area_label():
     assert t("tiles.sampling.raster_variable_label_strata") not in labels
     assert t("tiles.sampling.allocation_label") not in labels
     assert t("tiles.sampling.adapt_label") not in labels
+
+
+def test_random_sample_field_order_is_exact():
+    """Pins the exact field set and order for a non-stratified scenario.
+
+    Allocation and adapt must be absent entirely (not just unchecked), and no
+    generated-result field (n_total, class_counts, crs, created_at) appears.
+    """
+    s = Sample(name="rand_1", raster_var_name="fcc", strategy="random", n_samples=1000)
+    box = _render(_project_with(s), "rand_1")
+    assert _labels(box) == [
+        t("tiles.sampling.strategy_label"),
+        t("tiles.sampling.raster_variable_label_area"),
+        t("tiles.sampling.mask_variable_label"),
+        t("tiles.sampling.n_samples_label"),
+        t("tiles.sampling.sample_name_label"),
+        t("tiles.sampling.seed_label"),
+    ]
 
 
 def test_equal_allocation_shows_allocation_but_not_adapt():
@@ -120,7 +157,23 @@ def test_spacing_defined_sample_shows_spacing_instead_of_count():
     labels, values = _labels(box), _values(box)
     assert t("tiles.sampling.spacing_label") in labels
     assert t("tiles.sampling.n_samples_label") not in labels
-    assert values[t("tiles.sampling.spacing_label")] == "1000.0"
+    # Integral spacing must render like the form ("1000"), not "1000.0" — the
+    # form casts to int(round(...)), so the mirror must match it exactly.
+    assert values[t("tiles.sampling.spacing_label")] == "1000"
+
+
+def test_non_integral_spacing_keeps_its_fractional_part():
+    """A non-integral spacing_m still renders its fraction (no silent rounding)."""
+    s = Sample(
+        name="sys_2",
+        raster_var_name="fcc",
+        strategy="systematic",
+        n_samples=None,
+        spacing_m=1250.5,
+    )
+    box = _render(_project_with(s), "sys_2")
+    values = _values(box)
+    assert values[t("tiles.sampling.spacing_label")] == "1250.5"
 
 
 def test_missing_mask_renders_an_em_dash():
