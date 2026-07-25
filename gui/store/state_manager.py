@@ -18,13 +18,9 @@ class AppState:
         self.project_dirty = solara.reactive(False)
         self.last_saved = solara.reactive(None)  # datetime | None
 
-        # AOI (pysepal AoiResult | None)
+        # AOI (pysepal AoiResult | None). ASSET selections carry their picker
+        # inputs on ``AoiResult.asset``; see gui/scripts/aoi_io.py.
         self.aoi_result = solara.reactive(None)
-
-        # Captured/loaded ASSET descriptor ({asset_id,type,column,value}). The only
-        # AOI selection input not recoverable from the AoiResult, so it is tracked
-        # and persisted separately. See gui/scripts/aoi_io.py.
-        self.aoi_asset = solara.reactive(None)
 
         # Bumped each time a project is loaded from disk. The map view subscribes
         # to this so it can zoom to the AOI on load (a plain project-reference
@@ -73,7 +69,6 @@ class AppState:
         self.project.set(project)  # subscription marks dirty=True
         self.last_saved.set(None)
         self.aoi_result.set(None)
-        self.aoi_asset.set(None)
         self.process_error.set(None)
         self.status_message.set(None)
         self.error_message.set(None)
@@ -98,7 +93,6 @@ class AppState:
         self.project.set(None)  # subscription sets dirty=False
         self.last_saved.set(None)
         self.aoi_result.set(None)
-        self.aoi_asset.set(None)
         self.process_error.set(None)
         self.error_message.set(None)
         self.project_loaded_signal.set(self.project_loaded_signal.value + 1)

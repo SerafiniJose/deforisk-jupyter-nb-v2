@@ -1,21 +1,20 @@
 """Step 1 — AOI selection tile."""
 
 import solara
+from pysepal.solara.components.aoi import AoiView
 
 from gui.i18n import t
-from gui.widget.aoi_view import AoiView  # vendored fork (restore-on-load)
 
 
 @solara.component
-def AoiTile(map_, gee_interface, aoi_result, aoi_asset, on_selection, restore_signal, loading):
-    """AOI selection step using the vendored AoiView.
+def AoiTile(map_, gee_interface, aoi_result, restore_signal, loading):
+    """AOI selection step using pysepal's AoiView (restore-on-mount).
 
     Args:
         map_: SepalMap instance (shared with left panel).
         gee_interface: Current GEEInterface from session.
-        aoi_result: Reactive holding the current AoiResult (or None).
-        aoi_asset: Reactive holding the captured ASSET descriptor (or None).
-        on_selection: Callback fired with the asset descriptor (or None) on select.
+        aoi_result: Reactive holding the current AoiResult (or None). ASSET
+            selections carry their picker inputs on ``AoiResult.asset``.
         restore_signal: project_loaded_signal value; remounts the picker per load
             so its mount-time restore re-runs against the freshly loaded AOI.
         loading: Reactive bool for loading state.
@@ -31,6 +30,4 @@ def AoiTile(map_, gee_interface, aoi_result, aoi_asset, on_selection, restore_si
             methods="ALL",
             map_=map_,
             gee=True,
-            restore_asset=aoi_asset.value,
-            on_selection=on_selection,
         )
