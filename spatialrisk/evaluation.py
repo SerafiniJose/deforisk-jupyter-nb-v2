@@ -433,10 +433,25 @@ def resolve_layers(project, pred):
     ds = project.get_dataset(pred.dataset_name)
     if ds is None:
         raise ValueError(f"Dataset '{pred.dataset_name}' not found in project.")
-    forest = next((f for f in ds.features if f.name == FOREST_VAR), None)
+    # Hansen layers created in the GUI carry their parameters in the variable
+    # name ("forest_gfc_tc30" for a 30% tree-cover threshold), so an exact match
+    # misses every layer added since that feature shipped. The resolver that
+    # parses those names lives in gui/, and this package must never import gui/
+    # (see the note on PRED_OBS_X_LABEL above), so match the prefix instead.
+    # First match wins, as before: picking among several forest layers is a GUI
+    # concern (the Predict dialog asks the user); this path stays automatic.
+    forest = next(
+        (
+            f
+            for f in ds.features
+            if f.name == FOREST_VAR or f.name.startswith(f"{FOREST_VAR}_")
+        ),
+        None,
+    )
     if forest is None:
         raise ValueError(
-            f"Feature '{FOREST_VAR}' not in dataset '{ds.name}'. "
+            f"Feature '{FOREST_VAR}' (optionally parameter-suffixed, e.g. "
+            f"'{FOREST_VAR}_tc30') not in dataset '{ds.name}'. "
             f"Available: {[f.name for f in ds.features]}"
         )
     return {

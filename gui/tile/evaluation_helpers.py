@@ -101,11 +101,21 @@ def map_items(project):
 
 
 def default_forest_key(project):
-    """Storage key of the 'forest_gfc' instance, or None."""
+    """Storage key of the first Hansen forest instance, or None.
+
+    Matches any variable whose name resolves to the ``forest_gfc`` catalogue
+    key — the bare legacy ``forest_gfc`` and the parameterised
+    ``forest_gfc_tc30`` alike, since the tree-cover threshold is baked into the
+    variable name. Returns the first match in insertion order.
+    """
+    # Imported inside the function to keep this module import-light (the
+    # catalogue pulls in earthengine-api at import time).
+    from gui.scripts.predefined_variables import resolve_predefined
+
     if project is None or not getattr(project, "processed_variables", None):
         return None
     for key, var in project.processed_variables.items():
-        if var.name == "forest_gfc":
+        if resolve_predefined(var.name)[0] == "forest_gfc":
             return key
     return None
 

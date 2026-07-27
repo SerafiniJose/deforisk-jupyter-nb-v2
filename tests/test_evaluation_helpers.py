@@ -66,6 +66,48 @@ def test_default_forest_key_finds_forest_gfc():
     assert h.default_forest_key(_project()) == "forest_gfc"
 
 
+def test_default_forest_key_finds_a_parameterised_forest_variable():
+    """A Hansen layer named forest_gfc_tc30 must still preselect.
+
+    The tree-cover threshold is baked into the variable name, so every layer
+    added since that feature shipped is ``forest_gfc_tc<N>``; an exact-name
+    match silently stopped preselecting anything.
+    """
+    proj = _types.SimpleNamespace(
+        processed_variables={
+            "altitude": _var("altitude"),
+            "forest_gfc_tc30_2015": _var("forest_gfc_tc30", year=2015),
+        },
+        predictions={},
+    )
+    assert h.default_forest_key(proj) == "forest_gfc_tc30_2015"
+
+
+def test_default_forest_key_ignores_non_hansen_variables():
+    """Other forest-ish layers must not be mistaken for the Hansen mask."""
+    proj = _types.SimpleNamespace(
+        processed_variables={
+            "forest_tmf_2015": _var("forest_tmf", year=2015),
+            "my_forest_gfc": _var("my_forest_gfc"),
+            "forest_loss_2015_2020": _var("forest_loss_2015_2020"),
+        },
+        predictions={},
+    )
+    assert h.default_forest_key(proj) is None
+
+
+def test_default_forest_key_returns_the_first_match(_unused=None):
+    """Several forest layers: the first in insertion order wins, as before."""
+    proj = _types.SimpleNamespace(
+        processed_variables={
+            "forest_gfc_tc75_2015": _var("forest_gfc_tc75", year=2015),
+            "forest_gfc_tc30_2015": _var("forest_gfc_tc30", year=2015),
+        },
+        predictions={},
+    )
+    assert h.default_forest_key(proj) == "forest_gfc_tc75_2015"
+
+
 def test_default_forest_key_none_when_absent():
     """No forest variable means no preselection."""
     proj = _types.SimpleNamespace(
