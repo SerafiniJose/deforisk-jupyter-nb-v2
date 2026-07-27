@@ -8,7 +8,13 @@ import solara
 from pysepal.solara.components.inputs import FileInputComponent
 
 from gui.i18n import t
-from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+from gui.scripts.predefined_variables import (
+    PREDEFINED_CATALOGUE,
+    build_predefined_name,
+    coerce_param_values,
+    default_param_values,
+    param_specs,
+)
 from gui.widget.artifact_name_field import ArtifactNameField
 from spatialrisk.variables.models import (
     DataType,
@@ -77,6 +83,9 @@ def VariableModal(
     var_type, set_var_type = solara.use_state(VAR_TYPES[0])
     name, set_name = solara.use_state("")
     year, set_year = solara.use_state("")
+    # Raw (string) values for the selected predefined layer's declared params,
+    # keyed by param key. Coerced to ints on submit.
+    params_raw, set_params_raw = solara.use_state({})
     file_path, set_file_path = solara.use_state("")
     asset_id, set_asset_id = solara.use_state("")
     scale, set_scale = solara.use_state("")
@@ -92,7 +101,17 @@ def VariableModal(
     cat = PREDEFINED_CATALOGUE.get(predefined_key) if predefined_key else None
 
     # Storage key the entry will land under (mirrors variables_tile.entry_key).
-    _key_name = predefined_key if source == "predefined" else name.strip()
+    # A predefined layer's params are baked into its name (forest_gfc_tc30), so
+    # the preview only shows the suffix once the values are valid.
+    if source == "predefined":
+        _values, _bad_param = coerce_param_values(predefined_key, params_raw)
+        _key_name = (
+            build_predefined_name(predefined_key, _values)
+            if predefined_key and _bad_param is None
+            else predefined_key
+        )
+    else:
+        _key_name = name.strip()
     storage_key = (
         f"{_key_name}_{year}"
         if (_key_name and year and str(year).strip())
@@ -107,6 +126,7 @@ def VariableModal(
     def reset():
         set_source(SOURCES[0])
         set_predefined_key("")
+        set_params_raw({})
         set_var_type(VAR_TYPES[0])
         set_name("")
         set_year("")
@@ -122,6 +142,11 @@ def VariableModal(
             return
         set_source(initial_entry.get("source", "custom"))
         set_predefined_key(initial_entry.get("predefined_key", ""))
+        initial_key = initial_entry.get("predefined_key", "")
+        initial_params = initial_entry.get("params") or default_param_values(
+            initial_key
+        )
+        set_params_raw({k: str(v) for k, v in initial_params.items()})
         set_var_type(initial_entry.get("type", VAR_TYPES[0]))
         set_name(initial_entry.get("name", ""))
         set_year(str(initial_entry.get("year") or ""))
@@ -140,6 +165,14 @@ def VariableModal(
         reset()
         open_.set(False)
 
+    def on_select_predefined(key):
+        """Select a predefined layer and seed its params with catalogue defaults.
+
+        The previous layer's values must not leak across.
+        """
+        set_predefined_key(key or "")
+        set_params_raw({k: str(v) for k, v in default_param_values(key or "").items()})
+
     def _submit_predefined():
         if not predefined_key:
             set_error(t("vars.modal.error_no_predefined_selected"))
@@ -149,14 +182,28 @@ def VariableModal(
         if cat_entry["temporal"] and yr is None:
             set_error(t("vars.modal.error_year_required"))
             return
+        values, bad_param = coerce_param_values(predefined_key, params_raw)
+        if bad_param is not None:
+            set_error(
+                t(
+                    "vars.modal.error_param_range",
+                    label=t(bad_param["label_key"]),
+                    min=bad_param["min"],
+                    max=bad_param["max"],
+                )
+            )
+            return
         entry = {
             "source": "predefined",
             "type": "GEEVar",
-            "name": predefined_key,
+            # Params are baked into the name so two settings of the same layer
+            # are distinct variables; predefined_key stays the catalogue key.
+            "name": build_predefined_name(predefined_key, values),
             "year": yr,
             "data_type": DataType.raster,
             "raster_type": RasterType(cat_entry["raster_type"]),
             "predefined_key": predefined_key,
+            "params": values,
         }
         reset()
         open_.set(False)
@@ -241,12 +288,14 @@ def VariableModal(
                 if source == "predefined":
                     _render_predefined_fields(
                         predefined_key,
-                        set_predefined_key,
+                        on_select_predefined,
                         year,
                         set_year,
                         cat,
                         storage_key,
                         key_exists,
+                        params_raw,
+                        set_params_raw,
                     )
                 else:
                     _render_custom_fields(
@@ -294,19 +343,21 @@ def VariableModal(
 
 def _render_predefined_fields(
     predefined_key,
-    set_predefined_key,
+    on_select_predefined,
     year,
     set_year,
     cat,
     storage_key,
     key_exists,
+    params_raw,
+    set_params_raw,
 ):
     """Fields shown when source == 'predefined'."""
     rv.Select(
         label=t("vars.modal.predefined_variable_label"),
         items=_predefined_items(),
         v_model=predefined_key,
-        on_v_model=set_predefined_key,
+        on_v_model=on_select_predefined,
         dense=True,
         outlined=True,
     )
@@ -331,6 +382,22 @@ def _render_predefined_fields(
                 on_v_model=lambda v: set_year(str(v) if v else ""),
                 dense=True,
                 outlined=True,
+            )
+
+        # Layer-specific knobs declared by the catalogue (e.g. forest_gfc's
+        # tree-cover threshold). Rendered generically, like MODEL_REGISTRY
+        # params in the model dialog — no per-layer branching here.
+        for spec in param_specs(predefined_key):
+            pkey = spec["key"]
+            rv.TextField(
+                label=t(spec["label_key"]),
+                v_model=str(params_raw.get(pkey, spec["default"])),
+                on_v_model=lambda v, k=pkey: set_params_raw({**params_raw, k: v}),
+                dense=True,
+                outlined=True,
+                type="number",
+                hint=t(spec["hint_key"]),
+                persistent_hint=True,
             )
 
         # Read-only info fields

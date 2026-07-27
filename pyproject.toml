@@ -60,4 +60,4 @@ convention = "google"
 [tool.codespell]
 # Real Spanish words in the es-ES message catalogues that codespell's
 # English dictionary misreads as typos of similarly-spelled English words.
-ignore-words-list = "anual,clases,hace,posible"
+ignore-words-list = "anual,clases,hace,posible,ser"

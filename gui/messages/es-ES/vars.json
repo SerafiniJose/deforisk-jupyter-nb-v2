@@ -38,6 +38,8 @@
       "predefined_year_label": "Año",
       "predefined_var_type_label": "Tipo de variable",
       "predefined_raster_type_label": "Tipo de ráster",
+      "param_tree_cover_threshold": "Umbral de cobertura arbórea (%)",
+      "param_tree_cover_threshold_hint": "Cobertura de copa mínima en 2000 que se considera bosque (1-100). Forma parte del nombre de la variable, por lo que pueden coexistir varios umbrales.",
       "custom_name_label": "Nombre",
       "custom_type_label": "Tipo de variable",
       "custom_type_hint": "Archivo ráster local = GeoTIFF en disco; Asset de Google Earth Engine = asset de Earth Engine; Archivo vectorial local = archivo vectorial, rasterizado durante la armonización.",
@@ -54,6 +56,7 @@
       "custom_rasterization_method_hint": "binary = 1 donde hay un rasgo presente, 0 en el resto; unique = un valor por rasgo/clase.",
       "error_no_predefined_selected": "Seleccioná una variable de la lista.",
       "error_year_required": "El año es obligatorio para esta variable.",
+      "error_param_range": "{label} debe ser un número entero entre {min} y {max}.",
       "error_name_required": "El nombre de la variable es obligatorio."
     }
   }

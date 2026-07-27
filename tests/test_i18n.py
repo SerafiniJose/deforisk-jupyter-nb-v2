@@ -275,3 +275,26 @@ def test_set_app_locale_swaps_translator_live(monkeypatch):
         assert i18n.t("app.title") == english
     finally:
         i18n.reset_translator()
+
+
+def test_every_predefined_param_label_and_hint_resolves():
+    """A catalogue param renders its label and hint through t().
+
+    A missing key would surface the raw dotted key in the modal.
+    """
+    from gui import i18n
+    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+
+    for key, meta in PREDEFINED_CATALOGUE.items():
+        for spec in meta.get("params", []):
+            assert i18n.t(spec["label_key"]) != spec["label_key"], (key, spec["key"])
+            assert i18n.t(spec["hint_key"]) != spec["hint_key"], (key, spec["key"])
+
+
+def test_param_range_error_interpolates():
+    """The validation message names the field and its bounds."""
+    from gui import i18n
+
+    msg = i18n.t("vars.modal.error_param_range", label="Tree cover", min=1, max=100)
+    assert msg != "vars.modal.error_param_range"
+    assert "Tree cover" in msg and "1" in msg and "100" in msg
