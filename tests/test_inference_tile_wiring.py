@@ -1,6 +1,7 @@
 """Wiring: Inference tab is list-first; the run form lives in a dialog."""
 
 import inspect
+import types
 
 
 def test_naming_helpers_are_aliases():
@@ -42,3 +43,45 @@ def test_prediction_form_dialog_contract():
     assert "sepal_client" in src
     # import previews the resolved (suffixed) key, it never replaces
     assert "resolve_import_key" in src
+
+
+def test_worker_threads_the_forest_feature_to_the_runner(monkeypatch):
+    """The dialog's choice has to survive the hop onto the worker thread.
+
+    ``_run_inference`` swallows exceptions into the job row, so a dropped
+    argument would surface only as a failed prediction at runtime.
+    """
+    from gui.scripts import inference_runner
+    from gui.tile import inference_tile as it
+
+    calls = []
+    monkeypatch.setattr(
+        inference_runner, "run_inference", lambda *a, **kw: calls.append((a, kw))
+    )
+    previous_jobs = it.inference_jobs.value
+    try:
+        it.inference_jobs.set([{"id": "j1", "status": "running", "error": None}])
+        it._run_inference(
+            "j1",
+            "glm_glm_v1",
+            "calibration",
+            types.SimpleNamespace(project_name="p"),
+            name="run_a",
+            forest_feature="forest_gfc_tc75",
+        )
+
+        assert calls, "run_inference was never called"
+        _args, kwargs = calls[0]
+        assert kwargs["forest_feature"] == "forest_gfc_tc75"
+        assert kwargs["name"] == "run_a"
+        assert it.inference_jobs.value[0]["status"] == "completed"
+    finally:
+        it.inference_jobs.set(previous_jobs)
+
+
+def test_tile_forwards_the_entrys_forest_feature():
+    """on_submit carries the dialog's key through to the worker, absent or not."""
+    from gui.tile.inference_tile import InferenceTile
+
+    src = inspect.getsource(InferenceTile)
+    assert 'entry.get("forest_feature")' in src

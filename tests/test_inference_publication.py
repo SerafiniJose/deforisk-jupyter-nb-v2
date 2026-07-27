@@ -20,7 +20,7 @@ def test_completed_inference_republishes_project(monkeypatch):
     captured = _Project()
     project = solara.reactive(captured, equals=lambda a, b: a is b)
 
-    def fake_run_inference(p, model_key, dataset_key, name=None):
+    def fake_run_inference(p, model_key, dataset_key, name=None, forest_feature=None):
         p.predictions[name] = object()
 
     monkeypatch.setattr(inference_runner, "run_inference", fake_run_inference)
