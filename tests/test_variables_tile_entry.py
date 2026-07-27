@@ -53,3 +53,147 @@ def test_entry_key_matches_add_key_convention():
     assert entry_key({"name": "forest", "year": "2020"}) == "forest_2020"
     assert entry_key({"name": "altitude", "year": ""}) == "altitude"
     assert entry_key({"name": "altitude"}) == "altitude"
+
+
+def test_parameterised_predefined_roundtrips_with_params():
+    """Editing forest_gfc_tc30 must reopen the modal on the forest_gfc entry.
+
+    With 30 in the threshold field — so predefined_key is the catalogue key,
+    name keeps the suffix, and params carries the parsed value.
+    """
+    var = GEEVar(
+        name="forest_gfc_tc30",
+        year=2020,
+        data_type=DataType.raster,
+        raster_type=RasterType.categorical,
+        gee_images=["dummy"],
+    )
+    entry = _variable_to_entry("forest_gfc_tc30_2020", var, _FakeProject())
+
+    assert entry["source"] == "predefined"
+    assert entry["predefined_key"] == "forest_gfc"
+    assert entry["name"] == "forest_gfc_tc30"
+    assert entry["params"] == {"tree_cover_threshold": 30}
+    assert entry["year"] == "2020"
+
+
+def test_unparameterised_predefined_roundtrips_with_empty_params():
+    """Altitude has no params; the key must still be present and empty.
+
+    So the modal can prefill unconditionally.
+    """
+    var = GEEVar(
+        name="altitude",
+        data_type=DataType.raster,
+        raster_type=RasterType.continuous,
+        gee_images=["dummy"],
+    )
+    entry = _variable_to_entry("altitude", var, _FakeProject())
+
+    assert entry["predefined_key"] == "altitude"
+    assert entry["params"] == {}
+
+
+def test_build_predefined_forwards_params_to_get_image(monkeypatch):
+    """The chosen threshold must reach the catalogue's get_image call.
+
+    The bug this feature fixes is that it was invoked positionally as
+    (aoi, year).
+    """
+    import ee
+
+    import gui.scripts.predefined_variables as pv
+    from gui.tile.variables_tile import _build_predefined
+    from spatialrisk.variables.models import DataType, RasterType
+
+    seen = {}
+
+    def _fake_get_image(aoi, year=None, **params):
+        seen["aoi"] = aoi
+        seen["year"] = year
+        seen["params"] = params
+        return "IMAGE"
+
+    monkeypatch.setitem(
+        pv.PREDEFINED_CATALOGUE,
+        "forest_gfc",
+        {**pv.PREDEFINED_CATALOGUE["forest_gfc"], "get_image": _fake_get_image},
+    )
+    # Variable.aoi is typed as an ee object and pydantic isinstance-checks it, so
+    # a plain string would fail validation. An uninitialized instance satisfies
+    # the check without needing an Earth Engine session.
+    fake_aoi = ee.Geometry.__new__(ee.Geometry)
+    monkeypatch.setattr(pv, "resolve_aoi_ee", lambda _result: fake_aoi)
+
+    class _Reactive:
+        value = object()
+
+    class _FakeState:
+        aoi_result = _Reactive()
+
+    monkeypatch.setattr("gui.store.state_manager.app_state", _FakeState)
+
+    var = _build_predefined(
+        {
+            "source": "predefined",
+            "type": "GEEVar",
+            "name": "forest_gfc_tc45",
+            "predefined_key": "forest_gfc",
+            "params": {"tree_cover_threshold": 45},
+            "year": 2020,
+            "data_type": DataType.raster,
+            "raster_type": RasterType.categorical,
+        },
+        None,
+    )
+
+    assert seen["params"] == {"tree_cover_threshold": 45}
+    assert seen["year"] == 2020
+    assert var.name == "forest_gfc_tc45"  # suffix kept: it names the output file
+
+
+def test_build_predefined_without_params_is_unchanged(monkeypatch):
+    """Unparameterised layers must still be called as (aoi, year)."""
+    import ee
+
+    import gui.scripts.predefined_variables as pv
+    from gui.tile.variables_tile import _build_predefined
+    from spatialrisk.variables.models import DataType, RasterType
+
+    seen = {}
+
+    def _fake_get_image(aoi, year=None, **params):
+        seen["params"] = params
+        return "IMAGE"
+
+    monkeypatch.setitem(
+        pv.PREDEFINED_CATALOGUE,
+        "altitude",
+        {**pv.PREDEFINED_CATALOGUE["altitude"], "get_image": _fake_get_image},
+    )
+    monkeypatch.setattr(
+        pv, "resolve_aoi_ee", lambda _result: ee.Geometry.__new__(ee.Geometry)
+    )
+
+    class _Reactive:
+        value = object()
+
+    class _FakeState:
+        aoi_result = _Reactive()
+
+    monkeypatch.setattr("gui.store.state_manager.app_state", _FakeState)
+
+    _build_predefined(
+        {
+            "source": "predefined",
+            "type": "GEEVar",
+            "name": "altitude",
+            "predefined_key": "altitude",
+            "year": None,
+            "data_type": DataType.raster,
+            "raster_type": RasterType.continuous,
+        },
+        None,
+    )
+
+    assert seen["params"] == {}

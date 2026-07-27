@@ -99,9 +99,15 @@ def _styled_layer(image, var, gee_interface):
     Returns (image_to_add, vis_params). Synchronous — any GEE stretch it computes
     goes through the blocking interface, so call it from a worker thread.
     """
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui.scripts.predefined_variables import (
+        PREDEFINED_CATALOGUE,
+        resolve_predefined,
+    )
 
-    cat = PREDEFINED_CATALOGUE.get(getattr(var, "name", "") or "")
+    # The name may carry a param suffix (forest_gfc_tc30), so resolve it back to
+    # the catalogue key rather than looking the raw name up.
+    cat_key, _params = resolve_predefined(getattr(var, "name", "") or "")
+    cat = PREDEFINED_CATALOGUE.get(cat_key) if cat_key else None
     if cat:
         if cat.get("random_visualizer"):
             return image.randomVisualizer(), {}
@@ -139,7 +145,7 @@ def _add_gee_layer(map_, image, var, name: str, layer_key: str):
 
 def _variable_to_entry(key: str, var, project) -> dict:
     """Reconstruct a modal entry dict from an existing variable object."""
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui.scripts.predefined_variables import resolve_predefined
 
     vtype = type(var).__name__
 
@@ -147,13 +153,17 @@ def _variable_to_entry(key: str, var, project) -> dict:
     # local path / asset id — they are rebuilt from the catalogue by key. Round-
     # trip them as a predefined entry so editing re-fetches the image instead of
     # dropping gee_images and stringifying path=None into the literal "None"
-    # (which then fails GEEVar validation on save).
-    if vtype == "GEEVar" and not var.path and var.name in PREDEFINED_CATALOGUE:
+    # (which then fails GEEVar validation on save). The name may carry a
+    # parameter suffix (forest_gfc_tc30); resolve_predefined splits it back into
+    # the catalogue key plus the values, which prefill the modal's param fields.
+    cat_key, cat_params = resolve_predefined(var.name)
+    if vtype == "GEEVar" and not var.path and cat_key is not None:
         return {
             "source": "predefined",
             "type": "GEEVar",
             "name": var.name,
-            "predefined_key": var.name,
+            "predefined_key": cat_key,
+            "params": cat_params,
             "year": str(var.year) if var.year else "",
         }
 
@@ -245,7 +255,9 @@ def _build_predefined(entry: dict, project):
 
     aoi_ee = resolve_aoi_ee(aoi_result)
     year = entry.get("year")
-    image = cat["get_image"](aoi_ee, year)
+    # Declared params (e.g. forest_gfc's tree_cover_threshold) travel as kwargs;
+    # entries for unparameterised layers carry none and call through unchanged.
+    image = cat["get_image"](aoi_ee, year, **entry.get("params") or {})
 
     return GEEVar(
         name=entry["name"],

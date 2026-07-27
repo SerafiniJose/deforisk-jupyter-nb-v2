@@ -164,3 +164,27 @@ def test_catalogue_variable_is_unaffected_by_the_postprocess_branch():
 
     assert style["vmin"] == 0 and style["vmax"] == 60
     assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (26, 152, 80)
+
+
+def test_parameterised_predefined_keeps_catalogue_palette():
+    """forest_gfc_tc30 must render with the forest palette.
+
+    Not the grayscale / black-white fallback — its name carries a param
+    suffix, so a bare PREDEFINED_CATALOGUE lookup misses it.
+    """
+    style = resolve_variable_style(_local_raster("forest_gfc_tc30", "categorical"))
+
+    assert style["vmin"] == 0 and style["vmax"] == 1
+    # catalogue palette: white background -> #2e7d32 forest green
+    assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (255, 255, 255)
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (46, 125, 50)
+
+
+def test_unparameterised_forest_gfc_still_resolves():
+    """Variables created before the threshold feature are named plain 'forest_gfc'.
+
+    They must keep their palette.
+    """
+    style = resolve_variable_style(_local_raster("forest_gfc", "categorical"))
+
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (46, 125, 50)
