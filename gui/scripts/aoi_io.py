@@ -80,7 +80,9 @@ def _rebuild_asset_feature_collection(asset: Dict[str, Any]) -> Optional[Any]:
             return ee.ImageCollection(aid)
         logger.debug("Unknown asset type %r; loading metadata-only.", atype)
     except Exception:  # pragma: no cover - exercised via degrade test (patched)
-        logger.debug("Could not rebuild ASSET FeatureCollection; metadata-only.", exc_info=True)
+        logger.debug(
+            "Could not rebuild ASSET FeatureCollection; metadata-only.", exc_info=True
+        )
     return None
 
 
@@ -97,7 +99,7 @@ def _aoi_metadata(aoi: Any, geometry_file: Optional[str]) -> Dict[str, Any]:
     return meta
 
 
-def write_aoi(project_dir: Path, aoi: Any, asset: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def write_aoi(project_dir: Path, aoi: Any) -> Optional[Dict[str, Any]]:
     """Persist ``aoi`` for a project and return the metadata dict to store.
 
     Writes the geometry to ``<project_dir>/aoi.geojson`` (WGS84) when the AOI
@@ -127,6 +129,7 @@ def write_aoi(project_dir: Path, aoi: Any, asset: Optional[Dict[str, Any]] = Non
         # Metadata-only AOI (e.g. GEE admin/asset): drop any stale geometry.
         sidecar.unlink(missing_ok=True)
         meta = _aoi_metadata(aoi, geometry_file=None)
+        asset = getattr(aoi, "asset", None)
         if asset and getattr(aoi, "method", None) == "ASSET":
             meta["asset"] = asset
         return meta
@@ -187,4 +190,7 @@ def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[
         feature_collection=feature_collection,
         admin=admin,
         gee=gee,
+        # ASSET picker inputs round-trip on the result so AoiView can restore
+        # the asset field on load.
+        asset=metadata.get("asset"),
     )

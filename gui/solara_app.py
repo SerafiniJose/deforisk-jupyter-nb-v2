@@ -158,7 +158,6 @@ def ProjectPanel(on_close=None):
             app_state.aoi_result.set(
                 load_aoi(DATA_DIR / loaded.project_name, loaded.aoi)
             )
-            app_state.aoi_asset.set((loaded.aoi or {}).get("asset"))
             app_state.load_project_state(loaded, when)
             app_state.status_message.set(t("project.status_loaded", name=name))
             app_state.error_message.set(None)
@@ -314,7 +313,6 @@ def ProjectPanel(on_close=None):
             p.aoi = write_aoi(
                 DATA_DIR / p.project_name,
                 app_state.aoi_result.value,
-                asset=app_state.aoi_asset.value,
             )
             path = save_project(p)
             app_state.mark_saved(datetime.now())
@@ -580,8 +578,6 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
                 map_=map_,
                 gee_interface=gee_interface,
                 aoi_result=app_state.aoi_result,
-                aoi_asset=app_state.aoi_asset,
-                on_selection=app_state.aoi_asset.set,
                 restore_signal=app_state.project_loaded_signal.value,
                 loading=app_state.loading,
             )

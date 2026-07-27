@@ -98,21 +98,23 @@ def test_page_wires_project_summary_step():
     assert '"display": "dialog"' in src
 
 
-def test_workflow_tabs_wires_aoi_asset():
+def test_workflow_tabs_wires_aoi_restore_signal():
     import inspect
     import gui.solara_app as solara_app
 
     src = inspect.getsource(solara_app.WorkflowTabs)
-    assert "aoi_asset=app_state.aoi_asset" in src
-    assert "on_selection=app_state.aoi_asset.set" in src
     assert "restore_signal=app_state.project_loaded_signal.value" in src
 
 
-def test_aoi_tile_imports_vendored_view():
+def test_aoi_tile_imports_pysepal_view():
+    # The vendored restore fork was upstreamed into pysepal (AoiView
+    # restore-on-mount + AoiResult.asset); the tile must use the library.
     import inspect
     import gui.tile.aoi_tile as aoi_tile
 
-    assert "gui.widget.aoi_view" in inspect.getsource(aoi_tile)
+    src = inspect.getsource(aoi_tile)
+    assert "from pysepal.solara.components.aoi import AoiView" in src
+    assert "gui.widget.aoi_view" not in src
 
 
 def test_solara_app_installs_task_log_handler():

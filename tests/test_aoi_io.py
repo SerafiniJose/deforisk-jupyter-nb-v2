@@ -9,16 +9,17 @@ from gui.scripts.aoi_io import AOI_GEOMETRY_FILENAME, load_aoi, write_aoi
 
 
 def _gdf(bounds=(12.40, 43.89, 12.52, 43.99)):
-    return gpd.GeoDataFrame(
-        {"name": ["aoi"]}, geometry=[box(*bounds)], crs="EPSG:4326"
+    return gpd.GeoDataFrame({"name": ["aoi"]}, geometry=[box(*bounds)], crs="EPSG:4326")
+
+
+def _aoi(method="DRAW", name="san_marino", gee=True, admin=None, gdf=None, asset=None):
+    return SimpleNamespace(
+        method=method, name=name, gee=gee, admin=admin, gdf=gdf, asset=asset
     )
 
 
-def _aoi(method="DRAW", name="san_marino", gee=True, admin=None, gdf=None):
-    return SimpleNamespace(method=method, name=name, gee=gee, admin=admin, gdf=gdf)
-
-
 # --- write_aoi --------------------------------------------------------------
+
 
 def test_vector_aoi_writes_sidecar_and_metadata(tmp_path):
     meta = write_aoi(tmp_path, _aoi(gdf=_gdf()))
@@ -34,7 +35,9 @@ def test_vector_aoi_writes_sidecar_and_metadata(tmp_path):
 
 
 def test_geometryless_aoi_writes_metadata_only(tmp_path):
-    meta = write_aoi(tmp_path, _aoi(method="ADMIN1", name="COL_x", admin="21758", gdf=None))
+    meta = write_aoi(
+        tmp_path, _aoi(method="ADMIN1", name="COL_x", admin="21758", gdf=None)
+    )
 
     assert meta == {"method": "ADMIN1", "name": "COL_x", "gee": True, "admin": "21758"}
     assert "geometry_file" not in meta
@@ -75,6 +78,7 @@ def test_non_wgs84_geometry_is_reprojected(tmp_path):
 
 # --- load_aoi ---------------------------------------------------------------
 
+
 def test_load_roundtrips_geometry_and_metadata(tmp_path):
     meta = write_aoi(tmp_path, _aoi(gdf=_gdf()))
     restored = load_aoi(tmp_path, meta)
@@ -83,7 +87,9 @@ def test_load_roundtrips_geometry_and_metadata(tmp_path):
     assert restored.name == "san_marino"
     assert restored.gee is True
     assert restored.gdf is not None
-    assert restored.gdf.total_bounds == pytest.approx([12.40, 43.89, 12.52, 43.99], abs=1e-6)
+    assert restored.gdf.total_bounds == pytest.approx(
+        [12.40, 43.89, 12.52, 43.99], abs=1e-6
+    )
 
 
 def test_load_metadata_only_aoi_has_no_geometry(tmp_path):
@@ -146,7 +152,12 @@ def test_load_none_metadata_returns_none(tmp_path):
 
 def test_load_tolerates_missing_sidecar(tmp_path):
     # Manifest references a sidecar that was deleted/moved — degrade, don't crash.
-    meta = {"method": "DRAW", "name": "x", "gee": False, "geometry_file": AOI_GEOMETRY_FILENAME}
+    meta = {
+        "method": "DRAW",
+        "name": "x",
+        "gee": False,
+        "geometry_file": AOI_GEOMETRY_FILENAME,
+    }
     restored = load_aoi(tmp_path, meta)
 
     assert restored is not None
@@ -155,12 +166,18 @@ def test_load_tolerates_missing_sidecar(tmp_path):
 
 # --- Project.aoi field round-trip ------------------------------------------
 
+
 def test_project_persists_aoi_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(proj, "downloads_folder", tmp_path)
 
     p = proj.Project(project_name="proj_with_aoi")
-    p.aoi = {"method": "DRAW", "name": "x", "gee": True, "admin": None,
-             "geometry_file": AOI_GEOMETRY_FILENAME}
+    p.aoi = {
+        "method": "DRAW",
+        "name": "x",
+        "gee": True,
+        "admin": None,
+        "geometry_file": AOI_GEOMETRY_FILENAME,
+    }
     p.save()
 
     loaded = proj.Project.load("proj_with_aoi")
@@ -171,9 +188,18 @@ def test_project_persists_asset_aoi_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(proj, "downloads_folder", tmp_path)
 
     p = proj.Project(project_name="proj_asset_aoi")
-    p.aoi = {"method": "ASSET", "name": "aoi", "gee": True, "admin": None,
-             "asset": {"asset_id": "users/me/aoi", "type": "TABLE",
-                       "column": "ALL", "value": None}}
+    p.aoi = {
+        "method": "ASSET",
+        "name": "aoi",
+        "gee": True,
+        "admin": None,
+        "asset": {
+            "asset_id": "users/me/aoi",
+            "type": "TABLE",
+            "column": "ALL",
+            "value": None,
+        },
+    }
     p.save()
 
     loaded = proj.Project.load("proj_asset_aoi")
@@ -191,16 +217,42 @@ def test_project_without_aoi_loads_none(tmp_path, monkeypatch):
 
 # --- ASSET AOI persist + rebuild --------------------------------------------
 
+
 def test_write_includes_asset_for_asset_method(tmp_path):
-    asset = {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}
-    meta = write_aoi(tmp_path, _aoi(method="ASSET", name="aoi", gdf=None), asset=asset)
+    # The picker inputs ride on AoiResult.asset (pysepal restore support).
+    asset = {
+        "asset_id": "users/me/aoi",
+        "type": "TABLE",
+        "column": "ALL",
+        "value": None,
+    }
+    meta = write_aoi(tmp_path, _aoi(method="ASSET", name="aoi", gdf=None, asset=asset))
     assert meta["asset"] == asset
 
 
 def test_write_omits_asset_for_non_asset_method(tmp_path):
-    asset = {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}
-    meta = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197", gdf=None), asset=asset)
+    asset = {
+        "asset_id": "users/me/aoi",
+        "type": "TABLE",
+        "column": "ALL",
+        "value": None,
+    }
+    meta = write_aoi(
+        tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197", gdf=None, asset=asset)
+    )
     assert "asset" not in meta
+
+
+def test_load_attaches_asset_to_result(tmp_path):
+    asset = {
+        "asset_id": "users/me/aoi",
+        "type": "TABLE",
+        "column": "ALL",
+        "value": None,
+    }
+    meta = write_aoi(tmp_path, _aoi(method="ASSET", name="aoi", gdf=None, asset=asset))
+    restored = load_aoi(tmp_path, meta)
+    assert restored.asset == asset
 
 
 def test_load_asset_rebuilds_feature_collection(tmp_path, monkeypatch):
@@ -209,10 +261,21 @@ def test_load_asset_rebuilds_feature_collection(tmp_path, monkeypatch):
 
     sentinel = object()
     captured = {}
-    monkeypatch.setattr(ee, "FeatureCollection", lambda aid: captured.update({"aid": aid}) or sentinel)
+    monkeypatch.setattr(
+        ee, "FeatureCollection", lambda aid: captured.update({"aid": aid}) or sentinel
+    )
 
-    meta = {"method": "ASSET", "name": "aoi", "gee": True,
-            "asset": {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}}
+    meta = {
+        "method": "ASSET",
+        "name": "aoi",
+        "gee": True,
+        "asset": {
+            "asset_id": "users/me/aoi",
+            "type": "TABLE",
+            "column": "ALL",
+            "value": None,
+        },
+    }
     restored = aoi_io.load_aoi(tmp_path, meta)
 
     assert restored.gdf is None
@@ -223,9 +286,23 @@ def test_load_asset_rebuilds_feature_collection(tmp_path, monkeypatch):
 def test_load_asset_degrades_when_rebuild_fails(tmp_path, monkeypatch):
     import gui.scripts.aoi_io as aoi_io
     import ee
-    monkeypatch.setattr(ee, "FeatureCollection", lambda aid: (_ for _ in ()).throw(RuntimeError("no ee")))
-    meta = {"method": "ASSET", "name": "aoi", "gee": True,
-            "asset": {"asset_id": "users/me/aoi", "type": "TABLE", "column": "ALL", "value": None}}
+
+    monkeypatch.setattr(
+        ee,
+        "FeatureCollection",
+        lambda aid: (_ for _ in ()).throw(RuntimeError("no ee")),
+    )
+    meta = {
+        "method": "ASSET",
+        "name": "aoi",
+        "gee": True,
+        "asset": {
+            "asset_id": "users/me/aoi",
+            "type": "TABLE",
+            "column": "ALL",
+            "value": None,
+        },
+    }
     restored = aoi_io.load_aoi(tmp_path, meta)
     assert restored is not None
     assert restored.feature_collection is None
