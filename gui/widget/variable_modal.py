@@ -12,8 +12,8 @@ from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 from gui.widget.artifact_name_field import ArtifactNameField
 from spatialrisk.variables.models import (
     DataType,
-    RasterType,
     RasterizationMethod,
+    RasterType,
 )
 
 VAR_TYPES = ["LocalRasterVar", "GEEVar", "LocalVectorVar"]
@@ -93,8 +93,16 @@ def VariableModal(
 
     # Storage key the entry will land under (mirrors variables_tile.entry_key).
     _key_name = predefined_key if source == "predefined" else name.strip()
-    storage_key = f"{_key_name}_{year}" if (_key_name and year and str(year).strip()) else _key_name
-    key_exists = bool(storage_key) and storage_key in existing_keys and storage_key != editing_key
+    storage_key = (
+        f"{_key_name}_{year}"
+        if (_key_name and year and str(year).strip())
+        else _key_name
+    )
+    key_exists = (
+        bool(storage_key)
+        and storage_key in existing_keys
+        and storage_key != editing_key
+    )
 
     def reset():
         set_source(SOURCES[0])
@@ -206,7 +214,9 @@ def VariableModal(
             _submit_custom()
 
     title = t("vars.modal.title_edit") if is_edit else t("vars.modal.title_add")
-    submit_label = t("vars.modal.submit_save") if is_edit else t("vars.modal.submit_add")
+    submit_label = (
+        t("vars.modal.submit_save") if is_edit else t("vars.modal.submit_add")
+    )
 
     with rv.Dialog(
         v_model=open_.value, on_v_model=open_.set, max_width="560px", eager=True
@@ -230,21 +240,32 @@ def VariableModal(
 
                 if source == "predefined":
                     _render_predefined_fields(
-                        predefined_key, set_predefined_key,
-                        year, set_year,
+                        predefined_key,
+                        set_predefined_key,
+                        year,
+                        set_year,
                         cat,
-                        storage_key, key_exists,
+                        storage_key,
+                        key_exists,
                     )
                 else:
                     _render_custom_fields(
-                        var_type, set_var_type,
-                        name, set_name,
-                        year, set_year,
-                        file_path, set_file_path,
-                        asset_id, set_asset_id,
-                        scale, set_scale,
-                        raster_type, set_raster_type,
-                        rasterization_method, set_rasterization_method,
+                        var_type,
+                        set_var_type,
+                        name,
+                        set_name,
+                        year,
+                        set_year,
+                        file_path,
+                        set_file_path,
+                        asset_id,
+                        set_asset_id,
+                        scale,
+                        set_scale,
+                        raster_type,
+                        set_raster_type,
+                        rasterization_method,
+                        set_rasterization_method,
                         sepal_client=sepal_client,
                         storage_key=storage_key,
                         key_exists=key_exists,
@@ -254,8 +275,16 @@ def VariableModal(
                     rv.Alert(type_="error", dense=True, children=[error])
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                solara.Button(t("common.cancel"), on_click=on_cancel, text=True, small=True)
-                solara.Button(submit_label, on_click=on_submit, color="primary", small=True, icon_name="mdi-plus")
+                solara.Button(
+                    t("common.cancel"), on_click=on_cancel, text=True, small=True
+                )
+                solara.Button(
+                    submit_label,
+                    on_click=on_submit,
+                    color="primary",
+                    small=True,
+                    icon_name="mdi-plus",
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -264,10 +293,13 @@ def VariableModal(
 
 
 def _render_predefined_fields(
-    predefined_key, set_predefined_key,
-    year, set_year,
+    predefined_key,
+    set_predefined_key,
+    year,
+    set_year,
     cat,
-    storage_key, key_exists,
+    storage_key,
+    key_exists,
 ):
     """Fields shown when source == 'predefined'."""
     rv.Select(
@@ -320,7 +352,8 @@ def _render_predefined_fields(
     if storage_key:
         solara.Text(
             t(
-                "widgets.artifact_name.exists_warning" if key_exists
+                "widgets.artifact_name.exists_warning"
+                if key_exists
                 else "widgets.artifact_name.saved_as",
                 key=storage_key,
             ),
@@ -330,14 +363,22 @@ def _render_predefined_fields(
 
 
 def _render_custom_fields(
-    var_type, set_var_type,
-    name, set_name,
-    year, set_year,
-    file_path, set_file_path,
-    asset_id, set_asset_id,
-    scale, set_scale,
-    raster_type, set_raster_type,
-    rasterization_method, set_rasterization_method,
+    var_type,
+    set_var_type,
+    name,
+    set_name,
+    year,
+    set_year,
+    file_path,
+    set_file_path,
+    asset_id,
+    set_asset_id,
+    scale,
+    set_scale,
+    raster_type,
+    set_raster_type,
+    rasterization_method,
+    set_rasterization_method,
     sepal_client,
     storage_key,
     key_exists,
