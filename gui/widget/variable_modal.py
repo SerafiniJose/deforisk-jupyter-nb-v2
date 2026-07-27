@@ -265,9 +265,21 @@ def VariableModal(
         t("vars.modal.submit_save") if is_edit else t("vars.modal.submit_add")
     )
 
-    with rv.Dialog(
-        v_model=open_.value, on_v_model=open_.set, max_width="560px", eager=True
-    ):
+    # Same dismissal contract as the shared CreationDialog frame: `persistent`
+    # keeps a click aimed at an open v-select menu from taking the form with
+    # it, and the ESC handler restores the keyboard dismissal it disables (via
+    # on_cancel, so the form resets — the old outside-click close did not).
+    dialog = rv.Dialog(
+        v_model=open_.value,
+        on_v_model=open_.set,
+        max_width="560px",
+        eager=True,
+        persistent=True,
+        no_click_animation=True,
+    )
+    # rv.use_event is a hook — call it unconditionally.
+    rv.use_event(dialog, "keydown.esc", lambda *_: on_cancel())
+    with dialog:
         with rv.Card():
             with rv.CardTitle():
                 solara.Text(title)
