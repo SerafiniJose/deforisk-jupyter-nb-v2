@@ -38,7 +38,10 @@ def _source_items():
 def _import_palette_items():
     return [
         {"text": t("widgets.prediction_import_modal.palette_far"), "value": "far"},
-        {"text": t("widgets.prediction_import_modal.palette_stretch"), "value": "stretch"},
+        {
+            "text": t("widgets.prediction_import_modal.palette_stretch"),
+            "value": "stretch",
+        },
     ]
 
 
@@ -55,6 +58,7 @@ def PredictionFormDialog(
     Args:
         project: solara.Reactive[Project].
         open_: solara.Reactive[bool].
+        on_submit: callback receiving the entry dict described above.
         sepal_client: SEPAL client backing the import file picker.
     """
     p = project.value
@@ -76,7 +80,9 @@ def PredictionFormDialog(
     if source == "model":
         suggestion = default_pred_name(selected_model, selected_dataset)
     else:
-        suggestion = sanitize_import_name(Path(str(file_path)).stem) if file_path else ""
+        suggestion = (
+            sanitize_import_name(Path(str(file_path)).stem) if file_path else ""
+        )
     name_value, on_name_input, reset_name = use_artifact_name(suggestion)
 
     clean = sanitize_key(name_value)
@@ -152,7 +158,9 @@ def PredictionFormDialog(
         will_replace=will_replace,
         launch=launch,
         on_close=reset,
-        replace_message=lambda k: t("tiles.inference.confirm_overwrite_message", name=k),
+        replace_message=lambda k: t(
+            "tiles.inference.confirm_overwrite_message", name=k
+        ),
     ):
         rv.Select(
             label=t("tiles.inference.source_label"),
@@ -166,18 +174,26 @@ def PredictionFormDialog(
         )
         if source == "model":
             rv.Select(
-                label=t("tiles.inference.model_select_label"), items=model_keys,
-                v_model=selected_model, on_v_model=set_selected_model,
-                dense=True, outlined=True,
+                label=t("tiles.inference.model_select_label"),
+                items=model_keys,
+                v_model=selected_model,
+                on_v_model=set_selected_model,
+                dense=True,
+                outlined=True,
                 no_data_text=t("tiles.inference.model_select_no_data"),
-                hint=t("tiles.inference.model_select_hint"), persistent_hint=True,
+                hint=t("tiles.inference.model_select_hint"),
+                persistent_hint=True,
             )
             rv.Select(
-                label=t("tiles.inference.dataset_select_label"), items=dataset_keys,
-                v_model=selected_dataset, on_v_model=set_selected_dataset,
-                dense=True, outlined=True,
+                label=t("tiles.inference.dataset_select_label"),
+                items=dataset_keys,
+                v_model=selected_dataset,
+                on_v_model=set_selected_dataset,
+                dense=True,
+                outlined=True,
                 no_data_text=t("tiles.inference.dataset_select_no_data"),
-                hint=t("tiles.inference.dataset_select_hint"), persistent_hint=True,
+                hint=t("tiles.inference.dataset_select_hint"),
+                persistent_hint=True,
             )
         else:
             FileInputComponent(

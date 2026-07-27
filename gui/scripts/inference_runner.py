@@ -64,7 +64,8 @@ def run_inference(project, model_key, dataset_name, name=None):
     ti = interval_from_target(dataset.target.name)
     if ti is None:
         raise ValueError(
-            f"Cannot derive time_interval from target '{dataset.target.name}'.")
+            f"Cannot derive time_interval from target '{dataset.target.name}'."
+        )
 
     if family == "jnr":
         out_dir = Path(project.folders.rmj_bm) / (name or dataset_name)
@@ -80,4 +81,6 @@ def run_inference(project, model_key, dataset_name, name=None):
         model.apply(dataset, time_interval=ti, output_folder=out_folder)
         return
 
-    raise ValueError(f"Unknown model family '{model_key.split('_')[0]}' for key '{model_key}'.")
+    raise ValueError(
+        f"Unknown model family '{model_key.split('_')[0]}' for key '{model_key}'."
+    )

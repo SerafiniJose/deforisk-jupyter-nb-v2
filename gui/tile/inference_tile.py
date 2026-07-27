@@ -6,20 +6,25 @@ import uuid
 
 import reacton.ipyvuetify as rv
 import solara
-
 from pysepal.solara.notifications import use_notifications
 
-from gui.i18n import t, plural
-from gui.scripts.artifact_names import default_pred_name as _default_pred_name
+from gui.i18n import plural, t
+from gui.scripts import artifact_names as _artifact_names
 from gui.scripts.notify_bridge import tracked_job
-from gui.scripts.artifact_names import prediction_name_exists as _prediction_name_exists
-from gui.scripts.artifact_names import sanitize_key as _sanitize_pred_name
 from gui.scripts.product_rows import job_row_key
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
 from gui.widget.prediction_form_dialog import PredictionFormDialog
+
+# The naming helpers live in gui/scripts/artifact_names.py; they are re-exported
+# under this tile's historical private names because other modules (and
+# tests/test_inference_tile_wiring) still reach them through here. Bound as
+# assignments rather than aliased imports so the linter can see they are used.
+_default_pred_name = _artifact_names.default_pred_name
+_prediction_name_exists = _artifact_names.prediction_name_exists
+_sanitize_pred_name = _artifact_names.sanitize_key
 
 logger = logging.getLogger("spatial_risk")
 

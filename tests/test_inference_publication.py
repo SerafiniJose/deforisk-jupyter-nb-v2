@@ -13,6 +13,7 @@ class _Project:
 
 
 def test_completed_inference_republishes_project(monkeypatch):
+    """A finished run republishes the project so subscribers re-render."""
     from gui.scripts import inference_runner
     from gui.tile import inference_tile
 
@@ -25,12 +26,19 @@ def test_completed_inference_republishes_project(monkeypatch):
     monkeypatch.setattr(inference_runner, "run_inference", fake_run_inference)
     previous_jobs = inference_tile.inference_jobs.value
     try:
-        inference_tile.inference_jobs.set([
-            {"id": "job-1", "status": "running", "error": None},
-        ])
+        inference_tile.inference_jobs.set(
+            [
+                {"id": "job-1", "status": "running", "error": None},
+            ]
+        )
 
         inference_tile._run_inference(
-            "job-1", "glm_model", "dataset", captured, "prediction", project,
+            "job-1",
+            "glm_model",
+            "dataset",
+            captured,
+            "prediction",
+            project,
         )
 
         assert project.value is not captured

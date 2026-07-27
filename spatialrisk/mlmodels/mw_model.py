@@ -52,7 +52,7 @@ class MWModel(BaseRiskModel):
     be used by overriding ``forest_edge_var``, ``forest_var``,
     ``forest_value``, and ``defor_value``.
 
-    Attributes
+    Attributes:
     ----------
     win_size_list : list of int
         Moving window sizes in pixels (default: [5, 11, 21]).
@@ -142,11 +142,11 @@ class MWModel(BaseRiskModel):
         var_name : str
             Exact name to look for in ``dataset.features``.
 
-        Returns
+        Returns:
         -------
         Path
 
-        Raises
+        Raises:
         ------
         ValueError
             If the feature is not found, listing available names.
@@ -231,7 +231,7 @@ class MWModel(BaseRiskModel):
             Root output folder.  Defaults to the project ``rmj_mw`` folder,
             then the current working directory.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -276,7 +276,9 @@ class MWModel(BaseRiskModel):
         forest_file = self._get_feature(active, self.forest_var)
 
         out_root = (
-            Path(folder) if folder is not None else (self._default_folder() or Path.cwd())
+            Path(folder)
+            if folder is not None
+            else (self._default_folder() or Path.cwd())
         )
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
@@ -302,7 +304,9 @@ class MWModel(BaseRiskModel):
         ldefrate_files: Dict[str, Path] = {}
         for win_size in self.win_size_list:
             ldefrate_file = period_dir / f"ldefrate_mw_{win_size}.tif"
-            print(f"  local_defor_rate — window {win_size}×{win_size} px...")
+            # The label uses the multiplication sign deliberately (RUF001).
+            win_label = f"{win_size}×{win_size}"  # noqa: RUF001
+            print(f"  local_defor_rate — window {win_label} px...")
             deforrate.local_defor_rate(
                 defor_file=deforestation_file,
                 forest_file=forest_file,
@@ -374,12 +378,12 @@ class MWModel(BaseRiskModel):
         mask_value : optional
             Unused; kept for API consistency.
 
-        Returns
+        Returns:
         -------
         dict
             ``{win_size_str: Path}`` for each probability raster produced.
         """
-        from spatialrisk.rmj import set_defor_cat_zero, deforrate
+        from spatialrisk.rmj import deforrate, set_defor_cat_zero
 
         if not self.ldefrate_files:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
@@ -480,15 +484,9 @@ class MWModel(BaseRiskModel):
                 "ldefrate_files is empty. Ensure fit() was called and "
                 "the model was registered."
             )
-        missing = [
-            str(p)
-            for p in self.ldefrate_files.values()
-            if not Path(p).exists()
-        ]
+        missing = [str(p) for p in self.ldefrate_files.values() if not Path(p).exists()]
         if missing:
             raise FileNotFoundError(
-                f"ldefrate raster(s) not found:\n" + "\n".join(missing)
+                "ldefrate raster(s) not found:\n" + "\n".join(missing)
             )
-        print(
-            f"  MW model OK — {len(self.ldefrate_files)} ldefrate files verified."
-        )
+        print(f"  MW model OK — {len(self.ldefrate_files)} ldefrate files verified.")
