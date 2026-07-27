@@ -4,11 +4,7 @@ import asyncio
 import logging
 
 import ee
-import reacton.ipyvuetify as rv
 import solara
-
-logger = logging.getLogger("spatial_risk")
-
 from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
@@ -22,10 +18,16 @@ from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import SourceVariableList
 from gui.widget.variable_modal import VariableModal
-from spatialrisk.project import Project
+
+# Unused directly, but required in scope: pydantic v2's model_rebuild() below
+# resolves the Optional["Project"] forward reference using this module's
+# namespace, so removing the import would break model construction.
+from spatialrisk.project import Project  # noqa: F401
 from spatialrisk.variables.gee_var import GEEVar
 from spatialrisk.variables.local_raster_var import LocalRasterVar
 from spatialrisk.variables.local_vector_var import LocalVectorVar
+
+logger = logging.getLogger("spatial_risk")
 
 LocalRasterVar.model_rebuild()
 GEEVar.model_rebuild()
@@ -73,7 +75,7 @@ def _minmax(image, var, gee_interface):
 def _grayscale_vis(image, var, gee_interface):
     """Grayscale palette stretched to the image's min/max over its AOI.
 
-    Falls back to a bare grayscale palette (GEE's default 0–1 stretch) if the
+    Falls back to a bare grayscale palette (GEE's default 0-1 stretch) if the
     min/max can't be computed.
     """
     vis = {"palette": ["000000", "ffffff"]}
@@ -274,6 +276,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         project: Reactive holding the current Project (or None).
         process_error: Reactive str | None — error from last processing action.
         map_: SepalMap instance used by the per-variable "show on map" toggle.
+        sepal_client: SEPAL client passed through to the Add Variable modal.
     """
     modal_open = solara.use_reactive(False)
     editing_key, set_editing_key = solara.use_state(None)

@@ -10,9 +10,11 @@ class _FakeProject:
 
 
 def test_predefined_gee_roundtrips_as_predefined():
-    """A catalogue-backed GEEVar (gee_images set, no path) must round-trip as a
-    predefined entry so editing rebuilds the image instead of producing
-    path='None' and failing GEEVar validation."""
+    """A catalogue-backed GEEVar (gee_images set, no path) must round-trip.
+
+    As a predefined entry, so editing rebuilds the image instead of producing
+    path='None' and failing GEEVar validation.
+    """
     var = GEEVar(
         name="altitude",  # a PREDEFINED_CATALOGUE key
         data_type=DataType.raster,
@@ -40,9 +42,12 @@ def test_gee_without_path_does_not_emit_literal_none():
 
 
 def test_entry_key_matches_add_key_convention():
-    """entry_key must predict the storage key on_add computes after building the
-    variable (name_year, or bare name when year is empty) so the duplicate-add
-    confirmation fires exactly when the add would overwrite."""
+    """entry_key must predict the storage key on_add computes.
+
+    After building the variable (name_year, or bare name when year is empty)
+    so the duplicate-add confirmation fires exactly when the add would
+    overwrite.
+    """
     from gui.tile.variables_tile import entry_key
 
     assert entry_key({"name": "forest", "year": "2020"}) == "forest_2020"

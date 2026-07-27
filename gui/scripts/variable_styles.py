@@ -78,7 +78,11 @@ def resolve_variable_style(var) -> dict:
         if cat.get("random_visualizer"):
             # Many arbitrary class values -> qualitative ramp (approximation of
             # GEE's per-class randomVisualizer, which has no local equivalent).
-            return {"colormap": matplotlib.colormaps["tab20"], "vmin": None, "vmax": None}
+            return {
+                "colormap": matplotlib.colormaps["tab20"],
+                "vmin": None,
+                "vmax": None,
+            }
         vis = cat.get("vis_params")
         if vis and vis.get("palette"):
             return {
