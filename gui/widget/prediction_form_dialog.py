@@ -20,6 +20,7 @@ from gui.scripts.artifact_names import (
     prediction_name_exists,
     sanitize_key,
 )
+from gui.scripts.inference_runner import forest_feature_candidates, is_ml_family
 from gui.scripts.prediction_import import resolve_import_key, sanitize_import_name
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import CreationDialog
@@ -38,7 +39,10 @@ def _source_items():
 def _import_palette_items():
     return [
         {"text": t("widgets.prediction_import_modal.palette_far"), "value": "far"},
-        {"text": t("widgets.prediction_import_modal.palette_stretch"), "value": "stretch"},
+        {
+            "text": t("widgets.prediction_import_modal.palette_stretch"),
+            "value": "stretch",
+        },
     ]
 
 
@@ -50,11 +54,13 @@ def PredictionFormDialog(
 
     on_submit(entry) receives {"kind": "model", "model_key", "dataset_key",
     "name"} or {"kind": "import", "name", "path", "palette"}; the tile owns
-    the job row and the worker.
+    the job row and the worker. A model entry for an ML family (GLM/RF/ICAR)
+    also carries "forest_feature" — the dataset feature to mask with.
 
     Args:
         project: solara.Reactive[Project].
         open_: solara.Reactive[bool].
+        on_submit: callback receiving the entry dict described above.
         sepal_client: SEPAL client backing the import file picker.
     """
     p = project.value
@@ -67,6 +73,26 @@ def PredictionFormDialog(
     dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
     selected_dataset, set_selected_dataset = solara.use_state("")
 
+    # --- forest mask (ML families only)
+    # GLM/RF/ICAR mask their output with one of the dataset's forest layers.
+    # A Hansen layer's tree-cover threshold is part of its name, so a dataset
+    # can hold several; run_inference refuses to guess between them, which is
+    # why the choice is made here. The candidate list comes from the runner so
+    # the dialog can never offer a layer the runner would reject.
+    forest_feature, set_forest_feature = solara.use_state("")
+    ml_family = source == "model" and is_ml_family(selected_model)
+    _dataset = p.datasets.get(selected_dataset) if p and selected_dataset else None
+    forest_items = forest_feature_candidates(_dataset) if ml_family else []
+    show_forest = ml_family and bool(selected_dataset)
+
+    def seed_forest_feature():
+        """Preselect the only candidate; leave an ambiguous dataset unset."""
+        set_forest_feature(forest_items[0] if len(forest_items) == 1 else "")
+
+    # Re-seeds whenever the candidate set changes (a model or dataset switch)
+    # and never in between, so a deliberate pick among two survives re-renders.
+    solara.use_effect(seed_forest_feature, [tuple(forest_items)])
+
     # --- import mode state
     file_path, set_file_path = solara.use_state("")
     palette, set_palette = solara.use_state("far")
@@ -76,7 +102,9 @@ def PredictionFormDialog(
     if source == "model":
         suggestion = default_pred_name(selected_model, selected_dataset)
     else:
-        suggestion = sanitize_import_name(Path(str(file_path)).stem) if file_path else ""
+        suggestion = (
+            sanitize_import_name(Path(str(file_path)).stem) if file_path else ""
+        )
     name_value, on_name_input, reset_name = use_artifact_name(suggestion)
 
     clean = sanitize_key(name_value)
@@ -93,6 +121,7 @@ def PredictionFormDialog(
         set_source("model")
         set_selected_model("")
         set_selected_dataset("")
+        set_forest_feature("")
         set_file_path("")
         set_palette("far")
         reset_name()
@@ -135,14 +164,18 @@ def PredictionFormDialog(
                 }
             )
         else:
-            on_submit(
-                {
-                    "kind": "model",
-                    "model_key": selected_model,
-                    "dataset_key": selected_dataset,
-                    "name": clean,
-                }
-            )
+            entry = {
+                "kind": "model",
+                "model_key": selected_model,
+                "dataset_key": selected_dataset,
+                "name": clean,
+            }
+            if ml_family:
+                # Optional: blank means "resolve it", which run_inference can do
+                # whenever the dataset holds exactly one forest layer. Benchmark
+                # families resolve their own layers and never carry the key.
+                entry["forest_feature"] = forest_feature
+            on_submit(entry)
 
     with CreationDialog(
         open_=open_,
@@ -152,7 +185,9 @@ def PredictionFormDialog(
         will_replace=will_replace,
         launch=launch,
         on_close=reset,
-        replace_message=lambda k: t("tiles.inference.confirm_overwrite_message", name=k),
+        replace_message=lambda k: t(
+            "tiles.inference.confirm_overwrite_message", name=k
+        ),
     ):
         rv.Select(
             label=t("tiles.inference.source_label"),
@@ -166,19 +201,40 @@ def PredictionFormDialog(
         )
         if source == "model":
             rv.Select(
-                label=t("tiles.inference.model_select_label"), items=model_keys,
-                v_model=selected_model, on_v_model=set_selected_model,
-                dense=True, outlined=True,
+                label=t("tiles.inference.model_select_label"),
+                items=model_keys,
+                v_model=selected_model,
+                on_v_model=set_selected_model,
+                dense=True,
+                outlined=True,
                 no_data_text=t("tiles.inference.model_select_no_data"),
-                hint=t("tiles.inference.model_select_hint"), persistent_hint=True,
+                hint=t("tiles.inference.model_select_hint"),
+                persistent_hint=True,
             )
             rv.Select(
-                label=t("tiles.inference.dataset_select_label"), items=dataset_keys,
-                v_model=selected_dataset, on_v_model=set_selected_dataset,
-                dense=True, outlined=True,
+                label=t("tiles.inference.dataset_select_label"),
+                items=dataset_keys,
+                v_model=selected_dataset,
+                on_v_model=set_selected_dataset,
+                dense=True,
+                outlined=True,
                 no_data_text=t("tiles.inference.dataset_select_no_data"),
-                hint=t("tiles.inference.dataset_select_hint"), persistent_hint=True,
+                hint=t("tiles.inference.dataset_select_hint"),
+                persistent_hint=True,
             )
+            if show_forest:
+                rv.Select(
+                    label=t("tiles.inference.forest_feature_label"),
+                    items=forest_items,
+                    v_model=forest_feature,
+                    on_v_model=set_forest_feature,
+                    dense=True,
+                    outlined=True,
+                    clearable=True,
+                    no_data_text=t("tiles.inference.forest_feature_no_data"),
+                    hint=t("tiles.inference.forest_feature_hint"),
+                    persistent_hint=True,
+                )
         else:
             FileInputComponent(
                 label=t("widgets.prediction_import_modal.label_file"),

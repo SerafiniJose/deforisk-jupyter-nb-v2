@@ -1,7 +1,7 @@
 """JNR Benchmark unsupervised deforestation risk model.
 
 Implements the Jurisdictional and Nested REDD+ (JNR) benchmark approach:
-stratifies the landscape by distance-to-forest-edge bins × subjurisdictions
+stratifies the landscape by distance-to-forest-edge bins x subjurisdictions
 and assigns historical deforestation rates as vulnerability scores.
 
 All processing functions live in ``spatialrisk.rmj`` and work with two explicit
@@ -23,9 +23,13 @@ Features are looked up by exact name in the Dataset.  Defaults are
 
     jnr = JNRBenchmarkModel(
         name="calibration",
-        forest_edge_var="forest_gfc_edge",
-        forest_var="forest_gfc",
+        forest_edge_var="forest_gfc_tc30_edge",
+        forest_var="forest_gfc_tc30",
     )
+
+Variables created through the GUI carry their parameters in the name — a
+Hansen layer at a 30% tree-cover threshold is ``forest_gfc_tc30`` — so use
+the name as it appears in ``dataset.features``.
 """
 
 from pathlib import Path
@@ -43,7 +47,7 @@ class JNRBenchmarkModel(BaseRiskModel):
     All raster processing logic lives there; this class manages datasets,
     Pydantic metadata, and project registration.
 
-    Attributes
+    Attributes:
     ----------
     blk_rows : int
         Number of raster rows per processing block (default: 128).
@@ -132,11 +136,11 @@ class JNRBenchmarkModel(BaseRiskModel):
         var_name : str
             Exact name to look for in ``dataset.features``.
 
-        Returns
+        Returns:
         -------
         Path
 
-        Raises
+        Raises:
         ------
         ValueError
             If the feature is not found, listing available names.
@@ -223,13 +227,13 @@ class JNRBenchmarkModel(BaseRiskModel):
             Root output folder.  Defaults to the project ``rmj_bm`` folder,
             then the current working directory.
 
-        Returns
+        Returns:
         -------
         self
         """
         import numpy as np
 
-        from spatialrisk.rmj import deforrate, compute_dist_bins
+        from spatialrisk.rmj import compute_dist_bins, deforrate
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -246,7 +250,8 @@ class JNRBenchmarkModel(BaseRiskModel):
             raise ValueError(
                 f"JNRBenchmarkModel requires the forest-loss variable to be tagged "
                 f"'deforestation', but '{defor_var_obj.name}' has tags {defor_tags}. "
-                f"Ensure the variable was created/processed with the 'deforestation' tag."
+                f"Ensure the variable was created/processed with the "
+                f"'deforestation' tag."
             )
 
         period = active.name or self.name
@@ -302,7 +307,9 @@ class JNRBenchmarkModel(BaseRiskModel):
         print(f"  dist_bins: {len(self.dist_bins)} edges")
 
         # Populate serialisable metadata (mirrors _prepare_samples() pattern)
-        self.target_name = active.target.name if active.target is not None else defor_var_obj.name
+        self.target_name = (
+            active.target.name if active.target is not None else defor_var_obj.name
+        )
         self.feature_names = [v.name for v in active.features]
         self.dataset_name = active.name
         if active.year is not None:
@@ -349,12 +356,12 @@ class JNRBenchmarkModel(BaseRiskModel):
             ``model.defrate_files.get("calibration")`` for validation or
             ``model.defrate_files.get("historical")`` for forecast.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written vulnerability GeoTIFF.
         """
-        from spatialrisk.rmj import vulnerability_map, deforrate
+        from spatialrisk.rmj import deforrate, vulnerability_map
 
         if not self.dist_bins:
             raise RuntimeError("Model has not been fitted. Call fit() first.")

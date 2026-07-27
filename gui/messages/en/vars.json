@@ -38,6 +38,8 @@
       "predefined_year_label": "Year",
       "predefined_var_type_label": "Variable type",
       "predefined_raster_type_label": "Raster type",
+      "param_tree_cover_threshold": "Tree cover threshold (%)",
+      "param_tree_cover_threshold_hint": "Minimum canopy cover in 2000 counted as forest (1-100). It becomes part of the variable name, so several thresholds can coexist.",
       "custom_name_label": "Name",
       "custom_type_label": "Variable type",
       "custom_type_hint": "Local raster file = GeoTIFF on disk; Google Earth Engine asset = GEE asset; Local vector file = vector file, rasterized during harmonization.",
@@ -54,6 +56,7 @@
       "custom_rasterization_method_hint": "binary = 1 where a feature is present, 0 elsewhere; unique = one value per feature/class.",
       "error_no_predefined_selected": "Select a variable from the list.",
       "error_year_required": "Year is required for this variable.",
+      "error_param_range": "{label} must be a whole number between {min} and {max}.",
       "error_name_required": "Variable name is required."
     }
   }

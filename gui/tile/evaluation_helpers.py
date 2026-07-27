@@ -93,17 +93,29 @@ def map_items(project):
     """[{text: '<MODEL> — <period>', value: key}] for each registered prediction."""
     if project is None or not getattr(project, "predictions", None):
         return []
-    items = [{"text": f"{label_for(pred)} — {pred.dataset_name}", "value": key}
-             for key, pred in project.predictions.items()]
+    items = [
+        {"text": f"{label_for(pred)} — {pred.dataset_name}", "value": key}
+        for key, pred in project.predictions.items()
+    ]
     return sorted(items, key=lambda d: d["text"])
 
 
 def default_forest_key(project):
-    """Storage key of the 'forest_gfc' instance, or None."""
+    """Storage key of the first Hansen forest instance, or None.
+
+    Matches any variable whose name resolves to the ``forest_gfc`` catalogue
+    key — the bare legacy ``forest_gfc`` and the parameterised
+    ``forest_gfc_tc30`` alike, since the tree-cover threshold is baked into the
+    variable name. Returns the first match in insertion order.
+    """
+    # Imported inside the function to keep this module import-light (the
+    # catalogue pulls in earthengine-api at import time).
+    from gui.scripts.predefined_variables import resolve_predefined
+
     if project is None or not getattr(project, "processed_variables", None):
         return None
     for key, var in project.processed_variables.items():
-        if var.name == "forest_gfc":
+        if resolve_predefined(var.name)[0] == "forest_gfc":
             return key
     return None
 
@@ -152,8 +164,9 @@ def build_truth_spec(project, truth_key, forest_key, interval):
     }, None
 
 
-def build_evaluation_record(project, df, spec, resolved_keys, run_id,
-                            created_at, csizes=(300,), metrics=None):
+def build_evaluation_record(
+    project, df, spec, resolved_keys, run_id, created_at, csizes=(300,), metrics=None
+):
     """Build an EvaluationRecord from a result DataFrame and the run's truth spec.
 
     ``indices`` is materialized via ``df.to_json`` so values are JSON-native
@@ -210,8 +223,11 @@ def build_evaluation_record(project, df, spec, resolved_keys, run_id,
             "its artifacts are in the shared evaluation/<truth_tag>/ folder; "
             f"a record scoped to run_id={run_id!r} would point at a directory "
             "that was never written. Pass the same run_id to "
-            "evaluate_against_truth and to build_evaluation_record.")
-    csv_path = str(run_output_dir(project, truth_tag, actual_run_id) / "indices_all.csv")
+            "evaluate_against_truth and to build_evaluation_record."
+        )
+    csv_path = str(
+        run_output_dir(project, truth_tag, actual_run_id) / "indices_all.csv"
+    )
     artifacts = list(attrs.get("artifacts") or [])
     return EvaluationRecord(
         name=truth_tag,
@@ -303,7 +319,7 @@ def delete_evaluation_run(project, key):
     project.delete_evaluation(key, auto_save=False)
     try:
         project.save()
-    except Exception as exc:  # noqa: BLE001 - roll back; artifacts must survive
+    except Exception as exc:  # broad: roll back; artifacts must survive
         project.evaluations = snapshot
         return False, str(exc)
     delete_run_artifacts(project, record)

@@ -6,20 +6,25 @@ import uuid
 
 import reacton.ipyvuetify as rv
 import solara
-
 from pysepal.solara.notifications import use_notifications
 
-from gui.i18n import t, plural
-from gui.scripts.artifact_names import default_pred_name as _default_pred_name
+from gui.i18n import plural, t
+from gui.scripts import artifact_names as _artifact_names
 from gui.scripts.notify_bridge import tracked_job
-from gui.scripts.artifact_names import prediction_name_exists as _prediction_name_exists
-from gui.scripts.artifact_names import sanitize_key as _sanitize_pred_name
 from gui.scripts.product_rows import job_row_key
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
 from gui.widget.prediction_form_dialog import PredictionFormDialog
+
+# The naming helpers live in gui/scripts/artifact_names.py; they are re-exported
+# under this tile's historical private names because other modules (and
+# tests/test_inference_tile_wiring) still reach them through here. Bound as
+# assignments rather than aliased imports so the linter can see they are used.
+_default_pred_name = _artifact_names.default_pred_name
+_prediction_name_exists = _artifact_names.prediction_name_exists
+_sanitize_pred_name = _artifact_names.sanitize_key
 
 logger = logging.getLogger("spatial_risk")
 
@@ -46,15 +51,26 @@ def _run_inference(
     project_reactive=None,
     notifier=None,
     task_title=None,
+    forest_feature=None,
 ):
-    """Run model inference in a background thread."""
+    """Run model inference in a background thread.
+
+    ``forest_feature`` is the dataset feature an ML run masks with, as picked in
+    the Predict dialog; None or blank lets the runner resolve it.
+    """
     try:
         with tracked_job(notifier, task_title or f"Predicting: {model_key}"), writing(
             project.project_name
         ):
             from gui.scripts.inference_runner import run_inference
 
-            run_inference(project, model_key, dataset_key, name=name)
+            run_inference(
+                project,
+                model_key,
+                dataset_key,
+                name=name,
+                forest_feature=forest_feature,
+            )
 
             # Model.apply() registers and saves the prediction on ``project``,
             # but that mutation alone does not notify Solara subscribers. Publish
@@ -181,7 +197,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
-    def _launch_inference(model_key, dataset_key, name):
+    def _launch_inference(model_key, dataset_key, name, forest_feature=None):
         """Create the output job row and spawn the worker. Inputs pre-validated."""
         job_id = str(uuid.uuid4())[:8]
         job = {
@@ -205,6 +221,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 project,
                 notifications,
                 t("notifications.task_inference", model=model_key, dataset=dataset_key),
+                forest_feature,
             ),
         )
         logger.info(
@@ -219,7 +236,14 @@ def InferenceTile(project, map_=None, sepal_client=None):
         if entry["kind"] == "import":
             _launch_import(entry["name"], entry["path"], entry["palette"])
         else:
-            _launch_inference(entry["model_key"], entry["dataset_key"], entry["name"])
+            # forest_feature is absent for the JNR/MW families, which resolve
+            # their own layers rather than masking with a dataset feature.
+            _launch_inference(
+                entry["model_key"],
+                entry["dataset_key"],
+                entry["name"],
+                entry.get("forest_feature"),
+            )
 
     def _forget_on_map(row_key):
         remaining = set(preds_on_map.value)

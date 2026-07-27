@@ -20,11 +20,19 @@ from gui.widget.confirm_dialog import ConfirmDialog
 # Injected here so every creation form's `class_="advanced-params"` panel
 # looks identical.
 _ADVANCED_PANEL_CSS = """
-.advanced-params .v-expansion-panel { border: 1px solid rgba(0, 0, 0, .38); border-radius: 4px; }
-.theme--dark .advanced-params .v-expansion-panel { border-color: rgba(255, 255, 255, .24); }
+.advanced-params .v-expansion-panel {
+  border: 1px solid rgba(0, 0, 0, .38); border-radius: 4px;
+}
+.theme--dark .advanced-params .v-expansion-panel {
+  border-color: rgba(255, 255, 255, .24);
+}
 .advanced-params .v-expansion-panel::before { box-shadow: none; }
-.advanced-params .v-expansion-panel-header { min-height: 40px; padding: 0 12px; font-size: 14px; color: rgba(0, 0, 0, .6); }
-.theme--dark .advanced-params .v-expansion-panel-header { color: rgba(255, 255, 255, .7); }
+.advanced-params .v-expansion-panel-header {
+  min-height: 40px; padding: 0 12px; font-size: 14px; color: rgba(0, 0, 0, .6);
+}
+.theme--dark .advanced-params .v-expansion-panel-header {
+  color: rgba(255, 255, 255, .7);
+}
 .advanced-params .v-expansion-panel-content__wrap { padding: 16px 12px 4px; }
 
 /* A field's own help icon (`class_="field-info-icon"`). It has to be the
@@ -76,6 +84,8 @@ def CreationDialog(
 
     Args:
         open_: solara.Reactive[bool] — dialog visibility (owned by the tile).
+        title: dialog heading.
+        create_label: label for the submit button (e.g. "Register", "Save").
         validate: () -> error message | None; runs on Create click.
         will_replace: () -> existing storage key | None; runs after validate.
             A returned key opens the confirm-replace dialog instead of
@@ -83,8 +93,12 @@ def CreationDialog(
         launch: () -> None; performs the creation. The dialog closes and the
             caller's form resets (on_close) after it returns.
         on_close: reset callback fired on Cancel/ESC and after a launch.
+        replace_title: heading of the confirm-replace dialog; defaults to the
+            generic widgets.creation_dialog.replace_title copy.
         replace_message: key -> confirmation body; defaults to the generic
             widgets.creation_dialog.replace_message copy.
+        max_width: CSS max-width of the dialog card.
+        children: the caller's form fields, rendered in the card body.
     """
     error, set_error = solara.use_state(None)
     pending_replace, set_pending_replace = solara.use_state(None)
@@ -112,12 +126,25 @@ def CreationDialog(
             return
         do_launch()
 
-    with rv.Dialog(
+    # `persistent` takes the form out of the click-outside path. Without it a
+    # click meant to dismiss an open v-select menu closed the whole form: the
+    # menu renders detached, so Vuetify's overlay stack does not put it above
+    # the dialog here and both read the same click as their own. Vuetify's
+    # persistent "shake" would fire on exactly that click, so it is off too.
+    dialog = rv.Dialog(
         v_model=open_.value,
         on_v_model=lambda v: None if v else close(),
         max_width=max_width,
         eager=True,
-    ):
+        persistent=True,
+        no_click_animation=True,
+    )
+    # ESC back, which `persistent` otherwise disables: VDialog emits `keydown`
+    # regardless, and VSelect stops ESC propagating while its menu is open — so
+    # ESC closes an open dropdown first and the form only once none is open.
+    # rv.use_event is a hook — call it unconditionally.
+    rv.use_event(dialog, "keydown.esc", lambda *_: close())
+    with dialog:
         with rv.Card():
             with rv.CardTitle():
                 solara.Text(title)

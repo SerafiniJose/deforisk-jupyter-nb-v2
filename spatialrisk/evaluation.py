@@ -87,10 +87,12 @@ def pred_obs_axis_bounds(points):
     * constant series at 0   -> ``(0.0, 1.0)``
     * constant series at v   -> ``(v - |v|, v + |v|)``, i.e. ``(0, 2v)`` for v > 0
     """
-    values = np.concatenate([
-        pd.to_numeric(points[c], errors="coerce").to_numpy(dtype="float64")
-        for c in (_OBS_COL, _PRED_COL)
-    ])
+    values = np.concatenate(
+        [
+            pd.to_numeric(points[c], errors="coerce").to_numpy(dtype="float64")
+            for c in (_OBS_COL, _PRED_COL)
+        ]
+    )
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         return _FALLBACK_AXIS
@@ -195,16 +197,20 @@ class PredObsPlotData:
         English, PNG-formatted text: GUI consumers must build their own
         translated string via ``t(...)`` rather than reuse this.
         """
-        return (f"MedAE = {self.medae:.2f} ha\n"
-                f"R2 = {self.r2:.2f}\n"
-                f"n = {self.ncell:d}")
+        return (
+            f"MedAE = {self.medae:.2f} ha\n"
+            f"R2 = {self.r2:.2f}\n"
+            f"n = {self.ncell:d}"
+        )
 
     @property
     def x_label(self):
+        """Axis title for the observed-deforestation axis."""
         return PRED_OBS_X_LABEL
 
     @property
     def y_label(self):
+        """Axis title for the predicted-deforestation axis."""
         return PRED_OBS_Y_LABEL
 
     @property
@@ -258,11 +264,16 @@ def compute_validation(
 
     nsquare, nsquare_x, _, x, y, nx, ny = make_square(defor_file, csize_coarse_grid)
 
-    df = pd.DataFrame({
-        "cell": list(range(nsquare)),
-        "nfor_obs": 0, "ndefor_obs": 0,
-        "nfor_obs_ha": 0.0, "ndefor_obs_ha": 0.0, "ndefor_pred_ha": 0.0,
-    })
+    df = pd.DataFrame(
+        {
+            "cell": list(range(nsquare)),
+            "nfor_obs": 0,
+            "ndefor_obs": 0,
+            "nfor_obs_ha": 0.0,
+            "ndefor_obs_ha": 0.0,
+            "ndefor_pred_ha": 0.0,
+        }
+    )
 
     for s in range(nsquare):
         px, py = s % nsquare_x, s // nsquare_x
@@ -286,25 +297,35 @@ def compute_validation(
     df["ndefor_obs_ha"] = df["ndefor_obs"] * pix_area / 10000
 
     error_pred = df["ndefor_pred_ha"] - df["ndefor_obs_ha"]
-    squared_error = error_pred ** 2
+    squared_error = error_pred**2
     RMSE = round(float(np.sqrt(np.mean(squared_error))), 2)
     w = df["nfor_obs_ha"] / df["nfor_obs_ha"].sum()
     wRMSE = round(float(np.sqrt(np.sum(squared_error * w))), 2)
     MedAE = round(float(np.median(np.absolute(error_pred))), 2)
     r = np.corrcoef(df["ndefor_pred_ha"], df["ndefor_obs_ha"])[0, 1]
-    r_square = round(float(r ** 2), 2)
+    r_square = round(float(r**2), 2)
 
     indices = {
-        "RMSE": RMSE, "wRMSE": wRMSE, "MedAE": MedAE, "R2": r_square,
-        "ncell": ncell, "csize_coarse_grid": csize_coarse_grid,
+        "RMSE": RMSE,
+        "wRMSE": wRMSE,
+        "MedAE": MedAE,
+        "R2": r_square,
+        "ncell": ncell,
+        "csize_coarse_grid": csize_coarse_grid,
         "csize_coarse_grid_ha": csize_ha,
     }
     axis_min, axis_max = pred_obs_axis_bounds(df)
     plot_data = PredObsPlotData(
-        model=model_name, period=period,
-        csize_px=csize_coarse_grid, csize_ha=csize_ha,
-        points=df, axis_min=axis_min, axis_max=axis_max,
-        medae=MedAE, r2=r_square, ncell=ncell,
+        model=model_name,
+        period=period,
+        csize_px=csize_coarse_grid,
+        csize_ha=csize_ha,
+        points=df,
+        axis_min=axis_min,
+        axis_max=axis_max,
+        medae=MedAE,
+        r2=r_square,
+        ncell=ncell,
     )
     return ValidationResult(indices=indices, plot_data=plot_data)
 
@@ -337,7 +358,8 @@ def save_pred_obs_png(plot_data, output_path, *, figsize=(6.4, 6.4), dpi=100):
     producing a blank or NaN-scaled figure.
     """
     import matplotlib
-    matplotlib.use("Agg")   # worker-safe: must precede the pyplot import
+
+    matplotlib.use("Agg")  # worker-safe: must precede the pyplot import
     import matplotlib.pyplot as plt
 
     points = plot_data.finite_points
@@ -346,8 +368,9 @@ def save_pred_obs_png(plot_data, output_path, *, figsize=(6.4, 6.4), dpi=100):
     fig = plt.figure(figsize=figsize, dpi=dpi)
     ax = plt.subplot(111)
     ax.set_box_aspect(1)
-    plt.scatter(points[_OBS_COL], points[_PRED_COL],
-                color=None, marker="o", edgecolor="k")
+    plt.scatter(
+        points[_OBS_COL], points[_PRED_COL], color=None, marker="o", edgecolor="k"
+    )
     plt.plot(p, p, "r--")
     plt.title(plot_data.title)
     plt.xlabel(plot_data.x_label)
@@ -401,6 +424,7 @@ def validate_two_layer(
 def _defrate_per_cat(**kwargs):
     """Indirection over rmj.deforrate.defrate_per_cat (monkeypatchable seam)."""
     from spatialrisk import rmj
+
     return rmj.deforrate.defrate_per_cat(**kwargs)
 
 
@@ -408,13 +432,26 @@ def resolve_layers(project, pred):
     """Recover the two binary layers + time interval from the prediction's dataset."""
     ds = project.get_dataset(pred.dataset_name)
     if ds is None:
-        raise ValueError(
-            f"Dataset '{pred.dataset_name}' not found in project."
-        )
-    forest = next((f for f in ds.features if f.name == FOREST_VAR), None)
+        raise ValueError(f"Dataset '{pred.dataset_name}' not found in project.")
+    # Hansen layers created in the GUI carry their parameters in the variable
+    # name ("forest_gfc_tc30" for a 30% tree-cover threshold), so an exact match
+    # misses every layer added since that feature shipped. The resolver that
+    # parses those names lives in gui/, and this package must never import gui/
+    # (see the note on PRED_OBS_X_LABEL above), so match the prefix instead.
+    # First match wins, as before: picking among several forest layers is a GUI
+    # concern (the Predict dialog asks the user); this path stays automatic.
+    forest = next(
+        (
+            f
+            for f in ds.features
+            if f.name == FOREST_VAR or f.name.startswith(f"{FOREST_VAR}_")
+        ),
+        None,
+    )
     if forest is None:
         raise ValueError(
-            f"Feature '{FOREST_VAR}' not in dataset '{ds.name}'. "
+            f"Feature '{FOREST_VAR}' (optionally parameter-suffixed, e.g. "
+            f"'{FOREST_VAR}_tc30') not in dataset '{ds.name}'. "
             f"Available: {[f.name for f in ds.features]}"
         )
     return {
@@ -465,11 +502,19 @@ def evaluate_prediction(project, pred, csizes=(300,), recompute_defrate=True):
             model_name=label,
             period=period,
         )
-        idx.update({"prediction": pred.storage_key() if hasattr(pred, "storage_key")
-                    else f"{pred.model_key}__{period}",
-                    "model": label, "period": period, "fig_path": str(fig_path)})
-        pred.metrics[f"{period}_{csize}"] = {k: idx[k] for k in
-                                             ("RMSE", "wRMSE", "MedAE", "R2", "ncell")}
+        idx.update(
+            {
+                "prediction": pred.storage_key()
+                if hasattr(pred, "storage_key")
+                else f"{pred.model_key}__{period}",
+                "model": label,
+                "period": period,
+                "fig_path": str(fig_path),
+            }
+        )
+        pred.metrics[f"{period}_{csize}"] = {
+            k: idx[k] for k in ("RMSE", "wRMSE", "MedAE", "R2", "ncell")
+        }
         rows.append(idx)
     return rows
 
@@ -484,10 +529,16 @@ def _validate_run_component(value, name):
     containment guard in ``gui/tile/evaluation_helpers.delete_run_artifacts``.
     """
     text = str(value)
-    if (not text or text in (".", "..") or "/" in text or "\\" in text
-            or Path(text).is_absolute()):
+    if (
+        not text
+        or text in (".", "..")
+        or "/" in text
+        or "\\" in text
+        or Path(text).is_absolute()
+    ):
         raise ValueError(
-            f"{name} must be a plain identifier, got the path-like {value!r}")
+            f"{name} must be a plain identifier, got the path-like {value!r}"
+        )
     return text
 
 
@@ -513,7 +564,8 @@ def run_output_dir(project, truth_tag, run_id=None):
     if resolved_root not in resolved.parents:
         raise ValueError(
             f"evaluation output {resolved} escapes the project's "
-            f"evaluation folder {resolved_root}")
+            f"evaluation folder {resolved_root}"
+        )
     return out_dir
 
 
@@ -556,9 +608,18 @@ def _publish_legacy_copy(src, dst):
     return dst
 
 
-def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
-                                time_interval, truth_tag, csizes=(300,),
-                                recompute_defrate=True, run_id=None):
+def _evaluate_one_against_truth(
+    project,
+    pred,
+    *,
+    defor_file,
+    forest_file,
+    time_interval,
+    truth_tag,
+    csizes=(300,),
+    recompute_defrate=True,
+    run_id=None,
+):
     """Defrate + validate ONE prediction against an explicit shared truth.
 
     Mirrors evaluate_prediction but takes the truth (defor + forest + interval)
@@ -595,10 +656,14 @@ def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
             tab_file_defrate=defrate_csv,
             verbose=False,
         )
-        _publish_legacy_copy(defrate_csv, shared_defrate)   # shim — cache write, NOT pure, see banner
+        _publish_legacy_copy(
+            defrate_csv, shared_defrate
+        )  # shim — cache write, NOT pure, see banner
     else:
         # Cache hit: mirror it into the run folder so the run is self-contained.
-        _publish_legacy_copy(shared_defrate, defrate_csv)   # shim — cache mirror, NOT pure, see banner
+        _publish_legacy_copy(
+            shared_defrate, defrate_csv
+        )  # shim — cache mirror, NOT pure, see banner
 
     rows = []
     for csize in csizes:
@@ -618,30 +683,50 @@ def _evaluate_one_against_truth(project, pred, *, defor_file, forest_file,
             model_name=label,
             period=period,
         )
-        for src in (points_csv, indices_csv, fig_path):     # shim
+        for src in (points_csv, indices_csv, fig_path):  # shim
             _publish_legacy_copy(src, truth_dir / src.name)
 
-        prediction_key = (pred.storage_key() if hasattr(pred, "storage_key")
-                          else f"{pred.model_key}__{period}")
-        idx.update({"prediction": prediction_key,
-                    "model": label, "period": period, "truth": truth_tag,
-                    "fig_path": str(fig_path)})
+        prediction_key = (
+            pred.storage_key()
+            if hasattr(pred, "storage_key")
+            else f"{pred.model_key}__{period}"
+        )
+        idx.update(
+            {
+                "prediction": prediction_key,
+                "model": label,
+                "period": period,
+                "truth": truth_tag,
+                "fig_path": str(fig_path),
+            }
+        )
         if run_id is not None:
             # Only run-scoped paths are recorded: a shared path is not stable
             # enough to promise a saved record its own data.
             idx["artifact"] = EvaluationPlotArtifact(
-                prediction_key=prediction_key, model=label, period=period,
-                csize_px=int(csize), points_csv=str(points_csv),
-                png_path=str(fig_path))
-        pred.metrics[f"{truth_tag}__{period}_{csize}"] = {k: idx[k] for k in
-                                                          ("RMSE", "wRMSE", "MedAE", "R2", "ncell")}
+                prediction_key=prediction_key,
+                model=label,
+                period=period,
+                csize_px=int(csize),
+                points_csv=str(points_csv),
+                png_path=str(fig_path),
+            )
+        pred.metrics[f"{truth_tag}__{period}_{csize}"] = {
+            k: idx[k] for k in ("RMSE", "wRMSE", "MedAE", "R2", "ncell")
+        }
         rows.append(idx)
     return rows
 
 
-def evaluate_predictions(project, dataset_filter=None, model_filter=None,
-                         windows=None, csizes=(300,), recompute_defrate=True,
-                         auto_save=True):
+def evaluate_predictions(
+    project,
+    dataset_filter=None,
+    model_filter=None,
+    windows=None,
+    csizes=(300,),
+    recompute_defrate=True,
+    auto_save=True,
+):
     """Select predictions from the project, evaluate each, return aggregated indices.
 
     Skips (with a printed warning) any prediction whose layers cannot be resolved,
@@ -653,23 +738,44 @@ def evaluate_predictions(project, dataset_filter=None, model_filter=None,
             continue
         if model_filter and pred.model_key not in model_filter:
             continue
-        if windows is not None and pred.window is not None and pred.window not in windows:
+        if (
+            windows is not None
+            and pred.window is not None
+            and pred.window not in windows
+        ):
             continue
         selected[key] = pred
 
     rows = []
     for key, pred in selected.items():
         try:
-            rows.extend(evaluate_prediction(project, pred, csizes=csizes,
-                                            recompute_defrate=recompute_defrate))
-        except Exception as exc:  # noqa: BLE001 - skip-and-warn is intentional
+            rows.extend(
+                evaluate_prediction(
+                    project, pred, csizes=csizes, recompute_defrate=recompute_defrate
+                )
+            )
+        except Exception as exc:  # broad: skip-and-warn is intentional
             print(f"⚠ skipped {key}: {exc}")
 
-    cols = ["prediction", "model", "period", "csize_coarse_grid",
-            "csize_coarse_grid_ha", "ncell", "MedAE", "R2", "RMSE", "wRMSE"]
-    df = (pd.DataFrame(rows, columns=cols).sort_values(
-        ["csize_coarse_grid", "period", "model"]).reset_index(drop=True)
-        if rows else pd.DataFrame(columns=cols))
+    cols = [
+        "prediction",
+        "model",
+        "period",
+        "csize_coarse_grid",
+        "csize_coarse_grid_ha",
+        "ncell",
+        "MedAE",
+        "R2",
+        "RMSE",
+        "wRMSE",
+    ]
+    df = (
+        pd.DataFrame(rows, columns=cols)
+        .sort_values(["csize_coarse_grid", "period", "model"])
+        .reset_index(drop=True)
+        if rows
+        else pd.DataFrame(columns=cols)
+    )
 
     evaluation_folder = Path(project.folders.project_folder) / "evaluation"
     evaluation_folder.mkdir(parents=True, exist_ok=True)
@@ -678,15 +784,24 @@ def evaluate_predictions(project, dataset_filter=None, model_filter=None,
     if auto_save and rows:
         try:
             project.save()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # broad: a failed save must not lose results
             print(f"⚠ project.save() after evaluation failed: {exc}")
     return df
 
 
-def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
-                           forest_file, time_interval, truth_tag,
-                           csizes=(300,), recompute_defrate=True, auto_save=True,
-                           run_id=None):
+def evaluate_against_truth(
+    project,
+    prediction_keys=None,
+    *,
+    defor_file,
+    forest_file,
+    time_interval,
+    truth_tag,
+    csizes=(300,),
+    recompute_defrate=True,
+    auto_save=True,
+    run_id=None,
+):
     """Score selected maps against ONE common truth.
 
     Unlike evaluate_predictions (which derives each map's truth from its own
@@ -717,23 +832,46 @@ def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
     rows = []
     for key, pred in selected.items():
         try:
-            rows.extend(_evaluate_one_against_truth(
-                project, pred, defor_file=defor_file, forest_file=forest_file,
-                time_interval=time_interval, truth_tag=truth_tag,
-                csizes=csizes, recompute_defrate=recompute_defrate,
-                run_id=run_id))
-        except Exception as exc:  # noqa: BLE001 - skip-and-warn is intentional
+            rows.extend(
+                _evaluate_one_against_truth(
+                    project,
+                    pred,
+                    defor_file=defor_file,
+                    forest_file=forest_file,
+                    time_interval=time_interval,
+                    truth_tag=truth_tag,
+                    csizes=csizes,
+                    recompute_defrate=recompute_defrate,
+                    run_id=run_id,
+                )
+            )
+        except Exception as exc:  # broad: skip-and-warn is intentional
             print(f"⚠ skipped {key}: {exc}")
 
     # Harvest the per-row artifact objects before they are dropped by the
     # explicit column list below; they travel on df.attrs, not as a column.
     artifacts = [r.pop("artifact") for r in rows if r.get("artifact") is not None]
 
-    cols = ["prediction", "model", "period", "truth", "csize_coarse_grid",
-            "csize_coarse_grid_ha", "ncell", "MedAE", "R2", "RMSE", "wRMSE"]
-    df = (pd.DataFrame(rows, columns=cols).sort_values(
-        ["csize_coarse_grid", "period", "model"]).reset_index(drop=True)
-        if rows else pd.DataFrame(columns=cols))
+    cols = [
+        "prediction",
+        "model",
+        "period",
+        "truth",
+        "csize_coarse_grid",
+        "csize_coarse_grid_ha",
+        "ncell",
+        "MedAE",
+        "R2",
+        "RMSE",
+        "wRMSE",
+    ]
+    df = (
+        pd.DataFrame(rows, columns=cols)
+        .sort_values(["csize_coarse_grid", "period", "model"])
+        .reset_index(drop=True)
+        if rows
+        else pd.DataFrame(columns=cols)
+    )
     df.attrs["artifacts"] = artifacts
     df.attrs["run_id"] = run_id
 
@@ -748,6 +886,6 @@ def evaluate_against_truth(project, prediction_keys=None, *, defor_file,
     if auto_save and rows:
         try:
             project.save()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # broad: a failed save must not lose results
             print(f"⚠ project.save() after evaluation failed: {exc}")
     return df

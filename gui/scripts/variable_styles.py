@@ -7,6 +7,8 @@ is applied while the layer is still GEE-backed (see ``_styled_layer`` in
 local GeoTIFF (``GEEVar.to_local_raster`` -> ``LocalRasterVar``) the GEE image is
 gone, but the variable's ``name`` is preserved — so the same catalogue entry is
 still reachable.
+Names carrying a parameter suffix (``forest_gfc_tc30``) are mapped back to their
+catalogue key by ``resolve_predefined``.
 
 This module rebuilds that catalogue look as a matplotlib ``Colormap`` + value
 range so the local raster renders with the *same* colours it had as a GEE layer,
@@ -63,7 +65,10 @@ def resolve_variable_style(var) -> dict:
       [0, 1]; continuous -> grayscale auto-stretched.
     """
     from gui.scripts.postprocess_styles import resolve_postprocess_style
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui.scripts.predefined_variables import (
+        PREDEFINED_CATALOGUE,
+        resolve_predefined,
+    )
 
     # Post-process outputs (edge/dist/loss/gain) first: they are renamed because they
     # measure a *new* quantity, so a parent's catalogue palette would be meaningless
@@ -73,12 +78,19 @@ def resolve_variable_style(var) -> dict:
         return postprocess
 
     name = getattr(var, "name", "") or ""
-    cat = PREDEFINED_CATALOGUE.get(name)
+    # Parameterised layers are named <key>_<suffix> (forest_gfc_tc30) — resolve
+    # back to the catalogue key so they keep the palette they had as GEE layers.
+    cat_key, _params = resolve_predefined(name)
+    cat = PREDEFINED_CATALOGUE.get(cat_key) if cat_key else None
     if cat:
         if cat.get("random_visualizer"):
             # Many arbitrary class values -> qualitative ramp (approximation of
             # GEE's per-class randomVisualizer, which has no local equivalent).
-            return {"colormap": matplotlib.colormaps["tab20"], "vmin": None, "vmax": None}
+            return {
+                "colormap": matplotlib.colormaps["tab20"],
+                "vmin": None,
+                "vmax": None,
+            }
         vis = cat.get("vis_params")
         if vis and vis.get("palette"):
             return {

@@ -4,11 +4,7 @@ import asyncio
 import logging
 
 import ee
-import reacton.ipyvuetify as rv
 import solara
-
-logger = logging.getLogger("spatial_risk")
-
 from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
@@ -22,10 +18,16 @@ from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
 from gui.widget.variable_list import SourceVariableList
 from gui.widget.variable_modal import VariableModal
-from spatialrisk.project import Project
+
+# Unused directly, but required in scope: pydantic v2's model_rebuild() below
+# resolves the Optional["Project"] forward reference using this module's
+# namespace, so removing the import would break model construction.
+from spatialrisk.project import Project  # noqa: F401
 from spatialrisk.variables.gee_var import GEEVar
 from spatialrisk.variables.local_raster_var import LocalRasterVar
 from spatialrisk.variables.local_vector_var import LocalVectorVar
+
+logger = logging.getLogger("spatial_risk")
 
 LocalRasterVar.model_rebuild()
 GEEVar.model_rebuild()
@@ -73,7 +75,7 @@ def _minmax(image, var, gee_interface):
 def _grayscale_vis(image, var, gee_interface):
     """Grayscale palette stretched to the image's min/max over its AOI.
 
-    Falls back to a bare grayscale palette (GEE's default 0–1 stretch) if the
+    Falls back to a bare grayscale palette (GEE's default 0-1 stretch) if the
     min/max can't be computed.
     """
     vis = {"palette": ["000000", "ffffff"]}
@@ -97,9 +99,15 @@ def _styled_layer(image, var, gee_interface):
     Returns (image_to_add, vis_params). Synchronous — any GEE stretch it computes
     goes through the blocking interface, so call it from a worker thread.
     """
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui.scripts.predefined_variables import (
+        PREDEFINED_CATALOGUE,
+        resolve_predefined,
+    )
 
-    cat = PREDEFINED_CATALOGUE.get(getattr(var, "name", "") or "")
+    # The name may carry a param suffix (forest_gfc_tc30), so resolve it back to
+    # the catalogue key rather than looking the raw name up.
+    cat_key, _params = resolve_predefined(getattr(var, "name", "") or "")
+    cat = PREDEFINED_CATALOGUE.get(cat_key) if cat_key else None
     if cat:
         if cat.get("random_visualizer"):
             return image.randomVisualizer(), {}
@@ -137,7 +145,7 @@ def _add_gee_layer(map_, image, var, name: str, layer_key: str):
 
 def _variable_to_entry(key: str, var, project) -> dict:
     """Reconstruct a modal entry dict from an existing variable object."""
-    from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+    from gui.scripts.predefined_variables import resolve_predefined
 
     vtype = type(var).__name__
 
@@ -145,13 +153,17 @@ def _variable_to_entry(key: str, var, project) -> dict:
     # local path / asset id — they are rebuilt from the catalogue by key. Round-
     # trip them as a predefined entry so editing re-fetches the image instead of
     # dropping gee_images and stringifying path=None into the literal "None"
-    # (which then fails GEEVar validation on save).
-    if vtype == "GEEVar" and not var.path and var.name in PREDEFINED_CATALOGUE:
+    # (which then fails GEEVar validation on save). The name may carry a
+    # parameter suffix (forest_gfc_tc30); resolve_predefined splits it back into
+    # the catalogue key plus the values, which prefill the modal's param fields.
+    cat_key, cat_params = resolve_predefined(var.name)
+    if vtype == "GEEVar" and not var.path and cat_key is not None:
         return {
             "source": "predefined",
             "type": "GEEVar",
             "name": var.name,
-            "predefined_key": var.name,
+            "predefined_key": cat_key,
+            "params": cat_params,
             "year": str(var.year) if var.year else "",
         }
 
@@ -243,7 +255,9 @@ def _build_predefined(entry: dict, project):
 
     aoi_ee = resolve_aoi_ee(aoi_result)
     year = entry.get("year")
-    image = cat["get_image"](aoi_ee, year)
+    # Declared params (e.g. forest_gfc's tree_cover_threshold) travel as kwargs;
+    # entries for unparameterised layers carry none and call through unchanged.
+    image = cat["get_image"](aoi_ee, year, **entry.get("params") or {})
 
     return GEEVar(
         name=entry["name"],
@@ -274,6 +288,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         project: Reactive holding the current Project (or None).
         process_error: Reactive str | None — error from last processing action.
         map_: SepalMap instance used by the per-variable "show on map" toggle.
+        sepal_client: SEPAL client passed through to the Add Variable modal.
     """
     modal_open = solara.use_reactive(False)
     editing_key, set_editing_key = solara.use_state(None)

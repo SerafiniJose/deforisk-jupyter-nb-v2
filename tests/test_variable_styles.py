@@ -1,6 +1,9 @@
-"""Local-raster variable styling: a downloaded variable keeps the palette it had
-as a GEE layer (sourced from PREDEFINED_CATALOGUE by name), rather than the old
-hardcoded grayscale. Mirrors the GEE-side selection in ``_styled_layer``."""
+"""Local-raster variable styling.
+
+A downloaded variable keeps the palette it had as a GEE layer (sourced from
+PREDEFINED_CATALOGUE by name), rather than the old hardcoded grayscale.
+Mirrors the GEE-side selection in ``_styled_layer``.
+"""
 
 from matplotlib.colors import Colormap
 
@@ -15,7 +18,7 @@ def _local_raster(var_name, raster_type):
 
 
 def test_predefined_continuous_pins_catalogue_range():
-    """slope keeps its green->red ramp pinned to the catalogue min/max (0..60)."""
+    """Slope keeps its green->red ramp pinned to the catalogue min/max (0..60)."""
     style = resolve_variable_style(_local_raster("slope", "continuous"))
 
     assert isinstance(style["colormap"], Colormap)  # localtileserver needs the object
@@ -26,7 +29,7 @@ def test_predefined_continuous_pins_catalogue_range():
 
 
 def test_predefined_continuous_without_range_auto_stretches():
-    """altitude carries a palette but no min/max -> auto-stretch (vmin/vmax None)."""
+    """Altitude carries a palette but no min/max -> auto-stretch (vmin/vmax None)."""
     style = resolve_variable_style(_local_raster("altitude", "continuous"))
 
     assert style["vmin"] is None and style["vmax"] is None
@@ -45,8 +48,11 @@ def test_predefined_binary_uses_catalogue_palette_pinned_0_1():
 
 
 def test_non_catalogue_categorical_falls_back_to_black_white():
-    """A custom (non-catalogue) categorical raster -> 0=black, 1=white, pinned [0,1]
-    — matching ``_styled_layer``'s default, not a colourful catalogue palette."""
+    """A custom (non-catalogue) categorical raster.
+
+    Falls back to 0=black, 1=white, pinned [0,1] — matching ``_styled_layer``'s
+    default, not a colourful catalogue palette.
+    """
     style = resolve_variable_style(_local_raster("my_custom_mask", "categorical"))
 
     assert style["vmin"] == 0 and style["vmax"] == 1
@@ -64,8 +70,10 @@ def test_non_catalogue_continuous_falls_back_to_grayscale():
 
 
 def test_subj_random_visualizer_uses_qualitative_colormap():
-    """subj (random_visualizer) has no local per-class equivalent -> a qualitative
-    colormap, auto-stretched (never grayscale)."""
+    """Subj (random_visualizer) has no local per-class equivalent.
+
+    So it gets a qualitative colormap, auto-stretched (never grayscale).
+    """
     style = resolve_variable_style(_local_raster("subj", "categorical"))
 
     assert style["vmin"] is None and style["vmax"] is None
@@ -88,8 +96,11 @@ def _postprocess_raster(var_name, raster_type, tags=None, history=None):
 
 
 def test_postprocess_distance_wins_over_the_grayscale_fallback():
-    """An `edge` output is continuous and not in the catalogue — it used to land on
-    grayscale. It now gets the dist_edge.qml ramp, pinned to 30..1000 m."""
+    """An `edge` output is continuous and not in the catalogue.
+
+    It used to land on grayscale. It now gets the dist_edge.qml ramp, pinned
+    to 30..1000 m.
+    """
     style = resolve_variable_style(
         _postprocess_raster("forest_gfc_edge", "continuous", history=["edge"])
     )
@@ -100,6 +111,7 @@ def test_postprocess_distance_wins_over_the_grayscale_fallback():
 
 
 def test_postprocess_dist_gets_the_same_distance_ramp():
+    """A `dist` output gets the same distance ramp as `edge`."""
     style = resolve_variable_style(
         _postprocess_raster("roads_dist", "continuous", history=["dist"])
     )
@@ -109,8 +121,11 @@ def test_postprocess_dist_gets_the_same_distance_ramp():
 
 
 def test_postprocess_loss_wins_over_the_black_white_fallback():
-    """A change mask is categorical and not in the catalogue — it used to land on
-    black(0)/white(1). The event (1) is now red over an opaque grey stable class."""
+    """A change mask is categorical and not in the catalogue.
+
+    It used to land on black(0)/white(1). The event (1) is now red over an
+    opaque grey stable class.
+    """
     style = resolve_variable_style(
         _postprocess_raster(
             "loss_forest_2015_2020", "categorical", tags=["loss", "change", "2015_2020"]
@@ -123,6 +138,7 @@ def test_postprocess_loss_wins_over_the_black_white_fallback():
 
 
 def test_postprocess_gain_paints_the_event_green():
+    """A `gain` output paints the event (1) green instead of white."""
     style = resolve_variable_style(
         _postprocess_raster(
             "gain_forest_2015_2020", "categorical", tags=["gain", "change", "2015_2020"]
@@ -135,14 +151,40 @@ def test_postprocess_gain_paints_the_event_green():
 
 def test_legacy_postprocess_variable_classified_by_name_alone():
     """Variables saved before tags/processing_history existed still get the ramp."""
-    style = resolve_variable_style(_postprocess_raster("loss_forest_2000_2010", "categorical"))
+    style = resolve_variable_style(
+        _postprocess_raster("loss_forest_2000_2010", "categorical")
+    )
 
     assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (227, 26, 28)
 
 
 def test_catalogue_variable_is_unaffected_by_the_postprocess_branch():
-    """slope still resolves through PREDEFINED_CATALOGUE, exactly as before."""
+    """Slope still resolves through PREDEFINED_CATALOGUE, exactly as before."""
     style = resolve_variable_style(_postprocess_raster("slope", "continuous"))
 
     assert style["vmin"] == 0 and style["vmax"] == 60
     assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (26, 152, 80)
+
+
+def test_parameterised_predefined_keeps_catalogue_palette():
+    """forest_gfc_tc30 must render with the forest palette.
+
+    Not the grayscale / black-white fallback — its name carries a param
+    suffix, so a bare PREDEFINED_CATALOGUE lookup misses it.
+    """
+    style = resolve_variable_style(_local_raster("forest_gfc_tc30", "categorical"))
+
+    assert style["vmin"] == 0 and style["vmax"] == 1
+    # catalogue palette: white background -> #2e7d32 forest green
+    assert tuple(round(x * 255) for x in style["colormap"](0.0)[:3]) == (255, 255, 255)
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (46, 125, 50)
+
+
+def test_unparameterised_forest_gfc_still_resolves():
+    """Variables created before the threshold feature are named plain 'forest_gfc'.
+
+    They must keep their palette.
+    """
+    style = resolve_variable_style(_local_raster("forest_gfc", "categorical"))
+
+    assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (46, 125, 50)
