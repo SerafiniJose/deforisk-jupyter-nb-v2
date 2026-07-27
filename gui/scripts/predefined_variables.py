@@ -245,6 +245,14 @@ PREDEFINED_CATALOGUE = {
         # ``suffix_prefix`` makes the value part of the variable name
         # (forest_gfc_tc30) so two forest definitions coexist as separate
         # variables — see ``build_predefined_name`` / ``resolve_predefined``.
+        #
+        # CONSTRAINT: a suffix value must never reach four digits. Downstream
+        # name parsing pulls years out of variable names with
+        # ``re.findall(r"\d{4}")`` (spatialrisk.evaluation.interval_from_target),
+        # so four consecutive digits in a parameter suffix would be read as a
+        # year and corrupt the derived change-layer interval. ``max`` below
+        # keeps every value at three digits or fewer; keep it that way for any
+        # param added here.
         "params": [
             {
                 "key": "tree_cover_threshold",
@@ -369,6 +377,13 @@ def resolve_predefined(name):
     custom variables and post-process outputs — so they keep falling through to
     their own defaults. Use this instead of ``PREDEFINED_CATALOGUE.get(name)``
     anywhere a *variable* name (rather than a catalogue key) is looked up.
+
+    The inverse property holds for every name ``build_predefined_name``
+    produces; it is not injective over arbitrary strings, because a
+    non-canonical zero-padded suffix parses to the same values as its canonical
+    form (``forest_gfc_tc030`` -> the same params as ``forest_gfc_tc30``). No
+    such name is reachable through the UI: values are coerced to ``int`` before
+    the name is built, so only the canonical form is ever emitted.
     """
     import re
 

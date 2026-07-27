@@ -27,9 +27,13 @@ Features are looked up by exact name in the Dataset.  Defaults are
 
     mw = MWModel(
         name="calibration",
-        forest_edge_var="forest_gfc_edge",
-        forest_var="forest_gfc",
+        forest_edge_var="forest_gfc_tc30_edge",
+        forest_var="forest_gfc_tc30",
     )
+
+Variables created through the GUI carry their parameters in the name — a
+Hansen layer at a 30% tree-cover threshold is ``forest_gfc_tc30`` — so use
+the name as it appears in ``dataset.features``.
 """
 
 from pathlib import Path

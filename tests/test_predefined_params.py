@@ -115,6 +115,32 @@ def test_roundtrip_is_exact():
         )
 
 
+def test_suffix_values_can_never_reach_four_digits():
+    """Guard: a four-digit suffix would be parsed as a year downstream.
+
+    ``spatialrisk.evaluation.interval_from_target`` pulls years out of a name
+    with a four-consecutive-digits regex, so a param whose value could reach
+    four digits would corrupt derived change-layer intervals. Every declared
+    param's ``max`` must therefore stay below 1000.
+    """
+    for key in PREDEFINED_CATALOGUE:
+        for spec in param_specs(key):
+            assert spec["max"] < 1000, f"{key}.{spec['key']} allows a 4-digit suffix"
+
+
+def test_resolve_is_not_injective_over_non_canonical_suffixes():
+    """Documented limit of the inverse property (see resolve_predefined).
+
+    The inverse holds for every name ``build_predefined_name`` emits. It is not
+    injective over arbitrary strings: a zero-padded suffix parses to the same
+    values. Unreachable from the UI, where values are coerced to ``int`` before
+    the name is built — pinned here so the docstring stays honest.
+    """
+    canonical = build_predefined_name("forest_gfc", {"tree_cover_threshold": 30})
+    assert canonical == "forest_gfc_tc30"
+    assert resolve_predefined("forest_gfc_tc030") == resolve_predefined(canonical)
+
+
 def test_coerce_accepts_valid_form_text():
     """Form fields hand back strings; the entry must carry real ints."""
     values, bad = coerce_param_values("forest_gfc", {"tree_cover_threshold": "30"})

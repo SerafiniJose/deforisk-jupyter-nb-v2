@@ -403,8 +403,17 @@ def _render_predefined_fields(
             pkey = spec["key"]
             rv.TextField(
                 label=t(spec["label_key"]),
-                v_model=str(params_raw.get(pkey, spec["default"])),
-                on_v_model=lambda v, k=pkey: set_params_raw({**params_raw, k: v}),
+                # No catalogue-default fallback: the field must show exactly
+                # what will be submitted. coerce_param_values reads params_raw
+                # directly, so displaying a default the state does not hold
+                # would show a valid number while submit rejected it as blank.
+                # Seeding with the defaults is the job of on_select_predefined.
+                v_model=str(params_raw.get(pkey, "")),
+                # Functional update: two params edited in quick succession must
+                # each build on the latest state, not on this render's snapshot.
+                on_v_model=lambda v, k=pkey: set_params_raw(
+                    lambda prev: {**prev, k: v}
+                ),
                 dense=True,
                 outlined=True,
                 type="number",
