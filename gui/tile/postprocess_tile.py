@@ -21,9 +21,10 @@ logger = logging.getLogger("spatial_risk")
 
 @solara.component
 def PostProcessTile(project, process_error, map_=None):
-    """Derived layers: change detection (loss/gain) + edge/dist on harmonized variables."""
+    """Derived layers: change detection (loss/gain) + edge/dist on harmonized vars."""
     dialog_open = solara.use_reactive(False)
     pending_change = solara.use_reactive(None)
+    pending_post = solara.use_reactive(None)
     on_toggle_map = use_derived_map_toggle(project, map_, process_error)
     pending_remove, set_pending_remove = solara.use_state(None)
     notifications = use_notifications()
@@ -61,27 +62,44 @@ def PostProcessTile(project, process_error, map_=None):
                 return
             publish_if_current(project, p)
 
+    @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
+    async def post_task():
+        entry = pending_post.value
+        if p is None or entry is None:
+            return
+        process_error.set(None)
+        title = t(
+            "notifications.task_postprocess",
+            step=entry["op"],
+            name=entry["pp_key"],
+        )
+
+        def _tracked_post():
+            with tracked_job(notifications, title):
+                process_actions.apply_post_processing(p, entry["pp_key"], entry["op"])
+
+        with writing(p.project_name):
+            try:
+                await to_thread_in_context(_tracked_post)
+            except Exception as exc:
+                logger.exception("post-processing failed")
+                process_error.set(t("tiles.postprocess.error_post_processing", exc=exc))
+                return
+            publish_if_current(project, p)
+
     def on_submit(entry):
-        """Dialog-validated entry -> background change task or sync edge/dist."""
+        """Dialog-validated entry -> background change or edge/dist task.
+
+        Neither op may run inline: solara executes widget callbacks inside the
+        session's websocket message loop, so a GDAL proximity pass over a large
+        AOI would freeze the whole UI until it returned.
+        """
         if entry["op"] in CHANGE_OPS:
             pending_change.set(entry)
             change_task()
             return
-        try:
-            # Sync path (edge/dist) — the event-handler thread carries a kernel
-            # context, so tracking works inline without a worker.
-            with tracked_job(
-                notifications,
-                t(
-                    "notifications.task_postprocess",
-                    step=entry["op"],
-                    name=entry["pp_key"],
-                ),
-            ):
-                process_actions.apply_post_processing(p, entry["pp_key"], entry["op"])
-            project.set(p.model_copy())
-        except Exception as exc:
-            process_error.set(t("tiles.postprocess.error_post_processing", exc=exc))
+        pending_post.set(entry)
+        post_task()
 
     with solara.Column(style="gap:16px;"):
         with solara.Row(style="gap:4px;align-items:center;"):
@@ -101,7 +119,7 @@ def PostProcessTile(project, process_error, map_=None):
             block=True,
             on_click=lambda: dialog_open.set(True),
         )
-        if change_task.pending:
+        if change_task.pending or post_task.pending:
             solara.ProgressLinear(True)
 
         DerivedVariableList(

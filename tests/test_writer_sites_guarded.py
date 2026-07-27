@@ -16,6 +16,7 @@ TASK_TILES = [
     ("gui/tile/variables_tile.py", "download_task"),
     ("gui/tile/process_tile.py", "process_task"),
     ("gui/tile/postprocess_tile.py", "change_task"),
+    ("gui/tile/postprocess_tile.py", "post_task"),
 ]
 
 
@@ -35,23 +36,40 @@ def _task_body(src: str, name: str) -> str:
 
 
 def test_thread_workers_do_not_publish_the_project_directly():
+    """Every spawn_in_context worker writes back through the guard."""
     from gui.tile.evaluation_tile import _run_evaluation
     from gui.tile.inference_tile import _run_import, _run_inference
     from gui.tile.sampling_tile import _run_sampling
     from gui.tile.train_tile import _run_training
 
-    for fn in (_run_sampling, _run_training, _run_import, _run_inference,
-               _run_evaluation):
+    for fn in (
+        _run_sampling,
+        _run_training,
+        _run_import,
+        _run_inference,
+        _run_evaluation,
+    ):
         src = inspect.getsource(fn)
-        assert "publish_if_current(" in src, f"{fn.__name__} publishes without the guard"
-        assert "project_reactive.set(" not in src, f"{fn.__name__} still publishes directly"
+        assert (
+            "publish_if_current(" in src
+        ), f"{fn.__name__} publishes without the guard"
+        assert (
+            "project_reactive.set(" not in src
+        ), f"{fn.__name__} still publishes directly"
         assert "project.set(" not in src, f"{fn.__name__} still publishes directly"
-        assert "writing(" in src, f"{fn.__name__} does not mark the project as being written"
+        assert (
+            "writing(" in src
+        ), f"{fn.__name__} does not mark the project as being written"
 
 
 def test_use_task_tiles_do_not_publish_the_project_directly():
+    """Every use_task tile writes back through the guard."""
     for rel, task in TASK_TILES:
         body = _task_body((ROOT / rel).read_text(), task)
-        assert "publish_if_current(" in body, f"{rel}:{task} publishes without the guard"
+        assert (
+            "publish_if_current(" in body
+        ), f"{rel}:{task} publishes without the guard"
         assert "project.set(" not in body, f"{rel}:{task} still publishes directly"
-        assert "writing(" in body, f"{rel}:{task} does not mark the project as being written"
+        assert (
+            "writing(" in body
+        ), f"{rel}:{task} does not mark the project as being written"
