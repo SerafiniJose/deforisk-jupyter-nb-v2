@@ -1,6 +1,7 @@
 def test_workflow_tabs_uses_pipeline_header():
     import inspect
     import gui.solara_app as app
+
     src = inspect.getsource(app.WorkflowTabs)
     assert "PipelineHeader(" in src
     assert "on_navigate=set_active_tab" in src
@@ -18,15 +19,24 @@ def test_workflow_tabs_hosts_all_tiles_in_registry_order():
 
     src = inspect.getsource(app.WorkflowTabs)
     assert src.count("with rv.TabItem():") == len(STEPS)
-    tiles = ["AoiTile", "VariablesTile", "ProcessTile", "PostProcessTile",
-             "DatasetTile", "SamplingTile", "TrainTile", "InferenceTile",
-             "EvaluationTile"]
+    tiles = [
+        "AoiTile",
+        "VariablesTile",
+        "ProcessTile",
+        "PostProcessTile",
+        "DatasetTile",
+        "SamplingTile",
+        "TrainTile",
+        "InferenceTile",
+        "EvaluationTile",
+    ]
     positions = [src.index(t) for t in tiles]
     assert positions == sorted(positions), "tiles out of registry order"
 
 
 def test_app_state_has_no_stale_current_step():
     from gui.store.state_manager import AppState
+
     assert not hasattr(AppState(), "current_step")
 
 
@@ -35,6 +45,7 @@ def test_train_tile_selects_dataset_and_sample():
     out of TrainTile); this regression guard now targets that module."""
     import inspect
     from gui.widget import model_form_dialog
+
     src = inspect.getsource(model_form_dialog)
     assert "selected_dataset" in src
     assert "has_sampling" in src
@@ -48,6 +59,7 @@ def test_page_resets_job_lists_on_load():
     from the registries at render time (no job_restore facade)."""
     import inspect
     import gui.solara_app as app
+
     src = inspect.getsource(app.Page)
     assert "reset_jobs_on_load" in src
     assert "build_train_jobs" not in src
@@ -60,6 +72,7 @@ def test_page_clears_map_overlays_on_switch():
     per-tile on-map tracking so they don't leak onto the shared map."""
     import inspect
     import gui.solara_app as app
+
     src = inspect.getsource(app.Page)
     assert "clear_project_overlays(sepal_map)" in src
     assert "vars_on_map.set(set())" in src
@@ -70,12 +83,14 @@ def test_page_clears_map_overlays_on_switch():
 
 def test_solara_app_imports_summary_tile():
     import gui.solara_app as app
+
     assert hasattr(app, "ProjectSummaryTile")
 
 
 def test_page_wires_project_summary_step():
     import inspect
     import gui.solara_app as app
+
     src = inspect.getsource(app.Page)
     assert 't("app.step_project_summary")' in src
     assert "ProjectSummaryTile(" in src
@@ -86,6 +101,7 @@ def test_page_wires_project_summary_step():
 def test_workflow_tabs_wires_aoi_asset():
     import inspect
     import gui.solara_app as solara_app
+
     src = inspect.getsource(solara_app.WorkflowTabs)
     assert "aoi_asset=app_state.aoi_asset" in src
     assert "on_selection=app_state.aoi_asset.set" in src
@@ -95,27 +111,32 @@ def test_workflow_tabs_wires_aoi_asset():
 def test_aoi_tile_imports_vendored_view():
     import inspect
     import gui.tile.aoi_tile as aoi_tile
+
     assert "gui.widget.aoi_view" in inspect.getsource(aoi_tile)
 
 
-def test_solara_app_installs_log_console_handler():
+def test_solara_app_installs_task_log_handler():
+    """Job log lines only reach the notification pill through the bridge
+    handler — boot must install it once at import time."""
     import inspect
     import gui.solara_app as app
-    assert "install_log_console_handler()" in inspect.getsource(app)
+
+    assert "install_task_log_handler()" in inspect.getsource(app)
 
 
-def test_page_renders_log_console():
+def test_page_mounts_notification_provider_before_the_map_app():
+    """The pysepal NotificationProvider is the only notification UI (the custom
+    LogConsole is gone). It must mount before the MapApp element so the bus
+    exists when the workflow tiles first render — a tile whose
+    use_notifications() resolves a NoopNotifier would silently drop its task
+    tracking."""
     import inspect
     import gui.solara_app as app
-    assert "LogConsole()" in inspect.getsource(app.Page)
 
-
-def test_page_clears_log_on_switch():
-    import inspect
-    import gui.solara_app as app
     src = inspect.getsource(app.Page)
-    assert "clear_log_records()" in src
-    assert "solara.use_effect(reset_log_on_switch, [project_loaded_signal])" in src
+    assert "NotificationProvider()" in src
+    assert src.index("NotificationProvider()") < src.index("MapApp.element(")
+    assert "LogConsole" not in src
 
 
 def test_page_wires_locale_state_to_locale_select():
@@ -124,9 +145,10 @@ def test_page_wires_locale_state_to_locale_select():
     dead. Guard both halves of the handshake."""
     import inspect
     import gui.solara_app as app
+
     src = inspect.getsource(app.Page)
     assert "locale_select.bind_locale_state(locale_state)" in src
-    assert "set_app_locale(change[\"new\"])" in src
+    assert 'set_app_locale(change["new"])' in src
     assert 'locale_state.observe(handler, "locale")' in src
     assert "solara.use_effect(_bind_locale, [id(locale_state)])" in src
 

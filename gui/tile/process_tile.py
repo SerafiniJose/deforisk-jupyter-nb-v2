@@ -5,10 +5,12 @@ import logging
 
 import reacton.ipyvuetify as rv
 import solara
+from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
 from gui.scripts import process_actions
-from gui.scripts.solara_threads import publish_if_current
+from gui.scripts.notify_bridge import tracked_job
+from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
 from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -21,10 +23,12 @@ logger = logging.getLogger("spatial_risk")
 def _raw_raster_keys(p):
     """Keys of raw raster variables (candidates for the base)."""
     from spatialrisk.variables.models import DataType
+
     if p is None:
         return []
     return [
-        k for k, v in p.raw_variables.items()
+        k
+        for k, v in p.raw_variables.items()
         if getattr(v, "data_type", None) != DataType.vector
     ]
 
@@ -47,9 +51,18 @@ def base_raster_key(p) -> str:
 
 
 @solara.component
-def BaseProjectionForm(project, base_key, set_base_key, epsg, set_epsg,
-                       resolution, set_resolution, on_auto_utm, on_set_base,
-                       autofill_pending):
+def BaseProjectionForm(
+    project,
+    base_key,
+    set_base_key,
+    epsg,
+    set_epsg,
+    resolution,
+    set_resolution,
+    on_auto_utm,
+    on_set_base,
+    autofill_pending,
+):
     """Base & projection form (Select, EPSG ⌖ + resolution, full-width Set base).
 
     A separate component because ``rv.use_event`` is a hook and must run
@@ -62,28 +75,44 @@ def BaseProjectionForm(project, base_key, set_base_key, epsg, set_epsg,
     """
     with solara.Column(style="gap:14px;"):
         rv.Select(
-            label=t("tiles.process.base_raster_label"), items=_raw_raster_keys(project.value),
-            v_model=base_key, on_v_model=set_base_key, dense=True, outlined=True,
+            label=t("tiles.process.base_raster_label"),
+            items=_raw_raster_keys(project.value),
+            v_model=base_key,
+            on_v_model=set_base_key,
+            dense=True,
+            outlined=True,
             hint=t("tiles.process.base_raster_hint"),
         )
         with solara.Row(style="gap:8px;align-items:flex-start;flex-wrap:nowrap;"):
             epsg_field = rv.TextField(
-                label=t("tiles.process.epsg_label"), v_model=epsg, on_v_model=set_epsg,
-                dense=True, outlined=True, placeholder=t("tiles.process.epsg_placeholder"),
+                label=t("tiles.process.epsg_label"),
+                v_model=epsg,
+                on_v_model=set_epsg,
+                dense=True,
+                outlined=True,
+                placeholder=t("tiles.process.epsg_placeholder"),
                 style_="flex:1 1 55%;min-width:0;",
                 hint=t("tiles.process.epsg_hint"),
                 append_icon="mdi-crosshairs-gps",
             )
             rv.TextField(
-                label=t("tiles.process.resolution_label"), v_model=resolution,
-                on_v_model=set_resolution, dense=True, outlined=True, type="number",
+                label=t("tiles.process.resolution_label"),
+                v_model=resolution,
+                on_v_model=set_resolution,
+                dense=True,
+                outlined=True,
+                type="number",
                 style_="flex:1 1 45%;min-width:0;",
                 hint=t("tiles.process.resolution_hint"),
             )
         rv.use_event(epsg_field, "click:append", lambda *_: on_auto_utm())
         solara.Button(
-            t("tiles.process.set_base_button"), icon_name="mdi-target",
-            color="primary", small=True, block=True, on_click=on_set_base,
+            t("tiles.process.set_base_button"),
+            icon_name="mdi-target",
+            color="primary",
+            small=True,
+            block=True,
+            on_click=on_set_base,
             disabled=autofill_pending or not (base_key and epsg.strip()),
         )
 
@@ -96,6 +125,7 @@ def ProcessTile(project, processing, process_error, map_=None):
     resolution, set_resolution = solara.use_state("30")
     on_toggle_map = use_derived_map_toggle(project, map_, process_error)
     pending_remove, set_pending_remove = solara.use_state(None)
+    notifications = use_notifications()
 
     def _do_remove(key: str):
         """Unregister a harmonized output (the raster stays on disk)."""
@@ -109,7 +139,8 @@ def ProcessTile(project, processing, process_error, map_=None):
 
     pending_geevars = (
         [k for k, v in p.raw_variables.items() if type(v).__name__ == "GEEVar"]
-        if p else []
+        if p
+        else []
     )
 
     # Restore the form from a loaded project. The base raster is stored in the
@@ -132,7 +163,9 @@ def ProcessTile(project, processing, process_error, map_=None):
 
     solara.use_effect(_restore_base_form, [restored_key])
 
-    @solara.lab.use_task(dependencies=[base_key], raise_error=False, prefer_threaded=True)
+    @solara.lab.use_task(
+        dependencies=[base_key], raise_error=False, prefer_threaded=True
+    )
     async def autofill_base():
         """On base-raster selection, pre-fill EPSG (UTM) + resolution; stay editable."""
         if p is None or not base_key:
@@ -144,7 +177,10 @@ def ProcessTile(project, processing, process_error, map_=None):
         # after a project load): keep its stored CRS / resolution rather than
         # recomputing them from the source file, which could differ (e.g. a
         # non-UTM base CRS).
-        if p.base_raster is not None and getattr(var, "name", None) == p.base_raster.name:
+        if (
+            p.base_raster is not None
+            and getattr(var, "name", None) == p.base_raster.name
+        ):
             return
         res = await asyncio.to_thread(process_actions.base_raster_resolution, var)
         if res:
@@ -185,9 +221,19 @@ def ProcessTile(project, processing, process_error, map_=None):
             return
         processing.set(True)
         process_error.set(None)
+        title = t("notifications.task_processing")
+
+        def _tracked_run():
+            # tracked_job is entered on the pool thread itself so the library's
+            # per-stage log lines (download/reproject/rasterize) land on THIS
+            # job's tracker; to_thread_in_context gives that thread the kernel
+            # context its bus updates need to reach the browser.
+            with tracked_job(notifications, title):
+                process_actions.run_processing(p)
+
         with writing(p.project_name):
             try:
-                await asyncio.to_thread(process_actions.run_processing, p)
+                await to_thread_in_context(_tracked_run)
             except Exception as exc:
                 process_error.set(str(exc))
             finally:
@@ -220,15 +266,22 @@ def ProcessTile(project, processing, process_error, map_=None):
         # Downloading now lives in Step 2 — Variables; point back if layers are
         # still cloud-backed (auto-UTM needs the GeoTIFF on disk).
         if pending_geevars:
-            solara.Info(t("tiles.process.pending_geevars_hint", count=len(pending_geevars)))
+            solara.Info(
+                t("tiles.process.pending_geevars_hint", count=len(pending_geevars))
+            )
 
         # A — Base & projection
         solara.Markdown(t("tiles.process.base_projection_header"))
         BaseProjectionForm(
-            project=project, base_key=base_key, set_base_key=set_base_key,
-            epsg=epsg, set_epsg=set_epsg,
-            resolution=resolution, set_resolution=set_resolution,
-            on_auto_utm=on_auto_utm, on_set_base=on_set_base,
+            project=project,
+            base_key=base_key,
+            set_base_key=set_base_key,
+            epsg=epsg,
+            set_epsg=set_epsg,
+            resolution=resolution,
+            set_resolution=set_resolution,
+            on_auto_utm=on_auto_utm,
+            on_set_base=on_set_base,
             autofill_pending=autofill_base.pending,
         )
         if autofill_base.pending:
@@ -239,10 +292,12 @@ def ProcessTile(project, processing, process_error, map_=None):
             )
         if has_base:
             solara.Text(
-                t("tiles.process.base_info",
-                  name=p.base_raster.name,
-                  crs=p.base_raster.default_crs,
-                  resolution=p.base_raster.default_resolution),
+                t(
+                    "tiles.process.base_info",
+                    name=p.base_raster.name,
+                    crs=p.base_raster.default_crs,
+                    resolution=p.base_raster.default_resolution,
+                ),
                 style="font-size:0.8rem;",
                 classes=["text--secondary"],
             )
@@ -256,8 +311,12 @@ def ProcessTile(project, processing, process_error, map_=None):
                 classes=["text--secondary"],
             )
         solara.Button(
-            t("tiles.process.run_processing_button"), icon_name="mdi-play-circle-outline",
-            color="primary", small=True, block=True, on_click=run_processing,
+            t("tiles.process.run_processing_button"),
+            icon_name="mdi-play-circle-outline",
+            color="primary",
+            small=True,
+            block=True,
+            on_click=run_processing,
             # `disabled=` is a render-time prop: like `processing` (only set INSIDE
             # the coroutine), it reaches the browser a round-trip after the task
             # starts, so neither actually stops a fast double-click. This is

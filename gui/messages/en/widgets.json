@@ -141,10 +141,6 @@
       "col_metrics": "Metrics",
       "col_created": "Created"
     },
-    "log_console": {
-      "header": "Process log",
-      "empty": "No activity yet."
-    },
     "product_table": {
       "status_running": "running",
       "status_ready": "ready",

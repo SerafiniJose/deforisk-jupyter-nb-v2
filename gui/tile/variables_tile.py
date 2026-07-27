@@ -9,10 +9,13 @@ import solara
 
 logger = logging.getLogger("spatial_risk")
 
+from pysepal.solara.notifications import use_notifications
+
 from gui.i18n import t
 from gui.scripts import process_actions
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
-from gui.scripts.solara_threads import publish_if_current
+from gui.scripts.notify_bridge import tracked_job
+from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
 from gui.scripts.variable_map import add_raster_var_on_map
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -160,13 +163,23 @@ def _variable_to_entry(key: str, var, project) -> dict:
     }
     if vtype == "LocalRasterVar":
         entry["path"] = str(var.path)
-        entry["raster_type"] = var.raster_type.value if hasattr(var.raster_type, "value") else str(var.raster_type)
+        entry["raster_type"] = (
+            var.raster_type.value
+            if hasattr(var.raster_type, "value")
+            else str(var.raster_type)
+        )
     elif vtype == "GEEVar":
         entry["asset_id"] = str(var.path) if var.path else ""
-        entry["scale"] = str(var.default_scale) if getattr(var, "default_scale", None) else ""
+        entry["scale"] = (
+            str(var.default_scale) if getattr(var, "default_scale", None) else ""
+        )
     elif vtype == "LocalVectorVar":
         entry["path"] = str(var.path)
-        entry["rasterization_method"] = var.rasterization_method.value if hasattr(var.rasterization_method, "value") else str(var.rasterization_method)
+        entry["rasterization_method"] = (
+            var.rasterization_method.value
+            if hasattr(var.rasterization_method, "value")
+            else str(var.rasterization_method)
+        )
     return entry
 
 
@@ -267,6 +280,7 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     pending_toggle = solara.use_reactive(None)
     # Key of the variable being downloaded, or None for a bulk download.
     pending_download = solara.use_reactive(None)
+    notifications = use_notifications()
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
     async def download_task():
@@ -281,10 +295,24 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         key = pending_download.value
         keys = [key] if key is not None else None
         process_error.set(None)
+        var = p.raw_variables.get(key) if key is not None else None
+        title = (
+            t("notifications.task_download_one", name=getattr(var, "name", key))
+            if key is not None
+            else t("notifications.task_download_all")
+        )
+
+        def _tracked_download():
+            # Entered on the pool thread so the per-layer log lines feed this
+            # tracker; to_thread_in_context supplies the kernel context the
+            # tracker's bus updates need to reach the browser.
+            with tracked_job(notifications, title):
+                process_actions.materialize_raw_layers(p, keys)
+                p.save()
+
         with writing(p.project_name):
             try:
-                await asyncio.to_thread(process_actions.materialize_raw_layers, p, keys)
-                await asyncio.to_thread(p.save)
+                await to_thread_in_context(_tracked_download)
             except Exception as exc:
                 logger.exception("download failed")
                 process_error.set(t("tiles.variables.error_download", exc=exc))
@@ -375,7 +403,11 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
                     )
                 _drop_from_map(key, map_)
             p.raw_variables[key] = var
-            logger.debug("Added var '%s', raw_variables now: %s", key, list(p.raw_variables.keys()))
+            logger.debug(
+                "Added var '%s', raw_variables now: %s",
+                key,
+                list(p.raw_variables.keys()),
+            )
             project.set(p.model_copy())
         except Exception as exc:
             logger.exception("on_add failed")
@@ -439,7 +471,8 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     p = project.value
     pending_geevars = (
         [k for k, v in p.raw_variables.items() if type(v).__name__ == "GEEVar"]
-        if p else []
+        if p
+        else []
     )
 
     with solara.Column(style="gap: 16px;"):
@@ -498,11 +531,15 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         existing_keys=frozenset(p.raw_variables) if p else frozenset(),
     )
 
-    _pending_var = p.raw_variables.get(pending_remove) if (p and pending_remove) else None
+    _pending_var = (
+        p.raw_variables.get(pending_remove) if (p and pending_remove) else None
+    )
     _pending_is_base = bool(
         _pending_var and p.base_raster and p.base_raster.name == _pending_var.name
     )
-    _confirm_msg = t("tiles.variables.confirm_remove_message", name=pending_remove or "")
+    _confirm_msg = t(
+        "tiles.variables.confirm_remove_message", name=pending_remove or ""
+    )
     if _pending_is_base:
         _confirm_msg += " " + t("tiles.variables.confirm_remove_base_warning")
     ConfirmDialog(
@@ -521,7 +558,11 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
     _replace_msg = t("tiles.variables.confirm_replace_message", key=_add_key or "")
     if _add_old is not None and type(_add_old).__name__ != "GEEVar":
         _replace_msg += " " + t("tiles.variables.confirm_replace_downloaded_warning")
-    if _add_old is not None and p.base_raster is not None and p.base_raster.name == _add_old.name:
+    if (
+        _add_old is not None
+        and p.base_raster is not None
+        and p.base_raster.name == _add_old.name
+    ):
         _replace_msg += " " + t("tiles.variables.confirm_replace_base_warning")
     ConfirmDialog(
         open=pending_add is not None,

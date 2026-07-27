@@ -38,7 +38,11 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.scripts.echarts_options import (
-    RENDERER_CANVAS, RENDERER_SVG, resolve_renderer, themed_option)
+    RENDERER_CANVAS,
+    RENDERER_SVG,
+    resolve_renderer,
+    themed_option,
+)
 
 __all__ = [
     "DEFAULT_HEIGHT",
@@ -65,8 +69,9 @@ _RESIZE_NUDGE_CLASS = "sr-echarts-resize-nudge"
 _RESIZE_NUDGE_DELAY = 0.5  # seconds
 
 
-def build_chart_widget(option, *, dark=False, renderer=RENDERER_SVG,
-                       height=DEFAULT_HEIGHT):
+def build_chart_widget(
+    option, *, dark=False, renderer=RENDERER_SVG, height=DEFAULT_HEIGHT
+):
     """Build an ipecharts widget from a plain option ``dict``.
 
     Applies the app's chart theme (transparent background, theme ink) to a copy
@@ -118,8 +123,16 @@ def _option_digest(option):
 
 
 @solara.component
-def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
-                 height=DEFAULT_HEIGHT, option_digest=None, visible=True):
+def EChartsChart(
+    option,
+    identity="",
+    *,
+    dark=False,
+    renderer=RENDERER_SVG,
+    height=DEFAULT_HEIGHT,
+    option_digest=None,
+    visible=True
+):
     """Render an ECharts option dict as a chart.
 
     Args:
@@ -201,11 +214,14 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
     key either way, so a digest never has to account for them.
     """
     widget = solara.use_memo(
-        lambda: build_chart_widget(
-            option, dark=dark, renderer=renderer, height=height),
-        [identity,
-         _option_digest(option) if option_digest is None else option_digest,
-         dark, renderer, height],
+        lambda: build_chart_widget(option, dark=dark, renderer=renderer, height=height),
+        [
+            identity,
+            _option_digest(option) if option_digest is None else option_digest,
+            dark,
+            renderer,
+            height,
+        ],
     )
 
     # The widget is built by `use_memo`, NOT by reacton, so reacton does not own
@@ -230,12 +246,16 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
         # The trait sync only reaches the browser from a context-bearing
         # thread; a plain threading.Timer thread has none, so capture the
         # kernel context here (render thread) and attach it there — the
-        # log_bridge worker-thread pattern. Absent context (headless tests)
-        # the toggle still lands on the trait.
+        # spawn_in_context worker-thread pattern (gui/scripts/solara_threads).
+        # Absent context (headless tests) the toggle still lands on the trait.
         try:
             from solara.server import kernel_context
-            ctx = (kernel_context.get_current_context()
-                   if kernel_context.has_current_context() else None)
+
+            ctx = (
+                kernel_context.get_current_context()
+                if kernel_context.has_current_context()
+                else None
+            )
         except Exception:
             ctx = None
 
@@ -243,9 +263,11 @@ def EChartsChart(option, identity="", *, dark=False, renderer=RENDERER_SVG,
             try:
                 if ctx is not None:
                     from solara.server import kernel_context
+
                     if not kernel_context.has_current_context():
                         kernel_context.set_context_for_thread(
-                            ctx, threading.current_thread())
+                            ctx, threading.current_thread()
+                        )
                 if _RESIZE_NUDGE_CLASS in widget._dom_classes:
                     widget.remove_class(_RESIZE_NUDGE_CLASS)
                 else:

@@ -7,8 +7,11 @@ import uuid
 import reacton.ipyvuetify as rv
 import solara
 
+from pysepal.solara.notifications import use_notifications
+
 from gui.i18n import t, plural
 from gui.scripts.artifact_names import default_pred_name as _default_pred_name
+from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.artifact_names import prediction_name_exists as _prediction_name_exists
 from gui.scripts.artifact_names import sanitize_key as _sanitize_pred_name
 from gui.scripts.product_rows import job_row_key
@@ -34,11 +37,21 @@ def _pred_layer_key(storage_key: str) -> str:
     return f"pred_{storage_key}"
 
 
-def _run_inference(job_id, model_key, dataset_key, project, name=None,
-                   project_reactive=None):
+def _run_inference(
+    job_id,
+    model_key,
+    dataset_key,
+    project,
+    name=None,
+    project_reactive=None,
+    notifier=None,
+    task_title=None,
+):
     """Run model inference in a background thread."""
     try:
-        with writing(project.project_name):
+        with tracked_job(notifier, task_title or f"Predicting: {model_key}"), writing(
+            project.project_name
+        ):
             from gui.scripts.inference_runner import run_inference
 
             run_inference(project, model_key, dataset_key, name=name)
@@ -56,14 +69,25 @@ def _run_inference(job_id, model_key, dataset_key, project, name=None,
                 status="completed",
                 output_path="see project predictions",
             )
-            logger.info("Inference completed: %s on %s (name=%s)", model_key, dataset_key, name)
+            logger.info(
+                "Inference completed: %s on %s (name=%s)", model_key, dataset_key, name
+            )
 
     except Exception as exc:
         logger.exception("Inference failed for %s on %s", model_key, dataset_key)
         update_job(inference_jobs, job_id, status="failed", error=str(exc))
 
 
-def _run_import(job_id, src_path, name, palette, project, project_reactive):
+def _run_import(
+    job_id,
+    src_path,
+    name,
+    palette,
+    project,
+    project_reactive,
+    notifier=None,
+    task_title=None,
+):
     """Copy a local raster into the project as a Prediction (background thread).
 
     The copy can be large, so it runs off the render thread like inference does.
@@ -72,10 +96,14 @@ def _run_import(job_id, src_path, name, palette, project, project_reactive):
     republished so the outputs list and Step 8 — Evaluation pick it up.
     """
     try:
-        with writing(project.project_name):
+        with tracked_job(notifier, task_title or f"Importing '{name}'"), writing(
+            project.project_name
+        ):
             from gui.scripts.prediction_import import import_prediction
 
-            pred = import_prediction(project, src_path, name, palette=palette, auto_save=True)
+            pred = import_prediction(
+                project, src_path, name, palette=palette, auto_save=True
+            )
 
             update_job(
                 inference_jobs,
@@ -87,7 +115,9 @@ def _run_import(job_id, src_path, name, palette, project, project_reactive):
                 output_path=str(pred.path),
             )
             publish_if_current(project_reactive, project)
-            logger.info("Imported prediction '%s' registered as %s", name, pred.model_key)
+            logger.info(
+                "Imported prediction '%s' registered as %s", name, pred.model_key
+            )
 
     except Exception as exc:
         logger.exception("Prediction import failed for %s", src_path)
@@ -106,6 +136,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
     p = project.value
 
     dialog_open = solara.use_reactive(False)
+    notifications = use_notifications()
 
     # Form messages
     form_error, set_form_error = solara.use_state(None)
@@ -122,17 +153,31 @@ def InferenceTile(project, map_=None, sepal_client=None):
             return
         job_id = str(uuid.uuid4())[:8]
         # Placeholder job; _run_import fills in the real model_key on completion.
-        inference_jobs.set(list(inference_jobs.value) + [{
-            "id": job_id,
-            "model_key": name,
-            "dataset_name": "imported",
-            "status": "running",
-            "error": None,
-            "output_path": None,
-        }])
+        inference_jobs.set(
+            list(inference_jobs.value)
+            + [
+                {
+                    "id": job_id,
+                    "model_key": name,
+                    "dataset_name": "imported",
+                    "status": "running",
+                    "error": None,
+                    "output_path": None,
+                }
+            ]
+        )
         spawn_in_context(
             _run_import,
-            (job_id, path, name, palette, p, project),
+            (
+                job_id,
+                path,
+                name,
+                palette,
+                p,
+                project,
+                notifications,
+                t("notifications.task_import", name=name),
+            ),
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
@@ -151,10 +196,24 @@ def InferenceTile(project, map_=None, sepal_client=None):
         inference_jobs.set(list(inference_jobs.value) + [job])
         spawn_in_context(
             _run_inference,
-            (job_id, model_key, dataset_key, p, name, project),
+            (
+                job_id,
+                model_key,
+                dataset_key,
+                p,
+                name,
+                project,
+                notifications,
+                t("notifications.task_inference", model=model_key, dataset=dataset_key),
+            ),
         )
-        logger.info("Inference started: %s on %s as '%s' (job=%s)",
-                    model_key, dataset_key, name, job_id)
+        logger.info(
+            "Inference started: %s on %s as '%s' (job=%s)",
+            model_key,
+            dataset_key,
+            name,
+            job_id,
+        )
 
     def on_submit(entry):
         if entry["kind"] == "import":
@@ -252,7 +311,8 @@ def InferenceTile(project, map_=None, sepal_client=None):
         # A running/failed re-run of the same name is left alone.
         inference_jobs.set(
             [
-                j for j in inference_jobs.value
+                j
+                for j in inference_jobs.value
                 if job_row_key(j) != row_key or j.get("status") != "completed"
             ]
         )
@@ -291,7 +351,9 @@ def InferenceTile(project, map_=None, sepal_client=None):
             on_delete=set_pending_delete,
         )
 
-        _pending_count = len(pending_delete.get("storage_keys", [])) if pending_delete else 0
+        _pending_count = (
+            len(pending_delete.get("storage_keys", [])) if pending_delete else 0
+        )
         ConfirmDialog(
             open=pending_delete is not None,
             on_cancel=lambda: set_pending_delete(None),
@@ -306,5 +368,8 @@ def InferenceTile(project, map_=None, sepal_client=None):
         )
 
     PredictionFormDialog(
-        project=project, open_=dialog_open, on_submit=on_submit, sepal_client=sepal_client
+        project=project,
+        open_=dialog_open,
+        on_submit=on_submit,
+        sepal_client=sepal_client,
     )
