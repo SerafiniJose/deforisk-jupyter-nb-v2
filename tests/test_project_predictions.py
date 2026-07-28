@@ -54,38 +54,6 @@ def test_filter_predictions(tmp_path):
     assert set(by_attr.keys()) == {"glm_m__ds_2010_y2010"}
 
 
-def test_predictions_round_trip_save_load(tmp_path, monkeypatch):
-    project = Project(project_name="rt_predictions")
-    pred = Prediction(
-        path=Path("/tmp/glm_2020.tif"),
-        model_key="glm_m",
-        dataset_name="ds_2020",
-        year=2020,
-        model_snapshot={"model_type": "glm", "name": "m", "deviance": 1.23},
-        dataset_snapshot={"name": "ds_2020", "year": 2020, "feature_names": ["slope"]},
-    )
-    project.add_prediction(pred, auto_save=False)
-
-    # Serialize predictions exactly as Project.save() does.
-    dumped = {k: p.model_dump(mode="json") for k, p in project.predictions.items()}
-    assert dumped["glm_m__ds_2020_y2020"]["path"] == "/tmp/glm_2020.tif"
-    assert dumped["glm_m__ds_2020_y2020"]["model_snapshot"]["deviance"] == 1.23
-
-    # Reconstruct exactly as Project.load() does.
-    rebuilt = Project(project_name="rt_predictions")
-    for key, pdata in dumped.items():
-        if pdata.get("path"):
-            pdata["path"] = Path(pdata["path"])
-        restored = Prediction(**pdata)
-        restored.project = rebuilt
-        rebuilt.predictions[key] = restored
-
-    got = rebuilt.get_prediction("glm_m__ds_2020_y2020")
-    assert got.path == Path("/tmp/glm_2020.tif")
-    assert got.model_snapshot["deviance"] == 1.23
-    assert got.dataset_snapshot["feature_names"] == ["slope"]
-
-
 def test_predictions_survive_real_save_load(tmp_path, monkeypatch):
     # save() writes to <downloads_folder>/<project_name>/ and load() reads from
     # the same module-level `downloads_folder`. Redirect it to tmp_path so the

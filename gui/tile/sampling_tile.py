@@ -13,7 +13,6 @@ import solara
 from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
-from gui.scripts.artifact_names import suggest_name
 from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
@@ -23,10 +22,6 @@ from gui.widget.sample_form_dialog import SampleDetailsDialog, SampleFormDialog
 from gui.widget.sample_set_list import SampleSetList
 
 logger = logging.getLogger("spatial_risk")
-
-# Compat alias — the shared helper moved to gui/scripts/artifact_names.py
-# (tests/test_sampling_name_suggest.py imports it from here).
-_suggest_name = suggest_name
 
 
 # Module-level reactives shared across re-renders.

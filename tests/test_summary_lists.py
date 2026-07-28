@@ -1,19 +1,9 @@
 import inspect
 
-RENDERERS = [
-    "RawVariablesSummary", "ProcessedVariablesSummary", "DatasetsSummary",
-    "SamplesSummary", "ModelsSummary", "PredictionsSummary", "EvaluationsSummary",
-]
 HELPERS = [
     "raw_variable_rows", "processed_variable_rows", "dataset_rows",
     "sample_rows", "model_rows", "prediction_rows", "evaluation_rows",
 ]
-
-
-def test_all_renderers_exist():
-    import gui.widget.summary_lists as m
-    for name in RENDERERS:
-        assert hasattr(m, name), f"missing renderer {name}"
 
 
 def test_renderers_wired_to_helpers():

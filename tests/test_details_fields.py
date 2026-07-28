@@ -43,8 +43,3 @@ def test_zero_and_empty_string_are_not_treated_as_missing():
     assert format_value("") == ""
 
 
-def test_ro_field_is_importable_and_callable():
-    """ro_field is the second public primitive the module exports."""
-    from gui.widget.details_fields import ro_field
-
-    assert callable(ro_field)

@@ -56,12 +56,6 @@ def test_status_maps_cover_all_states():
     assert STATUS_COLORS["ready"] == "success"
 
 
-def test_product_table_component_importable():
-    from gui.widget.product_table import ProductTable
-
-    assert callable(ProductTable)
-
-
 def test_product_table_renders_duplicate_row_keys():
     """Rows may share a name (e.g. a temporal variable per year, summary rows
     keyed by display name) — rendering must not require unique row keys.

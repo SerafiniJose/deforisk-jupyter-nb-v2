@@ -42,6 +42,23 @@ dev = [
     "ipykernel>=6.30.1",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "ui: mounts components through reacton/solara (needs the i18n warm-up + rc.close discipline)",
+    "raster: writes real GeoTIFFs; needs rasterio/geopandas",
+    "tippecanoe: needs the tippecanoe binary on PATH",
+    "slow: >2s wall clock",
+]
+filterwarnings = [
+    # Scoped by message+module: `LocalRasterVar path does not exist` is a real
+    # signal in tests that are *not* deliberately pointing at absent paths.
+    "ignore:LocalRasterVar path does not exist.*:UserWarning",
+    "ignore:LocalVectorVar path does not exist.*:UserWarning",
+    "ignore::FutureWarning:rioxarray.*",
+]
+
 [tool.ruff]
 select = ["E", "F", "W", "I", "D", "RUF"]
 exclude = [".venv"]

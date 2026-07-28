@@ -1,13 +1,18 @@
 """Old project JSONs with a forest_loss_specs key must load cleanly."""
 
-import importlib
 import json
 
 
 def test_load_ignores_legacy_forest_loss_specs(tmp_path, monkeypatch):
-    monkeypatch.setenv("SPATIAL_RISK_DATA_DIR", str(tmp_path))
+    # Redirect the module-level `downloads_folder` rather than reloading the
+    # module. save()/load() read it at call time, so this is equivalent — and
+    # unlike importlib.reload it is self-restoring. A reload left a *second*
+    # Project class in sys.modules (spatialrisk.Project is
+    # spatialrisk.project.Project became False) and rebound downloads_folder to
+    # a tmp_path pytest then deleted, for the rest of the session.
     import spatialrisk.project as proj_mod
-    importlib.reload(proj_mod)
+
+    monkeypatch.setattr(proj_mod, "downloads_folder", tmp_path)
 
     p = proj_mod.Project(project_name="t")
     p.save()

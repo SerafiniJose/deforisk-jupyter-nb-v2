@@ -1,11 +1,16 @@
 """Unit tests for the shared artifact-naming helpers."""
+from pathlib import Path
+
 from gui.scripts.artifact_names import (
     default_pred_name,
     name_field_messages,
+    prediction_name_exists,
     sanitize_key,
     suggest_name,
     suggest_version,
 )
+from spatialrisk import Project
+from spatialrisk.predictions.prediction import Prediction
 
 
 def test_suggest_name_first_free_slot():
@@ -35,6 +40,22 @@ def test_default_pred_name():
     assert default_pred_name("glm_v1", "calibration") == "glm_v1__calibration"
     assert default_pred_name("", "calibration") == ""
     assert default_pred_name("glm_v1", "") == ""
+
+
+def test_prediction_name_exists_detects_key_and_name():
+    """A prediction name collides on either its registry key or its name."""
+    project = Project(project_name="exists_test")
+    # A name-keyed prediction (the new path).
+    project.add_prediction(
+        Prediction(name="run_a", path=Path("/tmp/a.tif"),
+                   model_key="glm_v1", dataset_name="calibration"),
+        key="run_a", auto_save=False,
+    )
+
+    assert prediction_name_exists(project, "run_a") is True   # matches key + name
+    assert prediction_name_exists(project, "run_b") is False  # absent
+    assert prediction_name_exists(project, "") is False       # empty never collides
+    assert prediction_name_exists(None, "run_a") is False     # no project
 
 
 def test_name_field_messages_states():

@@ -74,17 +74,6 @@ def test_no_duplicate_keys_within_language():
         assert not dupes, f"Duplicate keys in {lang}: {dupes}"
 
 
-def test_es_parity_reports_gaps():
-    """Keys missing from es-ES are reported, not hard-failed (incremental)."""
-    en, _ = _merged_for_lang("en")
-    es, _ = _merged_for_lang("es-ES")
-    missing = sorted(k for k in en if k not in es and not k.startswith("common._test"))
-    # Incremental translation allowed: report, do not hard-fail here.
-    if missing:
-        print(f"[i18n] {len(missing)} keys not yet in es: {missing[:20]}")
-    assert isinstance(missing, list)
-
-
 def test_relative_time_plural_keys_exist():
     """Relative-time and chip-count plural keys resolve for both languages."""
     for k in (
@@ -159,21 +148,6 @@ def test_every_referenced_key_exists_in_en():
         if k not in _en_keys() and not k.startswith("common._test")
     )
     assert not missing, f"t()/plural() keys with no en catalog entry: {missing}"
-
-
-def test_unused_en_keys_are_reported_advisory():
-    """Unused en keys are reported (advisory), not hard-failed."""
-    unused = sorted(
-        k
-        for k in _en_keys()
-        if k not in _code_keys() and not k.startswith("common._test")
-    )
-    if unused:
-        print(
-            f"[i18n] {len(unused)} en keys not referenced via "
-            f"t()/plural(): {unused[:30]}"
-        )
-    assert isinstance(unused, list)  # advisory: dynamic keys may be built at runtime
 
 
 def test_t_accepts_key_named_format_placeholder():

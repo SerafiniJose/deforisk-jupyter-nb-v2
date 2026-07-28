@@ -16,13 +16,6 @@ def test_sampling_tile_uses_raster_and_mask():
     assert "from spatialrisk.sampleset" not in src  # old SampleSet model import gone
 
 
-def test_sample_set_list_widget_importable():
-    """The list widget module exists and exposes SampleSetList."""
-    import gui.widget.sample_set_list as w
-
-    assert hasattr(w, "SampleSetList")
-
-
 def test_sampling_tile_has_distance_mode():
     """Systematic spacing mode threads through the tile and its form dialog."""
     import gui.widget.sample_form_dialog as dlg
@@ -74,8 +67,6 @@ def test_sampling_form_dialog_design_first_and_autoname():
     import gui.widget.sample_form_dialog as dlg
     from gui.tile import sampling_tile as st
 
-    # the tile still exposes the suggestion helper (compat alias)
-    assert callable(st._suggest_name)
     tile_src = inspect.getsource(st.SamplingTile)
     # list-first: tile has the New button + dialog, not the form fields
     assert "SampleFormDialog" in tile_src

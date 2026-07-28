@@ -8,11 +8,6 @@ guard the wiring so it cannot be silently dropped.
 import inspect
 
 
-def test_confirm_dialog_importable():
-    from gui.widget.confirm_dialog import ConfirmDialog
-    assert callable(ConfirmDialog)
-
-
 def test_variables_tile_confirms_remove():
     from gui.tile.variables_tile import VariablesTile
     src = inspect.getsource(VariablesTile)
