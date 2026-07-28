@@ -180,7 +180,7 @@
       "dataset_select_hint": "Dataset a cuyas capas se aplica el modelo.",
       "dataset_select_no_data": "No hay conjuntos de datos registrados. Creá uno en el paso Conjunto de datos.",
       "mask_layer_label": "Capa de máscara",
-      "mask_layer_hint": "Capa del conjunto de datos a la que se recorta el mapa de riesgo: los píxeles donde vale 0 o nodata quedan excluidos (p. ej., bosque al inicio del período). Elegí 'Sin máscara' para predecir en toda el área.",
+      "mask_layer_hint": "Los píxeles donde este ráster vale 0 o nodata quedan excluidos (p. ej., bosque al inicio del período). Elegí 'Sin máscara' para predecir en toda el área.",
       "mask_layer_none": "Sin máscara (predecir en toda el área)",
       "pred_name_label": "Nombre de predicción",
       "pred_name_exists_warning": "⚠ Ya existe una predicción llamada '{name}' — ejecutar la sobrescribirá.",

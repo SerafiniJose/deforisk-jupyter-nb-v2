@@ -45,7 +45,7 @@ def test_prediction_form_dialog_contract():
     assert "resolve_import_key" in src
 
 
-def test_worker_threads_the_mask_feature_to_the_runner(monkeypatch):
+def test_worker_threads_the_mask_layer_to_the_runner(monkeypatch):
     """The dialog's choice has to survive the hop onto the worker thread.
 
     ``_run_inference`` swallows exceptions into the job row, so a dropped
@@ -67,21 +67,21 @@ def test_worker_threads_the_mask_feature_to_the_runner(monkeypatch):
             "calibration",
             types.SimpleNamespace(project_name="p"),
             name="run_a",
-            mask_feature="forest_gfc_tc75",
+            mask_layer="forest_gfc_tc75",
         )
 
         assert calls, "run_inference was never called"
         _args, kwargs = calls[0]
-        assert kwargs["mask_feature"] == "forest_gfc_tc75"
+        assert kwargs["mask_layer"] == "forest_gfc_tc75"
         assert kwargs["name"] == "run_a"
         assert it.inference_jobs.value[0]["status"] == "completed"
     finally:
         it.inference_jobs.set(previous_jobs)
 
 
-def test_tile_forwards_the_entrys_mask_feature():
+def test_tile_forwards_the_entrys_mask_layer():
     """on_submit carries the dialog's key through to the worker, absent or not."""
     from gui.tile.inference_tile import InferenceTile
 
     src = inspect.getsource(InferenceTile)
-    assert 'entry.get("mask_feature")' in src
+    assert 'entry.get("mask_layer")' in src

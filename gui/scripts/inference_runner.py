@@ -16,10 +16,10 @@ logger = logging.getLogger("spatial_risk")
 _ML_FOLDER = {"glm": "glm_model", "rf": "rf_model", "icar": "icar_model"}
 
 # Catalogue key of the Hansen layer used to *suggest* a mask in the Predict
-# dialog. A dataset feature carries the *variable* name, which bakes in the
+# dialog. A processed variable carries the *variable* name, which bakes in the
 # layer's parameters ("forest_gfc_tc30"), so suggestions are found by resolving
 # the name back to this key — never by comparing against it. The mask itself is
-# generic: any dataset feature (or none) can be assigned.
+# generic: any processed raster in the project (or none) can be assigned.
 _FOREST_CATALOGUE_KEY = "forest_gfc"
 
 
@@ -28,20 +28,30 @@ def is_ml_family(model_key):
     return str(model_key or "").split("_")[0] in _ML_FOLDER
 
 
-def mask_layer_candidates(dataset):
-    """Names of *dataset*'s features assignable as the ML mask layer.
+def _raster_variables(project):
+    """The project's processed raster variables, keyed by storage key."""
+    variables = getattr(project, "processed_variables", None) or {}
+    return {
+        key: var
+        for key, var in variables.items()
+        if getattr(var, "data_type", None) == "raster"
+    }
 
-    Every feature qualifies — the mask is a plain 1=keep/0=suppress raster with
-    no assumption about where it came from. This is the single source the
-    Predict dialog lists from, so the dialog can never offer a layer the runner
-    would reject.
+
+def mask_layer_candidates(project):
+    """Storage keys of *project* rasters assignable as the ML mask layer.
+
+    Every processed raster in the project qualifies — the mask is a plain
+    1=keep/0=suppress raster and is deliberately NOT restricted to the
+    prediction dataset's features, so a run can mask with a layer that is not
+    part of the dataset. This is the single source the Predict dialog lists
+    from, so the dialog can never offer a layer the runner would reject.
     """
-    features = getattr(dataset, "features", None) or []
-    return [f.name for f in features]
+    return sorted(_raster_variables(project))
 
 
-def suggested_mask_layer(dataset):
-    """The feature name the Predict dialog seeds its mask select with.
+def suggested_mask_layer(project):
+    """The layer key the Predict dialog seeds its mask select with.
 
     Masking to forest-at-period-start is the usual deforestation setup, so a
     sole Hansen-derived layer (``forest_gfc_tc<threshold>``, or the legacy bare
@@ -53,35 +63,33 @@ def suggested_mask_layer(dataset):
     # module scope, and keeping it that way avoids an import cycle.
     from gui.scripts.predefined_variables import resolve_predefined
 
-    features = getattr(dataset, "features", None) or []
     forest = [
-        f.name
-        for f in features
-        if resolve_predefined(f.name)[0] == _FOREST_CATALOGUE_KEY
+        key
+        for key, var in _raster_variables(project).items()
+        if resolve_predefined(getattr(var, "name", key))[0] == _FOREST_CATALOGUE_KEY
     ]
     return forest[0] if len(forest) == 1 else ""
 
 
-def _resolve_mask(dataset, dataset_name, mask_feature):
-    """Path of the feature an ML run masks with, or None for no mask.
+def _resolve_mask(project, mask_layer):
+    """Path of the project raster an ML run masks with, or None for no mask.
 
-    ``mask_feature`` is the user's explicit choice from the Predict dialog;
+    ``mask_layer`` is the user's explicit choice from the Predict dialog;
     empty means "no mask" (predict over the full stack). Nothing is ever
     resolved on the user's behalf here — the dialog owns the forest suggestion.
     """
-    if not mask_feature:
+    if not mask_layer:
         return None
-    features = list(getattr(dataset, "features", None) or [])
-    feature = next((f for f in features if f.name == mask_feature), None)
-    if feature is None:
+    variable = _raster_variables(project).get(mask_layer)
+    if variable is None:
         raise ValueError(
-            f"Mask layer '{mask_feature}' is not in dataset "
-            f"'{dataset_name}'. Available features: {[f.name for f in features]}."
+            f"Mask layer '{mask_layer}' is not a processed raster of this "
+            f"project. Available layers: {mask_layer_candidates(project)}."
         )
-    return feature.path
+    return variable.path
 
 
-def run_inference(project, model_key, dataset_name, name=None, mask_feature=None):
+def run_inference(project, model_key, dataset_name, name=None, mask_layer=None):
     """Run inference for one registered model on one dataset.
 
     Parameters
@@ -93,15 +101,16 @@ def run_inference(project, model_key, dataset_name, name=None, mask_feature=None
         ``BaseRiskModel._register_prediction``). The caller is responsible for
         passing a path-safe token. When omitted, the legacy provenance-derived
         paths and keys are used unchanged.
-    mask_feature : str, optional
-        Name of the dataset feature to mask with (ML families only), as
-        assigned in the Predict dialog. Omitted or blank means no mask: the
-        prediction covers the full raster stack. Ignored by the JNR/MW
-        families, which resolve their own layers.
+    mask_layer : str, optional
+        Storage key of the processed raster variable to mask with (ML families
+        only), as assigned in the Predict dialog. Any project raster qualifies
+        — it need not be a feature of *dataset_name*. Omitted or blank means
+        no mask: the prediction covers the full raster stack. Ignored by the
+        JNR/MW families, which resolve their own layers.
 
     Raises ValueError if preconditions are missing (no dataset target, a mask
-    feature not in the dataset, unresolvable time interval for benchmark
-    models).
+    layer not in the project's processed rasters, unresolvable time interval
+    for benchmark models).
     """
     model = project.models[model_key]
     dataset = project.get_dataset(dataset_name)
@@ -119,7 +128,7 @@ def run_inference(project, model_key, dataset_name, name=None, mask_feature=None
     model._pending_pred_name = name or None
 
     if family in _ML_FOLDER:
-        mask = _resolve_mask(dataset, dataset_name, mask_feature)
+        mask = _resolve_mask(project, mask_layer)
         subfolder = name or (getattr(model, "name", None) or model_key)
         out_dir = Path(getattr(project.folders, _ML_FOLDER[family])) / subfolder
         out_dir.mkdir(parents=True, exist_ok=True)

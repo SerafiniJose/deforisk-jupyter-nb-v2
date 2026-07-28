@@ -64,8 +64,9 @@ def PredictionFormDialog(
     on_submit(entry) receives {"kind": "model", "model_key", "dataset_key",
     "name"} or {"kind": "import", "name", "path", "palette"}; the tile owns
     the job row and the worker. A model entry for an ML family (GLM/RF/ICAR)
-    also carries "mask_feature" — the dataset feature to mask with, or None
-    for an explicit "no mask".
+    also carries "mask_layer" — the storage key of the project raster to mask
+    with (any processed raster, dataset membership not required), or None for
+    an explicit "no mask".
 
     Args:
         project: solara.Reactive[Project].
@@ -84,24 +85,24 @@ def PredictionFormDialog(
     selected_dataset, set_selected_dataset = solara.use_state("")
 
     # --- mask layer (ML families only)
-    # GLM/RF/ICAR mask their output with a dataset layer the user assigns —
-    # any feature qualifies, and "no mask" is a valid explicit choice, so the
-    # algorithms carry no assumption about the mask's origin. The candidate
-    # list and the forest-layer suggestion both come from the runner module so
-    # the dialog can never offer a layer the runner would reject.
-    mask_feature, set_mask_feature = solara.use_state("")
+    # GLM/RF/ICAR mask their output with a project raster the user assigns —
+    # any processed raster qualifies (it need not be a feature of the selected
+    # dataset), and "no mask" is a valid explicit choice, so the algorithms
+    # carry no assumption about the mask's origin. The candidate list and the
+    # forest-layer suggestion both come from the runner module so the dialog
+    # can never offer a layer the runner would reject.
+    mask_layer, set_mask_layer = solara.use_state("")
     ml_family = source == "model" and is_ml_family(selected_model)
-    _dataset = p.datasets.get(selected_dataset) if p and selected_dataset else None
-    mask_candidates = mask_layer_candidates(_dataset) if ml_family else []
-    show_mask = ml_family and bool(selected_dataset)
+    mask_candidates = mask_layer_candidates(p) if ml_family else []
+    show_mask = ml_family
 
-    def seed_mask_feature():
+    def seed_mask_layer():
         """Suggest the sole forest layer; anything ambiguous starts unset."""
-        set_mask_feature(suggested_mask_layer(_dataset) if ml_family else "")
+        set_mask_layer(suggested_mask_layer(p) if ml_family else "")
 
-    # Re-seeds whenever the candidate set changes (a model or dataset switch)
-    # and never in between, so a deliberate pick survives re-renders.
-    solara.use_effect(seed_mask_feature, [tuple(mask_candidates)])
+    # Re-seeds whenever the candidate set changes (a model-family switch) and
+    # never in between, so a deliberate pick survives re-renders.
+    solara.use_effect(seed_mask_layer, [tuple(mask_candidates)])
 
     # --- import mode state
     file_path, set_file_path = solara.use_state("")
@@ -131,7 +132,7 @@ def PredictionFormDialog(
         set_source("model")
         set_selected_model("")
         set_selected_dataset("")
-        set_mask_feature("")
+        set_mask_layer("")
         set_file_path("")
         set_palette("far")
         reset_name()
@@ -154,7 +155,7 @@ def PredictionFormDialog(
             return t("tiles.inference.error_invalid_model")
         if not selected_dataset or selected_dataset not in p.datasets:
             return t("tiles.inference.error_invalid_dataset")
-        if ml_family and not mask_feature:
+        if ml_family and not mask_layer:
             return t("tiles.inference.error_mask_required")
         if not clean:
             return t("tiles.inference.error_name_required")
@@ -183,13 +184,11 @@ def PredictionFormDialog(
                 "name": clean,
             }
             if ml_family:
-                # The user's assignment: a feature name, or None for the
+                # The user's assignment: a project-raster key, or None for the
                 # explicit "no mask" choice (validate() guarantees one of the
                 # two). Benchmark families resolve their own layers and never
                 # carry the key.
-                entry["mask_feature"] = (
-                    None if mask_feature == NO_MASK else mask_feature
-                )
+                entry["mask_layer"] = None if mask_layer == NO_MASK else mask_layer
             on_submit(entry)
 
     with CreationDialog(
@@ -246,8 +245,8 @@ def PredictionFormDialog(
                     + [{"text": n, "value": n} for n in mask_candidates],
                     item_text="text",
                     item_value="value",
-                    v_model=mask_feature,
-                    on_v_model=set_mask_feature,
+                    v_model=mask_layer,
+                    on_v_model=set_mask_layer,
                     dense=True,
                     outlined=True,
                     clearable=True,

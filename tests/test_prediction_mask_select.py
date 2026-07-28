@@ -1,6 +1,7 @@
 """The Predict dialog lets the user assign which layer masks an ML run.
 
-The mask is generic — any dataset feature can be assigned, and "no mask" is a
+The mask is generic — any processed raster of the project can be assigned,
+whether or not it is a feature of the selected dataset, and "no mask" is a
 valid explicit choice — so the algorithms carry no Hansen-specific assumption.
 The deforisk convention (mask to forest at period start) survives only as a
 *seed*: a sole ``forest_gfc``-derived layer is preselected as a suggestion the
@@ -35,25 +36,32 @@ def _find(widget, cls, out=None):
     return out
 
 
-def _project(tmp_path, feature_names):
-    features = [
-        types.SimpleNamespace(name=n, path=f"/tmp/{n}.tif") for n in feature_names
-    ]
-    dataset = types.SimpleNamespace(name="calibration", features=features)
+def _project(tmp_path, layer_names):
+    """Fake project whose processed rasters are ``layer_names``.
+
+    The dataset's own features stay empty on purpose: the mask select must
+    list the *project's* rasters, independent of dataset membership.
+    """
+    variables = {
+        n: types.SimpleNamespace(name=n, data_type="raster", path=f"/tmp/{n}.tif")
+        for n in layer_names
+    }
+    dataset = types.SimpleNamespace(name="calibration", features=[])
     return types.SimpleNamespace(
         models={"glm_glm_v1": object(), "mw_calibration_mw": object()},
         datasets={"calibration": dataset},
+        processed_variables=variables,
         predictions={},
         filter_predictions=lambda **kw: [],
         folders=types.SimpleNamespace(project_folder=str(tmp_path)),
     )
 
 
-def _render(tmp_path, feature_names):
+def _render(tmp_path, layer_names):
     submitted = []
     box, _rc = reacton.render(
         PredictionFormDialog(
-            project=solara.reactive(_project(tmp_path, feature_names)),
+            project=solara.reactive(_project(tmp_path, layer_names)),
             open_=solara.reactive(True),
             on_submit=submitted.append,
         )
@@ -70,7 +78,7 @@ def _mask_select(box):
 
 
 def _pick(box, model_key, dataset_key="calibration"):
-    """Drive the two selects the mask field depends on."""
+    """Drive the model select (and optionally the dataset select)."""
     _select(box, t("tiles.inference.model_select_label")).v_model = model_key
     if dataset_key is not None:
         _select(box, t("tiles.inference.dataset_select_label")).v_model = dataset_key
@@ -86,15 +94,26 @@ def _item_values(select):
     return [i["value"] for i in select.items]
 
 
-def test_mask_select_is_hidden_until_a_model_and_dataset_are_chosen(tmp_path):
-    """No model or dataset yet — there is nothing to choose between."""
+def test_mask_select_is_hidden_until_an_ml_model_is_chosen(tmp_path):
+    """No model yet — the field's relevance is unknown, so it stays hidden."""
     box, _ = _render(tmp_path, ["forest_gfc_tc30"])
     assert _mask_select(box) is None
 
 
-def test_mask_select_offers_every_feature_plus_no_mask(tmp_path):
-    """Any dataset layer can be the mask, and 'no mask' is always on offer."""
-    box, _ = _render(tmp_path, ["altitude", "forest_gfc_tc30", "my_forest_mask"])
+def test_mask_select_appears_without_a_dataset(tmp_path):
+    """The mask is dataset-independent: an ML model alone reveals the field."""
+    box, _ = _render(tmp_path, ["forest_gfc_tc30"])
+    _pick(box, "glm_glm_v1", dataset_key=None)
+    assert _mask_select(box) is not None
+
+
+def test_mask_select_offers_every_project_raster_plus_no_mask(tmp_path):
+    """Any processed raster can be the mask, and 'no mask' is always on offer.
+
+    None of these layers are features of the selected dataset — the candidate
+    list is the project's raster catalogue, not the dataset's feature list.
+    """
+    box, _ = _render(tmp_path, ["my_forest_mask", "altitude", "forest_gfc_tc30"])
     _pick(box, "glm_glm_v1")
     sel = _mask_select(box)
     assert sel is not None
@@ -134,13 +153,13 @@ def test_benchmark_family_never_shows_the_field(tmp_path):
     assert _mask_select(box) is None
 
 
-def test_submitted_entry_carries_the_chosen_mask_feature(tmp_path):
-    """The pick reaches the tile as entry["mask_feature"]."""
+def test_submitted_entry_carries_the_chosen_mask_layer(tmp_path):
+    """The pick reaches the tile as entry["mask_layer"]."""
     box, submitted = _render(tmp_path, ["forest_gfc_tc30", "forest_gfc_tc75"])
     _pick(box, "glm_glm_v1")
     _mask_select(box).v_model = "forest_gfc_tc75"
     _create(box)
-    assert submitted and submitted[0]["mask_feature"] == "forest_gfc_tc75"
+    assert submitted and submitted[0]["mask_layer"] == "forest_gfc_tc75"
     assert submitted[0]["kind"] == "model"
 
 
@@ -150,7 +169,7 @@ def test_no_mask_choice_submits_none(tmp_path):
     _pick(box, "glm_glm_v1")
     _mask_select(box).v_model = NO_MASK
     _create(box)
-    assert submitted and submitted[0]["mask_feature"] is None
+    assert submitted and submitted[0]["mask_layer"] is None
 
 
 def test_unset_mask_blocks_the_run(tmp_path):
@@ -166,7 +185,7 @@ def test_benchmark_entry_does_not_carry_the_key(tmp_path):
     box, submitted = _render(tmp_path, ["forest_gfc_tc30"])
     _pick(box, "mw_calibration_mw")
     _create(box)
-    assert submitted and "mask_feature" not in submitted[0]
+    assert submitted and "mask_layer" not in submitted[0]
 
 
 def test_dialog_and_runner_share_one_candidate_source(tmp_path):

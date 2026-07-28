@@ -180,7 +180,7 @@
       "dataset_select_hint": "Dataset whose layers the model is applied to.",
       "dataset_select_no_data": "No datasets registered. Create one in the Dataset step.",
       "mask_layer_label": "Mask layer",
-      "mask_layer_hint": "Dataset layer the risk map is masked to: pixels where it is 0 or nodata are excluded (e.g. forest at period start). Pick 'No mask' to predict everywhere.",
+      "mask_layer_hint": "Pixels where this raster is 0 or nodata are excluded (e.g. forest at period start). Pick 'No mask' to predict everywhere.",
       "mask_layer_none": "No mask (predict everywhere)",
       "pred_name_label": "Prediction name",
       "pred_name_exists_warning": "⚠ A prediction named '{name}' already exists — running overwrites it.",
