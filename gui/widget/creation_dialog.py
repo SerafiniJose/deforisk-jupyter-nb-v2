@@ -63,6 +63,9 @@ _ADVANCED_PANEL_CSS = """
 .multi-chips .v-select__slot { min-height: 40px; }
 .multi-chips .v-select__selections { flex-wrap: wrap; padding: 3px 0; }
 .multi-chips .v-select__selections .v-chip { margin: 2px 4px 2px 0; }
+
+/* Formula textarea: patsy code reads better monospaced. */
+.formula-field textarea { font-family: monospace; font-size: 13px; }
 """
 
 

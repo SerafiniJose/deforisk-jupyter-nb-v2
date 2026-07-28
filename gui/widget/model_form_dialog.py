@@ -1,5 +1,6 @@
 """New Model dialog for the Train step."""
 
+import asyncio
 from typing import Callable
 
 import reacton.ipyvuetify as rv
@@ -7,11 +8,13 @@ import solara
 
 from gui.i18n import t
 from gui.scripts.artifact_names import sanitize_key, suggest_version
+from gui.scripts.formula_validation import validate_formula
 from gui.scripts.model_registry import MODEL_KEYS, MODEL_REGISTRY
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
 from gui.widget.details_fields import ro_field
 from gui.widget.help import InfoPopup
+from spatialrisk.far_helpers import generate_patsy_formula
 
 
 def model_label(key: str) -> str:
@@ -116,6 +119,7 @@ MODEL_HAS_PARAMS = {
     k: any(p.get("group", "params") == "params" for p in MODEL_REGISTRY[k]["params"])
     for k in MODEL_KEYS
 }
+MODEL_HAS_FORMULA = {k: MODEL_REGISTRY[k].get("has_formula", False) for k in MODEL_KEYS}
 
 
 @solara.component
@@ -166,8 +170,39 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         ):
             feature_options.append(selected_ds_obj.target.name)
 
+    # One shared formula string for the three patsy models (they share the
+    # same auto-formula); per-model copies would go stale on model switches.
+    formula_text, set_formula_text = solara.use_state("")
+    has_formula = MODEL_HAS_FORMULA[selected_key]
+
+    # generate_patsy_formula reads categorical rasters (get_categorical_levels)
+    # — real I/O, so never on the render/handler path.
+    @solara.lab.use_task(
+        dependencies=[selected_dataset, has_formula],
+        raise_error=False,
+        prefer_threaded=True,
+    )
+    async def prefill_formula():
+        if selected_ds_obj is None or not has_formula:
+            return None
+        text = await asyncio.to_thread(generate_patsy_formula, selected_ds_obj)
+        return (selected_dataset, text)
+
+    def _apply_prefill():
+        res = prefill_formula.value
+        if res is None:
+            return
+        ds_key, text = res
+        # Identity check: a slow run for dataset A must not overwrite the
+        # prefill after the user switched to dataset B.
+        if ds_key == selected_dataset:
+            set_formula_text(text)  # overwrites edits = regenerate-on-switch
+
+    solara.use_effect(_apply_prefill, [prefill_formula.value, selected_dataset])
+
     def reset():
         reset_name()
+        set_formula_text("")
 
     def validate():
         if p is None:
@@ -178,6 +213,23 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
             return t("tiles.train.error_invalid_dataset")
         if needs_sample and (not selected_sample or selected_sample not in p.samples):
             return t("tiles.train.error_invalid_sample")
+        if has_formula:
+            if prefill_formula.pending:
+                return t("tiles.train.error_formula_generating")
+            target_name = (
+                selected_ds_obj.target.name
+                if selected_ds_obj is not None and selected_ds_obj.target is not None
+                else ""
+            )
+            feature_names = (
+                [v.name for v in selected_ds_obj.features]
+                if selected_ds_obj is not None
+                else []
+            )
+            err = validate_formula(formula_text, target_name, feature_names)
+            if err:
+                key, kwargs = err
+                return t(key, **kwargs)
         if MODEL_HAS_VARIABLES[selected_key]:
             model_params = all_params.get(selected_key, {})
             for pdef in registry["params"]:
@@ -208,6 +260,7 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
                 "params": all_params.get(selected_key, {}),
                 "dataset_key": selected_dataset,
                 "sample_key": selected_sample if needs_sample else "",
+                "formula": formula_text if has_formula else None,
             }
         )
 
@@ -316,12 +369,33 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
 
         # Every parameter has a working default, so tuning is progressive-
         # disclosed at the end of the form, collapsed by default.
-        if MODEL_HAS_PARAMS[selected_key]:
+        if MODEL_HAS_PARAMS[selected_key] or has_formula:
             with rv.ExpansionPanels(flat=True, class_="advanced-params"):
                 with rv.ExpansionPanel():
                     with rv.ExpansionPanelHeader():
                         solara.Text(t("tiles.train.advanced_parameters_header"))
                     with rv.ExpansionPanelContent():
+                        if has_formula:
+                            if prefill_formula.pending:
+                                formula_hint = t("tiles.train.formula_generating")
+                            elif prefill_formula.error:
+                                # .error is a bool; the message lives on .exception
+                                formula_hint = str(prefill_formula.exception)
+                            else:
+                                formula_hint = t("tiles.train.formula_hint")
+                            rv.Textarea(
+                                label=t("tiles.train.formula_label"),
+                                v_model=formula_text,
+                                on_v_model=set_formula_text,
+                                disabled=prefill_formula.pending,
+                                dense=True,
+                                outlined=True,
+                                auto_grow=True,
+                                rows=2,
+                                class_="formula-field",
+                                hint=formula_hint,
+                                persistent_hint=True,
+                            )
                         ParamComponent(
                             params=all_params.get(selected_key, {}),
                             set_params=_set_model_params,
