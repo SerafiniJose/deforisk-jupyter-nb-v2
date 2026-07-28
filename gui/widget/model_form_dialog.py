@@ -471,7 +471,8 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                             for pd in (registry["params"] if registry else [])
                             if pd.get("group", "params") == "params"
                         ]
-                        if param_defs:
+                        stored_formula = getattr(model, "formula", None)
+                        if param_defs or stored_formula:
                             with rv.ExpansionPanels(
                                 flat=True, class_="advanced-params"
                             ):
@@ -481,6 +482,11 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                                             t("tiles.train.advanced_parameters_header")
                                         )
                                     with rv.ExpansionPanelContent():
+                                        if stored_formula:
+                                            ro_field(
+                                                t("tiles.train.formula_label"),
+                                                stored_formula,
+                                            )
                                         for pd in param_defs:
                                             ro_field(
                                                 t(pd["label_key"]),

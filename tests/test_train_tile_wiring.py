@@ -43,6 +43,9 @@ def test_model_details_dialog_is_read_only():
     assert "advanced_parameters_header" in src
     assert "common.close" in src
     assert "CreationDialog" not in src and "launch" not in src
+    # Stored formula shown read-only; row hidden for legacy models without one.
+    assert "formula_label" in src
+    assert 'getattr(model, "formula", None)' in src
 
 
 def test_model_form_dialog_contract():
