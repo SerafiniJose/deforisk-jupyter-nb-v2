@@ -1,0 +1,63 @@
+{
+  "vars": {
+    "predefined": {
+      "altitude": "Altitude (SRTM)",
+      "slope": "Declividade (SRTM)",
+      "protected_area": "Áreas protegidas (WDPA)",
+      "rivers": "Rios (OSM)",
+      "roads": "Estradas (OSM)",
+      "forest_gfc": "Cobertura florestal (Hansen GFC)",
+      "forest_tmf": "Cobertura florestal (JRC TMF)",
+      "towns": "Cidades / áreas urbanas (JRC GHSL)",
+      "subj": "Subjurisdição (FAO GAUL)"
+    },
+    "predefined_info": {
+      "altitude": "Altitude (m) do modelo digital de elevação [NASA SRTM 30 m](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003), recortada para a sua área de interesse. Contínua.",
+      "slope": "Declividade do terreno (graus) calculada a partir da elevação [NASA SRTM 30 m](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003) com `ee.Terrain.slope` do Earth Engine. Contínua.",
+      "protected_area": "Máscara binária (1 = dentro de uma área protegida) construída pela rasterização dos polígonos designados/inscritos/estabelecidos/propostos da [WDPA — World Database on Protected Areas](https://developers.google.com/earth-engine/datasets/catalog/WCMC_WDPA_current_polygons).",
+      "rivers": "Máscara binária de rios e córregos da [OSM Water Layer](https://gee-community-catalog.org/projects/osm_water/) (classes de água superficial), recortada para a sua área de interesse.",
+      "roads": "Máscara binária de estradas rasterizadas a partir das geometrias viárias do [OpenStreetMap](https://www.openstreetmap.org/), recortada para a sua área de interesse.",
+      "forest_gfc": "Máscara floresta/não floresta (1 = floresta) para o ano escolhido, derivada do [Hansen Global Forest Change](https://developers.google.com/earth-engine/datasets/catalog/UMD_hansen_global_forest_change_2024_v1_12): pixels acima do limiar de cobertura arbórea em 2000 menos a perda até aquele ano. Temporal.",
+      "forest_tmf": "Máscara floresta/não floresta (1 = floresta) para o ano escolhido, do produto de mudanças anuais [JRC Tropical Moist Forest](https://developers.google.com/earth-engine/datasets/catalog/projects_JRC_TMF_v1_2024_AnnualChanges) (floresta não perturbada mantida como floresta). Temporal.",
+      "towns": "Máscara binária de área urbana (1 = construída + povoada) para a época mais próxima, das camadas de população e superfície construída do [JRC GHSL](https://developers.google.com/earth-engine/datasets/catalog/JRC_GHSL_P2023A_GHS_BUILT_S). Temporal (épocas de 5 anos).",
+      "subj": "Raster categórico das subjurisdições administrativas de nível 2 do [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), com um valor distinto para cada zona. Usado na estratificação no estilo JNR."
+    },
+    "modal": {
+      "title_add": "Adicionar variável",
+      "title_edit": "Editar variável",
+      "submit_add": "Criar variável",
+      "submit_save": "Salvar",
+      "source_label": "Origem",
+      "source_hint": "Predefinida = camadas prontas do Earth Engine; Usuário = seu próprio raster, vetor ou asset do GEE.",
+      "source_predefined": "Predefinida",
+      "source_user": "Usuário",
+      "type_local_raster": "Arquivo raster local",
+      "type_gee": "Asset do Google Earth Engine",
+      "type_local_vector": "Arquivo vetorial local",
+      "predefined_variable_label": "Variável",
+      "predefined_year_label": "Ano",
+      "predefined_var_type_label": "Tipo de variável",
+      "predefined_raster_type_label": "Tipo de raster",
+      "param_tree_cover_threshold": "Limiar de cobertura arbórea (%)",
+      "param_tree_cover_threshold_hint": "Cobertura de dossel mínima em 2000 contada como floresta (1-100). Ela faz parte do nome da variável, então vários limiares podem coexistir.",
+      "custom_name_label": "Nome",
+      "custom_type_label": "Tipo de variável",
+      "custom_type_hint": "Arquivo raster local = GeoTIFF no disco; Asset do Google Earth Engine = asset do GEE; Arquivo vetorial local = arquivo vetorial, rasterizado durante a harmonização.",
+      "custom_year_label": "Ano (opcional)",
+      "custom_year_hint": "Defina para camadas temporais, assim a mesma variável pode ser adicionada por ano; deixe em branco para as estáticas.",
+      "custom_file_label": "Selecionar arquivo",
+      "custom_asset_id_label": "ID do asset do GEE",
+      "custom_asset_id_placeholder": "projects/your-project/assets/name",
+      "custom_scale_label": "Escala (m, opcional)",
+      "custom_scale_hint": "Tamanho nominal do pixel em metros usado ao exportar este asset do GEE.",
+      "custom_raster_type_label": "Tipo de raster",
+      "custom_raster_type_hint": "contínuo = valores medidos (p. ex. elevação); categórico = classes ou máscaras 0/1.",
+      "custom_rasterization_method_label": "Método de rasterização",
+      "custom_rasterization_method_hint": "binário = 1 onde há uma feição, 0 nos demais locais; único = um valor por feição/classe.",
+      "error_no_predefined_selected": "Selecione uma variável na lista.",
+      "error_year_required": "O ano é obrigatório para esta variável.",
+      "error_param_range": "{label} deve ser um número inteiro entre {min} e {max}.",
+      "error_name_required": "O nome da variável é obrigatório."
+    }
+  }
+}

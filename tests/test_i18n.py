@@ -37,11 +37,13 @@ def test_plural_selects_variant():
     assert i18n.plural(3, "common._test_one", "common._test_other") == "3 items"
 
 
-def test_app_available_locales_is_en_and_es():
-    """Only en and es-ES are exposed as available locales."""
-    # Spanish ships as "es-ES" — pysepal's LocaleSelect only lists IETF codes
-    # present in its locale table, which has no bare "es" (only es-ES/es-AR/...).
-    assert set(i18n.app_available_locales()) == {"en", "es-ES"}
+def test_app_available_locales():
+    """The four shipped locales are exposed to the selector."""
+    # pysepal's LocaleSelect only lists IETF codes present in its locale table:
+    # there is no bare "es" (only es-ES/es-AR/...) and no bare "pt" (only
+    # pt-PT/pt-BR), so Spanish ships as "es-ES" and Portuguese as "pt-BR".
+    # French does have a bare "fr" entry, so it ships as "fr".
+    assert set(i18n.app_available_locales()) == {"en", "es-ES", "fr", "pt-BR"}
 
 
 def _flat_keys(d, prefix=""):
@@ -69,9 +71,59 @@ def _merged_for_lang(lang):
 
 def test_no_duplicate_keys_within_language():
     """No key is declared twice across a language's message files."""
-    for lang in ("en", "es-ES"):
+    for lang in i18n.app_available_locales():
         _, dupes = _merged_for_lang(lang)
         assert not dupes, f"Duplicate keys in {lang}: {dupes}"
+
+
+def _translated_locales():
+    return [ln for ln in i18n.app_available_locales() if ln != "en"]
+
+
+def test_every_locale_has_full_key_parity_with_en():
+    """Every translated locale declares exactly the en key set.
+
+    A missing key silently falls back to English, so a gap is invisible in the
+    UI — only a parity check surfaces it.
+    """
+    en_keys = set(_merged_for_lang("en")[0])
+    for lang in _translated_locales():
+        keys = set(_merged_for_lang(lang)[0])
+        assert not (en_keys - keys), f"{lang} missing: {sorted(en_keys - keys)}"
+        assert not (keys - en_keys), f"{lang} has orphans: {sorted(keys - en_keys)}"
+
+
+def test_no_locale_has_empty_values():
+    """No catalog value is empty.
+
+    ``Translator.delete_empty`` drops empty strings and falls back to English,
+    so ``"key": ""`` is an invisible gap rather than a visible placeholder.
+    """
+    for lang in _translated_locales():
+        merged, _ = _merged_for_lang(lang)
+        empty = sorted(k for k, v in merged.items() if not str(v).strip())
+        assert not empty, f"Empty values in {lang}: {empty}"
+
+
+def test_placeholder_sets_match_en_in_every_locale():
+    """Each translated value carries exactly en's ``{placeholder}`` names.
+
+    This is the one mechanical failure a reader cannot catch: ``t()`` swallows
+    every exception and returns the raw dotted key, so a renamed placeholder
+    ({nome} for {name}) yields no error and no log line — just a dotted key
+    rendered into the UI.
+    """
+    placeholder = re.compile(r"{(\w+)}")
+    en_merged, _ = _merged_for_lang("en")
+    for lang in _translated_locales():
+        merged, _ = _merged_for_lang(lang)
+        for key, en_value in en_merged.items():
+            expected = set(placeholder.findall(en_value))
+            actual = set(placeholder.findall(merged[key]))
+            assert expected == actual, (
+                f"{lang} placeholder mismatch in '{key}': "
+                f"expected {sorted(expected)}, got {sorted(actual)}"
+            )
 
 
 def test_relative_time_plural_keys_exist():
@@ -193,10 +245,12 @@ def test_no_hardcoded_step_numbers_in_messages():
     """
     import re
 
-    for lang in ("en", "es-ES"):
+    # one alternative per shipped locale: en / es-ES / fr / pt-BR
+    step_word = r"(?:Step|Paso|Étape|Etapa|Passo)"
+    for lang in i18n.app_available_locales():
         for f in sorted((i18n.MESSAGES_DIR / lang).glob("*.json")):
             text = f.read_text()
-            hits = re.findall(r"(?:Step|Paso) \d", text)
+            hits = re.findall(rf"{step_word} \d", text)
             assert not hits, (lang, f.name, hits)
 
 

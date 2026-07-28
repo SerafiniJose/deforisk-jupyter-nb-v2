@@ -76,10 +76,12 @@ def test_formula_flag_on_patsy_models_only():
 
 
 def test_formula_i18n_keys_exist_in_both_locales():
-    """Test formula i18n keys exist in both English and Spanish."""
+    """Test formula i18n keys exist in every shipped locale."""
     import json
 
-    for locale in ("en", "es-ES"):
+    from gui import i18n
+
+    for locale in i18n.app_available_locales():
         with open(f"gui/messages/{locale}/tiles.json") as f:
             train = json.load(f)["tiles"]["train"]
         for key in (

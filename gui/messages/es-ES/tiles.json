@@ -185,7 +185,7 @@
       "pred_name_label": "Nombre de predicción",
       "pred_name_exists_warning": "⚠ Ya existe una predicción llamada '{name}' — ejecutar la sobrescribirá.",
       "pred_name_saved_as": "Guardado como '{name}'.",
-      "pred_name_required": "Requerido.",
+      "pred_name_required": "Obligatorio.",
       "run_button": "Crear predicción",
       "import_button": "Importar predicción",
       "generate_overviews_label": "Generar vistas generales antes de mostrar",
@@ -201,7 +201,7 @@
       "confirm_overwrite_message": "Ya existe una predicción llamada '{name}'. Ejecutar sobrescribirá su(s) ráster(es) y entrada en el registro. Esta acción no se puede deshacer.",
       "confirm_overwrite_label": "Sobrescribir",
       "error_map_toggle": "No se pudo alternar la predicción en el mapa: {exc}",
-      "source_label": "Origen",
+      "source_label": "Fuente",
       "source_model": "Ejecutar un modelo",
       "source_import": "Importar un ráster"
     },
@@ -283,7 +283,7 @@
       "confirm_overwrite_label": "Sobrescribir",
       "model_name_exists_warning": "⚠ Ya existe un modelo llamado '{key}' — el entrenamiento lo sobrescribirá.",
       "model_name_saved_as": "Guardado como '{key}'.",
-      "model_name_required": "Requerido."
+      "model_name_required": "Obligatorio."
     }
   }
 }

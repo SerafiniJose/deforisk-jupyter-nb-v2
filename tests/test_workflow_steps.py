@@ -29,9 +29,17 @@ def _project():
 
 
 def test_registry_shape():
+    """STEPS declares the nine pipeline steps in order, each key unique."""
     assert [s.key for s in STEPS] == [
-        "aoi", "variables", "process", "postprocess", "dataset",
-        "sampling", "train", "inference", "evaluation",
+        "aoi",
+        "variables",
+        "process",
+        "postprocess",
+        "dataset",
+        "sampling",
+        "train",
+        "inference",
+        "evaluation",
     ]
     assert len({s.key for s in STEPS}) == 9
     # AOI is always reachable, so it carries no lock reason.
@@ -41,8 +49,11 @@ def test_registry_shape():
 
 
 def test_gate_matrix_matches_legacy_disabled_flags():
-    """Walk the pipeline forward, asserting each artifact unlocks exactly the
-    steps the old inline disabled_flags did (gui/solara_app.py)."""
+    """Each artifact unlocks exactly the steps the legacy flags did.
+
+    Walks the pipeline forward, comparing against the old inline
+    disabled_flags truth table (gui/solara_app.py).
+    """
     p = _project()
     aoi = _aoi()
 
@@ -74,12 +85,14 @@ def test_gate_matrix_matches_legacy_disabled_flags():
 
 
 def test_gates_with_no_project_and_no_aoi():
+    """Without a project or AOI only the AOI step is reachable."""
     states = step_states(None, None)
     assert states[0] is StepStatus.EMPTY  # AOI reachable, nothing selected
     assert all(s is StepStatus.LOCKED for s in states[1:])
 
 
 def test_step_status_empty_vs_has_outputs():
+    """An unlocked step reports EMPTY until it owns outputs; locked wins."""
     p = _project()
     aoi = _aoi()
     variables = STEPS[1]
@@ -91,11 +104,13 @@ def test_step_status_empty_vs_has_outputs():
 
 
 def test_aoi_count_is_the_aoi_name():
+    """The AOI step shows the AOI name as its count, None when unset."""
     assert STEPS[0].count(None, _aoi()) == "Acre"
     assert STEPS[0].count(None, None) is None
 
 
 def test_postprocess_count_zero_without_outputs():
+    """A harmonized variable is not a derived layer, so the count stays 0."""
     p = _project()
     p.processed_variables["v"] = SimpleNamespace(
         data_type="raster", tags=[], processing_history=[], name="v"
@@ -105,10 +120,17 @@ def test_postprocess_count_zero_without_outputs():
 
 
 def test_nav_targets_skip_locked():
+    """Back/Next jump over locked steps to the nearest reachable one."""
     states = [
-        StepStatus.HAS_OUTPUTS, StepStatus.HAS_OUTPUTS, StepStatus.LOCKED,
-        StepStatus.EMPTY, StepStatus.LOCKED, StepStatus.LOCKED,
-        StepStatus.LOCKED, StepStatus.LOCKED, StepStatus.LOCKED,
+        StepStatus.HAS_OUTPUTS,
+        StepStatus.HAS_OUTPUTS,
+        StepStatus.LOCKED,
+        StepStatus.EMPTY,
+        StepStatus.LOCKED,
+        StepStatus.LOCKED,
+        StepStatus.LOCKED,
+        StepStatus.LOCKED,
+        StepStatus.LOCKED,
     ]
     assert nav_targets(3, states) == (1, None)
     assert nav_targets(0, states) == (None, 1)
@@ -134,7 +156,8 @@ def _lang_keys(lang):
 
 
 def test_registry_keys_resolve_in_both_locales():
-    for lang in ("en", "es-ES"):
+    """Every registry label, lock reason and count key exists in each locale."""
+    for lang in i18n.app_available_locales():
         keys = _lang_keys(lang)
         for spec in STEPS:
             assert spec.label_key in keys, (lang, spec.key)

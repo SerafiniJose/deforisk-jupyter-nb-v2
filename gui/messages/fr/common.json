@@ -1,0 +1,20 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "load": "Charger",
+    "cancel": "Annuler",
+    "create": "Créer",
+    "remove": "Retirer",
+    "replace": "Remplacer",
+    "delete": "Supprimer",
+    "close": "Fermer",
+    "actions": "Actions",
+    "advanced": "Avancé",
+    "new": "Nouveau",
+    "yes": "Oui",
+    "no": "Non",
+    "_test_fmt": "bonjour {name}",
+    "_test_one": "{n} élément",
+    "_test_other": "{n} éléments"
+  }
+}

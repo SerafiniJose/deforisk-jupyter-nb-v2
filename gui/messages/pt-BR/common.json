@@ -1,0 +1,20 @@
+{
+  "common": {
+    "save": "Salvar",
+    "load": "Carregar",
+    "cancel": "Cancelar",
+    "create": "Criar",
+    "remove": "Remover",
+    "replace": "Substituir",
+    "delete": "Excluir",
+    "close": "Fechar",
+    "actions": "Ações",
+    "advanced": "Avançado",
+    "new": "Novo",
+    "yes": "Sim",
+    "no": "Não",
+    "_test_fmt": "olá {name}",
+    "_test_one": "{n} item",
+    "_test_other": "{n} itens"
+  }
+}
