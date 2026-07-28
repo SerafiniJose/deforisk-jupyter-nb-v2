@@ -28,18 +28,18 @@ def _feature(name):
     return types.SimpleNamespace(name=name, path=Path(f"/tmp/{name}.tif"))
 
 
-def _project(model, model_key, with_forest=True, feature_names=None):
+def _project(model, model_key, feature_names=None):
     """Fake project around one dataset.
 
     ``feature_names`` sets the dataset's feature names explicitly; because the
     paths are derived from the names, a test can assert *which* feature was
-    picked. Defaults to the legacy single bare ``forest_gfc``.
+    picked. Defaults to a single ``forest_gfc_tc30``.
     """
     target = types.SimpleNamespace(
         name="forest_loss_2015_2020", path=Path("/tmp/d.tif")
     )
     if feature_names is None:
-        feature_names = ["forest_gfc"] if with_forest else []
+        feature_names = ["forest_gfc_tc30"]
     feats = [_feature(n) for n in feature_names]
     dataset = types.SimpleNamespace(name="calibration", target=target, features=feats)
     folders = types.SimpleNamespace(
@@ -56,20 +56,66 @@ def _project(model, model_key, with_forest=True, feature_names=None):
     )
 
 
-def test_ml_model_apply_gets_mask_and_output(tmp_path):
+# --- mask resolution ---------------------------------------------------------
+#
+# The mask is generic: any dataset feature can be assigned as the mask layer,
+# and omitting it is a valid, explicit "predict everywhere". The runner never
+# guesses a mask on the user's behalf — seeding a forest suggestion is the
+# Predict dialog's job (suggested_mask_layer).
+
+
+def test_ml_model_apply_gets_the_chosen_mask_and_output():
     """An ML family gets apply(output_file, dataset, mask, mask_value)."""
     m = _RecordingModel()
-    proj = _project(m, "glm_glm_v1")
-    run_inference(proj, "glm_glm_v1", "calibration")
+    proj = _project(m, "glm_glm_v1", feature_names=["altitude", "forest_gfc_tc30"])
+    run_inference(proj, "glm_glm_v1", "calibration", mask_feature="forest_gfc_tc30")
     (args, kwargs) = m.apply_calls[0]
     # apply(output_file, dataset, mask, mask_value)
     assert str(args[0]).endswith("calibration.tif")
     assert args[1] is proj.get_dataset("calibration")  # dataset positional arg
-    assert args[2] == Path("/tmp/forest_gfc.tif")  # forest_gfc mask
+    assert args[2] == Path("/tmp/forest_gfc_tc30.tif")  # chosen mask layer
     assert args[3] == 0  # mask_value
 
 
-def test_ml_model_with_none_name_falls_back_to_model_key(tmp_path):
+def test_any_feature_can_be_the_mask():
+    """The mask is not restricted to Hansen layers — algorithms stay generic."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1", feature_names=["altitude", "my_forest_mask"])
+    run_inference(proj, "glm_glm_v1", "calibration", mask_feature="my_forest_mask")
+    (args, _kwargs) = m.apply_calls[0]
+    assert args[2] == Path("/tmp/my_forest_mask.tif")
+
+
+def test_no_mask_predicts_over_the_full_stack():
+    """mask_feature=None is an explicit 'no mask': apply() receives mask=None."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1", feature_names=["altitude"])
+    run_inference(proj, "glm_glm_v1", "calibration", mask_feature=None)
+    (args, _kwargs) = m.apply_calls[0]
+    assert args[2] is None
+
+
+def test_blank_mask_feature_means_no_mask_too():
+    """The dialog's empty-string state degrades to no mask, never to a guess."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1")
+    run_inference(proj, "glm_glm_v1", "calibration", mask_feature="")
+    (args, _kwargs) = m.apply_calls[0]
+    assert args[2] is None
+
+
+def test_mask_feature_not_in_dataset_raises():
+    """A stale choice names the feature and the dataset it is missing from."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1", feature_names=["forest_gfc_tc30"])
+    with pytest.raises(ValueError) as excinfo:
+        run_inference(proj, "glm_glm_v1", "calibration", mask_feature="forest_gfc_tc75")
+    message = str(excinfo.value)
+    assert "forest_gfc_tc75" in message and "calibration" in message
+    assert not m.apply_calls
+
+
+def test_ml_model_with_none_name_falls_back_to_model_key():
     """A model whose ``name`` is None falls back to model_key, not a crash.
 
     Real models (BaseRiskModel) default ``name`` to None. The old code used
@@ -80,14 +126,85 @@ def test_ml_model_with_none_name_falls_back_to_model_key(tmp_path):
     m = _RecordingModel()
     m.name = None
     proj = _project(m, "glm")
-    run_inference(proj, "glm", "calibration")
+    run_inference(proj, "glm", "calibration", mask_feature="forest_gfc_tc30")
     (args, _kwargs) = m.apply_calls[0]
     out_path = Path(args[0])
     assert out_path.parent == Path("/tmp/far_glm/glm")  # model_key is the fallback
     assert out_path.name == "calibration.tif"
 
 
-def test_jnr_model_apply_gets_time_interval(tmp_path):
+# --- candidate list and dialog seed ------------------------------------------
+
+
+def test_mask_layer_candidates_lists_every_feature():
+    """Any dataset layer is a legal mask — the dialog offers them all."""
+    from gui.scripts.inference_runner import mask_layer_candidates
+
+    dataset = types.SimpleNamespace(
+        features=[
+            _feature("altitude"),
+            _feature("forest_gfc_tc30"),
+            _feature("my_forest_mask"),
+        ]
+    )
+    assert mask_layer_candidates(dataset) == [
+        "altitude",
+        "forest_gfc_tc30",
+        "my_forest_mask",
+    ]
+
+
+def test_mask_layer_candidates_tolerates_a_missing_dataset():
+    """A half-built dataset yields no candidates instead of raising."""
+    from gui.scripts.inference_runner import mask_layer_candidates
+
+    assert mask_layer_candidates(None) == []
+    assert mask_layer_candidates(types.SimpleNamespace(features=None)) == []
+
+
+def test_suggested_mask_layer_is_the_sole_forest_layer():
+    """A single Hansen-derived layer is the natural deforisk-style seed."""
+    from gui.scripts.inference_runner import suggested_mask_layer
+
+    dataset = types.SimpleNamespace(
+        features=[_feature("altitude"), _feature("forest_gfc_tc30")]
+    )
+    assert suggested_mask_layer(dataset) == "forest_gfc_tc30"
+
+
+def test_suggested_mask_layer_resolves_legacy_bare_names():
+    """Older projects name the layer plain ``forest_gfc``; it still seeds."""
+    from gui.scripts.inference_runner import suggested_mask_layer
+
+    dataset = types.SimpleNamespace(features=[_feature("forest_gfc")])
+    assert suggested_mask_layer(dataset) == "forest_gfc"
+
+
+def test_suggested_mask_layer_never_guesses_between_two_forests():
+    """Two forest definitions: the choice is the user's, so no seed."""
+    from gui.scripts.inference_runner import suggested_mask_layer
+
+    dataset = types.SimpleNamespace(
+        features=[_feature("forest_gfc_tc30"), _feature("forest_gfc_tc75")]
+    )
+    assert suggested_mask_layer(dataset) == ""
+
+
+def test_suggested_mask_layer_is_empty_without_a_forest_layer():
+    """No Hansen layer, no suggestion — other layers are never auto-picked."""
+    from gui.scripts.inference_runner import suggested_mask_layer
+
+    dataset = types.SimpleNamespace(
+        features=[_feature("altitude"), _feature("forest_tmf")]
+    )
+    assert suggested_mask_layer(dataset) == ""
+    assert suggested_mask_layer(None) == ""
+
+
+# --- benchmark families ------------------------------------------------------
+
+
+def test_jnr_model_apply_gets_time_interval():
     """The JNR family gets its time interval derived from the target name."""
     m = _RecordingModel()
     proj = _project(m, "jnr_calibration_jnr")
@@ -101,7 +218,7 @@ def test_jnr_model_apply_gets_time_interval(tmp_path):
     assert kwargs["deforate_model"] is None
 
 
-def test_mw_model_apply_returns_multiple_and_uses_output_folder(tmp_path):
+def test_mw_model_apply_returns_multiple_and_uses_output_folder():
     """The MW family writes one raster per window into an output folder."""
     m = _RecordingMW()
     proj = _project(m, "mw_calibration_mw")
@@ -111,120 +228,15 @@ def test_mw_model_apply_returns_multiple_and_uses_output_folder(tmp_path):
     assert kwargs["output_folder"] == Path("/tmp/rmj_mw")
 
 
-def test_ml_model_missing_forest_feature_raises():
-    """An ML run without a forest feature fails its precondition, loudly."""
-    m = _RecordingModel()
-    proj = _project(m, "glm_glm_v1", with_forest=False)
-    with pytest.raises(ValueError, match="forest_gfc"):
-        run_inference(proj, "glm_glm_v1", "calibration")
-
-
-# --- forest-mask resolution -------------------------------------------------
-#
-# Hansen layers created from the Add Variable modal bake their parameters into
-# the variable name ("forest_gfc_tc30"), so the mask can no longer be found by
-# an exact-name match. See gui/scripts/predefined_variables.resolve_predefined.
-
-
-def test_ml_model_accepts_a_parameterised_forest_feature():
-    """Regression: the mask lookup must resolve the name, not compare it.
-
-    Every project built after the tree-cover-threshold feature shipped names
-    its Hansen layer ``forest_gfc_tc<N>``; the old ``f.name == "forest_gfc"``
-    match returned None and raised on every GLM/RF/ICAR run.
-    """
-    m = _RecordingModel()
-    proj = _project(m, "glm_glm_v1", feature_names=["forest_gfc_tc30"])
-    run_inference(proj, "glm_glm_v1", "calibration")
-    (args, _kwargs) = m.apply_calls[0]
-    assert args[2] == Path("/tmp/forest_gfc_tc30.tif")
-
-
-def test_non_forest_features_are_not_mask_candidates():
-    """Other layers in the dataset must not be mistaken for the forest mask."""
-    m = _RecordingModel()
-    proj = _project(
-        m, "glm_glm_v1", feature_names=["altitude", "forest_tmf", "my_forest_mask"]
-    )
-    with pytest.raises(ValueError, match="forest_gfc"):
-        run_inference(proj, "glm_glm_v1", "calibration")
-
-
-def test_two_forest_candidates_raise_listing_both():
-    """Ambiguity is the user's call (in the Predict dialog), never a guess."""
-    m = _RecordingModel()
-    proj = _project(
-        m, "glm_glm_v1", feature_names=["forest_gfc_tc30", "forest_gfc_tc75"]
-    )
-    with pytest.raises(ValueError) as excinfo:
-        run_inference(proj, "glm_glm_v1", "calibration")
-    message = str(excinfo.value)
-    assert "forest_gfc_tc30" in message and "forest_gfc_tc75" in message
-    assert not m.apply_calls
-
-
-def test_explicit_forest_feature_resolves_the_ambiguity():
-    """The dialog's choice selects one of two candidates."""
-    m = _RecordingModel()
-    proj = _project(
-        m, "glm_glm_v1", feature_names=["forest_gfc_tc30", "forest_gfc_tc75"]
-    )
-    run_inference(proj, "glm_glm_v1", "calibration", forest_feature="forest_gfc_tc75")
-    (args, _kwargs) = m.apply_calls[0]
-    assert args[2] == Path("/tmp/forest_gfc_tc75.tif")
-
-
-def test_explicit_forest_feature_not_in_dataset_raises():
-    """A stale choice names the feature and the dataset it is missing from."""
-    m = _RecordingModel()
-    proj = _project(m, "glm_glm_v1", feature_names=["forest_gfc_tc30"])
-    with pytest.raises(ValueError) as excinfo:
-        run_inference(
-            proj, "glm_glm_v1", "calibration", forest_feature="forest_gfc_tc75"
-        )
-    message = str(excinfo.value)
-    assert "forest_gfc_tc75" in message and "calibration" in message
-
-
-def test_empty_forest_feature_falls_back_to_the_sole_candidate():
-    """The dialog field is optional: blank means 'resolve it for me'."""
-    m = _RecordingModel()
-    proj = _project(m, "glm_glm_v1", feature_names=["forest_gfc_tc30"])
-    run_inference(proj, "glm_glm_v1", "calibration", forest_feature="")
-    (args, _kwargs) = m.apply_calls[0]
-    assert args[2] == Path("/tmp/forest_gfc_tc30.tif")
-
-
-def test_forest_feature_candidates_lists_hansen_layers_only():
-    """The one place both the dialog and the runner ask 'which are forests?'."""
-    from gui.scripts.inference_runner import forest_feature_candidates
-
-    dataset = types.SimpleNamespace(
-        features=[
-            _feature("altitude"),
-            _feature("forest_gfc_tc30"),
-            _feature("forest_tmf"),
-            _feature("forest_gfc"),
-            _feature("my_forest_mask"),
-        ]
-    )
-    assert forest_feature_candidates(dataset) == ["forest_gfc_tc30", "forest_gfc"]
-
-
-def test_forest_feature_candidates_tolerates_a_missing_dataset():
-    """A half-built dataset yields no candidates instead of raising."""
-    from gui.scripts.inference_runner import forest_feature_candidates
-
-    assert forest_feature_candidates(None) == []
-    assert forest_feature_candidates(types.SimpleNamespace(features=None)) == []
-
-
-def test_benchmark_families_ignore_the_forest_feature():
+def test_benchmark_families_ignore_the_mask_feature():
     """JNR/MW resolve their own layers, so no mask is required of them."""
     m = _RecordingModel()
-    proj = _project(m, "jnr_calibration_jnr", with_forest=False)
-    run_inference(proj, "jnr_calibration_jnr", "calibration")
+    proj = _project(m, "jnr_calibration_jnr", feature_names=[])
+    run_inference(proj, "jnr_calibration_jnr", "calibration", mask_feature="whatever")
     assert m.apply_calls
+
+
+# --- named runs --------------------------------------------------------------
 
 
 def test_named_run_uses_name_subfolder_and_sets_pending_name():
@@ -234,7 +246,13 @@ def test_named_run_uses_name_subfolder_and_sets_pending_name():
     """
     m = _RecordingModel()
     proj = _project(m, "glm_glm_v1")
-    run_inference(proj, "glm_glm_v1", "calibration", name="run_a")
+    run_inference(
+        proj,
+        "glm_glm_v1",
+        "calibration",
+        name="run_a",
+        mask_feature="forest_gfc_tc30",
+    )
     (args, _kwargs) = m.apply_calls[0]
     out_path = Path(args[0])
     assert out_path.parent == Path("/tmp/far_glm/run_a")  # name is the subfolder
@@ -322,13 +340,12 @@ class _NamingProject:
 def test_run_inference_accepts_a_dataset_built_from_a_parameterised_layer(tmp_path):
     """Integration-shaped: modal name -> Dataset.set_features -> run_inference.
 
-    The unit tests above exercise each side of this boundary in isolation. This
-    one crosses it: the variable is named by ``build_predefined_name`` exactly
-    as the Add Variable modal names it, stored on a real ``Dataset`` via
-    ``set_features``, and handed to ``run_inference``. Before the fix this
-    raised "ML inference needs a 'forest_gfc' feature" — i.e. every GLM/RF/ICAR
-    run on any project created after the threshold feature shipped.
+    The variable is named by ``build_predefined_name`` exactly as the Add
+    Variable modal names it, stored on a real ``Dataset`` via ``set_features``,
+    suggested by ``suggested_mask_layer`` as the dialog would seed it, and
+    handed to ``run_inference`` — the whole path the app actually takes.
     """
+    from gui.scripts.inference_runner import suggested_mask_layer
     from gui.scripts.predefined_variables import build_predefined_name
     from spatialrisk.dataset import Dataset
 
@@ -349,7 +366,10 @@ def test_run_inference_accepts_a_dataset_built_from_a_parameterised_layer(tmp_pa
     ds.set_features([forest_name])
     proj._dataset = ds
 
-    run_inference(proj, "glm_glm_v1", "calibration")
+    seed = suggested_mask_layer(ds)
+    assert seed == forest_name
+
+    run_inference(proj, "glm_glm_v1", "calibration", mask_feature=seed)
 
     (args, _kwargs) = m.apply_calls[0]
     assert args[2] == Path(f"/tmp/{forest_name}.tif")

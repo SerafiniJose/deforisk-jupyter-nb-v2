@@ -15,79 +15,73 @@ logger = logging.getLogger("spatial_risk")
 
 _ML_FOLDER = {"glm": "glm_model", "rf": "rf_model", "icar": "icar_model"}
 
-# Catalogue key of the Hansen layer ML models mask with. A dataset feature
-# carries the *variable* name, which bakes in the layer's parameters
-# ("forest_gfc_tc30"), so candidates are found by resolving the name back to
-# this key — never by comparing against it.
+# Catalogue key of the Hansen layer used to *suggest* a mask in the Predict
+# dialog. A dataset feature carries the *variable* name, which bakes in the
+# layer's parameters ("forest_gfc_tc30"), so suggestions are found by resolving
+# the name back to this key — never by comparing against it. The mask itself is
+# generic: any dataset feature (or none) can be assigned.
 _FOREST_CATALOGUE_KEY = "forest_gfc"
 
 
 def is_ml_family(model_key):
-    """Whether *model_key* names a family whose apply() takes a forest mask."""
+    """Whether *model_key* names a family whose apply() takes a mask layer."""
     return str(model_key or "").split("_")[0] in _ML_FOLDER
 
 
-def forest_feature_candidates(dataset):
-    """Names of *dataset*'s features usable as the ML forest mask.
+def mask_layer_candidates(dataset):
+    """Names of *dataset*'s features assignable as the ML mask layer.
 
-    A Hansen layer added from the Add Variable modal is named
-    ``forest_gfc_tc<threshold>``, so an exact-name match misses it; each feature
-    name is resolved back to its catalogue key instead. Legacy bare
-    ``forest_gfc`` features still resolve, so older projects keep working.
+    Every feature qualifies — the mask is a plain 1=keep/0=suppress raster with
+    no assumption about where it came from. This is the single source the
+    Predict dialog lists from, so the dialog can never offer a layer the runner
+    would reject.
+    """
+    features = getattr(dataset, "features", None) or []
+    return [f.name for f in features]
 
-    This is the single definition of "which features are forest masks". The
-    Predict dialog lists exactly these and ``run_inference`` picks from exactly
-    these, so the dialog can never offer a layer the runner would reject.
+
+def suggested_mask_layer(dataset):
+    """The feature name the Predict dialog seeds its mask select with.
+
+    Masking to forest-at-period-start is the usual deforestation setup, so a
+    sole Hansen-derived layer (``forest_gfc_tc<threshold>``, or the legacy bare
+    ``forest_gfc``) is suggested. Zero or several such layers return "" — the
+    choice is then the user's, because only they know which forest definition
+    (or no mask at all) a run is meant to use.
     """
     # Imported inside the function: this module has no gui.scripts imports at
     # module scope, and keeping it that way avoids an import cycle.
     from gui.scripts.predefined_variables import resolve_predefined
 
     features = getattr(dataset, "features", None) or []
-    return [
+    forest = [
         f.name
         for f in features
         if resolve_predefined(f.name)[0] == _FOREST_CATALOGUE_KEY
     ]
+    return forest[0] if len(forest) == 1 else ""
 
 
-def _resolve_forest_mask(dataset, dataset_name, forest_feature):
-    """Path of the feature an ML run masks with. Raises when unresolvable.
+def _resolve_mask(dataset, dataset_name, mask_feature):
+    """Path of the feature an ML run masks with, or None for no mask.
 
-    ``forest_feature`` is the user's explicit choice from the Predict dialog.
-    When it is empty the mask is resolved automatically, which only succeeds
-    when the dataset holds exactly one forest feature: two candidates are never
-    disambiguated here, because only the user knows which forest definition a
-    run was meant to use.
+    ``mask_feature`` is the user's explicit choice from the Predict dialog;
+    empty means "no mask" (predict over the full stack). Nothing is ever
+    resolved on the user's behalf here — the dialog owns the forest suggestion.
     """
+    if not mask_feature:
+        return None
     features = list(getattr(dataset, "features", None) or [])
-    if forest_feature:
-        feature = next((f for f in features if f.name == forest_feature), None)
-        if feature is None:
-            raise ValueError(
-                f"Forest feature '{forest_feature}' is not in dataset "
-                f"'{dataset_name}'. Available features: {[f.name for f in features]}."
-            )
-        return feature.path
-
-    candidates = forest_feature_candidates(dataset)
-    if not candidates:
+    feature = next((f for f in features if f.name == mask_feature), None)
+    if feature is None:
         raise ValueError(
-            f"ML inference needs a Hansen forest feature (a "
-            f"'{_FOREST_CATALOGUE_KEY}' layer, e.g. "
-            f"'{_FOREST_CATALOGUE_KEY}_tc30') in dataset '{dataset_name}' to "
-            f"use as a mask."
+            f"Mask layer '{mask_feature}' is not in dataset "
+            f"'{dataset_name}'. Available features: {[f.name for f in features]}."
         )
-    if len(candidates) > 1:
-        raise ValueError(
-            f"Dataset '{dataset_name}' has more than one forest feature "
-            f"({', '.join(candidates)}). Choose which one to use as the mask "
-            f"in the Predict dialog."
-        )
-    return next(f.path for f in features if f.name == candidates[0])
+    return feature.path
 
 
-def run_inference(project, model_key, dataset_name, name=None, forest_feature=None):
+def run_inference(project, model_key, dataset_name, name=None, mask_feature=None):
     """Run inference for one registered model on one dataset.
 
     Parameters
@@ -99,14 +93,15 @@ def run_inference(project, model_key, dataset_name, name=None, forest_feature=No
         ``BaseRiskModel._register_prediction``). The caller is responsible for
         passing a path-safe token. When omitted, the legacy provenance-derived
         paths and keys are used unchanged.
-    forest_feature : str, optional
-        Name of the dataset feature to mask with (ML families only), as chosen
-        in the Predict dialog. Omitted or blank means "resolve it for me", which
-        works whenever the dataset holds exactly one forest feature. Ignored by
-        the JNR/MW families, which resolve their own layers.
+    mask_feature : str, optional
+        Name of the dataset feature to mask with (ML families only), as
+        assigned in the Predict dialog. Omitted or blank means no mask: the
+        prediction covers the full raster stack. Ignored by the JNR/MW
+        families, which resolve their own layers.
 
-    Raises ValueError if preconditions are missing (no dataset target, no forest
-    feature for ML models, unresolvable time interval for benchmark models).
+    Raises ValueError if preconditions are missing (no dataset target, a mask
+    feature not in the dataset, unresolvable time interval for benchmark
+    models).
     """
     model = project.models[model_key]
     dataset = project.get_dataset(dataset_name)
@@ -124,7 +119,7 @@ def run_inference(project, model_key, dataset_name, name=None, forest_feature=No
     model._pending_pred_name = name or None
 
     if family in _ML_FOLDER:
-        mask = _resolve_forest_mask(dataset, dataset_name, forest_feature)
+        mask = _resolve_mask(dataset, dataset_name, mask_feature)
         subfolder = name or (getattr(model, "name", None) or model_key)
         out_dir = Path(getattr(project.folders, _ML_FOLDER[family])) / subfolder
         out_dir.mkdir(parents=True, exist_ok=True)
