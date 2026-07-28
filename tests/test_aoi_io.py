@@ -5,7 +5,12 @@ import pytest
 from shapely.geometry import box
 
 import spatialrisk.project as proj
-from gui.scripts.aoi_io import AOI_GEOMETRY_FILENAME, load_aoi, write_aoi
+from gui.scripts.aoi_io import (
+    AOI_GEOMETRY_FILENAME,
+    load_aoi,
+    persist_aoi,
+    write_aoi,
+)
 
 
 def _gdf(bounds=(12.40, 43.89, 12.52, 43.99)):
@@ -306,3 +311,48 @@ def test_load_asset_degrades_when_rebuild_fails(tmp_path, monkeypatch):
     restored = aoi_io.load_aoi(tmp_path, meta)
     assert restored is not None
     assert restored.feature_collection is None
+
+
+# --- persist_aoi ------------------------------------------------------------
+
+
+def test_persist_keeps_stored_aoi_when_session_state_is_empty(tmp_path):
+    """A save must never turn a persisted AOI into nothing.
+
+    Session state going empty while a project holds a saved AOI means something
+    dropped it (a widget teardown, a failed restore) — not that the user asked
+    for the AOI to be removed. Overwriting is silent, unrecoverable data loss,
+    so the stored metadata and its sidecar are kept.
+    """
+    stored = write_aoi(tmp_path, _aoi(gdf=_gdf()))
+    assert (tmp_path / AOI_GEOMETRY_FILENAME).exists()
+
+    kept = persist_aoi(tmp_path, None, stored)
+
+    assert kept == stored
+    assert (tmp_path / AOI_GEOMETRY_FILENAME).exists(), "sidecar geometry was deleted"
+
+
+def test_persist_writes_a_new_aoi_over_the_stored_one(tmp_path):
+    """Guarding an empty AOI must not block a real change of area."""
+    stored = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197"))
+
+    meta = persist_aoi(tmp_path, _aoi(method="ADMIN0", name="BOL", admin="178"), stored)
+
+    assert meta["name"] == "BOL"
+    assert meta["admin"] == "178"
+
+
+def test_persist_stores_nothing_when_there_is_nothing_stored(tmp_path):
+    """No AOI and none saved before is an ordinary empty project, not data loss."""
+    assert persist_aoi(tmp_path, None, None) is None
+
+
+def test_persist_of_empty_state_leaves_no_stale_sidecar(tmp_path):
+    """Guarding the metadata must not resurrect geometry for a metadata-only AOI."""
+    stored = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197"))
+
+    kept = persist_aoi(tmp_path, None, stored)
+
+    assert kept == stored
+    assert not (tmp_path / AOI_GEOMETRY_FILENAME).exists()

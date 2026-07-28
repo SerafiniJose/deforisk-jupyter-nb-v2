@@ -141,6 +141,44 @@ def write_aoi(project_dir: Path, aoi: Any) -> Optional[Dict[str, Any]]:
     return _aoi_metadata(aoi, geometry_file=AOI_GEOMETRY_FILENAME)
 
 
+def persist_aoi(
+    project_dir: Path, aoi: Any, stored: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """Decide what a save should store on ``project.aoi``.
+
+    ``write_aoi`` faithfully persists whatever session state holds, including
+    "nothing" — which is right when the project never had an AOI, and wrong
+    when it had one a moment ago. An AOI vanishing from session state means
+    something dropped it, not that the user asked for it to be removed: the
+    picker is step 1 and gates the whole workflow, so there is no flow in which
+    saving is how you clear it. Overwriting the stored metadata (and unlinking
+    its sidecar) in that case is unrecoverable — the geometry only lives here.
+
+    So an empty AOI over a stored one keeps the stored one, loudly. This is
+    defence-in-depth: the wipe that motivated it (pysepal's AoiView nulling the
+    caller's reactive when the widget unmounted) is fixed upstream, but the
+    failure mode was silent and cost real data.
+
+    Args:
+        project_dir: The project folder.
+        aoi: The AOI in session state (an ``AoiResult`` or None).
+        stored: The metadata already on the project (``project.aoi``), if any.
+
+    Returns:
+        The metadata dict to assign to ``project.aoi``, or None.
+    """
+    if aoi is None and stored:
+        logger.warning(
+            "Refusing to overwrite the saved AOI (%s) with an empty one: the "
+            "project has a stored AOI but session state is empty. Keeping the "
+            "saved AOI; re-select the area if you meant to change it.",
+            stored.get("name") or stored.get("method"),
+        )
+        return stored
+
+    return write_aoi(project_dir, aoi)
+
+
 def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[Any]:
     """Reconstruct an ``AoiResult`` from persisted metadata + sidecar geometry.
 

@@ -45,7 +45,7 @@ from gui.scripts.project_ui_helpers import (
     validate_project_name,
 )
 from gui.scripts.map_helpers import show_aoi_on_map, clear_project_overlays
-from gui.scripts.aoi_io import load_aoi, write_aoi
+from gui.scripts.aoi_io import load_aoi, persist_aoi
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
 from gui.tile.variables_tile import VariablesTile, vars_on_map
@@ -310,9 +310,12 @@ def ProjectPanel(on_close=None):
         try:
             # Persist the AOI alongside the project: geometry → aoi.geojson
             # sidecar, light metadata → project.aoi (saved into the manifest).
-            p.aoi = write_aoi(
+            # Passing the stored metadata lets persist_aoi refuse to replace a
+            # saved AOI with an empty one — see gui/scripts/aoi_io.py.
+            p.aoi = persist_aoi(
                 DATA_DIR / p.project_name,
                 app_state.aoi_result.value,
+                p.aoi,
             )
             path = save_project(p)
             app_state.mark_saved(datetime.now())
