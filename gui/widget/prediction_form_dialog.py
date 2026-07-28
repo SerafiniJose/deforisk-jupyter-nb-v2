@@ -20,13 +20,22 @@ from gui.scripts.artifact_names import (
     prediction_name_exists,
     sanitize_key,
 )
-from gui.scripts.inference_runner import forest_feature_candidates, is_ml_family
+from gui.scripts.inference_runner import (
+    is_ml_family,
+    mask_layer_candidates,
+    suggested_mask_layer,
+)
 from gui.scripts.prediction_import import resolve_import_key, sanitize_import_name
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import CreationDialog
 
 # Raster file types accepted for a local prediction import.
 _IMPORT_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
+
+# Select value for the explicit "no mask" choice. A sentinel rather than ""
+# because "" is the field's *unset* state, which validation refuses: predicting
+# unmasked must be a decision, never a default.
+NO_MASK = "__no_mask__"
 
 
 def _source_items():
@@ -55,7 +64,8 @@ def PredictionFormDialog(
     on_submit(entry) receives {"kind": "model", "model_key", "dataset_key",
     "name"} or {"kind": "import", "name", "path", "palette"}; the tile owns
     the job row and the worker. A model entry for an ML family (GLM/RF/ICAR)
-    also carries "forest_feature" — the dataset feature to mask with.
+    also carries "mask_feature" — the dataset feature to mask with, or None
+    for an explicit "no mask".
 
     Args:
         project: solara.Reactive[Project].
@@ -73,25 +83,25 @@ def PredictionFormDialog(
     dataset_keys = sorted(p.datasets.keys()) if p and p.datasets else []
     selected_dataset, set_selected_dataset = solara.use_state("")
 
-    # --- forest mask (ML families only)
-    # GLM/RF/ICAR mask their output with one of the dataset's forest layers.
-    # A Hansen layer's tree-cover threshold is part of its name, so a dataset
-    # can hold several; run_inference refuses to guess between them, which is
-    # why the choice is made here. The candidate list comes from the runner so
+    # --- mask layer (ML families only)
+    # GLM/RF/ICAR mask their output with a dataset layer the user assigns —
+    # any feature qualifies, and "no mask" is a valid explicit choice, so the
+    # algorithms carry no assumption about the mask's origin. The candidate
+    # list and the forest-layer suggestion both come from the runner module so
     # the dialog can never offer a layer the runner would reject.
-    forest_feature, set_forest_feature = solara.use_state("")
+    mask_feature, set_mask_feature = solara.use_state("")
     ml_family = source == "model" and is_ml_family(selected_model)
     _dataset = p.datasets.get(selected_dataset) if p and selected_dataset else None
-    forest_items = forest_feature_candidates(_dataset) if ml_family else []
-    show_forest = ml_family and bool(selected_dataset)
+    mask_candidates = mask_layer_candidates(_dataset) if ml_family else []
+    show_mask = ml_family and bool(selected_dataset)
 
-    def seed_forest_feature():
-        """Preselect the only candidate; leave an ambiguous dataset unset."""
-        set_forest_feature(forest_items[0] if len(forest_items) == 1 else "")
+    def seed_mask_feature():
+        """Suggest the sole forest layer; anything ambiguous starts unset."""
+        set_mask_feature(suggested_mask_layer(_dataset) if ml_family else "")
 
     # Re-seeds whenever the candidate set changes (a model or dataset switch)
-    # and never in between, so a deliberate pick among two survives re-renders.
-    solara.use_effect(seed_forest_feature, [tuple(forest_items)])
+    # and never in between, so a deliberate pick survives re-renders.
+    solara.use_effect(seed_mask_feature, [tuple(mask_candidates)])
 
     # --- import mode state
     file_path, set_file_path = solara.use_state("")
@@ -121,7 +131,7 @@ def PredictionFormDialog(
         set_source("model")
         set_selected_model("")
         set_selected_dataset("")
-        set_forest_feature("")
+        set_mask_feature("")
         set_file_path("")
         set_palette("far")
         reset_name()
@@ -144,6 +154,8 @@ def PredictionFormDialog(
             return t("tiles.inference.error_invalid_model")
         if not selected_dataset or selected_dataset not in p.datasets:
             return t("tiles.inference.error_invalid_dataset")
+        if ml_family and not mask_feature:
+            return t("tiles.inference.error_mask_required")
         if not clean:
             return t("tiles.inference.error_name_required")
         return None
@@ -171,10 +183,13 @@ def PredictionFormDialog(
                 "name": clean,
             }
             if ml_family:
-                # Optional: blank means "resolve it", which run_inference can do
-                # whenever the dataset holds exactly one forest layer. Benchmark
-                # families resolve their own layers and never carry the key.
-                entry["forest_feature"] = forest_feature
+                # The user's assignment: a feature name, or None for the
+                # explicit "no mask" choice (validate() guarantees one of the
+                # two). Benchmark families resolve their own layers and never
+                # carry the key.
+                entry["mask_feature"] = (
+                    None if mask_feature == NO_MASK else mask_feature
+                )
             on_submit(entry)
 
     with CreationDialog(
@@ -222,17 +237,21 @@ def PredictionFormDialog(
                 hint=t("tiles.inference.dataset_select_hint"),
                 persistent_hint=True,
             )
-            if show_forest:
+            if show_mask:
                 rv.Select(
-                    label=t("tiles.inference.forest_feature_label"),
-                    items=forest_items,
-                    v_model=forest_feature,
-                    on_v_model=set_forest_feature,
+                    label=t("tiles.inference.mask_layer_label"),
+                    items=[
+                        {"text": t("tiles.inference.mask_layer_none"), "value": NO_MASK}
+                    ]
+                    + [{"text": n, "value": n} for n in mask_candidates],
+                    item_text="text",
+                    item_value="value",
+                    v_model=mask_feature,
+                    on_v_model=set_mask_feature,
                     dense=True,
                     outlined=True,
                     clearable=True,
-                    no_data_text=t("tiles.inference.forest_feature_no_data"),
-                    hint=t("tiles.inference.forest_feature_hint"),
+                    hint=t("tiles.inference.mask_layer_hint"),
                     persistent_hint=True,
                 )
         else:

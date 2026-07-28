@@ -51,12 +51,12 @@ def _run_inference(
     project_reactive=None,
     notifier=None,
     task_title=None,
-    forest_feature=None,
+    mask_feature=None,
 ):
     """Run model inference in a background thread.
 
-    ``forest_feature`` is the dataset feature an ML run masks with, as picked in
-    the Predict dialog; None or blank lets the runner resolve it.
+    ``mask_feature`` is the dataset feature an ML run masks with, as assigned
+    in the Predict dialog; None or blank means no mask.
     """
     try:
         with tracked_job(notifier, task_title or f"Predicting: {model_key}"), writing(
@@ -69,7 +69,7 @@ def _run_inference(
                 model_key,
                 dataset_key,
                 name=name,
-                forest_feature=forest_feature,
+                mask_feature=mask_feature,
             )
 
             # Model.apply() registers and saves the prediction on ``project``,
@@ -197,7 +197,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
-    def _launch_inference(model_key, dataset_key, name, forest_feature=None):
+    def _launch_inference(model_key, dataset_key, name, mask_feature=None):
         """Create the output job row and spawn the worker. Inputs pre-validated."""
         job_id = str(uuid.uuid4())[:8]
         job = {
@@ -221,7 +221,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 project,
                 notifications,
                 t("notifications.task_inference", model=model_key, dataset=dataset_key),
-                forest_feature,
+                mask_feature,
             ),
         )
         logger.info(
@@ -236,13 +236,13 @@ def InferenceTile(project, map_=None, sepal_client=None):
         if entry["kind"] == "import":
             _launch_import(entry["name"], entry["path"], entry["palette"])
         else:
-            # forest_feature is absent for the JNR/MW families, which resolve
+            # mask_feature is absent for the JNR/MW families, which resolve
             # their own layers rather than masking with a dataset feature.
             _launch_inference(
                 entry["model_key"],
                 entry["dataset_key"],
                 entry["name"],
-                entry.get("forest_feature"),
+                entry.get("mask_feature"),
             )
 
     def _forget_on_map(row_key):
