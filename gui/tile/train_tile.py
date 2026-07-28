@@ -6,15 +6,15 @@ import uuid
 import solara
 from pysepal.solara.notifications import use_notifications
 
-from spatialrisk.evaluation import interval_from_target
-
 from gui.i18n import t
 from gui.scripts.artifact_names import sanitize_key
-from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.model_registry import (
     MODEL_KEYS,
     MODEL_REGISTRY,
-)  # re-export: tests import from here
+)
+from gui.scripts.notify_bridge import tracked_job
+
+# re-export: tests import from here
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -24,6 +24,7 @@ from gui.widget.model_form_dialog import (
     model_short_label,
 )
 from gui.widget.train_model_list import TrainModelList
+from spatialrisk.evaluation import interval_from_target
 
 logger = logging.getLogger("spatial_risk")
 
@@ -85,6 +86,7 @@ def _run_training(
     model_name=None,
     notifier=None,
     task_title=None,
+    formula=None,
 ):
     """Run model training in a background thread."""
     registry = MODEL_REGISTRY[model_key]
@@ -105,6 +107,11 @@ def _run_training(
                     kwargs[key] = _parse_param(
                         str(raw) if raw is not None else None, param_def["type"]
                     )
+
+            if formula:
+                # BaseRiskModel.formula: _prepare_samples prefers it over
+                # auto-generation (iCAR appends "+ cell" internally on top).
+                kwargs["formula"] = formula
 
             model = model_cls(**kwargs)
             # The user-chosen name drives both the project.models key and the pickle
@@ -191,6 +198,7 @@ def TrainTile(project):
                 entry["name"],
                 notifications,
                 t("notifications.task_training", name=entry["name"]),
+                entry["formula"],
             ),
         )
         logger.info(

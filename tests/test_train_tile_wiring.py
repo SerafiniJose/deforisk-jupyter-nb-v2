@@ -92,3 +92,20 @@ def test_formula_i18n_keys_exist_in_both_locales():
             "error_formula_rhs_unknown",
         ):
             assert key in train, f"{locale} missing tiles.train.{key}"
+
+
+def test_run_training_accepts_and_forwards_formula():
+    """Test _run_training signature accepts formula and forwards it to model_cls."""
+    from gui.tile.train_tile import TrainTile, _run_training
+
+    sig = inspect.signature(_run_training)
+    assert "formula" in sig.parameters
+    assert sig.parameters["formula"].default is None
+
+    src = inspect.getsource(_run_training)
+    # The formula must reach the constructor kwargs, not be silently dropped.
+    assert 'kwargs["formula"] = formula' in src
+
+    # on_submit forwards entry["formula"] into the spawn tuple.
+    tile_src = inspect.getsource(TrainTile)
+    assert 'entry["formula"]' in tile_src
