@@ -14,7 +14,7 @@ from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
 from gui.widget.details_fields import ro_field
 from gui.widget.help import InfoPopup
-from spatialrisk.far_helpers import generate_patsy_formula
+from spatialrisk.far_helpers import generate_patsy_formula, strip_categorical_levels
 
 
 def model_label(key: str) -> str:
@@ -180,8 +180,9 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
     # unchanged on reopen).
     prefill_nonce, set_prefill_nonce = solara.use_state(0)
 
-    # generate_patsy_formula reads categorical rasters (get_categorical_levels)
-    # — real I/O, so never on the render/handler path.
+    # include_levels=False keeps the displayed formula short (bare C(x), no
+    # raster read); fit re-arms the level domains via inject_categorical_levels.
+    # Still off the render path: extract/classify can grow I/O again.
     @solara.lab.use_task(
         dependencies=[selected_dataset, has_formula, prefill_nonce],
         raise_error=False,
@@ -190,7 +191,9 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
     async def prefill_formula():
         if selected_ds_obj is None or not has_formula:
             return None
-        text = await asyncio.to_thread(generate_patsy_formula, selected_ds_obj)
+        text = await asyncio.to_thread(
+            generate_patsy_formula, selected_ds_obj, include_levels=False
+        )
         return (selected_dataset, text)
 
     def _apply_prefill():
@@ -497,9 +500,13 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                                         )
                                     with rv.ExpansionPanelContent():
                                         if stored_formula:
+                                            # levels=[...] is a fit-time safety
+                                            # net, noise to the reader.
                                             ro_field(
                                                 t("tiles.train.formula_label"),
-                                                stored_formula,
+                                                strip_categorical_levels(
+                                                    stored_formula
+                                                ),
                                             )
                                         for pd in param_defs:
                                             ro_field(

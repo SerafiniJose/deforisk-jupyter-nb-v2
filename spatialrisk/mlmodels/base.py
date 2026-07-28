@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
+
 class BaseRiskModel(BaseModel):
     """Generic base class for risk probability ML models.
 
@@ -54,7 +55,7 @@ class BaseRiskModel(BaseModel):
     n_samples : int, optional
         Number of samples used during training.
     deviance : float, optional
-        Model deviance (2 × log-loss × n_samples) from training.
+        Model deviance (2 x log-loss x n_samples) from training.
     project : any
         Live Project reference. Excluded from serialization.
     dataset : any
@@ -116,7 +117,10 @@ class BaseRiskModel(BaseModel):
         output_csv: Optional[Union[str, Path]] = None,
     ):
         """Extract the training table from (dataset, sample) and resolve formula."""
-        from spatialrisk.far_helpers import generate_patsy_formula
+        from spatialrisk.far_helpers import (
+            generate_patsy_formula,
+            inject_categorical_levels,
+        )
 
         if self.dataset is None:
             raise ValueError("dataset must be set before calling fit().")
@@ -127,6 +131,7 @@ class BaseRiskModel(BaseModel):
 
         if output_csv is not None:
             from pathlib import Path
+
             output_csv = Path(output_csv)
             output_csv.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(output_csv, index=False)
@@ -139,6 +144,9 @@ class BaseRiskModel(BaseModel):
             self.year = self.dataset.year
 
         resolved = formula or self.formula or generate_patsy_formula(self.dataset)
+        # The GUI shows/edits bare C(x) terms; prediction re-parses the stored
+        # string, so the categorical level domains must be re-armed here.
+        resolved = inject_categorical_levels(resolved, self.dataset)
         self.formula = resolved
         return df, resolved
 
@@ -205,8 +213,8 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Folder for saving the model pickle.
 
-        Returns
-        -------
+        Returns:
+        --------
         self
         """
         raise NotImplementedError("Subclasses must implement fit()")
@@ -236,8 +244,8 @@ class BaseRiskModel(BaseModel):
             Value(s) in the mask raster that identify pixels to suppress.
             Defaults to 0. Ignored when ``mask`` is None.
 
-        Returns
-        -------
+        Returns:
+        --------
         Path
             Path to the written GeoTIFF.
         """
@@ -255,8 +263,8 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Target folder. Falls back to the project model folder, then cwd.
 
-        Returns
-        -------
+        Returns:
+        --------
         Path
             Path to the written pickle file.
         """
@@ -390,7 +398,10 @@ class BaseRiskModel(BaseModel):
         if self.project is None:
             return None
 
-        from spatialrisk.predictions.prediction import Prediction, build_dataset_snapshot
+        from spatialrisk.predictions.prediction import (
+            Prediction,
+            build_dataset_snapshot,
+        )
 
         ds = dataset if dataset is not None else self.dataset
         # A pending name (set by the inference runner) makes the prediction's key

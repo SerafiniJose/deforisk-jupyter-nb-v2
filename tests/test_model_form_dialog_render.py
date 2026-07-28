@@ -113,6 +113,11 @@ def test_formula_contract():
     assert "prefill_nonce" in task_deps_src
     effect_src = src[src.index("solara.use_effect(") : src.index("def reset()")]
     assert "prefill_nonce" in effect_src
+    # users never see categorical levels: the prefill is generated without
+    # them (fit re-arms via inject_categorical_levels) and the details dialog
+    # strips them from the stored formula.
+    assert "include_levels=False" in src
+    assert "strip_categorical_levels" in src
     # failed re-generation for a newly-selected dataset must not leave the
     # previous dataset's stale formula sitting in the textarea
     apply_src = src[src.index("def _apply_prefill()") : src.index("solara.use_effect(")]
