@@ -1,3 +1,4 @@
+import ast
 import re
 
 
@@ -86,6 +87,49 @@ def extract_variables(formula: str, mode: str = "predictors") -> set:
     return raw_vars
 
 
+# Transform callables that may appear in formula factor code; they are
+# function names, not data variables.
+_FORMULA_TRANSFORMS = {
+    "I",
+    "C",
+    "scale",
+    "center",
+    "standardize",
+    "Q",
+    "np",
+    "log",
+    "poly",
+    "bs",
+    "cr",
+}
+
+
+def _factor_names(code: str) -> set:
+    """Variable names referenced by one patsy factor's Python code."""
+    tree = ast.parse(code, mode="eval")
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    return names - _FORMULA_TRANSFORMS
+
+
+def formula_variables(formula: str) -> tuple:
+    """(lhs_vars, rhs_vars) for a patsy formula, via patsy + ast.
+
+    Unlike :func:`extract_variables`, keyword-argument names such as the
+    ``levels=`` in ``C(x, levels=[...])`` are ``ast.keyword`` nodes — not
+    ``ast.Name`` — so they are never mistaken for variables. Raises
+    ``patsy.PatsyError`` or ``SyntaxError`` on unparsable input.
+    """
+    from patsy import ModelDesc
+
+    desc = ModelDesc.from_formula(formula)
+    lhs, rhs = set(), set()
+    for termlist, out in ((desc.lhs_termlist, lhs), (desc.rhs_termlist, rhs)):
+        for term in termlist:
+            for factor in term.factors:
+                out |= _factor_names(factor.code)
+    return lhs, rhs
+
+
 import warnings
 
 import pandas as pd
@@ -139,9 +183,11 @@ def get_categorical_levels(var) -> "list | None":
             nodata = src.nodata
             for _, window in src.block_windows(1):
                 block = src.read(1, window=window)
-                block = block[~np.isnan(block)] if np.issubdtype(
-                    block.dtype, np.floating
-                ) else block.ravel()
+                block = (
+                    block[~np.isnan(block)]
+                    if np.issubdtype(block.dtype, np.floating)
+                    else block.ravel()
+                )
                 uniques = np.unique(block)
                 if nodata is not None:
                     uniques = uniques[uniques != nodata]
