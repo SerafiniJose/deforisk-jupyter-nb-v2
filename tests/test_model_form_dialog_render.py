@@ -104,3 +104,16 @@ def test_formula_contract():
     assert '"formula"' in src
     # save blocked while the prefill is still running
     assert "error_formula_generating" in src
+    # reopen regression: reset() must bump a nonce that is threaded into both
+    # the prefill task's dependencies and the apply-effect's dependencies, or
+    # a reopen of the eagerly-mounted dialog never regenerates the formula.
+    reset_src = src[src.index("def reset()") : src.index("def validate()")]
+    assert "prefill_nonce" in reset_src
+    task_deps_src = src[src.index("use_task(") : src.index("async def prefill_formula")]
+    assert "prefill_nonce" in task_deps_src
+    effect_src = src[src.index("solara.use_effect(") : src.index("def reset()")]
+    assert "prefill_nonce" in effect_src
+    # failed re-generation for a newly-selected dataset must not leave the
+    # previous dataset's stale formula sitting in the textarea
+    apply_src = src[src.index("def _apply_prefill()") : src.index("solara.use_effect(")]
+    assert "prefill_formula.error" in apply_src

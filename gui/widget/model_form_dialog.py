@@ -174,11 +174,16 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
     # same auto-formula); per-model copies would go stale on model switches.
     formula_text, set_formula_text = solara.use_state("")
     has_formula = MODEL_HAS_FORMULA[selected_key]
+    # Bumped on every reset (Cancel/ESC/after-submit) so a reopen of the
+    # unconditionally-mounted, eager dialog regenerates the prefill instead of
+    # leaving formula_text stuck at "" (deps below would otherwise be
+    # unchanged on reopen).
+    prefill_nonce, set_prefill_nonce = solara.use_state(0)
 
     # generate_patsy_formula reads categorical rasters (get_categorical_levels)
     # — real I/O, so never on the render/handler path.
     @solara.lab.use_task(
-        dependencies=[selected_dataset, has_formula],
+        dependencies=[selected_dataset, has_formula, prefill_nonce],
         raise_error=False,
         prefer_threaded=True,
     )
@@ -189,6 +194,11 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         return (selected_dataset, text)
 
     def _apply_prefill():
+        if prefill_formula.error:
+            # A stale success for a prior dataset must not linger once the
+            # new dataset's generation fails.
+            set_formula_text("")
+            return
         res = prefill_formula.value
         if res is None:
             return
@@ -198,11 +208,15 @@ def ModelFormDialog(project, open_, on_submit: Callable[[dict], None]):
         if ds_key == selected_dataset:
             set_formula_text(text)  # overwrites edits = regenerate-on-switch
 
-    solara.use_effect(_apply_prefill, [prefill_formula.value, selected_dataset])
+    solara.use_effect(
+        _apply_prefill,
+        [prefill_formula.value, prefill_formula.error, selected_dataset, prefill_nonce],
+    )
 
     def reset():
         reset_name()
         set_formula_text("")
+        set_prefill_nonce(lambda n: n + 1)
 
     def validate():
         if p is None:

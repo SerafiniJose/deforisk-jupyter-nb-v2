@@ -8,13 +8,13 @@ from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
 from gui.scripts.artifact_names import sanitize_key
+
+# re-export: tests import from here
 from gui.scripts.model_registry import (
     MODEL_KEYS,
     MODEL_REGISTRY,
 )
 from gui.scripts.notify_bridge import tracked_job
-
-# re-export: tests import from here
 from gui.scripts.solara_threads import publish_if_current, spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
