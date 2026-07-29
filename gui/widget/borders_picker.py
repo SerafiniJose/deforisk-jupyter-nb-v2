@@ -50,7 +50,17 @@ def _hint_text(selection) -> str:
         if not selection.admin_code:
             return empty
         return t("toolbox.allocation.borders_hint_admin", code=selection.admin_code)
-    return (selection.asset or {}).get("asset_id") or empty
+    asset = selection.asset or {}
+    asset_id = asset.get("asset_id")
+    if not asset_id:
+        return empty
+    # Mirrors allocation_runner._validate_borders: a column filter with no
+    # value picked yet is not a runnable selection, so the hint must not
+    # claim the asset is ready.
+    column = asset.get("column")
+    if column not in (None, "ALL") and asset.get("value") is None:
+        return empty
+    return asset_id
 
 
 @solara.component

@@ -181,7 +181,14 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         else:
             solara.Info(t("toolbox.allocation.no_predictions"))
 
-        with solara.Div(classes=[TIGHT_FIELD]):
+        # Mirrors the render condition of DefrateResolutionHint below: only
+        # collapse the select's own messages row when a hint is actually
+        # going to render under it, or the field ends up ~22px tighter than
+        # the form's rhythm with nothing supplying that spacing back.
+        defrate_hint_will_render = bool(pred_key) or (
+            custom_table and bool(defrate_override)
+        )
+        with solara.Div(classes=[TIGHT_FIELD] if defrate_hint_will_render else []):
             rv.Select(
                 label=t("toolbox.allocation.field_defrate"),
                 items=[
@@ -230,7 +237,10 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         # already registered, so offer exactly that.
         mask_choices = mask_items(p)
         if mask_choices:
-            with solara.Div(classes=[TIGHT_FIELD]):
+            # field_mask_none (below) only renders while no mask is picked —
+            # same reasoning as the rate-table select above.
+            mask_hint_will_render = not mask
+            with solara.Div(classes=[TIGHT_FIELD] if mask_hint_will_render else []):
                 rv.Select(
                     label=t("toolbox.allocation.field_mask"),
                     items=mask_choices,

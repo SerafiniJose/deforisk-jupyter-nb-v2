@@ -421,6 +421,150 @@ def test_borders_picker_hint_flags_an_incomplete_selection():
     )
 
 
+def test_borders_picker_hint_flags_an_asset_with_an_unset_filter_value():
+    """A column chosen but no filter value is not runnable; the hint must agree.
+
+    ``allocation_runner._validate_borders`` rejects an asset selection whose
+    ``column`` is set to anything other than None/"ALL" while ``value`` is
+    None. The hint used to confidently name the asset in that state anyway,
+    so the user clicked Create only to be told to pick a filter value.
+    """
+    from gui.scripts.allocation_runner import BordersSelection
+    from gui.widget.borders_picker import _hint_text
+
+    selection = BordersSelection(
+        method="ASSET",
+        asset={
+            "asset_id": "users/me/t",
+            "type": "TABLE",
+            "column": "adm1",
+            "value": None,
+        },
+    )
+    assert t("toolbox.allocation.borders_hint_empty") == _hint_text(selection)
+
+
+def test_borders_picker_hint_names_a_fully_filtered_asset():
+    """A column WITH a value is a complete, runnable selection."""
+    from gui.scripts.allocation_runner import BordersSelection
+    from gui.widget.borders_picker import _hint_text
+
+    selection = BordersSelection(
+        method="ASSET",
+        asset={
+            "asset_id": "users/me/t",
+            "type": "TABLE",
+            "column": "adm1",
+            "value": "Nord",
+        },
+    )
+    assert _hint_text(selection) == "users/me/t"
+
+
+def _tight_wrapped(box, widget):
+    """True if *widget* sits inside a ``div`` carrying the TIGHT_FIELD class.
+
+    ``solara.Div(classes=[TIGHT_FIELD])`` renders as an ``ipyvuetify.Html``
+    with ``tag='div'`` and a space-separated ``class_`` string.
+    """
+    from gui.widget.text_style import TIGHT_FIELD
+
+    def contains(root):
+        if root is widget:
+            return True
+        return any(contains(c) for c in (getattr(root, "children", None) or []))
+
+    def walk(w):
+        if getattr(w, "tag", None) == "div":
+            classes = (getattr(w, "class_", None) or "").split()
+            if TIGHT_FIELD in classes and contains(w):
+                return True
+        return any(walk(c) for c in (getattr(w, "children", None) or []))
+
+    return walk(box)
+
+
+def test_defrate_select_tight_class_tracks_whether_its_hint_will_render(tmp_path):
+    """The rate-table select only collapses its own spacing when a hint follows.
+
+    ``TIGHT_FIELD`` used to be applied unconditionally, so with no prediction
+    chosen (DefrateResolutionHint does not render) the select sat ~22px
+    tighter than the form's normal field rhythm.
+    """
+    from spatialrisk.predictions.prediction import Prediction
+
+    project = Project(project_name="p")
+    project.predictions["icar_run"] = Prediction(
+        path=tmp_path / "prob.tif", model_key="icar", dataset_name="forecast"
+    )
+
+    box, _rc = reacton.render(
+        AllocationFormDialog(
+            open_=solara.reactive(True),
+            project=solara.reactive(project),
+            on_launch=lambda form: None,
+            on_close=lambda: None,
+        )
+    )
+
+    def defrate_select():
+        return [
+            s
+            for s in _find(box, vw.Select)
+            if s.label == t("toolbox.allocation.field_defrate")
+        ][0]
+
+    # No risk map chosen yet -> DefrateResolutionHint does not render.
+    assert not _tight_wrapped(box, defrate_select())
+
+    riskmap_select = [
+        s
+        for s in _find(box, vw.Select)
+        if s.label == t("toolbox.allocation.field_riskmap")
+    ][0]
+    riskmap_select.v_model = "icar_run"
+
+    # A prediction is now chosen -> the hint renders -> tight spacing applies.
+    assert _tight_wrapped(box, defrate_select())
+
+
+def test_mask_select_tight_class_tracks_whether_its_hint_will_render(
+    tmp_path, monkeypatch
+):
+    """The mask select only collapses its own spacing when field_mask_none follows."""
+    import gui.widget.allocation_form as allocation_form_module
+
+    monkeypatch.setattr(
+        allocation_form_module,
+        "mask_items",
+        lambda p: [{"text": "forest", "value": str(tmp_path / "forest.tif")}],
+    )
+
+    box, _rc = reacton.render(
+        AllocationFormDialog(
+            open_=solara.reactive(True),
+            project=solara.reactive(Project(project_name="p")),
+            on_launch=lambda form: None,
+            on_close=lambda: None,
+        )
+    )
+
+    def mask_select():
+        return [
+            s
+            for s in _find(box, vw.Select)
+            if s.label == t("toolbox.allocation.field_mask")
+        ][0]
+
+    # No mask picked yet -> field_mask_none WILL render.
+    assert _tight_wrapped(box, mask_select())
+
+    mask_select().v_model = str(tmp_path / "forest.tif")
+
+    # A mask is now picked -> field_mask_none no longer renders.
+    assert not _tight_wrapped(box, mask_select())
+
+
 def test_borders_picker_renders_the_file_method_by_default():
     """The default method mounts without a map, a GEE session or a network.
 
