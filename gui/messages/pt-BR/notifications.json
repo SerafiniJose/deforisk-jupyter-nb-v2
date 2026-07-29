@@ -6,6 +6,7 @@
     "task_inference": "Predizendo: {model} em {dataset}",
     "task_import": "Importando a predição '{name}'",
     "task_evaluation": "Avaliando predições ({tag})",
+    "task_allocation": "Alocando o desmatamento de '{name}'",
     "task_sampling": "Gerando a amostra '{name}'",
     "task_processing": "Harmonizando variáveis",
     "task_download_all": "Baixando camadas do GEE",

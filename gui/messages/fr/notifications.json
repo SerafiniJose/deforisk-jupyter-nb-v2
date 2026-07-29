@@ -6,6 +6,7 @@
     "task_inference": "Prédiction : {model} sur {dataset}",
     "task_import": "Importation de la prédiction '{name}'",
     "task_evaluation": "Évaluation des prédictions ({tag})",
+    "task_allocation": "Allocation de la déforestation pour « {name} »",
     "task_sampling": "Génération de l'échantillon '{name}'",
     "task_processing": "Harmonisation des variables",
     "task_download_all": "Téléchargement des couches GEE",
