@@ -42,3 +42,97 @@ def test_tile_mounts_with_a_project():
         toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
     )
     assert box is not None
+
+
+# --- two-pane shell + latest-run card (mock fidelity) -------------------
+
+
+def _find(widget, cls, out=None):
+    out = [] if out is None else out
+    if isinstance(widget, cls):
+        out.append(widget)
+    for child in getattr(widget, "children", []) or []:
+        if hasattr(child, "children") or isinstance(child, cls):
+            _find(child, cls, out)
+    return out
+
+
+def _all_text(box):
+    import ipyvuetify as vw
+
+    out = []
+    for cls in (vw.Html, vw.Btn, vw.Chip):
+        for w in _find(box, cls):
+            out.extend(str(c) for c in (w.children or []) if isinstance(c, str))
+    return " ".join(out)
+
+
+def test_tile_has_a_tool_registry():
+    """Future tools are one registry entry away — the mock's tool list."""
+    tools = toolbox_tile._TOOLS
+    assert [tool["key"] for tool in tools] == ["allocation"]
+    assert all("label_key" in tool and "icon" in tool for tool in tools)
+
+
+def test_tile_renders_the_tool_list_pane():
+    """The dialog shows the tool list beside the selected tool's panel."""
+    import reacton
+
+    from gui.i18n import t
+    from spatialrisk.project import Project
+
+    t("common.cancel")
+    box, _rc = reacton.render(
+        toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
+    )
+    assert t("toolbox.tool_allocation") in _all_text(box)
+
+
+def test_tile_shows_the_latest_run_as_a_result_card():
+    """The most recent completed run gets the mock's headline card."""
+    import reacton
+
+    from gui.i18n import t
+    from spatialrisk.allocations import AllocationRun
+    from spatialrisk.project import Project
+
+    t("common.cancel")
+    project = Project(project_name="p")
+    for run_id, created in (
+        ("aaa11111", "2026-07-28T10:00:00"),
+        ("bbb22222", "2026-07-29T10:00:00"),
+    ):
+        project.allocations[f"reserve_{run_id}"] = AllocationRun(
+            name="reserve",
+            run_id=run_id,
+            created_at=created,
+            borders_file="/b.gpkg",
+            defor_juris_ha=20000.0,
+            years_forecast=4,
+            annual_ha=312.4 if run_id == "bbb22222" else 1.0,
+            total_ha=1249.6 if run_id == "bbb22222" else 4.0,
+            out_dir="/out",
+            csv_path="/out/defor_project.csv",
+        )
+
+    box, _rc = reacton.render(
+        toolbox_tile.ToolboxTile(project=solara.reactive(project))
+    )
+
+    flat = _all_text(box)
+    assert t("toolbox.allocation.latest_result") in flat
+    assert "312.4" in flat  # the newest run, not the oldest
+
+
+def test_body_has_no_heading_and_defers_description_to_an_info_button():
+    """The body starts at the panes; the description is an InfoButton popup.
+
+    The dialog frame already says 'Tools', so the body repeats neither the
+    heading nor the subtitle.
+    """
+    src = inspect.getsource(toolbox_tile)
+    assert "InfoButton" in src
+    assert "toolbox.allocation.description" in src  # still the popup's content
+    assert "toolbox.title" not in src  # no duplicated heading
+    assert "toolbox.subtitle" not in src
+    assert 'solara.Text(t("toolbox.allocation.description")' not in src

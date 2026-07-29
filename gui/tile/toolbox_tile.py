@@ -21,10 +21,23 @@ from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.allocation_form import AllocationFormDialog
-from gui.widget.allocation_list import AllocationList
+from gui.widget.allocation_list import AllocationList, AllocationResultCard
 from gui.widget.confirm_dialog import ConfirmDialog
+from gui.widget.help import InfoButton
+from gui.widget.text_style import MUTED
 
 logger = logging.getLogger("spatial_risk")
+
+#: The toolbox's tool list (the dialog's left pane). One entry per tool; the
+#: panel itself is selected on ``key`` in the component body.
+_TOOLS = [
+    {
+        "key": "allocation",
+        "label_key": "toolbox.tool_allocation",
+        "description_key": "toolbox.allocation.description",
+        "icon": "mdi-earth-remove",
+    }
+]
 
 # Module-level so in-flight jobs and on-map layers survive re-renders.
 # Both are cleared on project switch by gui/solara_app.py (reset_jobs_on_load /
@@ -76,6 +89,7 @@ def ToolboxTile(project, map_=None, sepal_client=None):
 
     form_open = solara.use_reactive(False)
     pending_delete, set_pending_delete = solara.use_state(None)
+    selected_tool, set_selected_tool = solara.use_state(_TOOLS[0]["key"])
 
     def launch(form):
         job_id = str(uuid.uuid4())[:8]
@@ -105,29 +119,58 @@ def ToolboxTile(project, map_=None, sepal_client=None):
             )
             density_on_map.set(density_on_map.value | {key})
 
-    with solara.Column(style="gap:12px;"):
-        solara.Markdown(f"### {t('toolbox.title')}")
-        solara.Text(t("toolbox.subtitle"))
+    rows = allocation_rows(p, allocation_jobs.value) if p is not None else []
+    records = [r for r in rows if r["kind"] == "record"]
+    latest = max(records, key=lambda r: r.get("created_at") or "", default=None)
 
+    with solara.Column(style="gap:12px;"):
         if p is None:
             solara.Info(t("toolbox.allocation.empty"))
             return
 
-        solara.Markdown(f"**{t('toolbox.allocation.title')}**")
-        solara.Text(t("toolbox.allocation.description"))
+        # Two panes, as in the design mock: the tool list on the left, the
+        # selected tool's panel on the right. One tool today; the list is the
+        # registry future tools slot into.
+        with solara.Row(style="gap:16px;align-items:flex-start;"):
+            with solara.Column(style="flex:0 0 210px;gap:4px;"):
+                for tool in _TOOLS:
+                    # The tool's longer description lives in the info popup,
+                    # keeping the pane itself list-first (the design mock).
+                    with solara.Row(style="gap:0;align-items:center;"):
+                        solara.Button(
+                            t(tool["label_key"]),
+                            icon_name=tool["icon"],
+                            text=selected_tool != tool["key"],
+                            color="primary" if selected_tool == tool["key"] else None,
+                            on_click=lambda key=tool["key"]: set_selected_tool(key),
+                            style="justify-content:flex-start;flex:1;min-width:0;",
+                        )
+                        InfoButton(
+                            title=t(tool["label_key"]),
+                            markdown=t(tool["description_key"]),
+                        )
 
-        AllocationList(
-            rows=allocation_rows(p, allocation_jobs.value),
-            on_delete=set_pending_delete,
-            on_toggle_density=toggle_density if map_ is not None else None,
-            density_on_map=density_on_map.value,
-        )
-        solara.Button(
-            t("toolbox.allocation.new"),
-            icon_name="mdi-plus",
-            block=True,
-            on_click=lambda: form_open.set(True),
-        )
+            with solara.Column(style="flex:1;min-width:0;gap:12px;"):
+                if latest is not None:
+                    solara.Text(
+                        t("toolbox.allocation.latest_result"),
+                        style=MUTED + "font-size:0.72rem;letter-spacing:0.08em;"
+                        "text-transform:uppercase;",
+                    )
+                    AllocationResultCard(row=latest)
+
+                AllocationList(
+                    rows=rows,
+                    on_delete=set_pending_delete,
+                    on_toggle_density=toggle_density if map_ is not None else None,
+                    density_on_map=density_on_map.value,
+                )
+                solara.Button(
+                    t("toolbox.allocation.new"),
+                    icon_name="mdi-plus",
+                    block=True,
+                    on_click=lambda: form_open.set(True),
+                )
 
         ConfirmDialog(
             open=pending_delete is not None,

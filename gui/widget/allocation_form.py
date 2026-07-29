@@ -13,15 +13,27 @@ import solara
 from pysepal.solara.components.inputs import FileInputComponent
 
 from gui.i18n import t
-from gui.scripts.allocation_runner import AllocationForm, validate_form
+from gui.scripts.allocation_runner import (
+    AllocationForm,
+    mask_items,
+    preview_defrate_source,
+    validate_form,
+)
 from gui.tile.evaluation_helpers import map_items
 from gui.widget.creation_dialog import CreationDialog
+from gui.widget.text_style import MUTED
 
 logger = logging.getLogger("spatial_risk")
 
-_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt"]
 _TABLE_EXTENSIONS = [".csv"]
 _VECTOR_EXTENSIONS = [".gpkg", ".shp", ".geojson", ".json"]
+
+_HINT = MUTED + "font-size:0.75rem;"
+
+# Rate-table modes: resolve automatically from the prediction (default), or
+# let the user pick a table file.
+_DEFRATE_AUTO = "auto"
+_DEFRATE_CUSTOM = "custom"
 
 
 def _as_float(text):
@@ -30,6 +42,45 @@ def _as_float(text):
         return float(str(text).strip())
     except (TypeError, ValueError):
         return None
+
+
+@solara.component
+def DefrateResolutionHint(project_value, pred_key, override):
+    """Eager preview of the rate table the run will use.
+
+    The visible half of "auto-resolved": provenance chip + file name for a
+    table that exists, "will be computed" for FAR families, and the resolver's
+    reason when nothing resolves — shown at form time, not after the run.
+    """
+    src = preview_defrate_source(project_value, pred_key, user_path=override or None)
+
+    if src.provenance == "unavailable":
+        solara.Warning(src.caveat or "", dense=True)
+        return
+
+    will_compute = src.path is not None and not src.path.exists()
+    with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
+        # 'Computed' needs no provenance chip: its description already says
+        # where the table comes from. The other provenances name a file, so
+        # the chip is what tells persisted/sibling/user tables apart.
+        if src.provenance != "computed":
+            provenance_key = f"toolbox.allocation.provenance_{src.provenance}".replace(
+                "-", "_"
+            )
+            rv.Chip(
+                small=True,
+                outlined=True,
+                color="primary",
+                children=[t(provenance_key)],
+            )
+        solara.Text(
+            t("toolbox.allocation.defrate_will_compute")
+            if will_compute
+            else src.path.name,
+            style=_HINT,
+        )
+    if src.caveat:  # the JNR observed-rates caveat
+        solara.Warning(src.caveat, dense=True)
 
 
 @solara.component
@@ -47,7 +98,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
 
     name, set_name = solara.use_state("")
     pred_key, set_pred_key = solara.use_state(None)
-    external_map, set_external_map = solara.use_state("")
+    defrate_mode, set_defrate_mode = solara.use_state(_DEFRATE_AUTO)
     defrate_override, set_defrate_override = solara.use_state("")
     borders, set_borders = solara.use_state("")
     mask, set_mask = solara.use_state("")
@@ -55,12 +106,15 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
     years, set_years = solara.use_state("4")
     density, set_density = solara.use_state(False)
 
+    custom_table = defrate_mode == _DEFRATE_CUSTOM
+
     def build_form():
         return AllocationForm(
             name=name,
             prediction_key=pred_key,
-            external_riskmap=str(external_map) if external_map else None,
-            user_defrate_path=str(defrate_override) if defrate_override else None,
+            user_defrate_path=(
+                str(defrate_override) if custom_table and defrate_override else None
+            ),
             borders_file=str(borders) if borders else None,
             mask_file=str(mask) if mask else None,
             defor_juris_ha=_as_float(juris_ha),
@@ -69,6 +123,9 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         )
 
     def validate():
+        if custom_table and not defrate_override:
+            # Silent fallback to auto-resolution would betray the visible mode.
+            return "Choose the rate-table file, or switch back to automatic resolution."
         return validate_form(p, build_form())
 
     def launch():
@@ -77,7 +134,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
     def reset():
         set_name("")
         set_pred_key(None)
-        set_external_map("")
+        set_defrate_mode(_DEFRATE_AUTO)
         set_defrate_override("")
         set_borders("")
         set_mask("")
@@ -123,36 +180,40 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         else:
             solara.Info(t("toolbox.allocation.no_predictions"))
 
-        # An external map is the alternative to a project prediction; it needs
-        # its own rate table, since nothing in the project describes it.
-        if not pred_key:
+        rv.Select(
+            label=t("toolbox.allocation.field_defrate"),
+            items=[
+                {
+                    "text": t("toolbox.allocation.defrate_option_auto"),
+                    "value": _DEFRATE_AUTO,
+                },
+                {
+                    "text": t("toolbox.allocation.defrate_option_custom"),
+                    "value": _DEFRATE_CUSTOM,
+                },
+            ],
+            item_text="text",
+            item_value="value",
+            v_model=defrate_mode,
+            on_v_model=lambda v: set_defrate_mode(v or _DEFRATE_AUTO),
+            dense=True,
+            outlined=True,
+        )
+        if custom_table:
             FileInputComponent(
-                label=t("toolbox.allocation.field_riskmap_external"),
-                value=external_map,
-                on_value=set_external_map,
+                label=t("toolbox.allocation.field_defrate_override"),
+                value=defrate_override,
+                on_value=set_defrate_override,
                 sepal_client=sepal_client,
                 root="",
-                extensions=_RASTER_EXTENSIONS,
+                extensions=_TABLE_EXTENSIONS,
                 clearable=True,
             )
-
-        FileInputComponent(
-            label=(
-                t("toolbox.allocation.field_defrate")
-                if not pred_key
-                else t("toolbox.allocation.field_defrate_override")
-            ),
-            value=defrate_override,
-            on_value=set_defrate_override,
-            sepal_client=sepal_client,
-            root="",
-            extensions=_TABLE_EXTENSIONS,
-            clearable=True,
-        )
-        if pred_key and not defrate_override:
-            solara.Text(
-                t("toolbox.allocation.field_defrate_auto"),
-                style="font-size:0.75rem;opacity:0.7;",
+        if pred_key or (custom_table and defrate_override):
+            DefrateResolutionHint(
+                project_value=p,
+                pred_key=pred_key,
+                override=defrate_override if custom_table else "",
             )
 
         FileInputComponent(
@@ -165,37 +226,46 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
             clearable=True,
         )
 
-        FileInputComponent(
-            label=t("toolbox.allocation.field_mask"),
-            value=mask,
-            on_value=set_mask,
-            sepal_client=sepal_client,
-            root="",
-            extensions=_RASTER_EXTENSIONS,
-            clearable=True,
-        )
-        if not mask:
-            solara.Text(
-                t("toolbox.allocation.field_mask_none"),
-                style="font-size:0.75rem;opacity:0.7;",
+        # The mask is one of the project's processed rasters (Hansen forest &
+        # co.), not a free file: everything the risk map was built from is
+        # already registered, so offer exactly that.
+        mask_choices = mask_items(p)
+        if mask_choices:
+            rv.Select(
+                label=t("toolbox.allocation.field_mask"),
+                items=mask_choices,
+                item_text="text",
+                item_value="value",
+                v_model=mask or None,
+                on_v_model=lambda v: set_mask(v or ""),
+                dense=True,
+                outlined=True,
+                clearable=True,
             )
+        else:
+            solara.Text(t("toolbox.allocation.field_mask_empty"), style=_HINT)
+        if not mask:
+            solara.Text(t("toolbox.allocation.field_mask_none"), style=_HINT)
 
-        rv.TextField(
-            label=t("toolbox.allocation.field_juris_ha"),
-            v_model=juris_ha,
-            on_v_model=set_juris_ha,
-            type="number",
-            dense=True,
-            outlined=True,
-        )
-        rv.TextField(
-            label=t("toolbox.allocation.field_years"),
-            v_model=years,
-            on_v_model=set_years,
-            type="number",
-            dense=True,
-            outlined=True,
-        )
+        with solara.Row(style="gap:12px;"):
+            rv.TextField(
+                label=t("toolbox.allocation.field_juris_ha"),
+                v_model=juris_ha,
+                on_v_model=set_juris_ha,
+                type="number",
+                dense=True,
+                outlined=True,
+                style_="flex:2;",
+            )
+            rv.TextField(
+                label=t("toolbox.allocation.field_years"),
+                v_model=years,
+                on_v_model=set_years,
+                type="number",
+                dense=True,
+                outlined=True,
+                style_="flex:1;",
+            )
 
         rv.Checkbox(
             label=t("toolbox.allocation.field_density"),

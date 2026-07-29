@@ -20,7 +20,6 @@ def _form(**kw):
     base = dict(
         name="reserve_north",
         prediction_key="icar_run",
-        external_riskmap=None,
         user_defrate_path=None,
         borders_file="/data/borders.gpkg",
         mask_file=None,
@@ -63,9 +62,13 @@ def test_validate_form_rejects_empty_name():
 
 
 def test_validate_form_rejects_missing_risk_map():
-    """Neither a prediction nor an external file means nothing to allocate over."""
-    msg = validate_form(None, _form(prediction_key=None, external_riskmap=None))
-    assert "risk map" in msg.lower()
+    """No prediction selected means nothing to allocate over.
+
+    External risk maps are NOT an allocation-side input: they enter the
+    project through the inference tab and arrive here as predictions.
+    """
+    msg = validate_form(None, _form(prediction_key=None))
+    assert "prediction" in msg.lower()
 
 
 def test_validate_form_rejects_non_positive_years():
@@ -138,39 +141,12 @@ def test_run_allocation_registers_a_record(tmp_path, monkeypatch):
     assert Path(record.out_dir).parent.name == "allocation"
 
 
-def test_run_allocation_uses_the_external_map_when_given(tmp_path, monkeypatch):
-    """An external risk map bypasses the prediction registry entirely."""
-    import gui.scripts.allocation_runner as runner
-    from spatialrisk.allocation import AllocationResult
+def test_form_has_no_external_riskmap_channel():
+    """External risk maps are imported on the inference tab, never here."""
+    import dataclasses
 
-    project = _project(monkeypatch, tmp_path, "alloc_ext")
-    seen = {}
-
-    def fake_allocate(**kwargs):
-        seen.update(kwargs)
-        out = Path(kwargs["out_dir"])
-        out.mkdir(parents=True, exist_ok=True)
-        return AllocationResult(
-            annual_ha=1.0,
-            total_ha=4.0,
-            out_dir=out,
-            csv_path=out / "c.csv",
-            defrate_path=out / "d.csv",
-            cropped_riskmap_path=out / "r.tif",
-        )
-
-    monkeypatch.setattr(runner, "_allocate", fake_allocate)
-    form = _form(
-        prediction_key=None,
-        external_riskmap=str(tmp_path / "ext.tif"),
-        user_defrate_path=str(tmp_path / "ext.csv"),
-    )
-
-    record = run_allocation(project, form, job_id="job2")
-
-    assert str(seen["riskmap_file"]) == str(tmp_path / "ext.tif")
-    assert record.external_riskmap == str(tmp_path / "ext.tif")
-    assert record.prediction_key is None
+    fields = [f.name for f in dataclasses.fields(AllocationForm)]
+    assert "external_riskmap" not in fields
 
 
 def test_allocation_rows_merge_records_and_jobs(tmp_path, monkeypatch):
@@ -240,3 +216,161 @@ def test_delete_allocation_run_refuses_paths_outside_the_project(tmp_path, monke
     delete_allocation_run(project, "evil_abc123")
 
     assert outside.exists()  # never removed: outside <project>/allocation
+
+
+# --- form-time helpers: rate-table preview and mask choices -------------
+
+
+def _preview_pred(**kw):
+    from types import SimpleNamespace
+
+    base = dict(
+        path=Path("/data/p/inference/forecast/prob.tif"),
+        model_key="icar",
+        dataset_name="forecast",
+        window=None,
+        defrate_path=None,
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def _preview_project(predictions=None, processed_variables=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        predictions=predictions or {},
+        processed_variables=processed_variables or {},
+    )
+
+
+def test_preview_shows_a_persisted_table_without_computing(tmp_path):
+    """A JNR/MW run's own table is previewed by name, with the JNR caveat."""
+    from gui.scripts.allocation_runner import preview_defrate_source
+
+    csv = tmp_path / "defrate_cat_bm_forecast.csv"
+    csv.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
+    project = _preview_project(
+        {"jnr_run": _preview_pred(model_key="benchmark", defrate_path=csv)}
+    )
+
+    src = preview_defrate_source(project, "jnr_run")
+
+    assert src.path == csv
+    assert src.provenance == "persisted"
+    assert src.caveat is not None
+
+
+def test_preview_of_a_far_prediction_names_the_future_table(tmp_path):
+    """FAR families preview the to-be-computed path; nothing is computed."""
+    from gui.scripts.allocation_runner import preview_defrate_source
+
+    pred = _preview_pred(path=tmp_path / "prob.tif")
+    project = _preview_project({"icar_run": pred})
+
+    src = preview_defrate_source(project, "icar_run")
+
+    assert src.provenance == "computed"
+    assert src.path == tmp_path / "defrate_cat_icar_forecast.csv"
+    assert not src.path.exists()  # preview must not compute it
+
+
+def test_preview_reports_an_unresolvable_table_instead_of_raising(tmp_path):
+    """An MW run with no sibling table previews as unavailable, with the reason."""
+    from gui.scripts.allocation_runner import preview_defrate_source
+
+    prob = tmp_path / "prob_mw_11_forecast.tif"
+    prob.write_bytes(b"")
+    project = _preview_project(
+        {"mw_run": _preview_pred(model_key="mw", window=11, path=prob)}
+    )
+
+    src = preview_defrate_source(project, "mw_run")
+
+    assert src.provenance == "unavailable"
+    assert src.path is None
+    assert "rate table" in (src.caveat or "")
+
+
+def test_preview_honours_the_user_override(tmp_path):
+    """An explicit table short-circuits the preview like it does the run."""
+    from gui.scripts.allocation_runner import preview_defrate_source
+
+    csv = tmp_path / "mine.csv"
+    csv.write_text("cat\n1\n")
+
+    src = preview_defrate_source(_preview_project(), "nope", user_path=csv)
+
+    assert src.provenance == "user"
+    assert src.path == csv
+
+
+def test_resolve_returns_an_existing_computed_table_even_with_compute_off(tmp_path):
+    """compute=False forbids computing, not reusing a table already on disk."""
+    from gui.scripts.allocation_runner import resolve_defrate_table
+
+    pred = _preview_pred(path=tmp_path / "prob.tif")
+    existing = tmp_path / "defrate_cat_icar_forecast.csv"
+    existing.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
+    project = _preview_project({"icar_run": pred})
+
+    src = resolve_defrate_table(project, "icar_run", compute=False)
+
+    assert src.path == existing
+    assert src.provenance == "computed"
+
+
+def test_mask_items_lists_processed_raster_variables(tmp_path):
+    """The mask choices are the project's processed rasters, not free files."""
+    from types import SimpleNamespace
+
+    from gui.scripts.allocation_runner import mask_items
+
+    project = _preview_project(
+        processed_variables={
+            "forest_gfc_tc30": SimpleNamespace(path=tmp_path / "forest.tif"),
+            "roads": SimpleNamespace(path=tmp_path / "roads.gpkg"),  # vector: out
+            "elevation": SimpleNamespace(path=tmp_path / "elev.vrt"),
+        }
+    )
+
+    items = mask_items(project)
+
+    assert [i["text"] for i in items] == ["elevation", "forest_gfc_tc30"]
+    assert items[1]["value"] == str(tmp_path / "forest.tif")
+
+
+def test_mask_items_of_an_empty_project_is_empty():
+    """No processed variables (or no project) means no mask choices."""
+    from gui.scripts.allocation_runner import mask_items
+
+    assert mask_items(None) == []
+    assert mask_items(_preview_project()) == []
+
+
+def test_allocation_rows_carry_the_run_source(tmp_path, monkeypatch):
+    """Record rows say what the run was computed from (model — dataset)."""
+    project = _project(monkeypatch, tmp_path, "alloc_rows_src")
+    record = _record(tmp_path / "run")
+    record.prediction_snapshot = {
+        "model_key": "icar",
+        "dataset_name": "forecast",
+        "window": None,
+        "year": None,
+        "path": "/p.tif",
+    }
+    project.allocations["reserve_abc123"] = record
+
+    rows = allocation_rows(project)
+
+    assert rows[0]["source"] == "ICAR — forecast"
+
+
+def test_allocation_rows_source_is_none_for_external_maps(tmp_path, monkeypatch):
+    """An external-map run has no prediction to name; the widget labels it."""
+    project = _project(monkeypatch, tmp_path, "alloc_rows_ext")
+    project.allocations["reserve_abc123"] = _record(tmp_path / "run")
+
+    rows = allocation_rows(project)
+
+    assert rows[0]["source"] is None

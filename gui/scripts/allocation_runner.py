@@ -108,6 +108,11 @@ def resolve_defrate_table(
             "inference or select a table manually."
         )
 
+    out = (
+        Path(pred.path).parent / f"defrate_cat_{pred.model_key}_{pred.dataset_name}.csv"
+    )
+    if out.exists():
+        return DefrateSource(path=out, provenance="computed")
     if not compute:
         raise AllocationResolveError(
             f"No rate table available for '{pred_key}' and computing is disabled."
@@ -120,29 +125,79 @@ def resolve_defrate_table(
             "(expected two 4-digit years, e.g. 'forest_loss_2015_2020'). Select a "
             "rate table manually."
         )
-    out = (
-        Path(pred.path).parent / f"defrate_cat_{pred.model_key}_{pred.dataset_name}.csv"
+    logger.info("Computing rate table for '%s' → %s", pred_key, out.name)
+    _defrate_per_cat(
+        defor_file=layers["defor_file"],
+        forest_file=layers["forest_file"],
+        riskmap_file=layers["riskmap_file"],
+        time_interval=layers["time_interval"],
+        tab_file_defrate=out,
+        verbose=False,
     )
-    if not out.exists():
-        logger.info("Computing rate table for '%s' → %s", pred_key, out.name)
-        _defrate_per_cat(
-            defor_file=layers["defor_file"],
-            forest_file=layers["forest_file"],
-            riskmap_file=layers["riskmap_file"],
-            time_interval=layers["time_interval"],
-            tab_file_defrate=out,
-            verbose=False,
-        )
     return DefrateSource(path=out, provenance="computed")
+
+
+def preview_defrate_source(
+    project, pred_key: Optional[str], *, user_path: Optional[Path] = None
+) -> DefrateSource:
+    """Form-time preview of ``resolve_defrate_table``: never computes, never raises.
+
+    Same resolution order as the run itself, so what the form shows is what the
+    run will use. Provenance ``"unavailable"`` (path None, reason in ``caveat``)
+    stands in for the resolver's errors; provenance ``"computed"`` with a
+    not-yet-existing path means "will be computed from the dataset".
+    """
+    if user_path:
+        return DefrateSource(path=Path(user_path), provenance="user")
+    pred = (getattr(project, "predictions", None) or {}).get(pred_key)
+    if pred is None:
+        return DefrateSource(
+            path=None,
+            provenance="unavailable",
+            caveat=f"Prediction '{pred_key}' not found in this project.",
+        )
+    try:
+        return resolve_defrate_table(project, pred_key, compute=False)
+    except AllocationResolveError as exc:
+        if pred.model_key in (_MW_FAMILY, _JNR_FAMILY):
+            return DefrateSource(path=None, provenance="unavailable", caveat=str(exc))
+        out = (
+            Path(pred.path).parent
+            / f"defrate_cat_{pred.model_key}_{pred.dataset_name}.csv"
+        )
+        return DefrateSource(path=out, provenance="computed")
+
+
+#: Raster suffixes a processed variable must have to be offered as a mask.
+_MASK_SUFFIXES = {".tif", ".tiff", ".vrt"}
+
+
+def mask_items(project) -> List[dict]:
+    """Mask choices for the form: the project's processed raster variables.
+
+    ``[{"text": <variable name>, "value": <raster path>}]``, name-sorted.
+    Vector variables are skipped — the allocation core wants a raster aligned
+    with the risk map (it warps it to the cropped grid itself).
+    """
+    items = []
+    for key, var in (getattr(project, "processed_variables", None) or {}).items():
+        path = getattr(var, "path", None)
+        if path and Path(path).suffix.lower() in _MASK_SUFFIXES:
+            items.append({"text": key, "value": str(path)})
+    return sorted(items, key=lambda d: d["text"])
 
 
 @dataclass
 class AllocationForm:
-    """User inputs of one allocation run (already parsed from the form widgets)."""
+    """User inputs of one allocation run (already parsed from the form widgets).
+
+    The risk map is always one of the project's predictions: external risk
+    maps are imported on the inference tab (where they become predictions),
+    so the allocation tool never takes a raster file directly.
+    """
 
     name: str
     prediction_key: Optional[str]
-    external_riskmap: Optional[str]
     user_defrate_path: Optional[str]
     borders_file: Optional[str]
     mask_file: Optional[str]
@@ -162,8 +217,8 @@ def validate_form(project, form: AllocationForm) -> Optional[str]:
     """Return a user-facing error message, or None when the form is runnable."""
     if not (form.name or "").strip():
         return "Give the allocation run a name."
-    if not form.prediction_key and not form.external_riskmap:
-        return "Choose a risk map: a project prediction or an external file."
+    if not form.prediction_key:
+        return "Choose a risk map from the project's predictions."
     if not form.borders_file:
         return "Choose the project borders vector file."
     if form.years_forecast is None or form.years_forecast <= 0:
@@ -171,7 +226,6 @@ def validate_form(project, form: AllocationForm) -> Optional[str]:
     if form.defor_juris_ha is None or form.defor_juris_ha < 0:
         return "Expected jurisdictional deforestation cannot be negative (hectares)."
     for label, value in (
-        ("risk map", form.external_riskmap),
         ("rate table", form.user_defrate_path),
         ("project borders", form.borders_file),
         ("mask", form.mask_file),
@@ -210,24 +264,15 @@ def run_allocation(
     ).storage_key()
     out_dir = Path(project.folders.project_folder) / "allocation" / record_key
 
-    pred = None
-    if form.prediction_key:
-        pred = (project.predictions or {}).get(form.prediction_key)
-        if pred is None:
-            raise AllocationResolveError(
-                f"Prediction '{form.prediction_key}' is no longer in this project."
-            )
-        riskmap_file = pred.path
-        source = resolve_defrate_table(
-            project, form.prediction_key, user_path=form.user_defrate_path
+    pred = (project.predictions or {}).get(form.prediction_key)
+    if pred is None:
+        raise AllocationResolveError(
+            f"Prediction '{form.prediction_key}' is no longer in this project."
         )
-    else:
-        riskmap_file = form.external_riskmap
-        if not form.user_defrate_path:
-            raise AllocationResolveError(
-                "An external risk map needs an explicit deforestation-rate table."
-            )
-        source = DefrateSource(path=Path(form.user_defrate_path), provenance="user")
+    riskmap_file = pred.path
+    source = resolve_defrate_table(
+        project, form.prediction_key, user_path=form.user_defrate_path
+    )
 
     logger.info("Allocating deforestation for '%s'…", form.name)
     result = _allocate(
@@ -246,18 +291,13 @@ def run_allocation(
         run_id=run_id,
         created_at=datetime.now().isoformat(timespec="seconds"),
         prediction_key=form.prediction_key,
-        prediction_snapshot=(
-            {
-                "path": str(pred.path),
-                "model_key": pred.model_key,
-                "dataset_name": pred.dataset_name,
-                "year": getattr(pred, "year", None),
-                "window": getattr(pred, "window", None),
-            }
-            if pred is not None
-            else {}
-        ),
-        external_riskmap=form.external_riskmap,
+        prediction_snapshot={
+            "path": str(pred.path),
+            "model_key": pred.model_key,
+            "dataset_name": pred.dataset_name,
+            "year": getattr(pred, "year", None),
+            "window": getattr(pred, "window", None),
+        },
         defrate_source=source.as_dict(),
         borders_file=form.borders_file or "",
         mask_file=form.mask_file,
@@ -280,6 +320,21 @@ def run_allocation(
     return record
 
 
+def _run_source(record) -> Optional[str]:
+    """'<MODEL> — <dataset>' of the prediction a run came from, None if external."""
+    snapshot = getattr(record, "prediction_snapshot", None) or {}
+    if not snapshot.get("model_key"):
+        return None
+    from types import SimpleNamespace
+
+    from spatialrisk.evaluation import label_for
+
+    pred = SimpleNamespace(
+        model_key=snapshot["model_key"], window=snapshot.get("window")
+    )
+    return f"{label_for(pred)} — {snapshot.get('dataset_name', '')}"
+
+
 def allocation_rows(project, jobs=None) -> List[dict]:
     """Rows for the allocation list: in-flight jobs first, then saved runs."""
     rows: List[dict] = []
@@ -299,6 +354,7 @@ def allocation_rows(project, jobs=None) -> List[dict]:
                 "kind": "record",
                 "key": key,
                 "name": record.name,
+                "source": _run_source(record),
                 "created_at": record.created_at,
                 "annual_ha": record.annual_ha,
                 "total_ha": record.total_ha,

@@ -10,6 +10,7 @@ import solara
 
 from gui.i18n import t
 from gui.widget.product_table import ProductTable
+from gui.widget.text_style import MUTED
 
 logger = logging.getLogger("spatial_risk")
 
@@ -31,6 +32,29 @@ def _provenance_label(provenance):
     return t(key) if key else None
 
 
+def _run_meta(row):
+    """'<source> · <years> yr · <date>' line under a run's name."""
+    parts = [row.get("source") or t("toolbox.allocation.source_external")]
+    years = row.get("years_forecast")
+    if years:
+        parts.append(f"{years:g} {t('toolbox.allocation.unit_years')}")
+    created = row.get("created_at")
+    if created:
+        parts.append(str(created)[:10])
+    return " · ".join(parts)
+
+
+def _name_cell(row):
+    """Run name with its provenance meta line (mock's rich row)."""
+
+    def _fn(row=row):
+        with solara.Column(style="gap:0;"):
+            solara.Text(row["name"])
+            solara.Text(_run_meta(row), style=MUTED + "font-size:0.72rem;")
+
+    return {"type": "render", "fn": _fn}
+
+
 def _hectares_cell(value, unit_key):
     """Right-aligned hectare figure with tabular figures.
 
@@ -45,6 +69,32 @@ def _hectares_cell(value, unit_key):
         )
 
     return {"type": "render", "fn": _fn}
+
+
+_CARD_KEY = "font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;" + MUTED
+_CARD_VALUE = "font-size:1.15rem;font-weight:600;" + _NUM
+
+
+@solara.component
+def AllocationResultCard(row):
+    """Headline numbers of one run: the mock's result card, fed by the list row."""
+    with solara.Card(style="padding:4px 8px;", margin=0):
+        with solara.Row(style="gap:32px;align-items:flex-end;flex-wrap:wrap;"):
+            with solara.Column(style="gap:0;"):
+                solara.Text(t("toolbox.allocation.result_annual"), style=_CARD_KEY)
+                solara.Text(
+                    f"{row['annual_ha']:,.1f} {t('toolbox.allocation.unit_ha_yr')}",
+                    style=_CARD_VALUE,
+                )
+            with solara.Column(style="gap:0;"):
+                solara.Text(t("toolbox.allocation.result_total"), style=_CARD_KEY)
+                solara.Text(
+                    f"{row['total_ha']:,.1f} {t('toolbox.allocation.unit_ha')}",
+                    style=_CARD_VALUE,
+                )
+            with solara.Column(style="gap:0;margin-left:auto;"):
+                solara.Text(row["name"], style=MUTED + "font-size:0.8rem;")
+                solara.Text(_run_meta(row), style=MUTED + "font-size:0.72rem;")
 
 
 @solara.component
@@ -99,7 +149,7 @@ def AllocationList(rows, on_delete, on_toggle_density=None, density_on_map=froze
             {
                 "key": r["key"],
                 "cells": [
-                    {"type": "text", "value": r["name"]},
+                    _name_cell(r),
                     _hectares_cell(r["annual_ha"], "toolbox.allocation.unit_ha_yr"),
                     _hectares_cell(r["total_ha"], "toolbox.allocation.unit_ha"),
                     {
