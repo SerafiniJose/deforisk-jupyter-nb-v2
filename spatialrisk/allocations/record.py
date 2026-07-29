@@ -34,6 +34,10 @@ class AllocationRun(BaseModel):
     external_riskmap: Optional[str] = None
     defrate_source: Dict[str, Any] = Field(default_factory=dict)
     borders_file: str
+    #: How the user picked those borders: ``{method, file_path, admin_code,
+    #: asset}``. Mirrors ``defrate_source``. Defaulted, so runs saved before
+    #: the borders picker existed still load.
+    borders_source: Dict[str, Any] = Field(default_factory=dict)
     mask_file: Optional[str] = None
     defor_juris_ha: float
     years_forecast: float

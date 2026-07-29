@@ -93,3 +93,29 @@ def test_prediction_defrate_path_round_trips(tmp_path, monkeypatch):
     assert reloaded.predictions["mw_run_w11"].defrate_path == Path(
         tmp_path / "defrate_cat_mw_11_forecast.csv"
     )
+
+
+def test_borders_source_round_trips(tmp_path, monkeypatch):
+    """A run remembers where its borders came from, not just where they landed."""
+    _use_tmp_downloads(monkeypatch, tmp_path)
+
+    source = {
+        "method": "ADMIN1",
+        "admin_code": "3431",
+        "file_path": None,
+        "asset": None,
+    }
+    project = Project(project_name="alloc_borders")
+    key = project.add_allocation(_run(borders_source=source), auto_save=False)
+    project.save()
+
+    run = Project.load("alloc_borders").allocations[key]
+    assert run.borders_source == source
+
+
+def test_borders_source_defaults_for_runs_saved_before_it_existed():
+    """Old manifests have no borders_source; loading them must not fail."""
+    payload = _run().model_dump()
+    payload.pop("borders_source")
+
+    assert AllocationRun(**payload).borders_source == {}
