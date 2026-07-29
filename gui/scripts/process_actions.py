@@ -17,32 +17,53 @@ def _is_geevar(var) -> bool:
     return type(var).__name__ == "GEEVar"
 
 
-def materialize_raw_layers(project, keys=None) -> List[str]:
+def materialize_raw_layers(project, keys=None, on_progress=None) -> List[str]:
     """Download raw GEEVars to local vars, replacing them in raw_variables.
 
     Raster GEEVars -> to_local_raster(); vector GEEVars -> to_local_vector().
     Idempotent: already-local variables are skipped. ``keys`` restricts the
     download to those raw-variable keys (None = all pending). Returns the list
     of keys that were materialized.
-    """
-    from spatialrisk.variables.models import DataType
 
+    ``on_progress(layer_key, layer_idx, n_layers, tiles_done, tiles_total)``
+    reports download progress: once with zero tile counts as each layer starts,
+    then per completed geedim tile. Vector and already-on-disk layers produce
+    only the start event (they have no tile bar).
+    """
+    from spatialrisk.gee.progress import geedim_tile_progress
     from spatialrisk.log_utils import log_progress
+    from spatialrisk.variables.models import DataType
 
     # Snapshot pairs: to_local_*().add_as_raw() mutates raw_variables in place.
     pending = [
-        (k, v) for k, v in list(project.raw_variables.items())
+        (k, v)
+        for k, v in list(project.raw_variables.items())
         if _is_geevar(v) and (keys is None or k in keys)
     ]
     if pending:
         logger.info("Downloading %d GEE layer(s)…", len(pending))
 
+    n_layers = len(pending)
     materialized: List[str] = []
-    for key, var in log_progress(pending, "Downloading layer", label=lambda kv: kv[0]):
-        if var.data_type == DataType.vector:
-            local = var.to_local_vector()
-        else:
-            local = var.to_local_raster()
+    for idx, (key, var) in enumerate(
+        log_progress(pending, "Downloading layer", label=lambda kv: kv[0])
+    ):
+        if on_progress is not None:
+            on_progress(key, idx, n_layers, 0, 0)
+        tile_cb = (
+            (
+                lambda done, total, _k=key, _i=idx: on_progress(
+                    _k, _i, n_layers, done, total
+                )
+            )
+            if on_progress is not None
+            else lambda done, total: None
+        )
+        with geedim_tile_progress(tile_cb):
+            if var.data_type == DataType.vector:
+                local = var.to_local_vector()
+            else:
+                local = var.to_local_raster()
         # Single-image GEEVars return one var; lists are flattened defensively.
         locals_ = local if isinstance(local, list) else [local]
         for lv in locals_:
@@ -70,7 +91,9 @@ def base_raster_resolution(var) -> "float | None":
     metres). Falls back to the GeoTIFF's native pixel size, converting degrees -> metres
     for geographic CRSs. Returns ``None`` when nothing is available.
     """
-    res = getattr(var, "default_resolution", None) or getattr(var, "default_scale", None)
+    res = getattr(var, "default_resolution", None) or getattr(
+        var, "default_scale", None
+    )
     if res:
         return float(res)
     path = getattr(var, "path", None)
@@ -225,8 +248,11 @@ def change_output_name(project, op: str, start_key: str, end_key: str):
 
 
 def postprocess_output_name(project, pp_key: str, step: str):
-    """Name apply_post_processing will register: source variable name + step
-    suffix (mirrors LocalRasterVar._create_post_var's new_var_name)."""
+    """Name apply_post_processing will register.
+
+    Source variable name + step suffix (mirrors
+    LocalRasterVar._create_post_var's new_var_name).
+    """
     var = project.processed_variables.get(pp_key)
     if var is None:
         return None

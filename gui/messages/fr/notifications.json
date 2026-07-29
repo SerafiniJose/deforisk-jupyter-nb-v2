@@ -10,6 +10,8 @@
     "task_processing": "Harmonisation des variables",
     "task_download_all": "Téléchargement des couches GEE",
     "task_download_one": "Téléchargement de la couche '{name}'",
+    "task_download_layer": "Téléchargement de la couche {i}/{n} : '{name}'",
+    "task_download_tiles": "'{name}' — tuile {done}/{total}",
     "task_change": "Génération de la couche de changement {op}",
     "task_postprocess": "Application de {step} à '{name}'"
   },

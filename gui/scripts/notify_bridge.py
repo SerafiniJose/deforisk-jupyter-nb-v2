@@ -67,6 +67,68 @@ def install_task_log_handler(level: int = logging.INFO) -> TaskStepLogHandler:
         return handler
 
 
+def layer_progress_reporter(task, format_title=None, format_detail=None):
+    """Adapt ``materialize_raw_layers``'s ``on_progress`` events to a tracker.
+
+    Returns an ``on_progress(layer_key, layer_idx, n_layers, done, total)``
+    callable that drives the notification pill's alternating display:
+
+    - layer start (zero tile counts): retitle the task to the run position
+      via ``format_title(key, idx, n)`` — skipped for single-layer runs, whose
+      task already carries a named title — and ``set_progress(None)`` so the
+      ring returns to indeterminate instead of showing the previous layer's
+      100%.
+    - tile tick: ``set_progress(done/total, detail=...)`` with the layer's own
+      fraction, throttled to whole-percent changes so a many-tile layer doesn't
+      flood the reactive bus. The detail string comes from
+      ``format_detail(key, done, total)`` (default: ``"{key} — tile {d}/{t}"``).
+
+    ``format_*`` are injected so callers can localize without this module
+    importing the GUI's translator. Progress is never derived from milestone
+    step counts — the log handler's auto-increment would overshoot.
+
+    Works against stock (unforked) pysepal too: its ``set_progress`` has no
+    ``detail`` kwarg, so the reporter detects that once and publishes plain
+    progress values instead — the stock pill ignores them and keeps today's
+    indeterminate-spinner behavior, and the download never crashes.
+    """
+    import inspect
+
+    try:
+        detail_supported = "detail" in inspect.signature(task.set_progress).parameters
+    except (TypeError, ValueError):  # builtins/mocks without introspectable signatures
+        detail_supported = True
+
+    def _set_progress(value, detail=None):
+        if detail_supported:
+            task.set_progress(value, detail=detail)
+        else:
+            task.set_progress(value)
+
+    last_pct = None
+
+    def on_progress(layer_key, layer_idx, n_layers, done, total):
+        nonlocal last_pct
+        if not total:  # layer-start event
+            last_pct = None
+            if n_layers > 1 and format_title is not None:
+                task.update(format_title(layer_key, layer_idx, n_layers))
+            _set_progress(None)
+            return
+        pct = int(done * 100 / total)
+        if pct == last_pct:
+            return
+        last_pct = pct
+        detail = (
+            format_detail(layer_key, done, total)
+            if format_detail is not None
+            else f"{layer_key} — tile {done}/{total}"
+        )
+        _set_progress(done / total, detail=detail)
+
+    return on_progress
+
+
 @contextmanager
 def tracked_job(notifier, title: str, total_steps=None):
     """Track a job as a pysepal notification task, echoing its log milestones.

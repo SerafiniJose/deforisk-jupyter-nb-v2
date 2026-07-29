@@ -10,6 +10,8 @@
     "task_processing": "Harmonizing variables",
     "task_download_all": "Downloading GEE layers",
     "task_download_one": "Downloading layer '{name}'",
+    "task_download_layer": "Downloading layer {i}/{n}: '{name}'",
+    "task_download_tiles": "'{name}' — tile {done}/{total}",
     "task_change": "Generating {op} change layer",
     "task_postprocess": "Applying {step} to '{name}'"
   },

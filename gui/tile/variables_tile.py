@@ -10,7 +10,7 @@ from pysepal.solara.notifications import use_notifications
 from gui.i18n import t
 from gui.scripts import process_actions
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
-from gui.scripts.notify_bridge import tracked_job
+from gui.scripts.notify_bridge import layer_progress_reporter, tracked_job
 from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
 from gui.scripts.variable_map import add_raster_var_on_map
 from gui.store.project_writers import writing
@@ -317,12 +317,30 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             else t("notifications.task_download_all")
         )
 
+        def _var_name(k):
+            return getattr(p.raw_variables.get(k), "name", None) or k
+
         def _tracked_download():
             # Entered on the pool thread so the per-layer log lines feed this
             # tracker; to_thread_in_context supplies the kernel context the
             # tracker's bus updates need to reach the browser.
-            with tracked_job(notifications, title):
-                process_actions.materialize_raw_layers(p, keys)
+            with tracked_job(notifications, title) as task:
+                on_progress = layer_progress_reporter(
+                    task,
+                    format_title=lambda k, i, n: t(
+                        "notifications.task_download_layer",
+                        i=i + 1,
+                        n=n,
+                        name=_var_name(k),
+                    ),
+                    format_detail=lambda k, done, total: t(
+                        "notifications.task_download_tiles",
+                        name=_var_name(k),
+                        done=done,
+                        total=total,
+                    ),
+                )
+                process_actions.materialize_raw_layers(p, keys, on_progress=on_progress)
                 p.save()
 
         with writing(p.project_name):
