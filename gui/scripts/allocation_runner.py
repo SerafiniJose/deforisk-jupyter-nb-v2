@@ -279,6 +279,99 @@ def _validate_borders(borders: Optional[BordersSelection]) -> Optional[str]:
     return None
 
 
+#: Geometry types a cutline can be built from.
+_POLYGONAL = {"Polygon", "MultiPolygon"}
+
+
+def _build_asset_fc(asset):
+    """Indirection so tests can stub the (EE-bound) strict asset builder."""
+    from gui.scripts.aoi_io import build_asset_feature_collection
+
+    return build_asset_feature_collection(asset)
+
+
+def _ee_export_vector(fc, filename, selectors=None, verbose=True, **kwargs):
+    """Indirection so tests can stub the (network-bound) geemap export."""
+    import geemap
+
+    return geemap.ee_export_vector(
+        fc, filename, selectors=selectors, verbose=verbose, **kwargs
+    )
+
+
+def _admin_gdf(method: str, admin_code: str):
+    """GAUL boundary for an admin selection, via pysepal's non-GEE WFS path.
+
+    ``process_admin`` builds the AoiResult — including the readable name it
+    derives from pygaul's local parquet — and ``get_gdf_async`` fetches the
+    geometry from the FAO GAUL WFS. ``gee=False`` keeps Earth Engine out of the
+    most common case entirely; the GEE path would hand back a lazy
+    FeatureCollection that still needed exporting.
+
+    Worker-thread only: ``asyncio.run`` fails inside a running loop.
+    """
+    import asyncio
+
+    from pysepal.solara.components.aoi import process_admin
+
+    async def fetch():
+        result = await process_admin(method, admin_code, gee=False)
+        return await result.get_gdf_async()
+
+    gdf = asyncio.run(fetch())
+    if gdf is None:
+        raise AllocationResolveError(
+            f"Could not fetch the boundary for administrative area {admin_code}."
+        )
+    return gdf
+
+
+def _asset_gdf(asset: Optional[Dict[str, Any]], out_dir: Path):
+    """Local geometry for a GEE asset selection.
+
+    The pinned geemap cannot write GPKG (csv/geojson/json/kml/kmz/shp only), so
+    the export lands as GeoJSON and geopandas rewrites it to the canonical file.
+    ``selectors=[]`` keeps the payload to geometry — a cutline needs no
+    attributes — and skips geemap's ``propertyNames().getInfo()`` round-trip.
+    """
+    import geopandas as gpd
+    from pysepal.scripts import utils as su
+
+    su.init_ee()
+    fc = _build_asset_fc(asset or {})
+
+    tmp = Path(out_dir) / "project_borders_export.geojson"
+    _ee_export_vector(fc, str(tmp), selectors=[], verbose=False)
+    if not tmp.exists():
+        raise AllocationResolveError(
+            "The Earth Engine borders export produced no file."
+        )
+    try:
+        return gpd.read_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _check_borders_gdf(gdf) -> None:
+    """Reject geometry the core would only fail on deep inside GDAL."""
+    if gdf is None or gdf.empty:
+        raise AllocationResolveError(
+            "The selected project borders contain no features."
+        )
+    if gdf.crs is None:
+        raise AllocationResolveError(
+            "The selected project borders have no CRS, so they cannot be "
+            "reprojected onto the risk map."
+        )
+    kinds = set(gdf.geom_type.dropna().unique())
+    if not kinds <= _POLYGONAL:
+        raise AllocationResolveError(
+            "The project borders must be polygons; got "
+            f"{', '.join(sorted(kinds))}. A points or lines layer cannot crop "
+            "a risk map."
+        )
+
+
 def resolve_borders_file(selection: BordersSelection, out_dir: Path) -> Path:
     """Materialize *selection* as ``<out_dir>/project_borders.gpkg``.
 
@@ -298,10 +391,17 @@ def resolve_borders_file(selection: BordersSelection, out_dir: Path) -> Path:
 
     if selection.method == "FILE":
         gdf = gpd.read_file(selection.file_path)
+    elif selection.method in _ADMIN_METHODS:
+        gdf = _admin_gdf(selection.method, selection.admin_code)
+    elif selection.method == "ASSET":
+        gdf = _asset_gdf(selection.asset, out_dir)
     else:
         raise AllocationResolveError(
             f"Unknown project-borders method {selection.method!r}."
         )
+
+    # Before the write, so a rejected selection leaves nothing on disk.
+    _check_borders_gdf(gdf)
 
     target = out_dir / BORDERS_FILENAME
     gdf.to_file(target, driver="GPKG")

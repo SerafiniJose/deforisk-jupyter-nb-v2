@@ -457,3 +457,118 @@ def test_allocation_rows_source_is_none_for_external_maps(tmp_path, monkeypatch)
     rows = allocation_rows(project)
 
     assert rows[0]["source"] is None
+
+
+def _square_gdf(crs="EPSG:4326"):
+    """A one-polygon GeoDataFrame — the shape a borders selection must yield."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    return gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1)], crs=crs)
+
+
+def test_resolve_borders_file_fetches_an_admin_boundary(tmp_path, monkeypatch):
+    """ADMIN goes through pysepal's non-GEE WFS path and lands as the canonical file."""
+    import geopandas as gpd
+
+    import gui.scripts.allocation_runner as runner
+
+    monkeypatch.setattr(runner, "_admin_gdf", lambda method, code: _square_gdf())
+
+    out = tmp_path / "run"
+    path = resolve_borders_file(
+        BordersSelection(method="ADMIN1", admin_code="3431"), out
+    )
+
+    assert path == out / "project_borders.gpkg"
+    assert len(gpd.read_file(path)) == 1
+
+
+def test_resolve_borders_file_rejects_a_non_polygonal_selection(tmp_path, monkeypatch):
+    """A TABLE asset may be points; that cannot crop a risk map."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    import gui.scripts.allocation_runner as runner
+
+    points = gpd.GeoDataFrame(geometry=[Point(0, 0)], crs="EPSG:4326")
+    monkeypatch.setattr(runner, "_asset_gdf", lambda asset, out_dir: points)
+
+    selection = BordersSelection(method="ASSET", asset={"asset_id": "users/me/t"})
+    with pytest.raises(runner.AllocationResolveError, match="polygon"):
+        resolve_borders_file(selection, tmp_path / "run")
+
+
+def test_resolve_borders_file_rejects_borders_without_a_crs(tmp_path, monkeypatch):
+    """Without a CRS the core cannot reproject them onto the risk map's grid."""
+    import gui.scripts.allocation_runner as runner
+
+    monkeypatch.setattr(runner, "_admin_gdf", lambda m, c: _square_gdf(crs=None))
+
+    with pytest.raises(runner.AllocationResolveError, match="CRS"):
+        resolve_borders_file(
+            BordersSelection(method="ADMIN0", admin_code="62"), tmp_path / "run"
+        )
+
+
+def test_resolve_borders_file_rejects_an_empty_selection(tmp_path, monkeypatch):
+    """An admin code that matches nothing must not produce an empty cutline."""
+    import geopandas as gpd
+
+    import gui.scripts.allocation_runner as runner
+
+    empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    monkeypatch.setattr(runner, "_admin_gdf", lambda m, c: empty)
+
+    with pytest.raises(runner.AllocationResolveError, match="no features"):
+        resolve_borders_file(
+            BordersSelection(method="ADMIN0", admin_code="62"), tmp_path / "run"
+        )
+
+
+def test_bad_borders_leave_no_file_behind(tmp_path, monkeypatch):
+    """Validation runs before the write, so a rejected selection writes nothing."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    import gui.scripts.allocation_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "_asset_gdf",
+        lambda asset, out_dir: gpd.GeoDataFrame(
+            geometry=[Point(0, 0)], crs="EPSG:4326"
+        ),
+    )
+
+    out = tmp_path / "run"
+    with pytest.raises(runner.AllocationResolveError):
+        resolve_borders_file(
+            BordersSelection(method="ASSET", asset={"asset_id": "users/me/t"}), out
+        )
+
+    assert not (out / "project_borders.gpkg").exists()
+
+
+def test_asset_export_target_is_geojson_not_gpkg(tmp_path, monkeypatch):
+    """Geemap 0.36 allows csv/geojson/json/kml/kmz/shp only — .gpkg raises."""
+    import gui.scripts.allocation_runner as runner
+
+    seen = {}
+
+    def fake_export(fc, filename, selectors=None, verbose=True, **kw):
+        seen["filename"] = filename
+        seen["selectors"] = selectors
+        _square_gdf().to_file(filename, driver="GeoJSON")
+
+    monkeypatch.setattr(runner, "_ee_export_vector", fake_export)
+    monkeypatch.setattr(runner, "_build_asset_fc", lambda asset: object())
+
+    out = tmp_path / "run"
+    out.mkdir(parents=True)
+    gdf = runner._asset_gdf({"asset_id": "users/me/t"}, out)
+
+    assert seen["filename"].endswith(".geojson")
+    assert seen["selectors"] == []  # geometry only: a cutline needs no attributes
+    assert len(gdf) == 1
+    assert not list(out.glob("*.geojson"))  # the temp export is cleaned up
