@@ -55,6 +55,7 @@ from gui.tile.postprocess_tile import PostProcessTile
 from gui.tile.process_tile import ProcessTile
 from gui.tile.sampling_tile import SamplingTile, samples_on_map, sampling_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
+from gui.tile.toolbox_tile import ToolboxTile, allocation_jobs, density_on_map
 from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
@@ -717,6 +718,7 @@ def Page():
         derived_on_map.set(set())
         samples_on_map.set(set())
         preds_on_map.set(set())
+        density_on_map.set(set())
         show_aoi_on_map(sepal_map, app_state.aoi_result.value)
 
     solara.use_effect(render_map_on_switch, [project_loaded_signal])
@@ -729,6 +731,7 @@ def Page():
         inference_jobs.set([])
         eval_jobs.set([])
         sampling_jobs.set([])
+        allocation_jobs.set([])
 
     solara.use_effect(reset_jobs_on_load, [project_loaded_signal])
 
@@ -886,6 +889,18 @@ def Page():
                 last_saved=app_state.last_saved,
             ),
             "width": 760,
+        },
+        {
+            "id": 3,
+            "name": t("app.step_tools"),
+            "icon": "mdi-toolbox-outline",
+            "display": "dialog",
+            "content": ToolboxTile(
+                project=app_state.project,
+                map_=sepal_map,
+                sepal_client=sepal_client,
+            ),
+            "width": 780,
         },
     ]
 

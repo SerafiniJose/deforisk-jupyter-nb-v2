@@ -209,3 +209,34 @@ def test_notification_compute_is_registry_driven():
     # Count/"run X first" messages moved into the pipeline header.
     assert "dataset_count" not in src
     assert "train_no_dataset" not in src
+
+
+def test_toolbox_is_a_third_left_rail_entry():
+    """The Toolbox sits beside Project and Project Summary in the left rail."""
+    import inspect
+
+    from gui.solara_app import Page
+
+    src = inspect.getsource(Page.f)
+    assert "ToolboxTile" in src
+    assert "mdi-toolbox-outline" in src
+    assert "app.step_tools" in src
+
+
+def test_toolbox_is_not_a_workflow_step():
+    """The Toolbox is not a workflow step: STEPS and its numbering are untouched."""
+    from gui.store.workflow_steps import STEPS
+
+    assert len(STEPS) == 9
+    assert all(s.key != "toolbox" for s in STEPS)
+
+
+def test_page_resets_allocation_jobs_and_density_on_load():
+    """Switching projects clears in-flight allocations and their map layers."""
+    import inspect
+
+    from gui.solara_app import Page
+
+    src = inspect.getsource(Page.f)
+    assert "allocation_jobs.set([])" in src
+    assert "density_on_map.set(set())" in src
