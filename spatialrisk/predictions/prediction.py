@@ -51,6 +51,11 @@ class Prediction(BaseModel):
     # the file's value range. Set by the local-raster import flow (Step 7).
     display_palette: Optional[str] = None
 
+    # Per-category deforestation-rate table written alongside this prediction
+    # (MW/JNR apply()); consumed by the allocation tool. None for families that
+    # do not produce one — the allocation resolver computes it on demand.
+    defrate_path: Optional[Path] = None
+
     # Full-config provenance, frozen at prediction time.
     model_snapshot: Dict[str, Any] = Field(default_factory=dict)
     dataset_snapshot: Dict[str, Any] = Field(default_factory=dict)

@@ -84,6 +84,7 @@ class Project(BaseModel):
     samples: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
     evaluations: Dict[str, Any] = Field(default_factory=dict)
+    allocations: Dict[str, Any] = Field(default_factory=dict)
     # AOI descriptor (GUI-populated, library-agnostic): light metadata only
     # (method, name, gee, admin, geometry_file). The geometry itself lives in a
     # sidecar ``aoi.geojson`` in the project folder, written/read by the GUI —
@@ -568,6 +569,26 @@ class Project(BaseModel):
             self.save()
         return True
 
+    def add_allocation(self, run, auto_save: bool = True) -> str:
+        """Register an AllocationRun under its history-safe storage key."""
+        key = run.storage_key()
+        self.allocations[key] = run
+        if auto_save:
+            self.save()
+        return key
+
+    def delete_allocation(self, key: str) -> bool:
+        """Remove an allocation record (artifacts are removed by the caller).
+
+        Deletion is transactional in the GUI helper: the record is dropped here
+        without autosaving, the manifest is committed, and only then are the run's
+        files removed — see gui/scripts/allocation_runner.py::delete_allocation_run.
+        """
+        if key not in self.allocations:
+            return False
+        del self.allocations[key]
+        return True
+
     def _project_dir(self) -> Path:
         """Folder holding this project's files (manifest, rasters, model artifacts)."""
         return downloads_folder / self.project_name
@@ -775,6 +796,12 @@ class Project(BaseModel):
             data["evaluations"] = {}
             for key, record in self.evaluations.items():
                 data["evaluations"][key] = record.model_dump(mode="json")
+
+        # Serialize saved allocation runs
+        if self.allocations:
+            data["allocations"] = {}
+            for key, run in self.allocations.items():
+                data["allocations"][key] = run.model_dump(mode="json")
 
         # Serialize the AOI descriptor (geometry lives in the sidecar file)
         if self.aoi:
@@ -1009,6 +1036,8 @@ class Project(BaseModel):
             for key, pred_data in data["predictions"].items():
                 if pred_data.get("path"):
                     pred_data["path"] = Path(pred_data["path"])
+                if pred_data.get("defrate_path"):
+                    pred_data["defrate_path"] = Path(pred_data["defrate_path"])
                 prediction = Prediction(**pred_data)
                 prediction.project = project
                 project.predictions[key] = prediction
@@ -1021,6 +1050,14 @@ class Project(BaseModel):
             for key, ev_data in data["evaluations"].items():
                 project.evaluations[key] = EvaluationRecord(**ev_data)
             print(f"Loaded {len(project.evaluations)} evaluation(s)")
+
+        # Reconstruct saved allocation runs
+        if "allocations" in data and data["allocations"]:
+            from spatialrisk.allocations import AllocationRun
+
+            for key, run_data in data["allocations"].items():
+                project.allocations[key] = AllocationRun(**run_data)
+            print(f"Loaded {len(project.allocations)} allocation run(s)")
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
