@@ -37,7 +37,9 @@ def DerivedLayerDialog(project, open_, on_submit: Callable[[dict], None]):
     output_name = (
         change_output_name(p, op, start_key, end_key)
         if p and is_change
-        else postprocess_output_name(p, pp_key, op) if p and pp_key else None
+        else postprocess_output_name(p, pp_key, op)
+        if p and pp_key
+        else None
     )
 
     def reset():
@@ -81,18 +83,30 @@ def DerivedLayerDialog(project, open_, on_submit: Callable[[dict], None]):
                 {"text": t(f"tiles.postprocess.op_label_{o}"), "value": o}
                 for o in OPERATIONS
             ],
-            v_model=op, on_v_model=set_op, dense=True, outlined=True,
-            hint=t(f"tiles.postprocess.op_hint_{op}"), persistent_hint=True,
+            v_model=op,
+            on_v_model=set_op,
+            dense=True,
+            outlined=True,
+            hint=t(f"tiles.postprocess.op_hint_{op}"),
+            persistent_hint=True,
         )
         if is_change:
             candidates = change_layer_candidates(p) if p else []
             rv.Select(
-                label=t("tiles.postprocess.start_layer_label"), items=candidates,
-                v_model=start_key, on_v_model=set_start_key, dense=True, outlined=True,
+                label=t("tiles.postprocess.start_layer_label"),
+                items=candidates,
+                v_model=start_key,
+                on_v_model=set_start_key,
+                dense=True,
+                outlined=True,
             )
             rv.Select(
-                label=t("tiles.postprocess.end_layer_label"), items=candidates,
-                v_model=end_key, on_v_model=set_end_key, dense=True, outlined=True,
+                label=t("tiles.postprocess.end_layer_label"),
+                items=candidates,
+                v_model=end_key,
+                on_v_model=set_end_key,
+                dense=True,
+                outlined=True,
             )
             solara.Text(
                 t("tiles.postprocess.change_help_text"),
@@ -103,7 +117,10 @@ def DerivedLayerDialog(project, open_, on_submit: Callable[[dict], None]):
             rv.Select(
                 label=t("tiles.postprocess.processed_variable_label"),
                 items=list(p.processed_variables.keys()) if p else [],
-                v_model=pp_key, on_v_model=set_pp_key, dense=True, outlined=True,
+                v_model=pp_key,
+                on_v_model=set_pp_key,
+                dense=True,
+                outlined=True,
                 hint=t("tiles.postprocess.processed_variable_hint"),
                 persistent_hint=True,
             )

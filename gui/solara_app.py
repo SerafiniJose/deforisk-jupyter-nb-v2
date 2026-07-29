@@ -10,8 +10,6 @@ from datetime import datetime
 
 import reacton.ipyvuetify as rv
 import solara
-from solara.lab.components.theming import theme
-
 from pysepal import mapping as sm
 from pysepal.logger import setup_logging
 from pysepal.sepalwidgets.vue_app import LocaleSelect, MapApp, ThemeToggle
@@ -25,10 +23,12 @@ from pysepal.solara import (
     with_sepal_sessions,
 )
 from pysepal.solara.locale import resolve_locale_state
+from solara.lab.components.theming import theme
 
-from spatialrisk.project import Project, DATA_DIR
-from gui.store.state_manager import app_state
-from gui.store.project_writers import is_writing
+from gui.i18n import get_translator, reset_translator, set_app_locale, t
+from gui.scripts.aoi_io import load_aoi, persist_aoi
+from gui.scripts.map_helpers import clear_project_overlays, show_aoi_on_map
+from gui.scripts.notify_bridge import install_task_log_handler
 from gui.scripts.project_io import (
     delete_project,
     list_project_infos,
@@ -44,24 +44,23 @@ from gui.scripts.project_ui_helpers import (
     overwrite_needed,
     validate_project_name,
 )
-from gui.scripts.map_helpers import show_aoi_on_map, clear_project_overlays
-from gui.scripts.aoi_io import load_aoi, persist_aoi
+from gui.store.project_writers import is_writing
+from gui.store.state_manager import app_state
 from gui.tile.aoi_tile import AoiTile
 from gui.tile.dataset_tile import DatasetTile
-from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.tile.derived_map import derived_on_map
-from gui.tile.process_tile import ProcessTile
-from gui.tile.postprocess_tile import PostProcessTile
-from gui.tile.sampling_tile import SamplingTile, sampling_jobs, samples_on_map
-from gui.tile.train_tile import TrainTile, train_jobs
-from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
 from gui.tile.evaluation_tile import EvaluationTile, eval_jobs
+from gui.tile.inference_tile import InferenceTile, inference_jobs, preds_on_map
+from gui.tile.postprocess_tile import PostProcessTile
+from gui.tile.process_tile import ProcessTile
+from gui.tile.sampling_tile import SamplingTile, samples_on_map, sampling_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
+from gui.tile.train_tile import TrainTile, train_jobs
+from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
 from gui.widget.notification_area import NotificationArea
 from gui.widget.pipeline_header import PipelineHeader
-from gui.scripts.notify_bridge import install_task_log_handler
-from gui.i18n import t, get_translator, reset_translator, set_app_locale
+from spatialrisk.project import DATA_DIR, Project
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
@@ -77,6 +76,7 @@ setup_solara_server(extra_asset_locations=[])
 
 @solara.lab.on_kernel_start
 def on_kernel_start():
+    """Reset per-kernel state and open the SEPAL sessions."""
     reset_translator()  # drop the cached translator; Page rebuilds it from the
     # session LocaleState (the browser resolves the locale, not the config file)
     return setup_sessions()
@@ -115,9 +115,12 @@ def ProjectPanel(on_close=None):
     new_name, set_new_name = solara.use_state("")
 
     def refresh_infos():
-        """Rescan the saved projects. The single source of truth for both the
-        dialog list and the empty-state button's count — a delete changes it, so
-        the old use_memo(deps=[]) count went stale the moment one landed."""
+        """Rescan the saved projects.
+
+        The single source of truth for both the dialog list and the empty-state
+        button's count — a delete changes it, so the old use_memo(deps=[]) count
+        went stale the moment one landed.
+        """
         try:
             infos.set(list_project_infos(DATA_DIR))
             scan_failed.set(False)
@@ -171,12 +174,12 @@ def ProjectPanel(on_close=None):
 
     # ---- Delete ----------------------------------------------------------
     def open_delete(info):
-        """Row trash button: stage a target and price it. The size is computed for
-        this one project only — never per row, so the list stays cheap even with a
-        multi-GB project in it."""
+        """Row trash button: stage a target and price it."""
         if delete_task.pending:
             return  # a delete is in flight; nothing else may be staged
         delete_error.set(None)  # never carry the last target's failure into this one
+        # Priced for this one project only — never per row, so the list stays
+        # cheap even with a multi-GB project in it.
         pending_size.set(project_dir_size(info.name))
         pending_delete.set(info)
 
@@ -234,7 +237,8 @@ def ProjectPanel(on_close=None):
             if gone and live is not None and live.project_name == info.name:
                 app_state.close_project_state()
             if gone:
-                # After close_project_state, which deliberately leaves status alone (§3).
+                # After close_project_state, which deliberately leaves status
+                # alone (§3).
                 app_state.status_message.set(
                     t("project.status_deleted", name=info.name)
                 )
@@ -554,8 +558,10 @@ def ProjectPanel(on_close=None):
 
 @solara.component
 def WorkflowTabs(map_, gee_interface, sepal_client=None):
-    """Workflow panel: pipeline header (step map + navigation) over the
-    step tiles. Step order/gating live in gui/store/workflow_steps.py."""
+    """Workflow panel: pipeline header (step map + navigation) over the step tiles.
+
+    Step order/gating live in gui/store/workflow_steps.py.
+    """
     active_tab, set_active_tab = solara.use_state(0)
 
     # The global load/save status banner shows on whatever tab the user is on
@@ -665,7 +671,9 @@ def Page():
     solara.use_effect(_bind_locale, [id(locale_state)])
 
     def _observe_theme():
-        handler = lambda e: setattr(theme, "dark", e["new"])
+        def handler(e):
+            return setattr(theme, "dark", e["new"])
+
         theme_toggle.observe(handler, "dark")
         return lambda: theme_toggle.unobserve(handler, "dark")
 
@@ -733,8 +741,8 @@ def Page():
         if app_state.aoi_result.value is not None:
             return
         import geopandas as gpd
-        from shapely.geometry import box
         from pysepal.solara.components.aoi import AoiResult
+        from shapely.geometry import box
 
         gdf = gpd.GeoDataFrame(
             {"name": ["San Marino"]},
@@ -803,6 +811,7 @@ def Page():
 
         # Seed dummy processed variables so the Dataset tab is usable
         from pathlib import Path
+
         from spatialrisk.variables.local_raster_var import LocalRasterVar
 
         LocalRasterVar.model_rebuild()
@@ -931,7 +940,8 @@ def Page():
         right_panel_content=right_panel_content,
         right_panel_open=True,
         is_pinned=False,
-        dialog_width=560,  # roomier Project dialog (scroll fix is the .dialog-content style above)
+        # roomier Project dialog (scroll fix is the .dialog-content style above)
+        dialog_width=560,
         repo_url="https://github.com/openforis/spatial-risk",
     )
 

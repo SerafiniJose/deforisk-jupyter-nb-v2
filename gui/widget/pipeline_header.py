@@ -47,12 +47,14 @@ def count_text(spec, project, aoi_result) -> str:
 
 @solara.component
 def _SegmentCell(tip: str, seg_style: str, locked: bool, on_activate):
-    """One segment of the pipeline strip. Its own component so the
-    ``rv.use_event`` click hook is called exactly once at this component's top
-    level — never inside the caller's loop over STEPS (rules of hooks; this is
-    what the validate_hooks startup warning was about). Locked cells keep the
-    handler attached and no-op inside it, so lock/unlock never changes the
-    hook count."""
+    """One segment of the pipeline strip.
+
+    Its own component so the ``rv.use_event`` click hook is called exactly once
+    at this component's top level — never inside the caller's loop over STEPS
+    (rules of hooks; this is what the validate_hooks startup warning was about).
+    Locked cells keep the handler attached and no-op inside it, so lock/unlock
+    never changes the hook count.
+    """
     cursor = "" if locked else " cursor: pointer;"
     with rv.Html(
         tag="div",
@@ -64,11 +66,15 @@ def _SegmentCell(tip: str, seg_style: str, locked: bool, on_activate):
 
 
 @solara.component
-def _JumpMenuRow(index: int, label: str, sub_text: str, locked: bool,
-                 active: bool, on_jump):
-    """One row of the step-jump dropdown (same per-row-component rule as
-    ``_SegmentCell``). ``on_jump`` re-checks locked itself — Vuetify's
-    ``pointer-events: none`` on a disabled item is only the first guard."""
+def _JumpMenuRow(
+    index: int, label: str, sub_text: str, locked: bool, active: bool, on_jump
+):
+    """One row of the step-jump dropdown.
+
+    Same per-row-component rule as ``_SegmentCell``. ``on_jump`` re-checks
+    locked itself — Vuetify's ``pointer-events: none`` on a disabled item is
+    only the first guard.
+    """
     with rv.ListItem(
         disabled=locked,
         link=not locked,
@@ -102,9 +108,12 @@ def _JumpMenuRow(index: int, label: str, sub_text: str, locked: bool,
 
 @solara.component
 def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
-    """Pipeline map + step navigation. Takes the app_state *reactives* (not
-    their values — reacton's prop-equality bailout would eat project-only
-    changes) plus the active index and a navigate callback."""
+    """Pipeline map + step navigation.
+
+    Takes the app_state *reactives* (not their values — reacton's prop-equality
+    bailout would eat project-only changes) plus the active index and a navigate
+    callback.
+    """
     p = project.value
     aoi = aoi_result.value
     states = step_states(p, aoi)
@@ -115,7 +124,9 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
     # accent (green in light mode, gold in dark) — the same colour as the Next
     # button and every color="primary" control, so the strip matches the app.
     themes = solara.lab.theme.themes
-    primary = themes.dark.primary if solara.lab.use_dark_effective() else themes.light.primary
+    primary = (
+        themes.dark.primary if solara.lab.use_dark_effective() else themes.light.primary
+    )
     ring_css = f"box-shadow: 0 0 0 2px {_rgba(primary, 0.55)};"
 
     def _seg_style(i: int) -> str:
@@ -152,7 +163,8 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
             for i, spec in enumerate(STEPS):
                 locked = states[i] is StepStatus.LOCKED
                 _SegmentCell(
-                    tip=t(spec.lock_reason_key) if locked
+                    tip=t(spec.lock_reason_key)
+                    if locked
                     else f"{t(spec.label_key)} · {count_text(spec, p, aoi)}",
                     seg_style=_seg_style(i),
                     locked=locked,
@@ -162,7 +174,9 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
         active = STEPS[active_step]
         with solara.Row(style="gap: 8px; align-items: center; padding: 4px 0;"):
             solara.Button(
-                icon_name="mdi-chevron-left", icon=True, small=True,
+                icon_name="mdi-chevron-left",
+                icon=True,
+                small=True,
                 disabled=prev_t is None,
                 on_click=lambda: prev_t is not None and on_navigate(prev_t),
             )
@@ -194,8 +208,11 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
                     rv.Html(
                         tag="span",
                         children=[
-                            t("workflow.step_badge",
-                              n=active_step + 1, total=len(STEPS))
+                            t(
+                                "workflow.step_badge",
+                                n=active_step + 1,
+                                total=len(STEPS),
+                            )
                         ],
                         style_=f"background: {primary}; color: #ffffff;"
                         " font-weight: 600; font-size: 11px; border-radius: 4px;"
@@ -204,7 +221,8 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
                     solara.Text(t(active.label_key), style="font-weight: 700;")
                     rv.Chip(children=[count_text(active, p, aoi)], x_small=True)
                     rv.Icon(
-                        children=["mdi-menu-down"], small=True,
+                        children=["mdi-menu-down"],
+                        small=True,
                         style_="margin-left: auto;",
                     )
                 # solara.lab.Menu renders `activator` into its v-menu activator slot
@@ -233,14 +251,18 @@ def PipelineHeader(active_step: int, on_navigate, project, aoi_result):
                             _JumpMenuRow(
                                 index=i,
                                 label=t(spec.label_key),
-                                sub_text=t(spec.lock_reason_key) if locked
+                                sub_text=t(spec.lock_reason_key)
+                                if locked
                                 else count_text(spec, p, aoi),
                                 locked=locked,
                                 active=i == active_step,
                                 on_jump=_jump,
                             )
             solara.Button(
-                icon_name="mdi-chevron-right", icon=True, small=True,
-                color="primary", disabled=next_t is None,
+                icon_name="mdi-chevron-right",
+                icon=True,
+                small=True,
+                color="primary",
+                disabled=next_t is None,
                 on_click=lambda: next_t is not None and on_navigate(next_t),
             )

@@ -136,8 +136,11 @@ def grid_style(widths) -> str:
 
 
 def _render_chip(item: dict, shrink: bool = True):
-    """One list chip. ``shrink=False`` keeps it at its natural width so a tight
-    column truncates the neighbouring text instead of the chip's own label."""
+    """One list chip.
+
+    ``shrink=False`` keeps it at its natural width so a tight column truncates
+    the neighbouring text instead of the chip's own label.
+    """
     children = []
     if item.get("icon"):
         children.append(rv.Icon(children=[item["icon"]], x_small=True, left=True))
@@ -219,9 +222,11 @@ def _render_action(act: dict):
 
 @solara.component
 def _Row(row: dict, grid: str, show_actions: bool):
-    """One grid row. Its own component so the ``rv.use_event`` click hook is
-    called exactly once per row instance regardless of how many rows the table
-    renders (hooks must not live in the caller's loop).
+    """One grid row.
+
+    Its own component so the ``rv.use_event`` click hook is called exactly once
+    per row instance regardless of how many rows the table renders (hooks must
+    not live in the caller's loop).
 
     An optional ``row["on_click"]`` makes the content cells clickable. The
     listener sits on a ``display:contents`` wrapper around the content cells —

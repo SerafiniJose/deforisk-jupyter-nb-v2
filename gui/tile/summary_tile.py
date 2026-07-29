@@ -6,13 +6,13 @@ import solara
 from gui.i18n import t
 from gui.scripts.summary_helpers import project_overview
 from gui.widget.summary_lists import (
-    RawVariablesSummary,
-    ProcessedVariablesSummary,
     DatasetsSummary,
-    SamplesSummary,
+    EvaluationsSummary,
     ModelsSummary,
     PredictionsSummary,
-    EvaluationsSummary,
+    ProcessedVariablesSummary,
+    RawVariablesSummary,
+    SamplesSummary,
 )
 
 # (i18n key for tab label, renderer) — order is the displayed tab order.
@@ -45,9 +45,13 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
     with solara.Column(style="gap:12px;"):
         # Project header (read-only context)
         with solara.Row(style="gap:8px;align-items:center;"):
-            solara.Text(str(ov["project_name"]), style="font-weight:600;font-size:1.05rem;")
+            solara.Text(
+                str(ov["project_name"]), style="font-weight:600;font-size:1.05rem;"
+            )
             rv.Chip(
-                children=[t("project.chip_unsaved") if dirty else t("project.chip_saved")],
+                children=[
+                    t("project.chip_unsaved") if dirty else t("project.chip_saved")
+                ],
                 color="warning" if dirty else "primary",
                 text_color="white",
                 x_small=True,
@@ -69,7 +73,9 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
         )
 
         # One tab per component type
-        with rv.Tabs(v_model=active_tab, on_v_model=set_active_tab, grow=False, show_arrows=True):
+        with rv.Tabs(
+            v_model=active_tab, on_v_model=set_active_tab, grow=False, show_arrows=True
+        ):
             for label_key, _ in _TABS:
                 rv.Tab(children=[t(label_key)])
         with rv.TabsItems(v_model=active_tab):
