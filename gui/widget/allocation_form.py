@@ -21,7 +21,7 @@ from gui.scripts.allocation_runner import (
 )
 from gui.tile.evaluation_helpers import map_items
 from gui.widget.creation_dialog import CreationDialog
-from gui.widget.text_style import MUTED
+from gui.widget.text_style import MUTED, TIGHT_FIELD, FieldHint
 
 logger = logging.getLogger("spatial_risk")
 
@@ -59,26 +59,27 @@ def DefrateResolutionHint(project_value, pred_key, override):
         return
 
     will_compute = src.path is not None and not src.path.exists()
-    with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
-        # 'Computed' needs no provenance chip: its description already says
-        # where the table comes from. The other provenances name a file, so
-        # the chip is what tells persisted/sibling/user tables apart.
-        if src.provenance != "computed":
-            provenance_key = f"toolbox.allocation.provenance_{src.provenance}".replace(
-                "-", "_"
+    with FieldHint():
+        with solara.Row(style="gap:8px;align-items:center;flex-wrap:wrap;"):
+            # 'Computed' needs no provenance chip: its description already says
+            # where the table comes from. The other provenances name a file, so
+            # the chip is what tells persisted/sibling/user tables apart.
+            if src.provenance != "computed":
+                provenance_key = (
+                    f"toolbox.allocation.provenance_{src.provenance}".replace("-", "_")
+                )
+                rv.Chip(
+                    small=True,
+                    outlined=True,
+                    color="primary",
+                    children=[t(provenance_key)],
+                )
+            solara.Text(
+                t("toolbox.allocation.defrate_will_compute")
+                if will_compute
+                else src.path.name,
+                style=_HINT,
             )
-            rv.Chip(
-                small=True,
-                outlined=True,
-                color="primary",
-                children=[t(provenance_key)],
-            )
-        solara.Text(
-            t("toolbox.allocation.defrate_will_compute")
-            if will_compute
-            else src.path.name,
-            style=_HINT,
-        )
     if src.caveat:  # the JNR observed-rates caveat
         solara.Warning(src.caveat, dense=True)
 
@@ -180,35 +181,37 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         else:
             solara.Info(t("toolbox.allocation.no_predictions"))
 
-        rv.Select(
-            label=t("toolbox.allocation.field_defrate"),
-            items=[
-                {
-                    "text": t("toolbox.allocation.defrate_option_auto"),
-                    "value": _DEFRATE_AUTO,
-                },
-                {
-                    "text": t("toolbox.allocation.defrate_option_custom"),
-                    "value": _DEFRATE_CUSTOM,
-                },
-            ],
-            item_text="text",
-            item_value="value",
-            v_model=defrate_mode,
-            on_v_model=lambda v: set_defrate_mode(v or _DEFRATE_AUTO),
-            dense=True,
-            outlined=True,
-        )
-        if custom_table:
-            FileInputComponent(
-                label=t("toolbox.allocation.field_defrate_override"),
-                value=defrate_override,
-                on_value=set_defrate_override,
-                sepal_client=sepal_client,
-                root="",
-                extensions=_TABLE_EXTENSIONS,
-                clearable=True,
+        with solara.Div(classes=[TIGHT_FIELD]):
+            rv.Select(
+                label=t("toolbox.allocation.field_defrate"),
+                items=[
+                    {
+                        "text": t("toolbox.allocation.defrate_option_auto"),
+                        "value": _DEFRATE_AUTO,
+                    },
+                    {
+                        "text": t("toolbox.allocation.defrate_option_custom"),
+                        "value": _DEFRATE_CUSTOM,
+                    },
+                ],
+                item_text="text",
+                item_value="value",
+                v_model=defrate_mode,
+                on_v_model=lambda v: set_defrate_mode(v or _DEFRATE_AUTO),
+                dense=True,
+                outlined=True,
             )
+        if custom_table:
+            with solara.Div(classes=[TIGHT_FIELD]):
+                FileInputComponent(
+                    label=t("toolbox.allocation.field_defrate_override"),
+                    value=defrate_override,
+                    on_value=set_defrate_override,
+                    sepal_client=sepal_client,
+                    root="",
+                    extensions=_TABLE_EXTENSIONS,
+                    clearable=True,
+                )
         if pred_key or (custom_table and defrate_override):
             DefrateResolutionHint(
                 project_value=p,
@@ -231,21 +234,30 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         # already registered, so offer exactly that.
         mask_choices = mask_items(p)
         if mask_choices:
-            rv.Select(
-                label=t("toolbox.allocation.field_mask"),
-                items=mask_choices,
-                item_text="text",
-                item_value="value",
-                v_model=mask or None,
-                on_v_model=lambda v: set_mask(v or ""),
-                dense=True,
-                outlined=True,
-                clearable=True,
-            )
+            with solara.Div(classes=[TIGHT_FIELD]):
+                rv.Select(
+                    label=t("toolbox.allocation.field_mask"),
+                    items=mask_choices,
+                    item_text="text",
+                    item_value="value",
+                    v_model=mask or None,
+                    on_v_model=lambda v: set_mask(v or ""),
+                    dense=True,
+                    outlined=True,
+                    clearable=True,
+                )
         else:
-            solara.Text(t("toolbox.allocation.field_mask_empty"), style=_HINT)
+            FieldHint(
+                children=[
+                    solara.Text(t("toolbox.allocation.field_mask_empty"), style=_HINT)
+                ]
+            )
         if not mask:
-            solara.Text(t("toolbox.allocation.field_mask_none"), style=_HINT)
+            FieldHint(
+                children=[
+                    solara.Text(t("toolbox.allocation.field_mask_none"), style=_HINT)
+                ]
+            )
 
         with solara.Row(style="gap:12px;"):
             rv.TextField(

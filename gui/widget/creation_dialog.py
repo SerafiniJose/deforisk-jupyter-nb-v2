@@ -66,6 +66,16 @@ _ADVANCED_PANEL_CSS = """
 
 /* Formula textarea: patsy code reads better monospaced. */
 .formula-field textarea { font-family: monospace; font-size: 13px; }
+
+/* A field that owns a FieldHint (`gui/widget/text_style.py`). Vuetify reserves
+   a details row under every input for validation messages; the hinted fields
+   have no `rules`, so that row is always empty and pushes the hint ~22px down.
+   Collapse it when EMPTY only — an actual error message still renders at its
+   natural height, which `hide-details` would have suppressed. Needed as CSS
+   rather than a prop because FileInputComponent, AdminLevelSelector and
+   AssetSelectComponent expose no hide-details argument at all. */
+.sr-tight-field .v-text-field__details { min-height: 0; margin-bottom: 0; }
+.sr-tight-field .v-messages { min-height: 0; }
 """
 
 

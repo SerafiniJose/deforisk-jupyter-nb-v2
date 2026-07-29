@@ -41,6 +41,26 @@ def test_list_offers_density_toggle_only_when_a_density_map_exists():
     assert "density_map_path" in src
 
 
+def test_tight_field_css_collapses_only_the_empty_messages_row():
+    """The hint fix must not suppress real Vuetify error messages.
+
+    `hide_details` would remove the row entirely; collapsing min-height lets an
+    error still render at its natural height while an empty row takes none.
+    """
+    from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS
+
+    assert ".sr-tight-field .v-text-field__details" in _ADVANCED_PANEL_CSS
+    assert ".sr-tight-field .v-messages" in _ADVANCED_PANEL_CSS
+    assert "hide_details" not in inspect.getsource(allocation_form)
+
+
+def test_form_hints_use_the_shared_field_hint():
+    """Every hint in the form goes through FieldHint, not a bare Text."""
+    src = inspect.getsource(allocation_form)
+    assert "FieldHint" in src
+    assert "TIGHT_FIELD" in src
+
+
 # --- render tests -------------------------------------------------------
 # The assertions above are source-substring checks; these mount the widgets so
 # a wrong prop name or an unsupported cell spec fails here instead of in the app.
@@ -341,3 +361,11 @@ def test_form_guards_a_custom_mode_without_a_file():
     src = inspect.getsource(allocation_form)
     assert "_DEFRATE_CUSTOM" in src
     assert "switch back" in src  # the validate() guard message
+
+
+def test_field_hint_renders_its_children():
+    """FieldHint is a wrapper: whatever goes in must come out visible."""
+    from gui.widget.text_style import FieldHint
+
+    box, _rc = reacton.render(FieldHint(children=[solara.Text("resolved table.csv")]))
+    assert "resolved table.csv" in _all_text(box)
