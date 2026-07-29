@@ -15,19 +15,18 @@ from pysepal.solara.components.inputs import FileInputComponent
 from gui.i18n import t
 from gui.scripts.allocation_runner import (
     AllocationForm,
-    BordersSelection,
     mask_items,
     preview_defrate_source,
     validate_form,
 )
 from gui.tile.evaluation_helpers import map_items
+from gui.widget.borders_picker import BordersPicker
 from gui.widget.creation_dialog import CreationDialog
 from gui.widget.text_style import MUTED, TIGHT_FIELD, FieldHint
 
 logger = logging.getLogger("spatial_risk")
 
 _TABLE_EXTENSIONS = [".csv"]
-_VECTOR_EXTENSIONS = [".gpkg", ".shp", ".geojson", ".json"]
 
 _HINT = MUTED + "font-size:0.75rem;"
 
@@ -220,18 +219,11 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
                 override=defrate_override if custom_table else "",
             )
 
-        with solara.Div(classes=[TIGHT_FIELD]):
-            FileInputComponent(
-                label=t("toolbox.allocation.field_borders"),
-                value=(borders.file_path if borders else "") or "",
-                on_value=lambda p: set_borders(
-                    BordersSelection(method="FILE", file_path=str(p)) if p else None
-                ),
-                sepal_client=sepal_client,
-                root="",
-                extensions=_VECTOR_EXTENSIONS,
-                clearable=True,
-            )
+        BordersPicker(
+            value=borders,
+            on_value=set_borders,
+            sepal_client=sepal_client,
+        )
 
         # The mask is one of the project's processed rasters (Hansen forest &
         # co.), not a free file: everything the risk map was built from is

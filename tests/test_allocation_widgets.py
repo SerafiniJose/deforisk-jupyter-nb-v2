@@ -61,6 +61,39 @@ def test_form_hints_use_the_shared_field_hint():
     assert "TIGHT_FIELD" in src
 
 
+def test_borders_picker_offers_five_methods():
+    """AdminLevelSelector reads its cascade depth from the method string.
+
+    So 'administrative boundary' cannot be one option — it is three.
+    """
+    from gui.widget import borders_picker
+
+    methods = [m for m, _ in borders_picker._METHODS]
+    assert methods == ["ADMIN0", "ADMIN1", "ADMIN2", "FILE", "ASSET"]
+
+
+def test_borders_picker_uses_the_non_gee_admin_path():
+    """gee=False keeps Earth Engine out of the most common borders case."""
+    from gui.widget import borders_picker
+
+    assert "gee=False" in inspect.getsource(borders_picker)
+
+
+def test_borders_picker_restricts_assets_to_tables():
+    """An IMAGE asset is not a border."""
+    from gui.widget import borders_picker
+
+    assert 'types=["TABLE"]' in inspect.getsource(borders_picker)
+
+
+def test_form_delegates_borders_to_the_picker():
+    """The form no longer picks borders itself."""
+    src = inspect.getsource(allocation_form)
+    assert "BordersPicker" in src
+    # Only the rate-table override remains file-picked in this module.
+    assert src.count("FileInputComponent(") == 1
+
+
 # --- render tests -------------------------------------------------------
 # The assertions above are source-substring checks; these mount the widgets so
 # a wrong prop name or an unsupported cell spec fails here instead of in the app.
@@ -183,8 +216,6 @@ def test_form_mask_choices_come_from_processed_variables():
     """The mask is picked from the project's processed rasters, not free files."""
     src = inspect.getsource(allocation_form)
     assert "mask_items" in src
-    # Only the rate-table override and the borders remain file-picked.
-    assert src.count("FileInputComponent(") == 2
 
 
 def test_form_has_no_external_riskmap_field():
@@ -369,3 +400,45 @@ def test_field_hint_renders_its_children():
 
     box, _rc = reacton.render(FieldHint(children=[solara.Text("resolved table.csv")]))
     assert "resolved table.csv" in _all_text(box)
+
+
+def test_borders_picker_hint_names_the_chosen_file():
+    """The hint tells the user what the run will actually use."""
+    from gui.scripts.allocation_runner import BordersSelection
+    from gui.widget.borders_picker import _hint_text
+
+    selection = BordersSelection(method="FILE", file_path="/data/reserve.gpkg")
+    assert _hint_text(selection) == "reserve.gpkg"
+
+
+def test_borders_picker_hint_flags_an_incomplete_selection():
+    """A method chosen but nothing picked is not runnable; say so."""
+    from gui.scripts.allocation_runner import BordersSelection
+    from gui.widget.borders_picker import _hint_text
+
+    assert t("toolbox.allocation.borders_hint_empty") == _hint_text(
+        BordersSelection(method="ADMIN1")
+    )
+
+
+def test_borders_picker_renders_the_file_method_by_default():
+    """The default method mounts without a map, a GEE session or a network.
+
+    Vuetify's ``Select`` keeps its option labels in the ``items`` prop, not as
+    rendered text nodes, so a browserless render can't see them via
+    ``_all_text``. What it *can* see: which method is selected, that its
+    label came from the picker's own i18n key, and that only the FILE
+    method's own widget (``FileInput``) mounted — not the admin/asset ones,
+    which would need pygaul or a live GEE session.
+    """
+    from pysepal.sepalwidgets.file_input import FileInput
+
+    from gui.widget.borders_picker import BordersPicker
+
+    box, _rc = reacton.render(BordersPicker(value=None, on_value=lambda _v: None))
+
+    selects = _find(box, vw.Select)
+    assert any(s.v_model == "FILE" for s in selects)
+    labels = {item["value"]: item["text"] for s in selects for item in s.items}
+    assert labels["FILE"] == t("toolbox.allocation.borders_method_file")
+    assert _find(box, FileInput)
