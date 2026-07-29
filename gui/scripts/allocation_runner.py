@@ -187,6 +187,42 @@ def mask_items(project) -> List[dict]:
     return sorted(items, key=lambda d: d["text"])
 
 
+#: Canonical name of the materialized borders file inside a run's out_dir.
+BORDERS_FILENAME = "project_borders.gpkg"
+
+#: Every project-borders method the picker can produce. Anything else is
+#: rejected by both validate_form and the resolver rather than silently
+#: resolving to a default.
+_BORDER_METHODS = ("FILE", "ADMIN0", "ADMIN1", "ADMIN2", "ASSET")
+
+_ADMIN_METHODS = ("ADMIN0", "ADMIN1", "ADMIN2")
+
+
+@dataclass
+class BordersSelection:
+    """How the user chose the project borders.
+
+    Only FILE names something that already exists; ADMIN and ASSET are intents
+    that ``resolve_borders_file`` materializes at run time. No display label
+    lives here — pysepal's ``process_admin`` derives the readable name from
+    pygaul when the geometry is fetched.
+    """
+
+    method: str
+    file_path: Optional[str] = None
+    admin_code: Optional[str] = None
+    asset: Optional[Dict[str, Any]] = None
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Serializable form, stored on the AllocationRun record."""
+        return {
+            "method": self.method,
+            "file_path": self.file_path,
+            "admin_code": self.admin_code,
+            "asset": self.asset,
+        }
+
+
 @dataclass
 class AllocationForm:
     """User inputs of one allocation run (already parsed from the form widgets).
@@ -199,7 +235,7 @@ class AllocationForm:
     name: str
     prediction_key: Optional[str]
     user_defrate_path: Optional[str]
-    borders_file: Optional[str]
+    borders: Optional[BordersSelection]
     mask_file: Optional[str]
     defor_juris_ha: float
     years_forecast: float
@@ -213,21 +249,80 @@ def _allocate(**kwargs):
     return allocate_deforestation(**kwargs)
 
 
+def _validate_borders(borders: Optional[BordersSelection]) -> Optional[str]:
+    """Per-method check of the borders selection, or None when it is runnable.
+
+    ADMIN and ASSET cannot be existence-checked here — they are fetched at run
+    time — so this only catches an incomplete selection.
+    """
+    if borders is None or borders.method not in _BORDER_METHODS:
+        return "Choose the project borders."
+    if borders.method == "FILE":
+        if not borders.file_path:
+            return "Choose the project borders vector file."
+        if not Path(borders.file_path).exists():
+            return (
+                "The selected project borders file does not exist: "
+                f"{borders.file_path}"
+            )
+        return None
+    if borders.method in _ADMIN_METHODS:
+        if not borders.admin_code:
+            return "Choose the administrative area for the project borders."
+        return None
+    asset = borders.asset or {}
+    if not asset.get("asset_id"):
+        return "Choose the Earth Engine asset for the project borders."
+    column = asset.get("column")
+    if column not in (None, "ALL") and asset.get("value") is None:
+        return f"Choose a value for the '{column}' filter on the borders asset."
+    return None
+
+
+def resolve_borders_file(selection: BordersSelection, out_dir: Path) -> Path:
+    """Materialize *selection* as ``<out_dir>/project_borders.gpkg``.
+
+    Every method converges on one canonical file. The allocation core needs a
+    vector file on disk (it reprojects it and hands the result to gdal.Warp as
+    a cutline), and a run that owns a copy of its geometry stays reproducible
+    when the user later edits, moves or deletes what they picked. Rewriting a
+    FILE selection also collapses a shapefile's sidecars into one file.
+
+    Worker-thread only: the remote branches drive async pysepal code with
+    ``asyncio.run``, which fails inside a thread that already runs a loop.
+    """
+    import geopandas as gpd
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if selection.method == "FILE":
+        gdf = gpd.read_file(selection.file_path)
+    else:
+        raise AllocationResolveError(
+            f"Unknown project-borders method {selection.method!r}."
+        )
+
+    target = out_dir / BORDERS_FILENAME
+    gdf.to_file(target, driver="GPKG")
+    return target
+
+
 def validate_form(project, form: AllocationForm) -> Optional[str]:
     """Return a user-facing error message, or None when the form is runnable."""
     if not (form.name or "").strip():
         return "Give the allocation run a name."
     if not form.prediction_key:
         return "Choose a risk map from the project's predictions."
-    if not form.borders_file:
-        return "Choose the project borders vector file."
     if form.years_forecast is None or form.years_forecast <= 0:
         return "The forecast period must be at least one year."
     if form.defor_juris_ha is None or form.defor_juris_ha < 0:
         return "Expected jurisdictional deforestation cannot be negative (hectares)."
+    borders_error = _validate_borders(form.borders)
+    if borders_error:
+        return borders_error
     for label, value in (
         ("rate table", form.user_defrate_path),
-        ("project borders", form.borders_file),
         ("mask", form.mask_file),
     ):
         if value and not Path(value).exists():
@@ -254,7 +349,9 @@ def run_allocation(
     record_key = AllocationRun(
         name=form.name,
         run_id=run_id,
-        borders_file=form.borders_file or "",
+        # Only storage_key() is wanted here, and that uses name + run_id alone.
+        # The real borders path is not known until out_dir exists (below).
+        borders_file="",
         defor_juris_ha=form.defor_juris_ha,
         years_forecast=form.years_forecast,
         annual_ha=0.0,
@@ -274,13 +371,22 @@ def run_allocation(
         project, form.prediction_key, user_path=form.user_defrate_path
     )
 
+    try:
+        borders_path = resolve_borders_file(form.borders, out_dir)
+    except Exception:
+        # Resolution now runs before the core creates out_dir, so a failure
+        # here would otherwise leave an empty run folder behind.
+        if out_dir.is_dir() and not any(out_dir.iterdir()):
+            out_dir.rmdir()
+        raise
+
     logger.info("Allocating deforestation for '%s'…", form.name)
     result = _allocate(
         riskmap_file=riskmap_file,
         defrate_table=source.path,
         defor_juris_ha=form.defor_juris_ha,
         years_forecast=form.years_forecast,
-        project_borders=form.borders_file,
+        project_borders=str(borders_path),
         out_dir=out_dir,
         forest_mask_file=form.mask_file,
         defor_density_map=form.density_map,
@@ -299,7 +405,8 @@ def run_allocation(
             "window": getattr(pred, "window", None),
         },
         defrate_source=source.as_dict(),
-        borders_file=form.borders_file or "",
+        borders_file=str(borders_path),
+        borders_source=form.borders.as_dict(),
         mask_file=form.mask_file,
         defor_juris_ha=form.defor_juris_ha,
         years_forecast=form.years_forecast,

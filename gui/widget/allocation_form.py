@@ -15,6 +15,7 @@ from pysepal.solara.components.inputs import FileInputComponent
 from gui.i18n import t
 from gui.scripts.allocation_runner import (
     AllocationForm,
+    BordersSelection,
     mask_items,
     preview_defrate_source,
     validate_form,
@@ -101,7 +102,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
     pred_key, set_pred_key = solara.use_state(None)
     defrate_mode, set_defrate_mode = solara.use_state(_DEFRATE_AUTO)
     defrate_override, set_defrate_override = solara.use_state("")
-    borders, set_borders = solara.use_state("")
+    borders, set_borders = solara.use_state(None)
     mask, set_mask = solara.use_state("")
     juris_ha, set_juris_ha = solara.use_state("")
     years, set_years = solara.use_state("4")
@@ -116,7 +117,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
             user_defrate_path=(
                 str(defrate_override) if custom_table and defrate_override else None
             ),
-            borders_file=str(borders) if borders else None,
+            borders=borders,
             mask_file=str(mask) if mask else None,
             defor_juris_ha=_as_float(juris_ha),
             years_forecast=_as_float(years),
@@ -137,7 +138,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         set_pred_key(None)
         set_defrate_mode(_DEFRATE_AUTO)
         set_defrate_override("")
-        set_borders("")
+        set_borders(None)
         set_mask("")
         set_juris_ha("")
         set_years("4")
@@ -219,15 +220,18 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
                 override=defrate_override if custom_table else "",
             )
 
-        FileInputComponent(
-            label=t("toolbox.allocation.field_borders"),
-            value=borders,
-            on_value=set_borders,
-            sepal_client=sepal_client,
-            root="",
-            extensions=_VECTOR_EXTENSIONS,
-            clearable=True,
-        )
+        with solara.Div(classes=[TIGHT_FIELD]):
+            FileInputComponent(
+                label=t("toolbox.allocation.field_borders"),
+                value=(borders.file_path if borders else "") or "",
+                on_value=lambda p: set_borders(
+                    BordersSelection(method="FILE", file_path=str(p)) if p else None
+                ),
+                sepal_client=sepal_client,
+                root="",
+                extensions=_VECTOR_EXTENSIONS,
+                clearable=True,
+            )
 
         # The mask is one of the project's processed rasters (Hansen forest &
         # co.), not a free file: everything the risk map was built from is

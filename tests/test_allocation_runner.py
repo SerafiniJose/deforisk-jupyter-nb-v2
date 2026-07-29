@@ -6,8 +6,10 @@ import pytest
 
 from gui.scripts.allocation_runner import (
     AllocationForm,
+    BordersSelection,
     allocation_rows,
     delete_allocation_run,
+    resolve_borders_file,
     run_allocation,
     validate_form,
 )
@@ -21,7 +23,7 @@ def _form(**kw):
         name="reserve_north",
         prediction_key="icar_run",
         user_defrate_path=None,
-        borders_file="/data/borders.gpkg",
+        borders=BordersSelection(method="FILE", file_path="/data/borders.gpkg"),
         mask_file=None,
         defor_juris_ha=20000.0,
         years_forecast=4,
@@ -85,13 +87,87 @@ def test_validate_form_accepts_a_complete_form(tmp_path):
     """A fully specified form whose files exist passes validation."""
     borders = tmp_path / "borders.gpkg"
     borders.write_text("")
-    assert validate_form(None, _form(borders_file=str(borders))) is None
+    selection = BordersSelection(method="FILE", file_path=str(borders))
+    assert validate_form(None, _form(borders=selection)) is None
 
 
 def test_validate_form_rejects_a_borders_file_that_is_not_there(tmp_path):
     """Paths are checked before the run starts, not deep inside GDAL."""
-    msg = validate_form(None, _form(borders_file=str(tmp_path / "gone.gpkg")))
+    selection = BordersSelection(method="FILE", file_path=str(tmp_path / "gone.gpkg"))
+    msg = validate_form(None, _form(borders=selection))
     assert "does not exist" in msg
+
+
+def test_validate_form_rejects_no_borders_at_all():
+    """The core cannot crop a risk map without a project area."""
+    assert "borders" in validate_form(None, _form(borders=None)).lower()
+
+
+def test_validate_form_rejects_an_unknown_borders_method():
+    """A typo must fail loudly, not resolve to some default."""
+    selection = BordersSelection(method="ADMIN", admin_code="3431")
+    assert "borders" in validate_form(None, _form(borders=selection)).lower()
+
+
+def test_validate_form_rejects_an_admin_selection_with_no_code():
+    """Picking 'Region' without picking a region is incomplete."""
+    selection = BordersSelection(method="ADMIN1")
+    assert "administrative" in validate_form(None, _form(borders=selection)).lower()
+
+
+def test_validate_form_rejects_an_asset_filter_with_no_value():
+    """AssetSelectComponent publishes {column: X, value: None} mid-filter.
+
+    Accepting it would silently allocate over the whole unfiltered collection.
+    """
+    selection = BordersSelection(
+        method="ASSET",
+        asset={
+            "asset_id": "users/me/t",
+            "type": "TABLE",
+            "column": "adm1",
+            "value": None,
+        },
+    )
+    assert "adm1" in validate_form(None, _form(borders=selection))
+
+
+def test_validate_form_accepts_an_admin_selection():
+    """ADMIN borders are materialized at run time, so no file check applies."""
+    selection = BordersSelection(method="ADMIN1", admin_code="3431")
+    assert validate_form(None, _form(borders=selection)) is None
+
+
+def test_resolve_borders_file_rewrites_a_file_selection(tmp_path):
+    """FILE is canonicalized too: one meaning for borders_file, sidecars gone."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    src = tmp_path / "src.geojson"
+    gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1)], crs="EPSG:4326").to_file(src)
+
+    out = tmp_path / "run"
+    path = resolve_borders_file(
+        BordersSelection(method="FILE", file_path=str(src)), out
+    )
+
+    assert path == out / "project_borders.gpkg"
+    assert path.exists()
+    assert len(gpd.read_file(path)) == 1
+
+
+def test_resolve_borders_file_creates_the_run_directory(tmp_path):
+    """Resolution now runs before the core creates out_dir."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    src = tmp_path / "src.geojson"
+    gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1)], crs="EPSG:4326").to_file(src)
+
+    out = tmp_path / "not" / "there" / "yet"
+    resolve_borders_file(BordersSelection(method="FILE", file_path=str(src)), out)
+
+    assert out.is_dir()
 
 
 def test_run_allocation_registers_a_record(tmp_path, monkeypatch):
@@ -130,6 +206,11 @@ def test_run_allocation_registers_a_record(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(runner, "_allocate", fake_allocate)
+    monkeypatch.setattr(
+        runner,
+        "resolve_borders_file",
+        lambda selection, out_dir: Path(out_dir) / "b.gpkg",
+    )
 
     record = run_allocation(project, _form(), job_id="job1")
 
@@ -139,6 +220,8 @@ def test_run_allocation_registers_a_record(tmp_path, monkeypatch):
     assert record.prediction_key == "icar_run"
     assert record.prediction_snapshot["model_key"] == "icar"
     assert Path(record.out_dir).parent.name == "allocation"
+    assert record.borders_file.endswith("b.gpkg")
+    assert record.borders_source["method"] == "FILE"
 
 
 def test_form_has_no_external_riskmap_channel():
