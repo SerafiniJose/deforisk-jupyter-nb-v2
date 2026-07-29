@@ -1,0 +1,40 @@
+{
+  "toolbox": {
+    "title": "Tools",
+    "subtitle": "Tools that sit outside the main workflow.",
+    "tool_allocation": "Deforestation allocation",
+    "allocation": {
+      "title": "Deforestation allocation",
+      "description": "Allocate expected jurisdictional deforestation to a project area, using a risk map and its deforestation-rate table.",
+      "new": "New allocation",
+      "empty": "No allocation runs yet.",
+      "no_predictions": "No predictions in this project yet — run Inference first, or select an external risk map.",
+      "field_name": "Run name",
+      "field_riskmap": "Risk map",
+      "field_riskmap_external": "External risk map file",
+      "field_defrate": "Deforestation-rate table",
+      "field_defrate_auto": "Resolved automatically",
+      "field_defrate_override": "Use another table…",
+      "field_mask": "Forest mask",
+      "field_mask_none": "The risk map is already forest-masked",
+      "field_borders": "Project borders",
+      "field_juris_ha": "Expected jurisdictional deforestation (ha)",
+      "field_years": "Forecast period (years)",
+      "field_density": "Also write the deforestation-density map",
+      "density_warning": "The density map covers the whole jurisdiction and can reach several GB at 30 m resolution.",
+      "run": "Run allocation",
+      "running": "Allocating deforestation…",
+      "result_annual": "Annual",
+      "result_total": "Entire period",
+      "unit_ha_yr": "ha/yr",
+      "unit_ha": "ha",
+      "show_density": "Show density map",
+      "delete_title": "Delete allocation run",
+      "delete_message": "Delete '{name}' and its output files? This cannot be undone.",
+      "provenance_persisted": "table from the model run",
+      "provenance_mw_sibling": "table beside the raster",
+      "provenance_computed": "computed from the dataset",
+      "provenance_user": "table chosen by you"
+    }
+  }
+}

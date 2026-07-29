@@ -1,0 +1,40 @@
+{
+  "toolbox": {
+    "title": "Herramientas",
+    "subtitle": "Herramientas que están fuera del flujo de trabajo principal.",
+    "tool_allocation": "Asignación de deforestación",
+    "allocation": {
+      "title": "Asignación de deforestación",
+      "description": "Asigna la deforestación jurisdiccional esperada a un área de proyecto, usando un mapa de riesgo y su tabla de tasas de deforestación.",
+      "new": "Nueva asignación",
+      "empty": "Todavía no hay ejecuciones de asignación.",
+      "no_predictions": "Todavía no hay predicciones en este proyecto: ejecuta primero la inferencia o selecciona un mapa de riesgo externo.",
+      "field_name": "Nombre de la ejecución",
+      "field_riskmap": "Mapa de riesgo",
+      "field_riskmap_external": "Archivo de mapa de riesgo externo",
+      "field_defrate": "Tabla de tasas de deforestación",
+      "field_defrate_auto": "Resuelta automáticamente",
+      "field_defrate_override": "Usar otra tabla…",
+      "field_mask": "Máscara de bosque",
+      "field_mask_none": "El mapa de riesgo ya tiene aplicada la máscara de bosque",
+      "field_borders": "Límites del proyecto",
+      "field_juris_ha": "Deforestación jurisdiccional esperada (ha)",
+      "field_years": "Periodo de pronóstico (años)",
+      "field_density": "Generar también el mapa de densidad de deforestación",
+      "density_warning": "El mapa de densidad cubre toda la jurisdicción y puede alcanzar varios GB con resolución de 30 m.",
+      "run": "Ejecutar asignación",
+      "running": "Asignando deforestación…",
+      "result_annual": "Anual",
+      "result_total": "Periodo completo",
+      "unit_ha_yr": "ha/año",
+      "unit_ha": "ha",
+      "show_density": "Mostrar mapa de densidad",
+      "delete_title": "Eliminar ejecución de asignación",
+      "delete_message": "¿Eliminar '{name}' y sus archivos de salida? Esta acción no se puede deshacer.",
+      "provenance_persisted": "tabla de la ejecución del modelo",
+      "provenance_mw_sibling": "tabla junto al ráster",
+      "provenance_computed": "calculada a partir del conjunto de datos",
+      "provenance_user": "tabla elegida por ti"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "toolbox": {
+    "title": "Outils",
+    "subtitle": "Outils situés en dehors du flux de travail principal.",
+    "tool_allocation": "Allocation de la déforestation",
+    "allocation": {
+      "title": "Allocation de la déforestation",
+      "description": "Allouez la déforestation juridictionnelle attendue à une zone de projet, à partir d'une carte de risque et de sa table de taux de déforestation.",
+      "new": "Nouvelle allocation",
+      "empty": "Aucune allocation pour le moment.",
+      "no_predictions": "Aucune prédiction dans ce projet — lancez d'abord l'inférence ou sélectionnez une carte de risque externe.",
+      "field_name": "Nom de l'exécution",
+      "field_riskmap": "Carte de risque",
+      "field_riskmap_external": "Fichier de carte de risque externe",
+      "field_defrate": "Table des taux de déforestation",
+      "field_defrate_auto": "Résolue automatiquement",
+      "field_defrate_override": "Utiliser une autre table…",
+      "field_mask": "Masque forestier",
+      "field_mask_none": "La carte de risque est déjà masquée par la forêt",
+      "field_borders": "Limites du projet",
+      "field_juris_ha": "Déforestation juridictionnelle attendue (ha)",
+      "field_years": "Période de prévision (années)",
+      "field_density": "Générer aussi la carte de densité de déforestation",
+      "density_warning": "La carte de densité couvre toute la juridiction et peut atteindre plusieurs Go à 30 m de résolution.",
+      "run": "Lancer l'allocation",
+      "running": "Allocation de la déforestation…",
+      "result_annual": "Annuel",
+      "result_total": "Période entière",
+      "unit_ha_yr": "ha/an",
+      "unit_ha": "ha",
+      "show_density": "Afficher la carte de densité",
+      "delete_title": "Supprimer l'allocation",
+      "delete_message": "Supprimer « {name} » et ses fichiers de sortie ? Cette action est irréversible.",
+      "provenance_persisted": "table issue de l'exécution du modèle",
+      "provenance_mw_sibling": "table à côté du raster",
+      "provenance_computed": "calculée à partir du jeu de données",
+      "provenance_user": "table que vous avez choisie"
+    }
+  }
+}

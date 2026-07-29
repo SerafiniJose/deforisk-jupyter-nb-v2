@@ -1,0 +1,40 @@
+{
+  "toolbox": {
+    "title": "Ferramentas",
+    "subtitle": "Ferramentas que ficam fora do fluxo de trabalho principal.",
+    "tool_allocation": "Alocação de desmatamento",
+    "allocation": {
+      "title": "Alocação de desmatamento",
+      "description": "Aloque o desmatamento jurisdicional esperado para uma área de projeto, usando um mapa de risco e sua tabela de taxas de desmatamento.",
+      "new": "Nova alocação",
+      "empty": "Ainda não há execuções de alocação.",
+      "no_predictions": "Ainda não há previsões neste projeto — execute a inferência primeiro ou selecione um mapa de risco externo.",
+      "field_name": "Nome da execução",
+      "field_riskmap": "Mapa de risco",
+      "field_riskmap_external": "Arquivo de mapa de risco externo",
+      "field_defrate": "Tabela de taxas de desmatamento",
+      "field_defrate_auto": "Resolvida automaticamente",
+      "field_defrate_override": "Usar outra tabela…",
+      "field_mask": "Máscara de floresta",
+      "field_mask_none": "O mapa de risco já está mascarado pela floresta",
+      "field_borders": "Limites do projeto",
+      "field_juris_ha": "Desmatamento jurisdicional esperado (ha)",
+      "field_years": "Período de previsão (anos)",
+      "field_density": "Gerar também o mapa de densidade de desmatamento",
+      "density_warning": "O mapa de densidade cobre toda a jurisdição e pode chegar a vários GB na resolução de 30 m.",
+      "run": "Executar alocação",
+      "running": "Alocando desmatamento…",
+      "result_annual": "Anual",
+      "result_total": "Período inteiro",
+      "unit_ha_yr": "ha/ano",
+      "unit_ha": "ha",
+      "show_density": "Mostrar mapa de densidade",
+      "delete_title": "Excluir execução de alocação",
+      "delete_message": "Excluir '{name}' e seus arquivos de saída? Esta ação não pode ser desfeita.",
+      "provenance_persisted": "tabela da execução do modelo",
+      "provenance_mw_sibling": "tabela ao lado do raster",
+      "provenance_computed": "calculada a partir do conjunto de dados",
+      "provenance_user": "tabela escolhida por você"
+    }
+  }
+}
