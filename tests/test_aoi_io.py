@@ -1,3 +1,5 @@
+"""AOI persistence helpers."""
+
 from types import SimpleNamespace
 
 import geopandas as gpd
@@ -27,6 +29,7 @@ def _aoi(method="DRAW", name="san_marino", gee=True, admin=None, gdf=None, asset
 
 
 def test_vector_aoi_writes_sidecar_and_metadata(tmp_path):
+    """Vector AOI with geometry writes both sidecar and metadata."""
     meta = write_aoi(tmp_path, _aoi(gdf=_gdf()))
 
     assert meta == {
@@ -40,6 +43,7 @@ def test_vector_aoi_writes_sidecar_and_metadata(tmp_path):
 
 
 def test_geometryless_aoi_writes_metadata_only(tmp_path):
+    """Geometry-less AOI writes metadata only, no sidecar."""
     meta = write_aoi(
         tmp_path, _aoi(method="ADMIN1", name="COL_x", admin="21758", gdf=None)
     )
@@ -50,6 +54,7 @@ def test_geometryless_aoi_writes_metadata_only(tmp_path):
 
 
 def test_none_aoi_returns_none_and_removes_stale_sidecar(tmp_path):
+    """None AOI returns None and removes any stale sidecar."""
     write_aoi(tmp_path, _aoi(gdf=_gdf()))
     assert (tmp_path / AOI_GEOMETRY_FILENAME).exists()
 
@@ -58,6 +63,7 @@ def test_none_aoi_returns_none_and_removes_stale_sidecar(tmp_path):
 
 
 def test_geometryless_resave_removes_stale_sidecar(tmp_path):
+    """Re-saving a geometry-less AOI removes any stale sidecar from before."""
     write_aoi(tmp_path, _aoi(gdf=_gdf()))
     assert (tmp_path / AOI_GEOMETRY_FILENAME).exists()
 
@@ -67,6 +73,7 @@ def test_geometryless_resave_removes_stale_sidecar(tmp_path):
 
 
 def test_non_wgs84_geometry_is_reprojected(tmp_path):
+    """Non-WGS84 geometry is reprojected to EPSG:4326 for the sidecar."""
     # A box in Web Mercator metres near San Marino.
     gdf = gpd.GeoDataFrame(
         {"name": ["aoi"]},
@@ -85,6 +92,7 @@ def test_non_wgs84_geometry_is_reprojected(tmp_path):
 
 
 def test_load_roundtrips_geometry_and_metadata(tmp_path):
+    """Writing and loading an AOI preserves geometry and metadata."""
     meta = write_aoi(tmp_path, _aoi(gdf=_gdf()))
     restored = load_aoi(tmp_path, meta)
 
@@ -98,6 +106,7 @@ def test_load_roundtrips_geometry_and_metadata(tmp_path):
 
 
 def test_load_metadata_only_aoi_has_no_geometry(tmp_path):
+    """Metadata-only AOI loads without a geometry GeoDataFrame."""
     meta = write_aoi(tmp_path, _aoi(method="ADMIN1", admin="21758", gdf=None))
     restored = load_aoi(tmp_path, meta)
 
@@ -134,8 +143,11 @@ def test_load_gee_admin_rebuilds_feature_collection(tmp_path, monkeypatch):
 
 
 def test_load_gee_admin_degrades_when_rebuild_fails(tmp_path, monkeypatch):
-    """If the FeatureCollection rebuild fails (EE not ready, offline), loading
-    degrades to a metadata-only AOI instead of raising."""
+    """If the FeatureCollection rebuild fails, loading degrades gracefully.
+
+    When the rebuild fails (EE not ready, offline), loading degrades to a
+    metadata-only AOI instead of raising.
+    """
     import pygaul
 
     def boom(admin):
@@ -152,10 +164,12 @@ def test_load_gee_admin_degrades_when_rebuild_fails(tmp_path, monkeypatch):
 
 
 def test_load_none_metadata_returns_none(tmp_path):
+    """Loading with None metadata returns None."""
     assert load_aoi(tmp_path, None) is None
 
 
 def test_load_tolerates_missing_sidecar(tmp_path):
+    """Loading tolerates a missing geometry sidecar referenced in metadata."""
     # Manifest references a sidecar that was deleted/moved — degrade, don't crash.
     meta = {
         "method": "DRAW",
@@ -173,6 +187,7 @@ def test_load_tolerates_missing_sidecar(tmp_path):
 
 
 def test_project_persists_aoi_metadata(tmp_path, monkeypatch):
+    """Project.aoi metadata round-trips through save/load."""
     monkeypatch.setattr(proj, "downloads_folder", tmp_path)
 
     p = proj.Project(project_name="proj_with_aoi")
@@ -190,6 +205,7 @@ def test_project_persists_aoi_metadata(tmp_path, monkeypatch):
 
 
 def test_project_persists_asset_aoi_metadata(tmp_path, monkeypatch):
+    """Project persists and restores ASSET AOI metadata."""
     monkeypatch.setattr(proj, "downloads_folder", tmp_path)
 
     p = proj.Project(project_name="proj_asset_aoi")
@@ -212,6 +228,7 @@ def test_project_persists_asset_aoi_metadata(tmp_path, monkeypatch):
 
 
 def test_project_without_aoi_loads_none(tmp_path, monkeypatch):
+    """Project without saved AOI loads None."""
     monkeypatch.setattr(proj, "downloads_folder", tmp_path)
 
     proj.Project(project_name="proj_no_aoi").save()
@@ -224,6 +241,7 @@ def test_project_without_aoi_loads_none(tmp_path, monkeypatch):
 
 
 def test_write_includes_asset_for_asset_method(tmp_path):
+    """Write includes asset dict for ASSET method AOIs."""
     # The picker inputs ride on AoiResult.asset (pysepal restore support).
     asset = {
         "asset_id": "users/me/aoi",
@@ -236,6 +254,7 @@ def test_write_includes_asset_for_asset_method(tmp_path):
 
 
 def test_write_omits_asset_for_non_asset_method(tmp_path):
+    """Write omits asset dict for non-ASSET method AOIs."""
     asset = {
         "asset_id": "users/me/aoi",
         "type": "TABLE",
@@ -249,6 +268,7 @@ def test_write_omits_asset_for_non_asset_method(tmp_path):
 
 
 def test_load_attaches_asset_to_result(tmp_path):
+    """Load attaches asset dict to the restored AOI result."""
     asset = {
         "asset_id": "users/me/aoi",
         "type": "TABLE",
@@ -261,8 +281,10 @@ def test_load_attaches_asset_to_result(tmp_path):
 
 
 def test_load_asset_rebuilds_feature_collection(tmp_path, monkeypatch):
-    import gui.scripts.aoi_io as aoi_io
+    """Load rebuilds the feature collection from asset metadata."""
     import ee
+
+    import gui.scripts.aoi_io as aoi_io
 
     sentinel = object()
     captured = {}
@@ -289,8 +311,10 @@ def test_load_asset_rebuilds_feature_collection(tmp_path, monkeypatch):
 
 
 def test_load_asset_degrades_when_rebuild_fails(tmp_path, monkeypatch):
-    import gui.scripts.aoi_io as aoi_io
+    """Load degrades gracefully when asset feature collection rebuild fails."""
     import ee
+
+    import gui.scripts.aoi_io as aoi_io
 
     monkeypatch.setattr(
         ee,
@@ -317,7 +341,9 @@ def test_load_asset_degrades_when_rebuild_fails(tmp_path, monkeypatch):
 
 
 def test_persist_keeps_stored_aoi_when_session_state_is_empty(tmp_path):
-    """A save must never turn a persisted AOI into nothing.
+    """Persist keeps stored AOI when session state is empty.
+
+    A save must never turn a persisted AOI into nothing.
 
     Session state going empty while a project holds a saved AOI means something
     dropped it (a widget teardown, a failed restore) — not that the user asked
@@ -334,7 +360,10 @@ def test_persist_keeps_stored_aoi_when_session_state_is_empty(tmp_path):
 
 
 def test_persist_writes_a_new_aoi_over_the_stored_one(tmp_path):
-    """Guarding an empty AOI must not block a real change of area."""
+    """Persist allows writing a new AOI over the stored one.
+
+    Guarding an empty AOI must not block a real change of area.
+    """
     stored = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197"))
 
     meta = persist_aoi(tmp_path, _aoi(method="ADMIN0", name="BOL", admin="178"), stored)
@@ -344,12 +373,12 @@ def test_persist_writes_a_new_aoi_over_the_stored_one(tmp_path):
 
 
 def test_persist_stores_nothing_when_there_is_nothing_stored(tmp_path):
-    """No AOI and none saved before is an ordinary empty project, not data loss."""
+    """No AOI and none saved is an ordinary empty project."""
     assert persist_aoi(tmp_path, None, None) is None
 
 
 def test_persist_of_empty_state_leaves_no_stale_sidecar(tmp_path):
-    """Guarding the metadata must not resurrect geometry for a metadata-only AOI."""
+    """Persist guarding metadata doesn't resurrect geometry for metadata-only AOI."""
     stored = write_aoi(tmp_path, _aoi(method="ADMIN0", name="GUY", admin="197"))
 
     kept = persist_aoi(tmp_path, None, stored)
