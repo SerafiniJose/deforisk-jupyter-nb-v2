@@ -385,3 +385,46 @@ def test_persist_of_empty_state_leaves_no_stale_sidecar(tmp_path):
 
     assert kept == stored
     assert not (tmp_path / AOI_GEOMETRY_FILENAME).exists()
+
+
+# --- build_asset_feature_collection (strict builder) --------------------------
+
+
+def test_strict_builder_rejects_a_filter_with_no_value():
+    """AssetSelectComponent publishes {column: X, value: None} mid-filter.
+
+    Accepting it would silently allocate over the whole unfiltered collection.
+    """
+    from gui.scripts.aoi_io import build_asset_feature_collection
+
+    asset = {
+        "asset_id": "users/me/table",
+        "type": "TABLE",
+        "column": "adm1",
+        "value": None,
+    }
+
+    with pytest.raises(ValueError, match="adm1"):
+        build_asset_feature_collection(asset)
+
+
+def test_strict_builder_rejects_an_unknown_asset_type():
+    """An unrecognised type must not fall through to None."""
+    from gui.scripts.aoi_io import build_asset_feature_collection
+
+    with pytest.raises(ValueError, match="FOLDER"):
+        build_asset_feature_collection({"asset_id": "users/me/x", "type": "FOLDER"})
+
+
+def test_forgiving_builder_still_degrades_to_none():
+    """load_aoi's contract is unchanged: a bad asset loads as metadata-only."""
+    from gui.scripts.aoi_io import _rebuild_asset_feature_collection
+
+    asset = {
+        "asset_id": "users/me/table",
+        "type": "TABLE",
+        "column": "adm1",
+        "value": None,
+    }
+
+    assert _rebuild_asset_feature_collection(asset) is None

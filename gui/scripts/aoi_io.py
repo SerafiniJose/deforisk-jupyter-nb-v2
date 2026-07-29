@@ -57,28 +57,49 @@ def _rebuild_admin_feature_collection(admin_code: str) -> Optional[Any]:
         return None
 
 
+def build_asset_feature_collection(asset: Dict[str, Any]) -> Any:
+    """Rebuild the EE object for an ASSET selection, raising on any problem.
+
+    Mirrors pysepal's ``process_asset`` validation. The strict counterpart of
+    :func:`_rebuild_asset_feature_collection`: an allocation run that cannot
+    build its borders must fail loudly, where loading persisted AOI metadata
+    degrades to None.
+
+    Raises:
+        ValueError: no asset id, a column filter with no value, or an asset
+            type the AOI workflow does not support.
+    """
+    import ee
+
+    aid = (asset or {}).get("asset_id")
+    if not aid:
+        raise ValueError("No Earth Engine asset selected.")
+
+    atype = asset.get("type", "TABLE")
+    column, value = asset.get("column", "ALL"), asset.get("value")
+    if column not in (None, "ALL") and value is None:
+        raise ValueError(f"The filter on column '{column}' has no value selected.")
+
+    if atype == "TABLE":
+        obj = ee.FeatureCollection(aid)
+        if column not in (None, "ALL"):
+            obj = obj.filter(ee.Filter.eq(column, value))
+        return obj
+    if atype == "IMAGE":
+        return ee.Image(aid)
+    if atype == "IMAGE_COLLECTION":
+        return ee.ImageCollection(aid)
+    raise ValueError(f"Unsupported asset type {atype!r}.")
+
+
 def _rebuild_asset_feature_collection(asset: Dict[str, Any]) -> Optional[Any]:
-    """Rebuild the EE object for a persisted ASSET AOI (mirrors process_asset).
+    """Best-effort rebuild for ``load_aoi``: None instead of an exception.
 
     Returns None (metadata-only fallback) if EE isn't ready or the asset is
-    unavailable, so loading never crashes.
+    unavailable, so loading a project never crashes.
     """
     try:
-        import ee
-
-        aid = asset["asset_id"]
-        atype = asset.get("type", "TABLE")
-        if atype == "TABLE":
-            obj = ee.FeatureCollection(aid)
-            col, val = asset.get("column", "ALL"), asset.get("value")
-            if col not in (None, "ALL") and val is not None:
-                obj = obj.filter(ee.Filter.eq(col, val))
-            return obj
-        if atype == "IMAGE":
-            return ee.Image(aid)
-        if atype == "IMAGE_COLLECTION":
-            return ee.ImageCollection(aid)
-        logger.debug("Unknown asset type %r; loading metadata-only.", atype)
+        return build_asset_feature_collection(asset)
     except Exception:  # pragma: no cover - exercised via degrade test (patched)
         logger.debug(
             "Could not rebuild ASSET FeatureCollection; metadata-only.", exc_info=True
