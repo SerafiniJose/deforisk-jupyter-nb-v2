@@ -15,6 +15,7 @@ from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
+from gui.widget.text_style import MUTED
 from gui.widget.variable_list import DerivedVariableList
 
 logger = logging.getLogger("spatial_risk")
@@ -287,8 +288,7 @@ def ProcessTile(project, processing, process_error, map_=None):
         if autofill_base.pending:
             solara.Text(
                 t("tiles.process.detecting_projection"),
-                style="font-size:0.8rem;font-style:italic;",
-                classes=["text--secondary"],
+                style=MUTED + "font-size:0.8rem;font-style:italic;",
             )
         if has_base:
             solara.Text(
@@ -298,8 +298,7 @@ def ProcessTile(project, processing, process_error, map_=None):
                     crs=p.base_raster.default_crs,
                     resolution=p.base_raster.default_resolution,
                 ),
-                style="font-size:0.8rem;",
-                classes=["text--secondary"],
+                style=MUTED + "font-size:0.8rem;",
             )
 
         # B — Run processing
@@ -307,8 +306,7 @@ def ProcessTile(project, processing, process_error, map_=None):
         if not has_base:
             solara.Text(
                 t("tiles.process.error_no_base"),
-                style="font-size:0.8rem;font-style:italic;",
-                classes=["text--secondary"],
+                style=MUTED + "font-size:0.8rem;font-style:italic;",
             )
         solara.Button(
             t("tiles.process.run_processing_button"),

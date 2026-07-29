@@ -17,6 +17,7 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
+from gui.widget.text_style import MUTED
 
 GRID_BASE = "display:grid;align-items:center;width:100%;column-gap:8px;"
 HEADER_EXTRA = (
@@ -178,7 +179,7 @@ def _render_cell(cell: dict, first: bool):
                 if status in STATUS_ICONS
                 else str(status)
             )
-            solara.Text(label, classes=["text--secondary"], style="font-size:0.8rem;")
+            solara.Text(label, style=MUTED + "font-size:0.8rem;")
         return
     if ctype == "chip":
         with rv.Html(tag="div", style_=CELL):
@@ -192,13 +193,14 @@ def _render_cell(cell: dict, first: bool):
 
     # "text" (default)
     style = NAME_TEXT if first else ""
-    classes = ["text--secondary"] if cell.get("muted") else []
+    if cell.get("muted"):
+        style += MUTED
     if cell.get("size"):
         style += f"font-size:{cell['size']};"
     with rv.Html(
         tag="div", style_=wrapper, attributes=name_tooltip(cell) if first else {}
     ):
-        solara.Text(str(cell.get("value", "")), classes=classes, style=style)
+        solara.Text(str(cell.get("value", "")), style=style)
         for item in cell.get("chips", []):
             _render_chip(item, shrink=False)
 
@@ -317,19 +319,15 @@ def ProductTable(
             if banner:
                 solara.Text(
                     banner,
-                    classes=["text--secondary"],
-                    style="font-size:0.78rem;padding:2px 8px 8px;",
+                    style=MUTED + "font-size:0.78rem;padding:2px 8px 8px;",
                 )
             if not rows:
                 solara.Text(
                     empty_text,
-                    classes=["text--secondary"],
-                    style="padding:4px 8px;",
+                    style=MUTED + "padding:4px 8px;",
                 )
             else:
-                with rv.Html(
-                    tag="div", class_="text--secondary", style_=grid + HEADER_EXTRA
-                ):
+                with rv.Html(tag="div", style_=MUTED + grid + HEADER_EXTRA):
                     for i, lbl in enumerate(labels):
                         # Right-align the Actions header to sit over its
                         # right-aligned (flex-end) action buttons.

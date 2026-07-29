@@ -12,6 +12,7 @@ from gui.scripts.process_actions import (
     postprocess_output_name,
 )
 from gui.widget.creation_dialog import CreationDialog
+from gui.widget.text_style import MUTED
 from spatialrisk.variables.models import PostProcessing
 
 CHANGE_OPS = ["loss", "gain"]
@@ -110,8 +111,7 @@ def DerivedLayerDialog(project, open_, on_submit: Callable[[dict], None]):
             )
             solara.Text(
                 t("tiles.postprocess.change_help_text"),
-                style="font-size:0.8rem;font-style:italic;",
-                classes=["text--secondary"],
+                style=MUTED + "font-size:0.8rem;font-style:italic;",
             )
         else:
             rv.Select(
@@ -130,6 +130,5 @@ def DerivedLayerDialog(project, open_, on_submit: Callable[[dict], None]):
             t("tiles.postprocess.output_preview", key=output_name)
             if output_name
             else t("tiles.postprocess.output_preview_invalid"),
-            style="font-size:0.8rem;",
-            classes=["text--secondary"],
+            style=MUTED + "font-size:0.8rem;",
         )

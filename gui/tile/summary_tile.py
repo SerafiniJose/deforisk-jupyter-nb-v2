@@ -14,6 +14,7 @@ from gui.widget.summary_lists import (
     RawVariablesSummary,
     SamplesSummary,
 )
+from gui.widget.text_style import MUTED
 
 # (i18n key for tab label, renderer) — order is the displayed tab order.
 _TABS = [
@@ -68,8 +69,7 @@ def ProjectSummaryTile(project, project_dirty=None, last_saved=None):
         )
         solara.Text(
             " — ".join(meta),
-            classes=["text--secondary"],
-            style="font-size:0.8rem;",
+            style=MUTED + "font-size:0.8rem;",
         )
 
         # One tab per component type

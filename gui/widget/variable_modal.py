@@ -16,6 +16,7 @@ from gui.scripts.predefined_variables import (
     param_specs,
 )
 from gui.widget.artifact_name_field import ArtifactNameField
+from gui.widget.text_style import MUTED
 from spatialrisk.variables.models import (
     DataType,
     RasterizationMethod,
@@ -379,8 +380,7 @@ def _render_predefined_fields(
         # (catalogue link included). Rendered inline so it updates per selection.
         if cat.get("description_key"):
             with solara.Div(
-                style="font-size:0.85rem;padding:0 4px 4px 4px;",
-                classes=["text--secondary"],
+                style=MUTED + "font-size:0.85rem;padding:0 4px 4px 4px;",
             ):
                 solara.Markdown(t(cat["description_key"]))
 
@@ -445,8 +445,7 @@ def _render_predefined_fields(
                 else "widgets.artifact_name.saved_as",
                 key=storage_key,
             ),
-            style="font-size:0.8rem;padding:0 4px 4px;",
-            classes=["text--secondary"],
+            style=MUTED + "font-size:0.8rem;padding:0 4px 4px;",
         )
 
 

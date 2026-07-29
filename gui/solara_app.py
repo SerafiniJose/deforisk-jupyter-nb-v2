@@ -60,6 +60,7 @@ from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
 from gui.widget.notification_area import NotificationArea
 from gui.widget.pipeline_header import PipelineHeader
+from gui.widget.text_style import MUTED
 from spatialrisk.project import DATA_DIR, Project
 
 logger = setup_logging(logger_name="spatial_risk")
@@ -347,7 +348,7 @@ def ProjectPanel(on_close=None):
             solara.Text(t("project.empty_heading"), style="font-weight: 600;")
             solara.Text(
                 t("project.empty_help"),
-                classes=["text--secondary"],
+                style=MUTED,
             )
             solara.Button(
                 t("project.button_new_project"),
@@ -387,13 +388,11 @@ def ProjectPanel(on_close=None):
                     processed=len(p.processed_variables),
                     models=len(p.models),
                 ),
-                classes=["text--secondary"],
-                style="font-size: 12px;",
+                style=MUTED + "font-size: 12px;",
             )
             solara.Text(
                 format_last_saved(last_saved, datetime.now()),
-                classes=["text--secondary"],
-                style="font-size: 12px;",
+                style=MUTED + "font-size: 12px;",
             )
             with solara.Row(style="gap: 8px;"):
                 solara.Button(

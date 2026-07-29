@@ -16,6 +16,7 @@ import solara.lab
 
 from gui.i18n import plural, t
 from gui.store.workflow_steps import STEPS, StepStatus, nav_targets, step_states
+from gui.widget.text_style import MUTED
 
 # Empty / locked tones stay theme-neutral grey; the HAS_OUTPUTS fill and the
 # current-step ring derive from the live Vuetify "primary" colour at render
@@ -100,8 +101,7 @@ def _JumpMenuRow(
             rv.ListItemTitle(children=[label])
         solara.Text(
             sub_text,
-            style="font-size: 11px; margin-left: 12px; text-align: right;",
-            classes=["text--secondary"],
+            style=MUTED + "font-size: 11px; margin-left: 12px; text-align: right;",
         )
     rv.use_event(row, "click", lambda *_: on_jump(index))
 
