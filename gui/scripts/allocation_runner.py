@@ -7,9 +7,12 @@ harness); heavy geo dependencies are imported lazily inside functions.
 from __future__ import annotations
 
 import logging
+import shutil
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("spatial_risk")
 
@@ -131,3 +134,208 @@ def resolve_defrate_table(
             verbose=False,
         )
     return DefrateSource(path=out, provenance="computed")
+
+
+@dataclass
+class AllocationForm:
+    """User inputs of one allocation run (already parsed from the form widgets)."""
+
+    name: str
+    prediction_key: Optional[str]
+    external_riskmap: Optional[str]
+    user_defrate_path: Optional[str]
+    borders_file: Optional[str]
+    mask_file: Optional[str]
+    defor_juris_ha: float
+    years_forecast: float
+    density_map: bool = False
+
+
+def _allocate(**kwargs):
+    """Indirection so tests can stub the (slow, GDAL-bound) core."""
+    from spatialrisk.allocation import allocate_deforestation
+
+    return allocate_deforestation(**kwargs)
+
+
+def validate_form(project, form: AllocationForm) -> Optional[str]:
+    """Return a user-facing error message, or None when the form is runnable."""
+    if not (form.name or "").strip():
+        return "Give the allocation run a name."
+    if not form.prediction_key and not form.external_riskmap:
+        return "Choose a risk map: a project prediction or an external file."
+    if not form.borders_file:
+        return "Choose the project borders vector file."
+    if form.years_forecast is None or form.years_forecast <= 0:
+        return "The forecast period must be at least one year."
+    if form.defor_juris_ha is None or form.defor_juris_ha < 0:
+        return "Expected jurisdictional deforestation cannot be negative (hectares)."
+    for label, value in (
+        ("risk map", form.external_riskmap),
+        ("rate table", form.user_defrate_path),
+        ("project borders", form.borders_file),
+        ("mask", form.mask_file),
+    ):
+        if value and not Path(value).exists():
+            return f"The selected {label} file does not exist: {value}"
+    return None
+
+
+def run_allocation(
+    project,
+    form: AllocationForm,
+    project_reactive=None,
+    notifier=None,
+    jobs_reactive=None,
+    job_id: Optional[str] = None,
+):
+    """Execute one allocation and register it on the project.
+
+    Runs on a worker thread (the GDAL calls release the GIL). Wrapped by the
+    caller in ``tracked_job`` + ``writing`` when a notifier is available.
+    """
+    from spatialrisk.allocations import AllocationRun
+
+    run_id = uuid.uuid4().hex[:8]
+    record_key = AllocationRun(
+        name=form.name,
+        run_id=run_id,
+        borders_file=form.borders_file or "",
+        defor_juris_ha=form.defor_juris_ha,
+        years_forecast=form.years_forecast,
+        annual_ha=0.0,
+        total_ha=0.0,
+        out_dir="",
+        csv_path="",
+    ).storage_key()
+    out_dir = Path(project.folders.project_folder) / "allocation" / record_key
+
+    pred = None
+    if form.prediction_key:
+        pred = (project.predictions or {}).get(form.prediction_key)
+        if pred is None:
+            raise AllocationResolveError(
+                f"Prediction '{form.prediction_key}' is no longer in this project."
+            )
+        riskmap_file = pred.path
+        source = resolve_defrate_table(
+            project, form.prediction_key, user_path=form.user_defrate_path
+        )
+    else:
+        riskmap_file = form.external_riskmap
+        if not form.user_defrate_path:
+            raise AllocationResolveError(
+                "An external risk map needs an explicit deforestation-rate table."
+            )
+        source = DefrateSource(path=Path(form.user_defrate_path), provenance="user")
+
+    logger.info("Allocating deforestation for '%s'…", form.name)
+    result = _allocate(
+        riskmap_file=riskmap_file,
+        defrate_table=source.path,
+        defor_juris_ha=form.defor_juris_ha,
+        years_forecast=form.years_forecast,
+        project_borders=form.borders_file,
+        out_dir=out_dir,
+        forest_mask_file=form.mask_file,
+        defor_density_map=form.density_map,
+    )
+
+    record = AllocationRun(
+        name=form.name,
+        run_id=run_id,
+        created_at=datetime.now().isoformat(timespec="seconds"),
+        prediction_key=form.prediction_key,
+        prediction_snapshot=(
+            {
+                "path": str(pred.path),
+                "model_key": pred.model_key,
+                "dataset_name": pred.dataset_name,
+                "year": getattr(pred, "year", None),
+                "window": getattr(pred, "window", None),
+            }
+            if pred is not None
+            else {}
+        ),
+        external_riskmap=form.external_riskmap,
+        defrate_source=source.as_dict(),
+        borders_file=form.borders_file or "",
+        mask_file=form.mask_file,
+        defor_juris_ha=form.defor_juris_ha,
+        years_forecast=form.years_forecast,
+        annual_ha=result.annual_ha,
+        total_ha=result.total_ha,
+        out_dir=str(result.out_dir),
+        csv_path=str(result.csv_path),
+        density_map_path=(
+            str(result.density_map_path) if result.density_map_path else None
+        ),
+        warnings=list(result.warnings),
+    )
+    project.add_allocation(record, auto_save=True)
+    if project_reactive is not None:
+        from gui.scripts.solara_threads import publish_if_current
+
+        publish_if_current(project_reactive, project)
+    return record
+
+
+def allocation_rows(project, jobs=None) -> List[dict]:
+    """Rows for the allocation list: in-flight jobs first, then saved runs."""
+    rows: List[dict] = []
+    for job in jobs or []:
+        rows.append(
+            {
+                "kind": "job",
+                "key": job.get("id"),
+                "name": job.get("name"),
+                "status": job.get("status"),
+                "error": job.get("error"),
+            }
+        )
+    for key, record in (getattr(project, "allocations", None) or {}).items():
+        rows.append(
+            {
+                "kind": "record",
+                "key": key,
+                "name": record.name,
+                "created_at": record.created_at,
+                "annual_ha": record.annual_ha,
+                "total_ha": record.total_ha,
+                "years_forecast": record.years_forecast,
+                "density_map_path": record.density_map_path,
+                "warnings": record.warnings,
+                "provenance": (record.defrate_source or {}).get("provenance"),
+            }
+        )
+    return rows
+
+
+def delete_allocation_run(project, key: str) -> bool:
+    """Delete a saved allocation: registry entry, commit, THEN artifacts.
+
+    Deletion is a transaction, mirroring evaluation_helpers.delete_evaluation_run:
+    a failed manifest save must never leave a record pointing at files that are
+    already gone, so the record is restored and the files kept.
+    """
+    record = (getattr(project, "allocations", None) or {}).get(key)
+    if record is None:
+        return False
+    project.delete_allocation(key)
+    try:
+        project.save()
+    except Exception:
+        project.allocations[key] = record
+        raise
+
+    run_dir = Path(record.out_dir).resolve()
+    allocation_root = (Path(project.folders.project_folder) / "allocation").resolve()
+    if run_dir.is_dir() and allocation_root in run_dir.parents and run_dir.name == key:
+        shutil.rmtree(run_dir, ignore_errors=True)
+    else:
+        logger.warning(
+            "Refusing to delete '%s': not a run directory under %s",
+            run_dir,
+            allocation_root,
+        )
+    return True
