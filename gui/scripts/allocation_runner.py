@@ -341,19 +341,33 @@ def _asset_gdf(asset: Optional[Dict[str, Any]], out_dir: Path):
     fc = _build_asset_fc(asset or {})
 
     tmp = Path(out_dir) / "project_borders_export.geojson"
-    _ee_export_vector(fc, str(tmp), selectors=[], verbose=False)
-    if not tmp.exists():
-        raise AllocationResolveError(
-            "The Earth Engine borders export produced no file."
-        )
     try:
+        _ee_export_vector(fc, str(tmp), selectors=[], verbose=False)
+        if not tmp.exists():
+            raise AllocationResolveError(
+                "The Earth Engine borders export produced no file."
+            )
         return gpd.read_file(tmp)
     finally:
+        # A partial download must not survive a failed or timed-out export:
+        # the run directory has no owner until the run finishes registering,
+        # so nothing else in the app can ever clean this up.
         tmp.unlink(missing_ok=True)
 
 
 def _check_borders_gdf(gdf) -> None:
-    """Reject geometry the core would only fail on deep inside GDAL."""
+    """Reject geometry the core would only fail on deep inside GDAL.
+
+    A null or empty geometry passes ``gdf.empty`` (the GeoDataFrame still has
+    rows) and, when EVERY geometry is null, ``set(gdf.geom_type.dropna())``
+    collapses to the empty set — which is a subset of ``_POLYGONAL``, so an
+    attribute-only layer used to sail through this check, get written to
+    project_borders.gpkg, and only fail later as a confusing gdal.Warp
+    cutline error. A layer that mixes real polygons with null/empty rows is
+    rejected outright rather than silently thinned: dropping the null rows
+    would crop against an incomplete boundary with no indication anything
+    was wrong.
+    """
     if gdf is None or gdf.empty:
         raise AllocationResolveError(
             "The selected project borders contain no features."
@@ -363,7 +377,19 @@ def _check_borders_gdf(gdf) -> None:
             "The selected project borders have no CRS, so they cannot be "
             "reprojected onto the risk map."
         )
-    kinds = set(gdf.geom_type.dropna().unique())
+    usable = gdf.geometry.notna() & ~gdf.geometry.is_empty
+    if not usable.any():
+        raise AllocationResolveError(
+            "The selected project borders have no usable geometry: every "
+            "feature is null or empty."
+        )
+    if not usable.all():
+        raise AllocationResolveError(
+            "The selected project borders mix real geometry with "
+            f"{int((~usable).sum())} null or empty feature(s). Fix the "
+            "source data before running."
+        )
+    kinds = set(gdf.geom_type.unique())
     if not kinds <= _POLYGONAL:
         raise AllocationResolveError(
             "The project borders must be polygons; got "
@@ -471,13 +497,26 @@ def run_allocation(
         project, form.prediction_key, user_path=form.user_defrate_path
     )
 
+    # Resolution runs before the core creates out_dir. A failure here — the
+    # export can raise after partially writing into out_dir — must not leave
+    # an unregistered run folder behind forever: no AllocationRun record
+    # exists yet for delete_allocation_run to ever act on. Only remove the
+    # directory THIS call created (never one that already existed).
+    created_out_dir = not out_dir.exists()
     try:
         borders_path = resolve_borders_file(form.borders, out_dir)
     except Exception:
-        # Resolution now runs before the core creates out_dir, so a failure
-        # here would otherwise leave an empty run folder behind.
-        if out_dir.is_dir() and not any(out_dir.iterdir()):
-            out_dir.rmdir()
+        if created_out_dir:
+            # Best-effort: a cleanup failure (e.g. a stray open file handle)
+            # must never replace the real resolution error the user needs to
+            # see with a confusing "directory not empty" of its own.
+            try:
+                shutil.rmtree(out_dir, ignore_errors=True)
+            except Exception:
+                logger.warning(
+                    "Could not clean up run directory %s after a failed resolution.",
+                    out_dir,
+                )
         raise
 
     logger.info("Allocating deforestation for '%s'…", form.name)

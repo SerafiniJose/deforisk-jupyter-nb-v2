@@ -526,6 +526,65 @@ def test_resolve_borders_file_rejects_an_empty_selection(tmp_path, monkeypatch):
         )
 
 
+def test_resolve_borders_file_rejects_all_null_geometries(tmp_path, monkeypatch):
+    """Attribute-only rows must not silently pass as an empty-but-valid layer.
+
+    ``set(gdf.geom_type.dropna().unique())`` is the empty set when every
+    geometry is null, and ``set() <= _POLYGONAL`` is True — so this used to
+    sail through the check, get written to project_borders.gpkg, and only
+    fail later as a confusing gdal.Warp cutline error.
+    """
+    import geopandas as gpd
+
+    import gui.scripts.allocation_runner as runner
+
+    all_null = gpd.GeoDataFrame({"col": [1, 2]}, geometry=[None, None], crs="EPSG:4326")
+    monkeypatch.setattr(runner, "_admin_gdf", lambda m, c: all_null)
+
+    with pytest.raises(runner.AllocationResolveError, match="null"):
+        resolve_borders_file(
+            BordersSelection(method="ADMIN0", admin_code="62"), tmp_path / "run"
+        )
+
+
+def test_resolve_borders_file_rejects_all_empty_polygons(tmp_path, monkeypatch):
+    """An empty (but non-null) Polygon geometry is just as unusable as null."""
+    import geopandas as gpd
+    from shapely.geometry import Polygon
+
+    import gui.scripts.allocation_runner as runner
+
+    all_empty = gpd.GeoDataFrame(geometry=[Polygon(), Polygon()], crs="EPSG:4326")
+    monkeypatch.setattr(runner, "_admin_gdf", lambda m, c: all_empty)
+
+    with pytest.raises(runner.AllocationResolveError, match="null"):
+        resolve_borders_file(
+            BordersSelection(method="ADMIN0", admin_code="62"), tmp_path / "run"
+        )
+
+
+def test_resolve_borders_file_rejects_mixed_null_and_polygon_geometries(
+    tmp_path, monkeypatch
+):
+    """A partially null layer is corrupted data, not a smaller-but-valid AOI.
+
+    Silently dropping the null rows would let a run quietly crop against an
+    incomplete boundary with no indication anything was wrong.
+    """
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    import gui.scripts.allocation_runner as runner
+
+    mixed = gpd.GeoDataFrame(geometry=[None, box(0, 0, 1, 1)], crs="EPSG:4326")
+    monkeypatch.setattr(runner, "_admin_gdf", lambda m, c: mixed)
+
+    with pytest.raises(runner.AllocationResolveError, match="null"):
+        resolve_borders_file(
+            BordersSelection(method="ADMIN0", admin_code="62"), tmp_path / "run"
+        )
+
+
 def test_bad_borders_leave_no_file_behind(tmp_path, monkeypatch):
     """Validation runs before the write, so a rejected selection writes nothing."""
     import geopandas as gpd
@@ -548,6 +607,156 @@ def test_bad_borders_leave_no_file_behind(tmp_path, monkeypatch):
         )
 
     assert not (out / "project_borders.gpkg").exists()
+
+
+def test_asset_export_temp_file_is_removed_when_the_export_raises(
+    tmp_path, monkeypatch
+):
+    """A partial TABLE export must not survive a failed/timed-out download.
+
+    The export call used to sit outside the try/finally that unlinks the temp
+    GeoJSON, so a large asset that wrote a partial file and then raised (e.g.
+    on timeout) left that file behind forever.
+    """
+    import gui.scripts.allocation_runner as runner
+
+    def fake_export(fc, filename, selectors=None, verbose=True, **kw):
+        # Simulate geemap writing a partial file before the export fails.
+        Path(filename).write_text("{}")
+        raise TimeoutError("export timed out")
+
+    monkeypatch.setattr(runner, "_ee_export_vector", fake_export)
+    monkeypatch.setattr(runner, "_build_asset_fc", lambda asset: object())
+
+    out = tmp_path / "run"
+    out.mkdir(parents=True)
+
+    with pytest.raises(TimeoutError):
+        runner._asset_gdf({"asset_id": "users/me/t"}, out)
+
+    assert not list(out.glob("*.geojson"))
+
+
+def test_run_allocation_removes_the_run_directory_it_created_on_a_failed_resolution(
+    tmp_path, monkeypatch
+):
+    """A directory created for a run must not be orphaned when resolution fails.
+
+    Cleanup used to only remove an EMPTY out_dir, so a partial EE export (or
+    any other file resolution wrote before failing) left the directory behind
+    with no registered AllocationRun able to ever clean it up.
+    """
+    import gui.scripts.allocation_runner as runner
+    from spatialrisk.predictions.prediction import Prediction
+
+    project = _project(monkeypatch, tmp_path, "alloc_orphan")
+    project.predictions["icar_run"] = Prediction(
+        path=tmp_path / "prob.tif", model_key="icar", dataset_name="forecast"
+    )
+
+    class _FixedUUID:
+        hex = "deadbeef"
+
+    monkeypatch.setattr(runner.uuid, "uuid4", lambda: _FixedUUID())
+    monkeypatch.setattr(
+        runner,
+        "resolve_defrate_table",
+        lambda *a, **k: runner.DefrateSource(
+            path=tmp_path / "r.csv", provenance="computed"
+        ),
+    )
+
+    def fake_resolve(selection, out_dir):
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "project_borders_export.geojson").write_text("{}")
+        raise runner.AllocationResolveError("export timed out")
+
+    monkeypatch.setattr(runner, "resolve_borders_file", fake_resolve)
+
+    with pytest.raises(runner.AllocationResolveError):
+        run_allocation(project, _form(), job_id="job1")
+
+    out_dir = (
+        Path(project.folders.project_folder) / "allocation" / "reserve_north_deadbeef"
+    )
+    assert not out_dir.exists()
+
+
+def test_run_allocation_does_not_delete_a_pre_existing_directory(tmp_path, monkeypatch):
+    """Cleanup must only ever remove the directory THIS call created."""
+    import gui.scripts.allocation_runner as runner
+    from spatialrisk.predictions.prediction import Prediction
+
+    project = _project(monkeypatch, tmp_path, "alloc_orphan_safe")
+    project.predictions["icar_run"] = Prediction(
+        path=tmp_path / "prob.tif", model_key="icar", dataset_name="forecast"
+    )
+
+    class _FixedUUID:
+        hex = "deadbeef"
+
+    monkeypatch.setattr(runner.uuid, "uuid4", lambda: _FixedUUID())
+    monkeypatch.setattr(
+        runner,
+        "resolve_defrate_table",
+        lambda *a, **k: runner.DefrateSource(
+            path=tmp_path / "r.csv", provenance="computed"
+        ),
+    )
+
+    out_dir = (
+        Path(project.folders.project_folder) / "allocation" / "reserve_north_deadbeef"
+    )
+    out_dir.mkdir(parents=True)
+    (out_dir / "keep.txt").write_text("mine")
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_borders_file",
+        lambda selection, out_dir: (_ for _ in ()).throw(
+            runner.AllocationResolveError("boom")
+        ),
+    )
+
+    with pytest.raises(runner.AllocationResolveError):
+        run_allocation(project, _form(), job_id="job1")
+
+    assert out_dir.exists()
+    assert (out_dir / "keep.txt").exists()
+
+
+def test_run_allocation_cleanup_failure_does_not_mask_the_original_error(
+    tmp_path, monkeypatch
+):
+    """A cleanup OSError must never replace the real resolution failure."""
+    import gui.scripts.allocation_runner as runner
+    from spatialrisk.predictions.prediction import Prediction
+
+    project = _project(monkeypatch, tmp_path, "alloc_mask")
+    project.predictions["icar_run"] = Prediction(
+        path=tmp_path / "prob.tif", model_key="icar", dataset_name="forecast"
+    )
+
+    def fake_resolve(selection, out_dir):
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        raise runner.AllocationResolveError("original failure")
+
+    def boom_rmtree(*args, **kwargs):
+        raise OSError("Directory not empty")
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_defrate_table",
+        lambda *a, **k: runner.DefrateSource(
+            path=tmp_path / "r.csv", provenance="computed"
+        ),
+    )
+    monkeypatch.setattr(runner, "resolve_borders_file", fake_resolve)
+    monkeypatch.setattr(runner.shutil, "rmtree", boom_rmtree)
+
+    with pytest.raises(runner.AllocationResolveError, match="original failure"):
+        run_allocation(project, _form(), job_id="job1")
 
 
 def test_asset_export_target_is_geojson_not_gpkg(tmp_path, monkeypatch):
