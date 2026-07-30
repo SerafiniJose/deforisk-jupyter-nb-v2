@@ -84,6 +84,28 @@ def on_kernel_start():
     return setup_sessions()
 
 
+def _loopback_bridge_widget():
+    """Return the jupyter-loopback CommBridge singleton (or None).
+
+    Layer helpers (localtileserver, pmtiles_map) enable the bridge lazily from
+    worker threads, but under voila a ``display()`` outside the initial cell
+    execution never reaches the browser — the widget must be mounted in the
+    app's own widget tree so its JS half installs the tile-URL interceptors
+    before any local tile layer renders.
+    """
+    try:
+        import jupyter_loopback
+
+        return jupyter_loopback.enable_comm_bridge(display=False)
+    except Exception:  # pragma: no cover - anywidget missing / exotic runtime
+        logging.getLogger(__name__).warning(
+            "jupyter-loopback comm bridge unavailable; local tile layers "
+            "may not render under voila",
+            exc_info=True,
+        )
+        return None
+
+
 @solara.component
 def ProjectPanel(on_close=None):
     """Current-project status + New / Load / Save controls (left drawer).
@@ -935,6 +957,13 @@ def Page():
     app_title = compute_app_title(
         app_state.project.value, app_state.project_dirty.value
     )
+
+    # jupyter-loopback comm bridge, mounted in the page from the first render
+    # so tile-URL interception is live before any local tile layer is added
+    # (see _loopback_bridge_widget for why lazy display() is not enough).
+    loopback_bridge = solara.use_memo(_loopback_bridge_widget, [])
+    if loopback_bridge is not None:
+        solara.display(loopback_bridge)
 
     # Kernel-scoped notification bus + UI (toasts top-right, task pill
     # bottom-right). Mounted BEFORE the MapApp element so the bus exists by the
