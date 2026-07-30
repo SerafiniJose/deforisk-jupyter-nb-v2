@@ -71,32 +71,6 @@ def _hectares_cell(value, unit_key):
     return {"type": "render", "fn": _fn}
 
 
-_CARD_KEY = "font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;" + MUTED
-_CARD_VALUE = "font-size:1.15rem;font-weight:600;" + _NUM
-
-
-@solara.component
-def AllocationResultCard(row):
-    """Headline numbers of one run: the mock's result card, fed by the list row."""
-    with solara.Card(style="padding:4px 8px;", margin=0):
-        with solara.Row(style="gap:32px;align-items:flex-end;flex-wrap:wrap;"):
-            with solara.Column(style="gap:0;"):
-                solara.Text(t("toolbox.allocation.result_annual"), style=_CARD_KEY)
-                solara.Text(
-                    f"{row['annual_ha']:,.1f} {t('toolbox.allocation.unit_ha_yr')}",
-                    style=_CARD_VALUE,
-                )
-            with solara.Column(style="gap:0;"):
-                solara.Text(t("toolbox.allocation.result_total"), style=_CARD_KEY)
-                solara.Text(
-                    f"{row['total_ha']:,.1f} {t('toolbox.allocation.unit_ha')}",
-                    style=_CARD_VALUE,
-                )
-            with solara.Column(style="gap:0;margin-left:auto;"):
-                solara.Text(row["name"], style=MUTED + "font-size:0.8rem;")
-                solara.Text(_run_meta(row), style=MUTED + "font-size:0.72rem;")
-
-
 @solara.component
 def AllocationList(rows, on_delete, on_toggle_density=None, density_on_map=frozenset()):
     """Allocation runs table: one row per saved run plus in-flight jobs.

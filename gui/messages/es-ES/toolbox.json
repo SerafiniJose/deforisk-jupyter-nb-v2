@@ -21,7 +21,6 @@
       "field_mask_empty": "Este proyecto aún no tiene variables ráster procesadas.",
       "defrate_will_compute": "se calculará a partir del conjunto de datos de la predicción",
       "source_external": "mapa de riesgo externo",
-      "latest_result": "Última ejecución",
       "unit_years": "años",
       "field_borders": "Límites del proyecto",
       "field_borders_file": "Archivo vectorial de límites",

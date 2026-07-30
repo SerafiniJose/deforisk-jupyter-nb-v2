@@ -353,18 +353,6 @@ def test_list_labels_external_map_runs():
     assert t("toolbox.allocation.source_external") in flat
 
 
-def test_result_card_shows_both_headline_numbers():
-    """The latest-run card carries annual and entire-period hectares."""
-    from gui.widget.allocation_list import AllocationResultCard
-
-    box, _rc = reacton.render(AllocationResultCard(row=_record_row()))
-    flat = " ".join(str(w.children[0]) for w in _find(box, vw.Html) if w.children)
-    assert "312.4" in flat
-    assert "1,249.6" in flat
-    assert t("toolbox.allocation.result_annual") in flat
-    assert t("toolbox.allocation.result_total") in flat
-
-
 def test_form_defrate_mode_dropdown_defaults_to_automatic():
     """The rate table is a two-option mode select, defaulting to automatic.
 

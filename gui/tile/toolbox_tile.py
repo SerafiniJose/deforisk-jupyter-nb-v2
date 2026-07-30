@@ -21,10 +21,9 @@ from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.store.project_writers import writing
 from gui.widget.allocation_form import AllocationFormDialog
-from gui.widget.allocation_list import AllocationList, AllocationResultCard
+from gui.widget.allocation_list import AllocationList
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
-from gui.widget.text_style import MUTED
 
 logger = logging.getLogger("spatial_risk")
 
@@ -120,8 +119,6 @@ def ToolboxTile(project, map_=None, sepal_client=None):
             density_on_map.set(density_on_map.value | {key})
 
     rows = allocation_rows(p, allocation_jobs.value) if p is not None else []
-    records = [r for r in rows if r["kind"] == "record"]
-    latest = max(records, key=lambda r: r.get("created_at") or "", default=None)
 
     with solara.Column(style="gap:12px;"):
         if p is None:
@@ -151,14 +148,6 @@ def ToolboxTile(project, map_=None, sepal_client=None):
                         )
 
             with solara.Column(style="flex:1;min-width:0;gap:12px;"):
-                if latest is not None:
-                    solara.Text(
-                        t("toolbox.allocation.latest_result"),
-                        style=MUTED + "font-size:0.72rem;letter-spacing:0.08em;"
-                        "text-transform:uppercase;",
-                    )
-                    AllocationResultCard(row=latest)
-
                 AllocationList(
                     rows=rows,
                     on_delete=set_pending_delete,

@@ -88,8 +88,8 @@ def test_tile_renders_the_tool_list_pane():
     assert t("toolbox.tool_allocation") in _all_text(box)
 
 
-def test_tile_shows_the_latest_run_as_a_result_card():
-    """The most recent completed run gets the mock's headline card."""
+def test_tile_has_no_latest_run_card():
+    """Runs live in the table only; the headline card is gone (2026-07-30 spec)."""
     import reacton
 
     from gui.i18n import t
@@ -98,30 +98,27 @@ def test_tile_shows_the_latest_run_as_a_result_card():
 
     t("common.cancel")
     project = Project(project_name="p")
-    for run_id, created in (
-        ("aaa11111", "2026-07-28T10:00:00"),
-        ("bbb22222", "2026-07-29T10:00:00"),
-    ):
-        project.allocations[f"reserve_{run_id}"] = AllocationRun(
-            name="reserve",
-            run_id=run_id,
-            created_at=created,
-            borders_file="/b.gpkg",
-            defor_juris_ha=20000.0,
-            years_forecast=4,
-            annual_ha=312.4 if run_id == "bbb22222" else 1.0,
-            total_ha=1249.6 if run_id == "bbb22222" else 4.0,
-            out_dir="/out",
-            csv_path="/out/defor_project.csv",
-        )
+    project.allocations["reserve_bbb22222"] = AllocationRun(
+        name="reserve",
+        run_id="bbb22222",
+        created_at="2026-07-29T10:00:00",
+        borders_file="/b.gpkg",
+        defor_juris_ha=20000.0,
+        years_forecast=4,
+        annual_ha=312.4,
+        total_ha=1249.6,
+        out_dir="/out",
+        csv_path="/out/defor_project.csv",
+    )
 
     box, _rc = reacton.render(
         toolbox_tile.ToolboxTile(project=solara.reactive(project))
     )
 
-    flat = _all_text(box)
-    assert t("toolbox.allocation.latest_result") in flat
-    assert "312.4" in flat  # the newest run, not the oldest
+    assert "312.4" in _all_text(box)  # the run still renders, in the table
+    src = inspect.getsource(toolbox_tile)
+    assert "latest_result" not in src
+    assert "AllocationResultCard" not in src
 
 
 def test_body_has_no_heading_and_defers_description_to_an_info_button():

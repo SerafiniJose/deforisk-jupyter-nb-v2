@@ -21,7 +21,6 @@
       "field_mask_empty": "No processed raster variables in this project yet.",
       "defrate_will_compute": "will be computed from the prediction's dataset",
       "source_external": "external risk map",
-      "latest_result": "Latest run",
       "unit_years": "yr",
       "field_borders": "Project borders",
       "field_borders_file": "Borders vector file",
