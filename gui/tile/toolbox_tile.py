@@ -129,7 +129,6 @@ def ToolboxTile(project, map_=None, sepal_client=None):
         # drawer: icon-only buttons, tooltip = tool name, selected in primary.
         # The panel header carries the title and the description popup that
         # used to sit next to each tool-list entry.
-        # Note: solara.Tooltip is used here for tooltips on icon buttons.
         tool = next(entry for entry in _TOOLS if entry["key"] == selected_tool)
         with solara.Row(style="gap:16px;align-items:stretch;"):
             with solara.Column(
@@ -137,14 +136,16 @@ def ToolboxTile(project, map_=None, sepal_client=None):
                 "padding:4px 0;border-right:1px solid rgba(128,128,128,0.25);"
             ):
                 for entry in _TOOLS:
-                    solara.Button(
-                        "",
-                        icon_name=entry["icon"],
-                        icon=True,
-                        color=("primary" if selected_tool == entry["key"] else None),
-                        on_click=lambda key=entry["key"]: set_selected_tool(key),
-                        tooltip=t(entry["label_key"]),
-                    )
+                    with solara.Tooltip(t(entry["label_key"])):
+                        solara.Button(
+                            "",
+                            icon_name=entry["icon"],
+                            icon=True,
+                            color=(
+                                "primary" if selected_tool == entry["key"] else None
+                            ),
+                            on_click=lambda key=entry["key"]: set_selected_tool(key),
+                        )
 
             with solara.Column(style="flex:1;min-width:0;gap:12px;"):
                 with solara.Row(

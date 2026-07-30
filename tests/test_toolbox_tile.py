@@ -51,7 +51,10 @@ def _find(widget, cls, out=None):
     out = [] if out is None else out
     if isinstance(widget, cls):
         out.append(widget)
-    for child in getattr(widget, "children", []) or []:
+    children = list(getattr(widget, "children", []) or [])
+    for slot in getattr(widget, "v_slots", None) or []:
+        children.extend(slot.get("children", []) or [])
+    for child in children:
         if hasattr(child, "children") or isinstance(child, cls):
             _find(child, cls, out)
     return out
@@ -167,6 +170,31 @@ def test_rail_is_icon_only_with_primary_selection():
 
 def test_panel_header_carries_title_and_info_button():
     """The pane header owns the tool title; the description stays an InfoButton."""
+    import ipyvuetify as vw
+    import reacton
+
+    from gui.i18n import t
+    from spatialrisk.project import Project
+
+    t("common.cancel")
+    box, _rc = reacton.render(
+        toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
+    )
+
+    # Assert a rendered vw.Tooltip exists with the tool name (rail buttons announce
+    # their tool name via tooltip)
+    tooltips = _find(box, vw.Tooltip)
+    tool_name = t("toolbox.tool_allocation")
+    assert len(tooltips) > 0, "No tooltips rendered"
+    tooltip_texts = []
+    for tooltip in tooltips:
+        if tooltip.children:
+            tooltip_texts.extend([str(c) for c in tooltip.children])
+    assert tool_name in tooltip_texts, f"{tool_name} not in tooltip texts"
+
+    # Assert the header title (tool name) renders in the panel
+    assert tool_name in _all_text(box)
+
+    # Assert InfoButton is in the source (description stays as InfoButton popup)
     src = inspect.getsource(toolbox_tile)
     assert "InfoButton" in src
-    assert "solara.Tooltip" in src  # rail buttons announce their tool name
