@@ -133,3 +133,40 @@ def test_body_has_no_heading_and_defers_description_to_an_info_button():
     assert "toolbox.title" not in src  # no duplicated heading
     assert "toolbox.subtitle" not in src
     assert 'solara.Text(t("toolbox.allocation.description")' not in src
+
+
+def _rail_button(box):
+    """The rail's tool button: the Btn whose icon is the tool's mdi icon."""
+    import ipyvuetify as vw
+
+    for btn in _find(box, vw.Btn):
+        icons = [str(i.children[0]) for i in _find(btn, vw.Icon) if i.children]
+        if "mdi-earth-remove" in icons:
+            return btn
+    return None
+
+
+def test_rail_is_icon_only_with_primary_selection():
+    """The tool rail mirrors the app drawer: icon button, primary when active."""
+    import reacton
+
+    from gui.i18n import t
+    from spatialrisk.project import Project
+
+    t("common.cancel")
+    box, _rc = reacton.render(
+        toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
+    )
+
+    btn = _rail_button(box)
+    assert btn is not None
+    assert btn.icon  # icon-only, no text label on the button
+    assert btn.color == "primary"  # the (only) tool is selected
+    assert not [c for c in (btn.children or []) if isinstance(c, str) and c.strip()]
+
+
+def test_panel_header_carries_title_and_info_button():
+    """The pane header owns the tool title; the description stays an InfoButton."""
+    src = inspect.getsource(toolbox_tile)
+    assert "InfoButton" in src
+    assert "solara.Tooltip" in src  # rail buttons announce their tool name

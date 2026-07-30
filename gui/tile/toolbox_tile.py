@@ -27,7 +27,7 @@ from gui.widget.help import InfoButton
 
 logger = logging.getLogger("spatial_risk")
 
-#: The toolbox's tool list (the dialog's left pane). One entry per tool; the
+#: The toolbox's tool list (the dialog's icon rail). One entry per tool; the
 #: panel itself is selected on ``key`` in the component body.
 _TOOLS = [
     {
@@ -125,29 +125,42 @@ def ToolboxTile(project, map_=None, sepal_client=None):
             solara.Info(t("toolbox.allocation.empty"))
             return
 
-        # Two panes, as in the design mock: the tool list on the left, the
-        # selected tool's panel on the right. One tool today; the list is the
-        # registry future tools slot into.
-        with solara.Row(style="gap:16px;align-items:flex-start;"):
-            with solara.Column(style="flex:0 0 210px;gap:4px;"):
-                for tool in _TOOLS:
-                    # The tool's longer description lives in the info popup,
-                    # keeping the pane itself list-first (the design mock).
-                    with solara.Row(style="gap:0;align-items:center;"):
-                        solara.Button(
-                            t(tool["label_key"]),
-                            icon_name=tool["icon"],
-                            text=selected_tool != tool["key"],
-                            color="primary" if selected_tool == tool["key"] else None,
-                            on_click=lambda key=tool["key"]: set_selected_tool(key),
-                            style="justify-content:flex-start;flex:1;min-width:0;",
-                        )
-                        InfoButton(
-                            title=t(tool["label_key"]),
-                            markdown=t(tool["description_key"]),
-                        )
+        # Icon rail + the selected tool's panel. The rail mirrors the app
+        # drawer: icon-only buttons, tooltip = tool name, selected in primary.
+        # The panel header carries the title and the description popup that
+        # used to sit next to each tool-list entry.
+        # Note: solara.Tooltip is used here for tooltips on icon buttons.
+        tool = next(entry for entry in _TOOLS if entry["key"] == selected_tool)
+        with solara.Row(style="gap:16px;align-items:stretch;"):
+            with solara.Column(
+                style="flex:0 0 48px;gap:4px;align-items:center;"
+                "padding:4px 0;border-right:1px solid rgba(128,128,128,0.25);"
+            ):
+                for entry in _TOOLS:
+                    solara.Button(
+                        "",
+                        icon_name=entry["icon"],
+                        icon=True,
+                        color=("primary" if selected_tool == entry["key"] else None),
+                        on_click=lambda key=entry["key"]: set_selected_tool(key),
+                        tooltip=t(entry["label_key"]),
+                    )
 
             with solara.Column(style="flex:1;min-width:0;gap:12px;"):
+                with solara.Row(
+                    style="gap:6px;align-items:center;"
+                    "border-bottom:1px solid rgba(128,128,128,0.25);"
+                    "padding-bottom:6px;"
+                ):
+                    solara.Text(
+                        t(tool["label_key"]),
+                        style="font-weight:600;font-size:0.95rem;",
+                    )
+                    InfoButton(
+                        title=t(tool["label_key"]),
+                        markdown=t(tool["description_key"]),
+                    )
+
                 AllocationList(
                     rows=rows,
                     on_delete=set_pending_delete,
