@@ -704,3 +704,52 @@ def test_details_dialog_renders_warnings():
         )
     )
     assert "3.1 ha could not be allocated" in _all_text(box)
+
+
+def _capture_product_table(monkeypatch):
+    """Swap ProductTable for a stub that records its kwargs.
+
+    The stub still renders an element — a component whose body renders nothing
+    would make reacton.render itself fail, which is not what these tests probe.
+    """
+    captured = {}
+
+    def fake_table(**kwargs):
+        captured.update(kwargs)
+        solara.Text("product-table-stub")
+
+    monkeypatch.setattr("gui.widget.allocation_list.ProductTable", fake_table)
+    return captured
+
+
+def test_list_record_rows_open_details_jobs_do_not(monkeypatch):
+    """Row click -> on_open(run_key); in-flight jobs are not clickable."""
+    captured = _capture_product_table(monkeypatch)
+
+    opened = []
+    job = {
+        "kind": "job",
+        "key": "j1",
+        "name": "pending",
+        "status": "running",
+        "error": None,
+    }
+    reacton.render(
+        AllocationList(
+            rows=[_record_row(), job],
+            on_delete=lambda key: None,
+            on_open=opened.append,
+        )
+    )
+
+    rows = {r["key"]: r for r in captured["rows"]}
+    rows["reserve_abc123"]["on_click"]()
+    assert opened == ["reserve_abc123"]
+    assert rows["j1"].get("on_click") is None
+
+
+def test_list_without_on_open_has_no_clickable_rows(monkeypatch):
+    """Summary-style consumers that pass no on_open get inert rows."""
+    captured = _capture_product_table(monkeypatch)
+    reacton.render(AllocationList(rows=[_record_row()], on_delete=lambda key: None))
+    assert captured["rows"][0].get("on_click") is None

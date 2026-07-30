@@ -20,7 +20,7 @@ from gui.scripts.density_map import add_density_on_map, density_layer_key
 from gui.scripts.notify_bridge import tracked_job
 from gui.scripts.solara_threads import spawn_in_context, update_job
 from gui.store.project_writers import writing
-from gui.widget.allocation_form import AllocationFormDialog
+from gui.widget.allocation_form import AllocationDetailsDialog, AllocationFormDialog
 from gui.widget.allocation_list import AllocationList
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
@@ -89,6 +89,7 @@ def ToolboxTile(project, map_=None, sepal_client=None):
     form_open = solara.use_reactive(False)
     pending_delete, set_pending_delete = solara.use_state(None)
     selected_tool, set_selected_tool = solara.use_state(_TOOLS[0]["key"])
+    selected_run_key, set_selected_run_key = solara.use_state(None)
 
     def launch(form):
         job_id = str(uuid.uuid4())[:8]
@@ -165,6 +166,7 @@ def ToolboxTile(project, map_=None, sepal_client=None):
                 AllocationList(
                     rows=rows,
                     on_delete=set_pending_delete,
+                    on_open=set_selected_run_key,
                     on_toggle_density=toggle_density if map_ is not None else None,
                     density_on_map=density_on_map.value,
                 )
@@ -188,4 +190,9 @@ def ToolboxTile(project, map_=None, sepal_client=None):
             on_launch=launch,
             on_close=lambda: form_open.set(False),
             sepal_client=sepal_client,
+        )
+        AllocationDetailsDialog(
+            project=project,
+            run_key=selected_run_key,
+            on_close=lambda: set_selected_run_key(None),
         )

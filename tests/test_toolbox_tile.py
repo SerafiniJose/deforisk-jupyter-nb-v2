@@ -198,3 +198,10 @@ def test_panel_header_carries_title_and_info_button():
     # Assert InfoButton is in the source (description stays as InfoButton popup)
     src = inspect.getsource(toolbox_tile)
     assert "InfoButton" in src
+
+
+def test_tile_mounts_the_details_dialog():
+    """Row clicks land somewhere: the tile owns the selected key + dialog."""
+    src = inspect.getsource(toolbox_tile)
+    assert "AllocationDetailsDialog" in src
+    assert "on_open" in src

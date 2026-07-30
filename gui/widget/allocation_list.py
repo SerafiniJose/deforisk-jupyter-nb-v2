@@ -72,12 +72,20 @@ def _hectares_cell(value, unit_key):
 
 
 @solara.component
-def AllocationList(rows, on_delete, on_toggle_density=None, density_on_map=frozenset()):
+def AllocationList(
+    rows,
+    on_delete,
+    on_open=None,
+    on_toggle_density=None,
+    density_on_map=frozenset(),
+):
     """Allocation runs table: one row per saved run plus in-flight jobs.
 
     Args:
         rows: output of ``allocation_runner.allocation_rows``.
         on_delete: callback(run_key) — delete a saved run (confirmed by the tile).
+        on_open: callback(run_key) — open the run's read-only details dialog;
+            None leaves the rows inert. Job rows never fire it.
         on_toggle_density: callback(row) — show/hide the density raster; None
             when there is no map to draw on.
         density_on_map: set of layer keys currently on the map.
@@ -122,6 +130,7 @@ def AllocationList(rows, on_delete, on_toggle_density=None, density_on_map=froze
         table_rows.append(
             {
                 "key": r["key"],
+                "on_click": ((lambda *_, k=r["key"]: on_open(k)) if on_open else None),
                 "cells": [
                     _name_cell(r),
                     _hectares_cell(r["annual_ha"], "toolbox.allocation.unit_ha_yr"),
