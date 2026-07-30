@@ -219,10 +219,14 @@ def test_form_mask_choices_come_from_processed_variables():
 
 
 def test_form_has_no_external_riskmap_field():
-    """External risk maps enter on the inference tab; the form offers none."""
+    """External risk maps enter on the inference tab; the form offers none.
+
+    The details dialog may *display* a run's external map, so this pins the
+    form section only (everything above the details-dialog marker comment).
+    """
     src = inspect.getsource(allocation_form)
-    assert "external" not in src
-    assert "field_riskmap_external" not in src
+    form_src = src.split("read-only run details")[0]
+    assert "external" not in form_src
 
 
 def test_form_previews_the_resolved_rate_table():
@@ -574,3 +578,129 @@ def test_borders_picker_renders_the_file_method_by_default():
     labels = {item["value"]: item["text"] for s in selects for item in s.items}
     assert labels["FILE"] == t("toolbox.allocation.borders_method_file")
     assert _find(box, FileInput)
+
+
+# --- run details dialog (2026-07-30 icon-rail + run-details spec) -----------
+
+
+def _sample_run(**kw):
+    from spatialrisk.allocations import AllocationRun
+
+    base = dict(
+        name="reserve",
+        run_id="abc123",
+        created_at="2026-07-29T10:00:00",
+        prediction_key="rf_2024",
+        defrate_source={"provenance": "persisted", "path": "/tmp/defrate.csv"},
+        borders_file="/tmp/borders.gpkg",
+        borders_source={"method": "ADMIN1", "admin_code": "MTQ"},
+        mask_file="/tmp/forest_gfc_2024.tif",
+        defor_juris_ha=20000.0,
+        years_forecast=4.0,
+        annual_ha=312.4,
+        total_ha=1249.6,
+        out_dir="/out",
+        csv_path="/out/defor_project.csv",
+    )
+    base.update(kw)
+    return AllocationRun(**base)
+
+
+def _details_fields(box):
+    return {f.label: f.v_model for f in _find(box, vw.TextField)}
+
+
+def test_details_dialog_shows_inputs_and_results():
+    """Every stored input and both results reach the read-only fields."""
+    from gui.widget.allocation_form import AllocationDetailsDialog
+
+    p = Project(project_name="p")
+    run = _sample_run()
+    p.allocations[run.storage_key()] = run
+
+    box, _rc = reacton.render(
+        AllocationDetailsDialog(
+            project=solara.reactive(p),
+            run_key=run.storage_key(),
+            on_close=lambda: None,
+        )
+    )
+
+    fields = _details_fields(box)
+    assert fields[t("toolbox.allocation.field_riskmap")].startswith("rf_2024")
+    assert (
+        t("toolbox.allocation.provenance_persisted")
+        in fields[t("toolbox.allocation.field_defrate")]
+    )
+    assert "MTQ" in fields[t("toolbox.allocation.field_borders")]
+    assert "forest_gfc_2024" in fields[t("toolbox.allocation.field_mask")]
+    assert "312.4" in fields[t("toolbox.allocation.result_annual")]
+    assert "1,249.6" in fields[t("toolbox.allocation.result_total")]
+    assert fields[t("toolbox.allocation.field_output_table")].endswith(
+        "defor_project.csv"
+    )
+    assert fields[t("toolbox.allocation.field_created")] == "2026-07-29"
+
+
+def test_details_dialog_labels_external_runs_and_borders_fallback():
+    """No prediction -> external label; no borders_source -> file-name fallback."""
+    from gui.widget.allocation_form import AllocationDetailsDialog
+
+    p = Project(project_name="p")
+    run = _sample_run(
+        prediction_key=None,
+        external_riskmap="/maps/riskmap_v2.tif",
+        borders_source={},
+        mask_file=None,
+    )
+    p.allocations[run.storage_key()] = run
+
+    box, _rc = reacton.render(
+        AllocationDetailsDialog(
+            project=solara.reactive(p),
+            run_key=run.storage_key(),
+            on_close=lambda: None,
+        )
+    )
+
+    fields = _details_fields(box)
+    riskmap = fields[t("toolbox.allocation.field_riskmap")]
+    assert "riskmap_v2.tif" in riskmap
+    assert t("toolbox.allocation.source_external") in riskmap
+    assert fields[t("toolbox.allocation.field_borders")] == "borders.gpkg"
+    assert fields[t("toolbox.allocation.field_mask")] == t(
+        "toolbox.allocation.field_mask_none"
+    )
+
+
+def test_details_dialog_is_closed_for_a_stale_key():
+    """A run deleted while selected renders the dialog closed, not crashed."""
+    from gui.widget.allocation_form import AllocationDetailsDialog
+
+    box, _rc = reacton.render(
+        AllocationDetailsDialog(
+            project=solara.reactive(Project(project_name="p")),
+            run_key="gone_run",
+            on_close=lambda: None,
+        )
+    )
+    dialogs = _find(box, vw.Dialog)
+    assert dialogs and not dialogs[0].v_model
+
+
+def test_details_dialog_renders_warnings():
+    """Unallocated-classes warnings must be readable in the details view."""
+    from gui.widget.allocation_form import AllocationDetailsDialog
+
+    p = Project(project_name="p")
+    run = _sample_run(warnings=["3.1 ha could not be allocated"])
+    p.allocations[run.storage_key()] = run
+
+    box, _rc = reacton.render(
+        AllocationDetailsDialog(
+            project=solara.reactive(p),
+            run_key=run.storage_key(),
+            on_close=lambda: None,
+        )
+    )
+    assert "3.1 ha could not be allocated" in _all_text(box)

@@ -47,7 +47,13 @@
       "provenance_persisted": "table from the model run",
       "provenance_mw_sibling": "table beside the raster",
       "provenance_computed": "computed from the dataset",
-      "provenance_user": "table chosen by you"
+      "provenance_user": "table chosen by you",
+      "details_title": "Allocation run — {name}",
+      "section_inputs": "Inputs",
+      "section_results": "Results",
+      "field_created": "Created",
+      "field_output_table": "Output table",
+      "riskmap_prediction": "prediction"
     }
   }
 }

@@ -7,6 +7,8 @@ pysepal's ``FileInputComponent`` rather than typed into a bare text field.
 """
 
 import logging
+from pathlib import Path
+from typing import Callable
 
 import reacton.ipyvuetify as rv
 import solara
@@ -22,6 +24,7 @@ from gui.scripts.allocation_runner import (
 from gui.tile.evaluation_helpers import map_items
 from gui.widget.borders_picker import BordersPicker
 from gui.widget.creation_dialog import CreationDialog
+from gui.widget.details_fields import ro_field
 from gui.widget.text_style import MUTED, TIGHT_FIELD, FieldHint
 
 logger = logging.getLogger("spatial_risk")
@@ -293,3 +296,169 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         )
         if density:
             solara.Warning(t("toolbox.allocation.density_warning"), dense=True)
+
+
+# --- read-only run details (ModelDetailsDialog / SampleDetailsDialog pattern) --
+
+_SECTION = (
+    MUTED + "font-size:0.7rem;font-weight:600;"
+    "letter-spacing:0.08em;text-transform:uppercase;margin-top:4px;"
+)
+
+_BORDERS_METHOD_KEYS = {
+    "ADMIN0": "toolbox.allocation.borders_method_admin0",
+    "ADMIN1": "toolbox.allocation.borders_method_admin1",
+    "ADMIN2": "toolbox.allocation.borders_method_admin2",
+    "FILE": "toolbox.allocation.borders_method_file",
+    "ASSET": "toolbox.allocation.borders_method_asset",
+}
+
+
+def _details_riskmap(record):
+    """'<key> (prediction)' or '<file> (external risk map)'."""
+    if record.prediction_key:
+        return (
+            f"{record.prediction_key} "
+            f"({t('toolbox.allocation.riskmap_prediction')})"
+        )
+    if record.external_riskmap:
+        return (
+            f"{Path(record.external_riskmap).name} "
+            f"({t('toolbox.allocation.source_external')})"
+        )
+    return None
+
+
+def _details_defrate(record):
+    """Provenance label, plus the file name when the user picked the table."""
+    src = record.defrate_source or {}
+    provenance = (src.get("provenance") or "").replace("-", "_")
+    if not provenance:
+        return None
+    label = t(f"toolbox.allocation.provenance_{provenance}")
+    path = src.get("path")
+    if provenance == "user" and path:
+        return f"{label} — {Path(path).name}"
+    return label
+
+
+def _details_borders(record):
+    """'<method> — <code|file|asset>'; pre-picker runs fall back to the file."""
+    src = record.borders_source or {}
+    method = (src.get("method") or "").upper()
+    key = _BORDERS_METHOD_KEYS.get(method)
+    if key is None:
+        return Path(record.borders_file).name if record.borders_file else None
+    if method.startswith("ADMIN"):
+        detail = src.get("admin_code")
+    elif method == "FILE":
+        detail = Path(src["file_path"]).name if src.get("file_path") else None
+    else:
+        detail = src.get("asset")
+    label = t(key)
+    return f"{label} — {detail}" if detail else label
+
+
+@solara.component
+def AllocationDetailsDialog(project, run_key, on_close: Callable[[], None]):
+    """Read-only view of a saved allocation run, opened by clicking its row.
+
+    Open iff ``run_key`` resolves to a record — a stale key (run deleted while
+    selected) renders it closed, mirroring ModelDetailsDialog.
+
+    Args:
+        project: solara.Reactive[Project].
+        run_key: project.allocations key to display, or None (dialog closed).
+        on_close: () -> None; clears the tile's selected key.
+    """
+    p = project.value
+    runs = (getattr(p, "allocations", None) or {}) if p is not None else {}
+    record = runs.get(run_key) if run_key else None
+
+    with rv.Dialog(
+        v_model=record is not None,
+        on_v_model=lambda v: None if v else on_close(),
+        max_width="560px",
+    ):
+        with rv.Card():
+            with rv.CardTitle():
+                solara.Text(
+                    t(
+                        "toolbox.allocation.details_title",
+                        name=record.name if record is not None else "",
+                    )
+                )
+            with rv.CardText():
+                if record is not None:
+                    with solara.Column(style="gap:4px;"):
+                        solara.Text(
+                            t("toolbox.allocation.section_inputs"), style=_SECTION
+                        )
+                        ro_field(
+                            t("toolbox.allocation.field_riskmap"),
+                            _details_riskmap(record),
+                        )
+                        ro_field(
+                            t("toolbox.allocation.field_defrate"),
+                            _details_defrate(record),
+                        )
+                        ro_field(
+                            t("toolbox.allocation.field_borders"),
+                            _details_borders(record),
+                        )
+                        ro_field(
+                            t("toolbox.allocation.field_mask"),
+                            Path(record.mask_file).name
+                            if record.mask_file
+                            else t("toolbox.allocation.field_mask_none"),
+                        )
+                        with solara.Row(style="gap:8px;"):
+                            with solara.Column(style="flex:1;"):
+                                ro_field(
+                                    t("toolbox.allocation.field_juris_ha"),
+                                    f"{record.defor_juris_ha:,.1f}",
+                                )
+                            with solara.Column(style="flex:1;"):
+                                ro_field(
+                                    t("toolbox.allocation.field_years"),
+                                    f"{record.years_forecast:g}",
+                                )
+
+                        solara.Text(
+                            t("toolbox.allocation.section_results"), style=_SECTION
+                        )
+                        with solara.Row(style="gap:8px;"):
+                            with solara.Column(style="flex:1;"):
+                                ro_field(
+                                    t("toolbox.allocation.result_annual"),
+                                    f"{record.annual_ha:,.1f} "
+                                    f"{t('toolbox.allocation.unit_ha_yr')}",
+                                )
+                            with solara.Column(style="flex:1;"):
+                                ro_field(
+                                    t("toolbox.allocation.result_total"),
+                                    f"{record.total_ha:,.1f} "
+                                    f"{t('toolbox.allocation.unit_ha')}",
+                                )
+                        ro_field(
+                            t("toolbox.allocation.field_output_table"),
+                            record.csv_path,
+                        )
+                        ro_field(
+                            t("toolbox.allocation.field_created"),
+                            (record.created_at or "")[:10] or None,
+                        )
+                        for warning in record.warnings or []:
+                            rv.Html(
+                                tag="span",
+                                class_="error--text",
+                                style_="font-size:0.8rem;",
+                                children=[str(warning)],
+                            )
+            with rv.CardActions(style_="justify-content: flex-end;"):
+                solara.Button(
+                    t("common.close"),
+                    on_click=on_close,
+                    text=True,
+                    small=True,
+                )

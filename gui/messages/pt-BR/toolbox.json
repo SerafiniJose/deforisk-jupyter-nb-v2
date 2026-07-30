@@ -47,7 +47,13 @@
       "provenance_persisted": "tabela da execução do modelo",
       "provenance_mw_sibling": "tabela ao lado do raster",
       "provenance_computed": "calculada a partir do conjunto de dados",
-      "provenance_user": "tabela escolhida por você"
+      "provenance_user": "tabela escolhida por você",
+      "details_title": "Execução de alocação — {name}",
+      "section_inputs": "Entradas",
+      "section_results": "Resultados",
+      "field_created": "Criado em",
+      "field_output_table": "Tabela de saída",
+      "riskmap_prediction": "predição"
     }
   }
 }
