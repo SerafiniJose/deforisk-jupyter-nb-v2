@@ -6,8 +6,6 @@ readme = "README.rst"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 dependencies = [
-    "cudf-cu12>=25.8.0",
-    "cuml-cu12>=25.8.0",
     "dask-ml>=2025.1.0",
     "earthengine-api",
     "fiona>=1.10.1",

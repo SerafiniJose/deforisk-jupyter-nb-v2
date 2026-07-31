@@ -27,3 +27,7 @@ test/
 
 # Superpowers workspace
 .superpowers/
+
+# uv-managed files (env is defined by sepal_environment.yml)
+uv.lock
+.python-version
