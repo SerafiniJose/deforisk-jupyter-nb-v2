@@ -1,14 +1,23 @@
+"""The Project model: the manifest every other module reads and writes."""
+
 import json
 import logging
 import os
-from typing import Dict, List, Optional, Union, Any
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 from box import Box
-from pydantic import BaseModel, Field, ConfigDict
-from spatialrisk.variables import LocalVectorVar, LocalRasterVar
-from spatialrisk.variables.models import DataType
+from pydantic import BaseModel, ConfigDict, Field
+
 from spatialrisk.log_utils import log_progress
+
+# Imported for their runtime presence in this module's namespace, not for direct
+# use: Project's fields annotate them as forward references (``Union["LocalVectorVar",
+# "LocalRasterVar"]``) that pydantic resolves against this namespace on
+# model_rebuild(). Removing them breaks Project construction at import time.
+from spatialrisk.variables import LocalRasterVar, LocalVectorVar  # noqa: F401
+from spatialrisk.variables.models import DataType
 
 root_folder: Path = Path.cwd().parent
 
@@ -75,6 +84,7 @@ class Project(BaseModel):
     samples: Dict[str, Any] = Field(default_factory=dict)
     predictions: Dict[str, Any] = Field(default_factory=dict)
     evaluations: Dict[str, Any] = Field(default_factory=dict)
+    allocations: Dict[str, Any] = Field(default_factory=dict)
     # AOI descriptor (GUI-populated, library-agnostic): light metadata only
     # (method, name, gee, admin, geometry_file). The geometry itself lives in a
     # sidecar ``aoi.geojson`` in the project folder, written/read by the GUI —
@@ -122,11 +132,11 @@ class Project(BaseModel):
 
     @staticmethod
     def _ensure_model_schemas() -> None:
-        """Ensure Pydantic forward references between Project and variable models are resolved."""
+        """Resolve the forward references between Project and the variable models."""
         from spatialrisk.variables import (
-            LocalVectorVar,
-            LocalRasterVar,
             GEEVar,
+            LocalRasterVar,
+            LocalVectorVar,
         )
         from spatialrisk.variables.variable import Variable
 
@@ -221,7 +231,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         LocalVectorVar | LocalRasterVar | None
             The variable if found, None otherwise
@@ -267,7 +277,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         List[LocalVectorVar | LocalRasterVar]
             List of all variable instances with matching name
@@ -288,7 +298,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         bool
             True if variable has multiple years, False otherwise
@@ -308,7 +318,7 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         List[int]
             Sorted list of years for the variable
@@ -329,12 +339,12 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default), 'raw', or 'all'
 
-        Returns
+        Returns:
         -------
         List[int]
             Sorted list of all unique years found in variables
 
-        Examples
+        Examples:
         --------
         >>> project.get_available_years()  # All years from all variables
         [2015, 2020, 2024]
@@ -364,10 +374,11 @@ class Project(BaseModel):
         source : str, optional
             Variable source: 'processed' (default) or 'raw'
 
-        Returns
+        Returns:
         -------
         List[str]
-            Sorted list of unique variable names (e.g., ['altitude', 'towns', 'forest_gfc'])
+            Sorted list of unique variable names
+            (e.g., ['altitude', 'towns', 'forest_gfc'])
         """
         variables = (
             self.processed_variables if source == "processed" else self.raw_variables
@@ -399,9 +410,7 @@ class Project(BaseModel):
         model.project = self
         model.project_name = self.project_name
         storage_key = key or (
-            f"{model.model_type}_{model.name}"
-            if model.name
-            else model.model_type
+            f"{model.model_type}_{model.name}" if model.name else model.model_type
         )
         self.models[storage_key] = model
         print(f"  Model registered as project.models['{storage_key}']")
@@ -443,7 +452,9 @@ class Project(BaseModel):
         """Return sorted list of registered model keys."""
         return sorted(self.models.keys())
 
-    def add_dataset(self, dataset: Any, key: Optional[str] = None, auto_save: bool = True) -> None:
+    def add_dataset(
+        self, dataset: Any, key: Optional[str] = None, auto_save: bool = True
+    ) -> None:
         """Add a dataset to the project's dataset registry.
 
         Parameters
@@ -472,8 +483,9 @@ class Project(BaseModel):
         """Return sorted list of registered dataset keys."""
         return sorted(self.datasets.keys())
 
-    def add_sample(self, sample: Any, key: Optional[str] = None,
-                   auto_save: bool = True) -> None:
+    def add_sample(
+        self, sample: Any, key: Optional[str] = None, auto_save: bool = True
+    ) -> None:
         """Register a Sample under ``key`` (defaults to sample.name)."""
         storage_key = key or sample.name
         if not storage_key:
@@ -557,6 +569,26 @@ class Project(BaseModel):
             self.save()
         return True
 
+    def add_allocation(self, run, auto_save: bool = True) -> str:
+        """Register an AllocationRun under its history-safe storage key."""
+        key = run.storage_key()
+        self.allocations[key] = run
+        if auto_save:
+            self.save()
+        return key
+
+    def delete_allocation(self, key: str) -> bool:
+        """Remove an allocation record (artifacts are removed by the caller).
+
+        Deletion is transactional in the GUI helper: the record is dropped here
+        without autosaving, the manifest is committed, and only then are the run's
+        files removed — see gui/scripts/allocation_runner.py::delete_allocation_run.
+        """
+        if key not in self.allocations:
+            return False
+        del self.allocations[key]
+        return True
+
     def _project_dir(self) -> Path:
         """Folder holding this project's files (manifest, rasters, model artifacts)."""
         return downloads_folder / self.project_name
@@ -574,7 +606,9 @@ class Project(BaseModel):
             return False
         project_dir = self._project_dir().resolve()
         if project_dir not in target.parents:
-            logger.warning("Refusing to delete %s — outside project folder %s", target, project_dir)
+            logger.warning(
+                "Refusing to delete %s — outside project folder %s", target, project_dir
+            )
             return False
         if not target.exists():
             return False
@@ -619,7 +653,7 @@ class Project(BaseModel):
         return list(self.evaluations.keys())
 
     def delete_evaluation(self, key: str, auto_save: bool = False) -> bool:
-        """Remove a saved evaluation record (registry only; leaves on-disk artifacts)."""
+        """Remove an evaluation record (registry only; on-disk artifacts stay)."""
         removed = self.evaluations.pop(key, None)
         if removed is None:
             return False
@@ -664,9 +698,10 @@ class Project(BaseModel):
         Parameters
         ----------
         filename : str, optional
-            Custom filename for the project file. If None, uses '{project_name}_project.json'
+            Custom filename for the project file.
+            If None, uses '{project_name}_project.json'
 
-        Returns
+        Returns:
         -------
         Path
             Path to the saved JSON file
@@ -762,6 +797,12 @@ class Project(BaseModel):
             for key, record in self.evaluations.items():
                 data["evaluations"][key] = record.model_dump(mode="json")
 
+        # Serialize saved allocation runs
+        if self.allocations:
+            data["allocations"] = {}
+            for key, run in self.allocations.items():
+                data["allocations"][key] = run.model_dump(mode="json")
+
         # Serialize the AOI descriptor (geometry lives in the sidecar file)
         if self.aoi:
             data["aoi"] = self.aoi
@@ -786,9 +827,10 @@ class Project(BaseModel):
         project_name : str
             Name of the project (used to locate the project folder)
         filename : str, optional
-            Custom filename for the project file. If None, uses '{project_name}_project.json'
+            Custom filename for the project file.
+            If None, uses '{project_name}_project.json'
 
-        Returns
+        Returns:
         -------
         Project
             Loaded project instance with all variables
@@ -796,7 +838,7 @@ class Project(BaseModel):
         # Ensure schemas are up-to-date before instantiating variables
         cls._ensure_model_schemas()
 
-        from spatialrisk.variables import LocalVectorVar, LocalRasterVar
+        from spatialrisk.variables import LocalRasterVar, LocalVectorVar
 
         if filename is None:
             filename = f"{project_name}_project.json"
@@ -830,7 +872,8 @@ class Project(BaseModel):
                 var = LocalRasterVar(**var_data)
             else:
                 raise ValueError(
-                    f"Unknown data_type for variable {var_name}: {var_data.get('data_type')}"
+                    f"Unknown data_type for variable {var_name}: "
+                    f"{var_data.get('data_type')}"
                 )
 
             # Set project reference and add to raw_variables
@@ -850,7 +893,8 @@ class Project(BaseModel):
                 var = LocalRasterVar(**var_data)
             else:
                 raise ValueError(
-                    f"Unknown data_type for variable {var_name}: {var_data.get('data_type')}"
+                    f"Unknown data_type for variable {var_name}: "
+                    f"{var_data.get('data_type')}"
                 )
 
             # Set project reference and add to processed_variables
@@ -872,7 +916,13 @@ class Project(BaseModel):
 
         # Reconstruct registered ML models
         if "models" in data and data["models"]:
-            from spatialrisk.mlmodels import GLMModel, ICARModel, JNRBenchmarkModel, MWModel, RFModel
+            from spatialrisk.mlmodels import (
+                GLMModel,
+                ICARModel,
+                JNRBenchmarkModel,
+                MWModel,
+                RFModel,
+            )
 
             _MODEL_REGISTRY = {
                 "glm": GLMModel,
@@ -885,7 +935,10 @@ class Project(BaseModel):
                 model_type = model_data.get("model_type", "")
                 model_cls = _MODEL_REGISTRY.get(model_type)
                 if model_cls is None:
-                    print(f"  Warning: unknown model_type '{model_type}' for key '{key}' — skipped")
+                    print(
+                        f"  Warning: unknown model_type '{model_type}' "
+                        f"for key '{key}' — skipped"
+                    )
                     continue
                 # Convert Path strings back to Path objects
                 for path_field in ("model_path", "samples_path", "rho_path"):
@@ -899,8 +952,13 @@ class Project(BaseModel):
         # Reconstruct registered datasets
         if "datasets" in data and data["datasets"]:
             from spatialrisk.dataset import Dataset
+
             for key, ds_data in data["datasets"].items():
-                ds = Dataset(project=project, name=ds_data.get("name"), year=ds_data.get("year"))
+                ds = Dataset(
+                    project=project,
+                    name=ds_data.get("name"),
+                    year=ds_data.get("year"),
+                )
                 target_name = ds_data.get("target_name")
                 feature_names = ds_data.get("feature_names", [])
                 if target_name:
@@ -914,11 +972,16 @@ class Project(BaseModel):
                         year=ds_data.get("year") if target_is_temporal else None,
                     )
                 if feature_names:
-                    missing = [n for n in feature_names if not project.get_all_instances(n)]
-                    valid_names = [n for n in feature_names if project.get_all_instances(n)]
+                    missing = [
+                        n for n in feature_names if not project.get_all_instances(n)
+                    ]
+                    valid_names = [
+                        n for n in feature_names if project.get_all_instances(n)
+                    ]
                     if missing:
                         print(
-                            f"  ⚠ Dataset '{key}': feature(s) not found in processed variables, skipped: {missing}"
+                            f"  ⚠ Dataset '{key}': feature(s) not found in "
+                            f"processed variables, skipped: {missing}"
                         )
                     if valid_names:
                         ds.set_features(valid_names)
@@ -927,8 +990,10 @@ class Project(BaseModel):
 
         # Reconstruct registered samples (location-only; no regeneration).
         if "samples" in data and data["samples"]:
-            from spatialrisk.sample import Sample
             from pathlib import Path as _Path
+
+            from spatialrisk.sample import Sample
+
             loaded = 0
             for key, s_data in data["samples"].items():
                 if "raster_var_name" not in s_data:
@@ -944,8 +1009,16 @@ class Project(BaseModel):
                     allocation=s_data.get("allocation"),
                     adapt=s_data.get("adapt", False),
                     seed=s_data.get("seed"),
-                    points_path=_Path(s_data["points_path"]) if s_data.get("points_path") else None,
-                    pmtiles_path=_Path(s_data["pmtiles_path"]) if s_data.get("pmtiles_path") else None,
+                    points_path=(
+                        _Path(s_data["points_path"])
+                        if s_data.get("points_path")
+                        else None
+                    ),
+                    pmtiles_path=(
+                        _Path(s_data["pmtiles_path"])
+                        if s_data.get("pmtiles_path")
+                        else None
+                    ),
                     crs=s_data.get("crs"),
                     n_total=s_data.get("n_total", 0),
                     class_counts=s_data.get("class_counts", {}),
@@ -963,6 +1036,8 @@ class Project(BaseModel):
             for key, pred_data in data["predictions"].items():
                 if pred_data.get("path"):
                     pred_data["path"] = Path(pred_data["path"])
+                if pred_data.get("defrate_path"):
+                    pred_data["defrate_path"] = Path(pred_data["defrate_path"])
                 prediction = Prediction(**pred_data)
                 prediction.project = project
                 project.predictions[key] = prediction
@@ -975,6 +1050,14 @@ class Project(BaseModel):
             for key, ev_data in data["evaluations"].items():
                 project.evaluations[key] = EvaluationRecord(**ev_data)
             print(f"Loaded {len(project.evaluations)} evaluation(s)")
+
+        # Reconstruct saved allocation runs
+        if "allocations" in data and data["allocations"]:
+            from spatialrisk.allocations import AllocationRun
+
+            for key, run_data in data["allocations"].items():
+                project.allocations[key] = AllocationRun(**run_data)
+            print(f"Loaded {len(project.allocations)} allocation run(s)")
 
         print(f"Project loaded from: {load_path}")
         print(f"Loaded {len(project.processed_variables)} processed variables")
@@ -997,28 +1080,30 @@ class Project(BaseModel):
         target_epsg : str, optional
             Target EPSG code. If None, uses base_raster's CRS (base_raster must be set).
         resolution : float, optional
-            Target resolution. If None, uses base_raster's resolution (base_raster must be set).
+            Target resolution. If None, uses base_raster's resolution
+            (base_raster must be set).
         source : str, optional
             Which variables to reproject: 'raw' or 'processed' (default: 'raw').
         add_to_processed : bool, optional
-            Whether to add reprojected variables to processed collection (default: True).
+            Whether to add reprojected variables to the processed collection
+            (default: True).
         auto_save : bool, optional
             Whether to auto-save after each reprojection (default: True).
         **reproject_kwargs
             Additional arguments passed to LocalRasterVar.reproject().
 
-        Returns
+        Returns:
         -------
         Dict[str, LocalRasterVar]
             Dictionary of reprojected variables {name: LocalRasterVar}.
 
-        Raises
+        Raises:
         ------
         ValueError
             If base_raster is not set when target_epsg or resolution is None.
             If source is not 'raw' or 'processed'.
 
-        Examples
+        Examples:
         --------
         >>> # Reproject all raw variables to base raster's CRS
         >>> project.reproject_all()
@@ -1026,8 +1111,6 @@ class Project(BaseModel):
         >>> # Reproject to specific CRS
         >>> project.reproject_all(target_epsg="EPSG:32618", resolution=30)
         """
-        from spatialrisk.variables import LocalRasterVar
-
         # Determine source collection
         if source == "raw":
             source_vars = self.raw_variables
@@ -1040,7 +1123,8 @@ class Project(BaseModel):
         if target_epsg is None or resolution is None:
             if self.base_raster is None:
                 raise ValueError(
-                    "base_raster must be set when target_epsg or resolution is not provided. "
+                    "base_raster must be set when target_epsg or resolution is "
+                    "not provided. "
                     "Use variable.use_as_base_raster() to set a base raster first."
                 )
 
@@ -1095,18 +1179,18 @@ class Project(BaseModel):
         **rasterize_kwargs
             Additional arguments passed to LocalVectorVar.rasterize().
 
-        Returns
+        Returns:
         -------
         Dict[str, LocalRasterVar]
             Dictionary of rasterized variables {name: LocalRasterVar}.
 
-        Raises
+        Raises:
         ------
         ValueError
             If base_raster is not set.
             If source is not 'raw' or 'processed'.
 
-        Examples
+        Examples:
         --------
         >>> # Set base raster first
         >>> dem.use_as_base_raster()
@@ -1114,8 +1198,6 @@ class Project(BaseModel):
         >>> # Rasterize all raw vector variables
         >>> project.rasterize_all()
         """
-        from spatialrisk.variables import LocalVectorVar
-
         # Check base raster is set
         if self.base_raster is None:
             raise ValueError(
@@ -1182,7 +1264,6 @@ class Project(BaseModel):
             strings/bytes) are treated as lists of acceptable values. Callables
             are invoked with the attribute value and must return True to keep it.
         """
-
         if source == "processed":
             candidates = self.processed_vars
         elif source == "raw":
@@ -1245,12 +1326,13 @@ class Project(BaseModel):
             **filters : keyword arguments
                 Additional filter criteria (same as list_variables).
 
-            Returns
+        Returns:
             -------
             Dict[str, Variable]
-                Dictionary of variables that match the tag criteria and any additional filters.
+                Dictionary of variables matching the tag criteria and any
+                additional filters.
 
-            Examples
+        Examples:
             --------
             >>> # Get all variables with 'climate' tag
         >>> project.filter_by_tags('climate')
@@ -1259,10 +1341,14 @@ class Project(BaseModel):
         >>> project.filter_by_tags(['roads', 'infrastructure'])
 
             >>> # Get active variables with BOTH 'climate' AND 'temperature' tags
-            >>> project.filter_by_tags(['climate', 'temperature'], match_all=True, active=True)
+            >>> project.filter_by_tags(
+            ...     ['climate', 'temperature'], match_all=True, active=True
+            ... )
 
             >>> # Get raw raster variables with 'elevation' tag
-            >>> project.filter_by_tags('elevation', look_up_in='raw', data_type='raster')
+            >>> project.filter_by_tags(
+            ...     'elevation', look_up_in='raw', data_type='raster'
+            ... )
         """
         # Normalize tags to a list
         if isinstance(tags, str):
@@ -1309,14 +1395,15 @@ class Project(BaseModel):
             - Simple values: year=2020, active=True, data_type='raster'
             - Lists of acceptable values: year=[2019, 2020, 2021]
             - Callable functions: year=lambda y: y >= 2015
-            - Tags (special): tags=["tag1"] or tags="tag1" checks if ANY tag matches (OR logic)
+            - Tags (special): tags=["tag1"] or tags="tag1" checks if ANY tag
+              matches (OR logic)
 
-        Returns
+        Returns:
         -------
         Dict[str, Variable]
             Dictionary of variables that match all specified attribute criteria.
 
-        Examples
+        Examples:
         --------
         >>> # Filter by year
         >>> project.filter_by_attrs(year=2020)
@@ -1326,7 +1413,8 @@ class Project(BaseModel):
 
         >>> # Filter by tags (checks if variable has ANY of these tags)
         >>> project.filter_by_attrs(source="raw", tags=["town"])
-        >>> project.filter_by_attrs(tags=["town", "city"])  # Has either "town" OR "city"
+        >>> # Has either "town" OR "city"
+        >>> project.filter_by_attrs(tags=["town", "city"])
 
         >>> # Filter by name pattern (using callable)
         >>> project.filter_by_attrs(name=lambda n: 'forest' in n.lower())
@@ -1343,11 +1431,12 @@ class Project(BaseModel):
         >>> # Search in both raw and processed
         >>> project.filter_by_attrs(source='both', active=True)
 
-        Notes
+        Notes:
         -----
         - String and bytes values are compared for exact equality.
         - Iterable values (lists, tuples, sets) are treated as "value in list" checks.
-        - Tags are special: tags=["tag1", "tag2"] checks if variable has ANY of these tags.
+        - Tags are special: tags=["tag1", "tag2"] checks whether the variable
+          has ANY of these tags.
         - Callable values are invoked with the attribute value and must return True.
         - All filters must match for a variable to be included (AND logic).
         """
@@ -1424,17 +1513,17 @@ class Project(BaseModel):
             If True (default), shows a warning message before clearing.
             Set to False to skip confirmation (useful in scripts).
 
-        Returns
+        Returns:
         -------
         int
             Number of variables removed.
 
-        Raises
+        Raises:
         ------
         ValueError
             If source is not 'processed', 'raw', or 'both'.
 
-        Examples
+        Examples:
         --------
         >>> # Reset processed variables (default)
         >>> project.reset()
@@ -1448,7 +1537,7 @@ class Project(BaseModel):
         >>> # Reset without confirmation (in automated scripts)
         >>> project.reset(confirm=False, auto_save=False)
 
-        Notes
+        Notes:
         -----
         This does NOT delete the actual files on disk, only removes the
         variable references from the project. Use with caution as this
@@ -1463,7 +1552,8 @@ class Project(BaseModel):
             count = len(self.processed_variables)
             if confirm and count > 0:
                 print(
-                    f"⚠️  WARNING: About to remove {count} processed variable(s) from project"
+                    f"⚠️  WARNING: About to remove {count} processed "
+                    f"variable(s) from project"
                 )
 
             self.processed_variables.clear()
@@ -1486,7 +1576,7 @@ class Project(BaseModel):
                 print(f"✓ Removed {count} raw variable(s)")
 
         if removed_count == 0:
-            print(f"ℹ️  No variables to remove from '{source}' collection")
+            print(f"i️  No variables to remove from '{source}' collection")
         else:
             print(f"\n✅ Total removed: {removed_count} variable(s)")
 
@@ -1496,7 +1586,7 @@ class Project(BaseModel):
         return removed_count
 
     def create_model_folder(self, model: str, test_name: Optional[str] = None) -> Path:
-
+        """Path of *model*'s folder inside this project (not created on disk)."""
         # Create the folder path
         project_folder = downloads_folder / self.project_name
         model_folder = project_folder / model
@@ -1522,7 +1612,7 @@ class Project(BaseModel):
         return model_folder
 
     def initialize_folders(self, step=None, it_name=""):
-
+        """Create this project's folder tree and return it as a dotted Box."""
         if step and not it_name:
             raise ValueError(
                 "A suffix must be provided when a specific step is specified."
@@ -1566,13 +1656,16 @@ class Project(BaseModel):
         return Box(folders)
 
 
-# Rebuild Project model after Variable classes are imported to resolve forward references
+# Rebuild the Project model now that the Variable classes can be imported, so the
+# forward references in its field annotations resolve. The names shadow the
+# module-level imports on purpose: this block runs after those classes are fully
+# defined, which is what makes model_rebuild() succeed.
 try:
     from spatialrisk.variables import (
-        Variable,
-        LocalVectorVar,
-        LocalRasterVar,
         GEEVar,
+        LocalRasterVar,  # noqa: F811
+        LocalVectorVar,  # noqa: F811
+        Variable,
     )
 
     # Rebuild Variable classes first to ensure they're fully defined

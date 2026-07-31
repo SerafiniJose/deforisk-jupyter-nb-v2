@@ -424,7 +424,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         self.defrate_files[period] = defrate_tab
 
         print(f"✓ JNR apply complete — {output_file}")
-        self._register_prediction(output_file, dataset=active)
+        self._register_prediction(output_file, dataset=active, defrate_path=defrate_tab)
         return output_file
 
     # ------------------------------------------------------------------

@@ -23,6 +23,31 @@ themes and under both hosts. 0.7 matches the dark-theme alpha exactly and the
 light-theme one closely (0.7 x 0.87 = 0.61 vs 0.6).
 """
 
+import solara
+
 MUTED = "opacity: 0.7;"
 
-__all__ = ["MUTED"]
+#: CSS class that collapses a field's *empty* Vuetify messages row (rule lives
+#: in ``creation_dialog._ADVANCED_PANEL_CSS``). Wrap a field in
+#: ``solara.Div(classes=[TIGHT_FIELD])`` whenever a ``FieldHint`` follows it.
+TIGHT_FIELD = "sr-tight-field"
+
+
+@solara.component
+def FieldHint(children=[]):
+    """A field's own description — sits tight under the field it describes.
+
+    Vuetify reserves a ``.v-text-field__details`` row under every input for
+    validation messages. None of the hinted fields in the creation forms use
+    ``rules``, so that row is always empty and pushes the description ~22px
+    below the field it belongs to. Pair this with a
+    ``solara.Div(classes=[TIGHT_FIELD])`` wrapper around that field: the
+    wrapper collapses the empty row, and this supplies the spacing it used to
+    provide before the next field.
+    """
+    solara.Column(
+        style="margin-top:-2px;margin-bottom:14px;gap:2px;", children=children
+    )
+
+
+__all__ = ["MUTED", "TIGHT_FIELD", "FieldHint"]

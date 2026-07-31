@@ -459,6 +459,7 @@ class MWModel(BaseRiskModel):
                 prob_file,
                 dataset=active,
                 window=int(win_size_str) if str(win_size_str).isdigit() else None,
+                defrate_path=defrate_tab,
             )
             print(f"  window {win_size_str} → {prob_file.name}")
 

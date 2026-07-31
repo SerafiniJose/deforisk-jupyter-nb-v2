@@ -376,6 +376,7 @@ class BaseRiskModel(BaseModel):
         year: Optional[int] = None,
         window: Optional[int] = None,
         auto_save: bool = True,
+        defrate_path: Optional[Union[str, Path]] = None,
     ) -> Optional[Any]:
         """Build and register a Prediction for an output raster.
 
@@ -394,6 +395,9 @@ class BaseRiskModel(BaseModel):
             Moving-window size discriminator (MW only).
         auto_save : bool
             Passed through to project registration.
+        defrate_path : str or Path, optional
+            Per-category deforestation-rate table written alongside this output
+            (MW/JNR). Consumed by the allocation tool.
         """
         if self.project is None:
             return None
@@ -419,6 +423,7 @@ class BaseRiskModel(BaseModel):
             window=window,
             model_snapshot=self.model_dump(mode="json"),
             dataset_snapshot=build_dataset_snapshot(ds),
+            defrate_path=Path(defrate_path) if defrate_path else None,
         )
         key = None
         if pending_name:

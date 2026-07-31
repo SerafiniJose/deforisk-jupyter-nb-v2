@@ -4,7 +4,8 @@
     "title_dirty_suffix": " ●",
     "panel_workflow_title": "Flujo de trabajo",
     "step_project": "Proyecto",
-    "step_project_summary": "Resumen del proyecto"
+    "step_project_summary": "Resumen del proyecto",
+    "step_tools": "Herramientas"
   },
   "workflow": {
     "tab_aoi": "Área de interés",

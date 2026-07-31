@@ -1,5 +1,11 @@
+"""Import-level and wiring guards on the Solara app shell.
+"""
+
+
 def test_workflow_tabs_uses_pipeline_header():
+    """The tab strip is the shared PipelineHeader, not a hand-rolled rv.Tabs."""
     import inspect
+
     import gui.solara_app as app
 
     src = inspect.getsource(app.WorkflowTabs)
@@ -11,9 +17,12 @@ def test_workflow_tabs_uses_pipeline_header():
 
 
 def test_workflow_tabs_hosts_all_tiles_in_registry_order():
-    """One rv.TabItem per registry step, tiles in canonical order — the
-    registry is the single source of truth for step order."""
+    """One rv.TabItem per registry step, tiles in canonical order.
+
+    the registry is the...
+    """
     import inspect
+
     import gui.solara_app as app
     from gui.store.workflow_steps import STEPS
 
@@ -35,15 +44,21 @@ def test_workflow_tabs_hosts_all_tiles_in_registry_order():
 
 
 def test_app_state_has_no_stale_current_step():
+    """AppState carries no leftover current_step field."""
     from gui.store.state_manager import AppState
 
     assert not hasattr(AppState(), "current_step")
 
 
 def test_train_tile_selects_dataset_and_sample():
-    """Dataset/sample selection lives in ModelFormDialog (Task 7 moved the form
-    out of TrainTile); this regression guard now targets that module."""
+    """Dataset/sample selection lives in ModelFormDialog (Task 7 moved the form out of.
+
+    T...
+
+    this regression guard now targets that module.
+    """
     import inspect
+
     from gui.widget import model_form_dialog
 
     src = inspect.getsource(model_form_dialog)
@@ -55,9 +70,12 @@ def test_train_tile_selects_dataset_and_sample():
 
 
 def test_page_resets_job_lists_on_load():
-    """Switching projects clears the session job lists; product rows derive
-    from the registries at render time (no job_restore facade)."""
+    """Switching projects clears the session job lists;.
+
+    product rows derive from the registries at render time (no job_restore facade).
+    """
     import inspect
+
     import gui.solara_app as app
 
     src = inspect.getsource(app.Page)
@@ -68,9 +86,12 @@ def test_page_resets_job_lists_on_load():
 
 
 def test_page_clears_map_overlays_on_switch():
-    """Switching projects clears the previous project's overlay layers and the
-    per-tile on-map tracking so they don't leak onto the shared map."""
+    """Switching projects clears the previous project's overlay layers and the.
+
+    per-tile...
+    """
     import inspect
+
     import gui.solara_app as app
 
     src = inspect.getsource(app.Page)
@@ -82,13 +103,16 @@ def test_page_clears_map_overlays_on_switch():
 
 
 def test_solara_app_imports_summary_tile():
+    """The shell imports the Project Summary tile."""
     import gui.solara_app as app
 
     assert hasattr(app, "ProjectSummaryTile")
 
 
 def test_page_wires_project_summary_step():
+    """Project Summary is a left-rail dialog step, not a workflow tab."""
     import inspect
+
     import gui.solara_app as app
 
     src = inspect.getsource(app.Page)
@@ -99,7 +123,9 @@ def test_page_wires_project_summary_step():
 
 
 def test_workflow_tabs_wires_aoi_restore_signal():
+    """The AOI restore signal reaches the tabs."""
     import inspect
+
     import gui.solara_app as solara_app
 
     src = inspect.getsource(solara_app.WorkflowTabs)
@@ -107,9 +133,11 @@ def test_workflow_tabs_wires_aoi_restore_signal():
 
 
 def test_aoi_tile_imports_pysepal_view():
+    """The AOI tile builds on pysepal's AOI view."""
     # The vendored restore fork was upstreamed into pysepal (AoiView
     # restore-on-mount + AoiResult.asset); the tile must use the library.
     import inspect
+
     import gui.tile.aoi_tile as aoi_tile
 
     src = inspect.getsource(aoi_tile)
@@ -118,21 +146,28 @@ def test_aoi_tile_imports_pysepal_view():
 
 
 def test_solara_app_installs_task_log_handler():
-    """Job log lines only reach the notification pill through the bridge
-    handler — boot must install it once at import time."""
+    """Job log lines only reach the notification pill through the bridge handler.
+
+    boot...
+    """
     import inspect
+
     import gui.solara_app as app
 
     assert "install_task_log_handler()" in inspect.getsource(app)
 
 
 def test_page_mounts_notification_provider_before_the_map_app():
-    """The pysepal NotificationProvider is the only notification UI (the custom
-    LogConsole is gone). It must mount before the MapApp element so the bus
-    exists when the workflow tiles first render — a tile whose
-    use_notifications() resolves a NoopNotifier would silently drop its task
-    tracking."""
+    """The pysepal NotificationProvider is the only notification UI (the custom.
+
+    LogConso...
+
+    It must mount before the MapApp element so the bus exists when the workflow
+    tiles first render — a tile whose use_notifications() resolves a NoopNotifier
+    would silently drop its task tracking.
+    """
     import inspect
+
     import gui.solara_app as app
 
     src = inspect.getsource(app.Page)
@@ -142,10 +177,14 @@ def test_page_mounts_notification_provider_before_the_map_app():
 
 
 def test_page_wires_locale_state_to_locale_select():
-    """Live language switching is pure wiring — nothing else asserts on it, so
-    dropping the bind or the effect would leave the suite green and the feature
-    dead. Guard both halves of the handshake."""
+    """Live language switching is pure wiring.
+
+    nothing else asserts on it, so dropping...
+
+    Guard both halves of the handshake.
+    """
     import inspect
+
     import gui.solara_app as app
 
     src = inspect.getsource(app.Page)
@@ -156,9 +195,12 @@ def test_page_wires_locale_state_to_locale_select():
 
 
 def test_notification_compute_is_registry_driven():
-    """No more hand-maintained `if tab == N` ladder — the step key comes from
-    the STEPS registry, so reordering steps can't desync notifications."""
+    """No more hand-maintained `if tab == N` ladder.
+
+    the step key comes from the STEPS...
+    """
     import inspect
+
     from gui.widget import notification_area
 
     src = inspect.getsource(notification_area._compute)
@@ -167,3 +209,34 @@ def test_notification_compute_is_registry_driven():
     # Count/"run X first" messages moved into the pipeline header.
     assert "dataset_count" not in src
     assert "train_no_dataset" not in src
+
+
+def test_toolbox_is_a_third_left_rail_entry():
+    """The Toolbox sits beside Project and Project Summary in the left rail."""
+    import inspect
+
+    from gui.solara_app import Page
+
+    src = inspect.getsource(Page.f)
+    assert "ToolboxTile" in src
+    assert "mdi-toolbox-outline" in src
+    assert "app.step_tools" in src
+
+
+def test_toolbox_is_not_a_workflow_step():
+    """The Toolbox is not a workflow step: STEPS and its numbering are untouched."""
+    from gui.store.workflow_steps import STEPS
+
+    assert len(STEPS) == 9
+    assert all(s.key != "toolbox" for s in STEPS)
+
+
+def test_page_resets_allocation_jobs_and_density_on_load():
+    """Switching projects clears in-flight allocations and their map layers."""
+    import inspect
+
+    from gui.solara_app import Page
+
+    src = inspect.getsource(Page.f)
+    assert "allocation_jobs.set([])" in src
+    assert "density_on_map.set(set())" in src

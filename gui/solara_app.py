@@ -55,6 +55,7 @@ from gui.tile.postprocess_tile import PostProcessTile
 from gui.tile.process_tile import ProcessTile
 from gui.tile.sampling_tile import SamplingTile, samples_on_map, sampling_jobs
 from gui.tile.summary_tile import ProjectSummaryTile
+from gui.tile.toolbox_tile import ToolboxTile, allocation_jobs, density_on_map
 from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
@@ -81,6 +82,28 @@ def on_kernel_start():
     reset_translator()  # drop the cached translator; Page rebuilds it from the
     # session LocaleState (the browser resolves the locale, not the config file)
     return setup_sessions()
+
+
+def _loopback_bridge_widget():
+    """Return the jupyter-loopback CommBridge singleton (or None).
+
+    Layer helpers (localtileserver, pmtiles_map) enable the bridge lazily from
+    worker threads, but under voila a ``display()`` outside the initial cell
+    execution never reaches the browser — the widget must be mounted in the
+    app's own widget tree so its JS half installs the tile-URL interceptors
+    before any local tile layer renders.
+    """
+    try:
+        import jupyter_loopback
+
+        return jupyter_loopback.enable_comm_bridge(display=False)
+    except Exception:  # pragma: no cover - anywidget missing / exotic runtime
+        logging.getLogger(__name__).warning(
+            "jupyter-loopback comm bridge unavailable; local tile layers "
+            "may not render under voila",
+            exc_info=True,
+        )
+        return None
 
 
 @solara.component
@@ -717,6 +740,7 @@ def Page():
         derived_on_map.set(set())
         samples_on_map.set(set())
         preds_on_map.set(set())
+        density_on_map.set(set())
         show_aoi_on_map(sepal_map, app_state.aoi_result.value)
 
     solara.use_effect(render_map_on_switch, [project_loaded_signal])
@@ -729,6 +753,7 @@ def Page():
         inference_jobs.set([])
         eval_jobs.set([])
         sampling_jobs.set([])
+        allocation_jobs.set([])
 
     solara.use_effect(reset_jobs_on_load, [project_loaded_signal])
 
@@ -887,6 +912,18 @@ def Page():
             ),
             "width": 760,
         },
+        {
+            "id": 3,
+            "name": t("app.step_tools"),
+            "icon": "mdi-toolbox-outline",
+            "display": "dialog",
+            "content": ToolboxTile(
+                project=app_state.project,
+                map_=sepal_map,
+                sepal_client=sepal_client,
+            ),
+            "width": 780,
+        },
     ]
 
     # Right panel: workflow tabs
@@ -920,6 +957,13 @@ def Page():
     app_title = compute_app_title(
         app_state.project.value, app_state.project_dirty.value
     )
+
+    # jupyter-loopback comm bridge, mounted in the page from the first render
+    # so tile-URL interception is live before any local tile layer is added
+    # (see _loopback_bridge_widget for why lazy display() is not enough).
+    loopback_bridge = solara.use_memo(_loopback_bridge_widget, [])
+    if loopback_bridge is not None:
+        solara.display(loopback_bridge)
 
     # Kernel-scoped notification bus + UI (toasts top-right, task pill
     # bottom-right). Mounted BEFORE the MapApp element so the bus exists by the
