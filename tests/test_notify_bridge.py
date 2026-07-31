@@ -290,3 +290,58 @@ def test_nested_tracked_jobs_restore_the_outer_tracker():
         logger.info("outer line")
     assert _milestones(bus, "Inner") == ["inner line"]
     assert _milestones(bus, "Outer") == ["outer line"]
+
+
+def test_error_format_localizes_the_failure_toast_and_task():
+    """A formatter turns the raw exception into the user-facing message."""
+    _logger, bus, notifier = _fresh()
+    with pytest.raises(ValueError, match="boom"):
+        with notify_bridge.tracked_job(
+            notifier,
+            "Harmonizing variables",
+            error_format=lambda exc: f"Harmonization failed: {exc}",
+        ):
+            raise ValueError("boom")
+
+    task = next(t for t in bus.tasks.value if t.title == "Harmonizing variables")
+    assert task.status == TaskStatus.FAILED
+    assert task.error_message == "Harmonization failed: boom"
+    errors = [t for t in bus.toasts.value if t.type == ToastType.ERROR]
+    assert [t.message for t in errors] == ["Harmonization failed: boom"]
+    assert errors[0].effective_timeout() == notify_bridge.ERROR_TOAST_TIMEOUT
+
+
+def test_failure_publishes_exactly_one_error_toast():
+    """Pysepal's own __exit__ toast must not fire on top of ours.
+
+    bus.add_toast keeps only the newest ERROR toast, so the bus cannot show a
+    duplicate — count the publications at the notifier instead.
+    """
+    _logger, _bus, notifier = _fresh()
+    published = []
+    original = notifier.error
+
+    def spy(message, *, timeout=None):
+        published.append((message, timeout))
+        return original(message, timeout=timeout)
+
+    notifier.error = spy
+    with pytest.raises(RuntimeError):
+        with notify_bridge.tracked_job(notifier, "One toast only"):
+            raise RuntimeError("kaboom")
+
+    assert published == [("kaboom", notify_bridge.ERROR_TOAST_TIMEOUT)]
+
+
+def test_cancellation_is_not_reported_as_a_failure():
+    """A cancelled job stays CANCELLED and raises no error toast."""
+    import asyncio
+
+    _logger, bus, notifier = _fresh()
+    with pytest.raises(asyncio.CancelledError):
+        with notify_bridge.tracked_job(notifier, "Cancelled job"):
+            raise asyncio.CancelledError()
+
+    task = next(t for t in bus.tasks.value if t.title == "Cancelled job")
+    assert task.status == TaskStatus.CANCELLED
+    assert [t for t in bus.toasts.value if t.type == ToastType.ERROR] == []

@@ -18,11 +18,20 @@ cannot publish reactives to the browser — run those job bodies via
 ``solara_threads.to_thread_in_context`` so the tracker's bus updates land.
 """
 
+import asyncio
 import logging
 import threading
 from contextlib import contextmanager
 
 _LOGGER_NAME = "spatial_risk"
+
+ERROR_TOAST_TIMEOUT = 10.0
+"""Seconds an error toast stays on screen. Successes keep pysepal's 3 s default.
+
+Failures deserve a longer read than confirmations, but nothing is sticky: a
+tracked job's failure also lands in the notification log, which outlives the
+toast.
+"""
 
 # thread ident -> TaskTracker of the tracked job running on that thread.
 _trackers = {}
@@ -130,7 +139,7 @@ def layer_progress_reporter(task, format_title=None, format_detail=None):
 
 
 @contextmanager
-def tracked_job(notifier, title: str, total_steps=None):
+def tracked_job(notifier, title: str, total_steps=None, error_format=None):
     """Track a job as a pysepal notification task, echoing its log milestones.
 
     Must be entered on the thread that runs the job body — the log→milestone
@@ -138,6 +147,13 @@ def tracked_job(notifier, title: str, total_steps=None):
     tracker on exit. Yields the ``TaskTracker`` for explicit ``step()`` /
     ``set_progress()`` calls where log lines aren't enough. ``notifier=None``
     falls back to a no-op tracker so workers stay callable from plain tests.
+
+    ``error_format`` (``Callable[[Exception], str]``) turns a failure into the
+    user-facing message; without it the raw ``str(exc)`` is used. On failure the
+    task is marked FAILED with that message *before* the toast is published:
+    pysepal's ``_TaskTrackerContextManager.__exit__`` only raises its own
+    bare-exception toast while the task is not already FAILED, so failing first
+    is what keeps this to exactly one toast.
     """
     if notifier is None:
         from pysepal.solara.notifications.notifier import NoopNotifier
@@ -150,6 +166,13 @@ def tracked_job(notifier, title: str, total_steps=None):
         _trackers[tid] = task
         try:
             yield task
+        except asyncio.CancelledError:
+            raise  # pysepal's __exit__ marks the task CANCELLED; not a failure
+        except Exception as exc:
+            message = error_format(exc) if error_format is not None else str(exc)
+            task.fail(message)
+            notifier.error(message, timeout=ERROR_TOAST_TIMEOUT)
+            raise
         finally:
             if previous is not None:
                 _trackers[tid] = previous
