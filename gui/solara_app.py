@@ -615,7 +615,6 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
         with rv.TabItem():
             VariablesTile(
                 project=app_state.project,
-                process_error=app_state.process_error,
                 map_=map_,
                 sepal_client=sepal_client,
             )

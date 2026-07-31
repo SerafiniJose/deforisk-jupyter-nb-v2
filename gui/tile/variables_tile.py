@@ -10,7 +10,11 @@ from pysepal.solara.notifications import use_notifications
 from gui.i18n import t
 from gui.scripts import process_actions
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
-from gui.scripts.notify_bridge import layer_progress_reporter, tracked_job
+from gui.scripts.notify_bridge import (
+    ERROR_TOAST_TIMEOUT,
+    layer_progress_reporter,
+    tracked_job,
+)
 from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
 from gui.scripts.variable_map import add_raster_var_on_map
 from gui.store.project_writers import writing
@@ -281,12 +285,11 @@ def _drop_from_map(key: str, map_):
 
 
 @solara.component
-def VariablesTile(project, process_error, map_=None, sepal_client=None):
+def VariablesTile(project, map_=None, sepal_client=None):
     """Variables step: add, inspect, and process variables.
 
     Args:
         project: Reactive holding the current Project (or None).
-        process_error: Reactive str | None — error from last processing action.
         map_: SepalMap instance used by the per-variable "show on map" toggle.
         sepal_client: SEPAL client passed through to the Add Variable modal.
     """
@@ -309,7 +312,6 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             return
         key = pending_download.value
         keys = [key] if key is not None else None
-        process_error.set(None)
         var = p.raw_variables.get(key) if key is not None else None
         title = (
             t("notifications.task_download_one", name=getattr(var, "name", key))
@@ -324,7 +326,11 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             # Entered on the pool thread so the per-layer log lines feed this
             # tracker; to_thread_in_context supplies the kernel context the
             # tracker's bus updates need to reach the browser.
-            with tracked_job(notifications, title) as task:
+            with tracked_job(
+                notifications,
+                title,
+                error_format=lambda exc: t("tiles.variables.error_download", exc=exc),
+            ) as task:
                 on_progress = layer_progress_reporter(
                     task,
                     format_title=lambda k, i, n: t(
@@ -346,9 +352,8 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         with writing(p.project_name):
             try:
                 await to_thread_in_context(_tracked_download)
-            except Exception as exc:
+            except Exception:
                 logger.exception("download failed")
-                process_error.set(t("tiles.variables.error_download", exc=exc))
             publish_if_current(project, p)
 
     def on_download(key=None):
@@ -404,7 +409,10 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             vars_on_map.set(set(vars_on_map.value) | {key})
         except Exception as exc:
             logger.exception("map toggle failed for %s", key)
-            process_error.set(t("tiles.variables.error_toggle_map", key=key, exc=exc))
+            notifications.error(
+                t("tiles.variables.error_toggle_map", key=key, exc=exc),
+                timeout=ERROR_TOAST_TIMEOUT,
+            )
 
     def on_toggle_map(key: str):
         """Trigger the async toggle task for one source variable."""
@@ -419,7 +427,10 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         p = project.value
         if p is None:
             logger.warning("on_add: project is None")
-            process_error.set(t("tiles.variables.error_no_project"))
+            notifications.error(
+                t("tiles.variables.error_no_project"),
+                timeout=ERROR_TOAST_TIMEOUT,
+            )
             return
         try:
             var = _build_variable(entry, p)
@@ -431,8 +442,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             if old is not None:
                 if p.base_raster is not None and p.base_raster.name == old.name:
                     p.base_raster = None
-                    process_error.set(
-                        t("tiles.variables.error_base_raster_reset", name=old.name)
+                    notifications.error(
+                        t("tiles.variables.error_base_raster_reset", name=old.name),
+                        timeout=ERROR_TOAST_TIMEOUT,
                     )
                 _drop_from_map(key, map_)
             p.raw_variables[key] = var
@@ -444,14 +456,20 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             project.set(p.model_copy())
         except Exception as exc:
             logger.exception("on_add failed")
-            process_error.set(t("tiles.variables.error_add_variable", exc=exc))
+            notifications.error(
+                t("tiles.variables.error_add_variable", exc=exc),
+                timeout=ERROR_TOAST_TIMEOUT,
+            )
 
     def on_add(entry: dict):
         logger.debug("on_add called: %s", entry)
         p = project.value
         if p is None:
             logger.warning("on_add: project is None")
-            process_error.set(t("tiles.variables.error_no_project"))
+            notifications.error(
+                t("tiles.variables.error_no_project"),
+                timeout=ERROR_TOAST_TIMEOUT,
+            )
             return
         # Duplicate key (e.g. re-adding a predefined variable that was already
         # downloaded): confirm before silently clobbering it.
@@ -472,8 +490,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             old_var = p.raw_variables.pop(old_key, None)
             if old_var and p.base_raster and p.base_raster.name == old_var.name:
                 p.base_raster = None
-                process_error.set(
-                    t("tiles.variables.error_base_raster_reset", name=old_var.name)
+                notifications.error(
+                    t("tiles.variables.error_base_raster_reset", name=old_var.name),
+                    timeout=ERROR_TOAST_TIMEOUT,
                 )
             # The key may change on edit — drop the stale layer so it doesn't linger.
             _drop_from_map(old_key, map_)
@@ -484,7 +503,10 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
             project.set(p.model_copy())
         except Exception as exc:
             logger.exception("on_save failed")
-            process_error.set(t("tiles.variables.error_save_variable", exc=exc))
+            notifications.error(
+                t("tiles.variables.error_save_variable", exc=exc),
+                timeout=ERROR_TOAST_TIMEOUT,
+            )
 
     pending_remove, set_pending_remove = solara.use_state(None)
 
@@ -495,8 +517,9 @@ def VariablesTile(project, process_error, map_=None, sepal_client=None):
         removed = p.raw_variables.pop(key, None)
         if removed and p.base_raster and p.base_raster.name == removed.name:
             p.base_raster = None
-            process_error.set(
-                t("tiles.variables.error_base_raster_removed", name=removed.name)
+            notifications.error(
+                t("tiles.variables.error_base_raster_removed", name=removed.name),
+                timeout=ERROR_TOAST_TIMEOUT,
             )
         _drop_from_map(key, map_)
         project.set(p.model_copy())
