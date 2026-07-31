@@ -51,6 +51,7 @@
       "error_download_first": "Download the layer in the Variables step before auto-computing UTM.",
       "error_auto_utm": "Auto-UTM failed: {exc}",
       "error_set_base": "Could not set reference raster: {exc}",
+      "error_processing": "Harmonization failed: {exc}",
       "confirm_remove_title": "Remove harmonized variable?",
       "confirm_remove_message": "'{name}' will be removed from the project. The raster file stays on disk and re-running harmonization will register it again — but any dataset, sample or model that uses it will need to be rebuilt."
     },

@@ -9,7 +9,7 @@ from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
 from gui.scripts import process_actions
-from gui.scripts.notify_bridge import tracked_job
+from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT, tracked_job
 from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
 from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
@@ -119,7 +119,7 @@ def BaseProjectionForm(
 
 
 @solara.component
-def ProcessTile(project, processing, process_error, map_=None):
+def ProcessTile(project, processing, map_=None):
     """Base/projection → run harmonization (downloading lives in Step 2 — Variables)."""
     base_key, set_base_key = solara.use_state("")
     epsg, set_epsg = solara.use_state("")
@@ -200,11 +200,16 @@ def ProcessTile(project, processing, process_error, map_=None):
             base = p.raw_variables[base_key]
             path = getattr(base, "path", None)
             if path is None:
-                process_error.set(t("tiles.process.error_download_first"))
+                notifications.error(
+                    t("tiles.process.error_download_first"),
+                    timeout=ERROR_TOAST_TIMEOUT,
+                )
                 return
             set_epsg(process_actions.auto_utm_epsg(path))
         except Exception as exc:
-            process_error.set(t("tiles.process.error_auto_utm", exc=exc))
+            notifications.error(
+                t("tiles.process.error_auto_utm", exc=exc), timeout=ERROR_TOAST_TIMEOUT
+            )
 
     def on_set_base():
         if p is None:
@@ -214,14 +219,15 @@ def ProcessTile(project, processing, process_error, map_=None):
             process_actions.set_base_raster(p, base_key, epsg.strip(), res)
             project.set(p.model_copy())
         except Exception as exc:
-            process_error.set(t("tiles.process.error_set_base", exc=exc))
+            notifications.error(
+                t("tiles.process.error_set_base", exc=exc), timeout=ERROR_TOAST_TIMEOUT
+            )
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)
     async def process_task():
         if p is None:
             return
         processing.set(True)
-        process_error.set(None)
         title = t("notifications.task_processing")
 
         def _tracked_run():
@@ -229,14 +235,18 @@ def ProcessTile(project, processing, process_error, map_=None):
             # per-stage log lines (download/reproject/rasterize) land on THIS
             # job's tracker; to_thread_in_context gives that thread the kernel
             # context its bus updates need to reach the browser.
-            with tracked_job(notifications, title):
+            with tracked_job(
+                notifications,
+                title,
+                error_format=lambda exc: t("tiles.process.error_processing", exc=exc),
+            ):
                 process_actions.run_processing(p)
 
         with writing(p.project_name):
             try:
                 await to_thread_in_context(_tracked_run)
-            except Exception as exc:
-                process_error.set(str(exc))
+            except Exception:
+                logger.exception("processing failed")  # toast raised by tracked_job
             finally:
                 processing.set(False)
             publish_if_current(project, p)

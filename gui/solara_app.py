@@ -622,7 +622,6 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
             ProcessTile(
                 project=app_state.project,
                 processing=app_state.processing,
-                process_error=app_state.process_error,
                 map_=map_,
             )
         with rv.TabItem():

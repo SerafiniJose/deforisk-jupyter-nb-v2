@@ -1,0 +1,39 @@
+"""Harmonization reports through toasts; its job failure gets a localized key.
+
+Before this change the harmonization catch stored a raw str(exc) with no i18n
+key at all — the only failure path in the tile that was never translated.
+"""
+
+import inspect
+
+from gui.i18n import t
+from gui.tile.process_tile import ProcessTile
+
+
+def test_process_tile_has_no_process_error_parameter():
+    """ProcessTile signature no longer accepts a process_error parameter."""
+    sig = inspect.signature(ProcessTile.f)
+    assert "process_error" not in sig.parameters
+
+
+def test_process_tile_toasts_every_failure_path():
+    """All failure paths in ProcessTile use notifications.error, not process_error."""
+    src = inspect.getsource(ProcessTile.f)
+    assert "process_error" not in src
+    assert (
+        'error_format=lambda exc: t("tiles.process.error_processing", exc=exc)' in src
+    )
+    assert src.count("notifications.error(") == src.count("ERROR_TOAST_TIMEOUT")
+    for key in (
+        "tiles.process.error_download_first",
+        "tiles.process.error_auto_utm",
+        "tiles.process.error_set_base",
+    ):
+        assert key in src
+
+
+def test_processing_error_key_resolves_and_interpolates():
+    """The new i18n key exists and interpolates the exception text."""
+    rendered = t("tiles.process.error_processing", exc="no CRS on source")
+    assert "tiles.process.error_processing" != rendered  # key actually exists
+    assert "no CRS on source" in rendered

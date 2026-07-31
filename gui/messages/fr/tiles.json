@@ -51,6 +51,7 @@
       "error_download_first": "Téléchargez la couche à l'étape Variables avant de calculer automatiquement l'UTM.",
       "error_auto_utm": "Échec de l'UTM automatique : {exc}",
       "error_set_base": "Impossible de définir le raster de référence : {exc}",
+      "error_processing": "Échec de l'harmonisation : {exc}",
       "confirm_remove_title": "Retirer la variable harmonisée ?",
       "confirm_remove_message": "'{name}' sera retirée du projet. Le fichier raster reste sur le disque et relancer l'harmonisation l'enregistrera de nouveau — mais tout jeu de données, échantillon ou modèle qui l'utilise devra être reconstruit."
     },

@@ -51,6 +51,7 @@
       "error_download_first": "Descargá la capa en el paso Variables antes de calcular UTM automáticamente.",
       "error_auto_utm": "Auto-UTM falló: {exc}",
       "error_set_base": "No se pudo configurar el ráster de referencia: {exc}",
+      "error_processing": "La armonización falló: {exc}",
       "confirm_remove_title": "¿Eliminar la variable armonizada?",
       "confirm_remove_message": "«{name}» se eliminará del proyecto. El archivo ráster permanece en el disco y volver a ejecutar la armonización lo registrará de nuevo, pero cualquier conjunto de datos, muestra o modelo que lo utilice deberá reconstruirse."
     },
