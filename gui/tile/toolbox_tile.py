@@ -29,12 +29,14 @@ logger = logging.getLogger("spatial_risk")
 
 #: The toolbox's tool list (the dialog's icon rail). One entry per tool; the
 #: panel itself is selected on ``key`` in the component body.
+#: ``icon`` must exist in the MDI font jupyter-vuetify bundles (~4.9):
+#: mdi-earth-remove is a 5.x glyph and rendered as an empty button.
 _TOOLS = [
     {
         "key": "allocation",
         "label_key": "toolbox.tool_allocation",
         "description_key": "toolbox.allocation.description",
-        "icon": "mdi-earth-remove",
+        "icon": "mdi-earth-off",
     }
 ]
 

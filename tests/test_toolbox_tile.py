@@ -144,9 +144,23 @@ def _rail_button(box):
 
     for btn in _find(box, vw.Btn):
         icons = [str(i.children[0]) for i in _find(btn, vw.Icon) if i.children]
-        if "mdi-earth-remove" in icons:
+        if toolbox_tile._TOOLS[0]["icon"] in icons:
             return btn
     return None
+
+
+def test_rail_icon_exists_in_the_bundled_mdi_font():
+    """jupyter-vuetify ships MDI ~4.9; a 5.x glyph renders as an empty button.
+
+    mdi-earth-remove did exactly that (2026-07-30), so the registry is pinned
+    to glyphs known to exist in the 4.x font.
+    """
+    known_4x = {"mdi-earth", "mdi-earth-off", "mdi-pine-tree", "mdi-tree", "mdi-axe"}
+    for tool in toolbox_tile._TOOLS:
+        assert tool["icon"] in known_4x, (
+            f"{tool['icon']} is not on the known-4.x allowlist; verify it exists "
+            "in the bundled MDI font before using it (see this test's docstring)"
+        )
 
 
 def test_rail_is_icon_only_with_primary_selection():
