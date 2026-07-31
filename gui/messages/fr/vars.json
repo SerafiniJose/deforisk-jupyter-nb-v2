@@ -9,7 +9,9 @@
       "forest_gfc": "Couvert forestier (Hansen GFC)",
       "forest_tmf": "Couvert forestier (JRC TMF)",
       "towns": "Villes / zones urbaines (JRC GHSL)",
-      "subj": "Sous-juridiction (FAO GAUL)"
+      "subj": "Sous-juridiction (FAO GAUL)",
+      "precipitation": "Précipitations (ERA5-Land, annuelles)",
+      "temperature_2m": "Température 2 m (ERA5-Land)"
     },
     "predefined_info": {
       "altitude": "Altitude (m) issue du modèle numérique de terrain [NASA SRTM 30 m](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003), découpée sur votre zone d'intérêt. Continue.",
@@ -20,7 +22,9 @@
       "forest_gfc": "Masque forêt/non-forêt (1 = forêt) pour l'année choisie, dérivé de [Hansen Global Forest Change](https://developers.google.com/earth-engine/datasets/catalog/UMD_hansen_global_forest_change_2024_v1_12) : les pixels au-dessus du seuil de couvert arboré en 2000 moins la perte jusqu'à cette année. Temporel.",
       "forest_tmf": "Masque forêt/non-forêt (1 = forêt) pour l'année choisie, issu du produit de changements annuels [JRC Tropical Moist Forest](https://developers.google.com/earth-engine/datasets/catalog/projects_JRC_TMF_v1_2024_AnnualChanges) (la forêt non perturbée reste de la forêt). Temporel.",
       "towns": "Masque binaire des zones urbaines (1 = bâti + peuplé) pour l'époque la plus proche, issu des couches de population et de surface bâtie [JRC GHSL](https://developers.google.com/earth-engine/datasets/catalog/JRC_GHSL_P2023A_GHS_BUILT_S). Temporel (époques de 5 ans).",
-      "subj": "Raster catégoriel des sous-juridictions administratives de niveau 2 issu de [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), chaque zone recevant une valeur distincte. Utilisé pour la stratification de type JNR."
+      "subj": "Raster catégoriel des sous-juridictions administratives de niveau 2 issu de [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), chaque zone recevant une valeur distincte. Utilisé pour la stratification de type JNR.",
+      "precipitation": "Précipitations totales annuelles (mm/an) de l'année choisie, en sommant les 12 totaux mensuels d'[ERA5-Land Monthly Aggregates](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_MONTHLY_AGGR) (~11 km). Continue. Temporelle.",
+      "temperature_2m": "Température de l'air à 2 m (°C) de l'année choisie, en combinant les 12 moyennes mensuelles d'[ERA5-Land Monthly Aggregates](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_MONTHLY_AGGR) avec la métrique d'agrégation choisie (~11 km). Continue. Temporelle."
     },
     "modal": {
       "title_add": "Ajouter une variable",
@@ -40,6 +44,12 @@
       "predefined_raster_type_label": "Type de raster",
       "param_tree_cover_threshold": "Seuil de couvert arboré (%)",
       "param_tree_cover_threshold_hint": "Couvert de canopée minimal en 2000 compté comme forêt (1-100). Il fait partie du nom de la variable, plusieurs seuils peuvent donc coexister.",
+      "param_aggregation": "Métrique d'agrégation",
+      "param_aggregation_hint": "Comment les 12 valeurs mensuelles sont combinées en la valeur annuelle. Elle fait partie du nom de la variable, donc plusieurs métriques peuvent coexister.",
+      "agg_mean": "Moyenne",
+      "agg_max": "Maximum",
+      "agg_min": "Minimum",
+      "agg_median": "Médiane",
       "custom_name_label": "Nom",
       "custom_type_label": "Type de variable",
       "custom_type_hint": "Fichier raster local = GeoTIFF sur le disque ; Asset Google Earth Engine = asset GEE ; Fichier vectoriel local = fichier vectoriel, rastérisé pendant l'harmonisation.",
@@ -57,6 +67,7 @@
       "error_no_predefined_selected": "Sélectionnez une variable dans la liste.",
       "error_year_required": "L'année est requise pour cette variable.",
       "error_param_range": "{label} doit être un nombre entier compris entre {min} et {max}.",
+      "error_param_choice": "{label} doit être l'une de : {options}.",
       "error_name_required": "Le nom de la variable est requis."
     }
   }

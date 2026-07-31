@@ -9,7 +9,9 @@
       "forest_gfc": "Forest cover (Hansen GFC)",
       "forest_tmf": "Forest cover (JRC TMF)",
       "towns": "Towns / urban areas (JRC GHSL)",
-      "subj": "Subjurisdiction (FAO GAUL)"
+      "subj": "Subjurisdiction (FAO GAUL)",
+      "precipitation": "Precipitation (ERA5-Land, annual)",
+      "temperature_2m": "Temperature 2 m (ERA5-Land)"
     },
     "predefined_info": {
       "altitude": "Elevation (m) from the [NASA SRTM 30 m](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003) digital elevation model, clipped to your AOI. Continuous.",
@@ -20,7 +22,9 @@
       "forest_gfc": "Forest/non-forest mask (1 = forest) for the chosen year, derived from [Hansen Global Forest Change](https://developers.google.com/earth-engine/datasets/catalog/UMD_hansen_global_forest_change_2024_v1_12): pixels above the tree-cover threshold in 2000 minus loss up to that year. Temporal.",
       "forest_tmf": "Forest/non-forest mask (1 = forest) for the chosen year from the [JRC Tropical Moist Forest](https://developers.google.com/earth-engine/datasets/catalog/projects_JRC_TMF_v1_2024_AnnualChanges) annual-change product (undisturbed forest kept as forest). Temporal.",
       "towns": "Binary urban-area mask (1 = built-up + populated) for the nearest epoch, from [JRC GHSL](https://developers.google.com/earth-engine/datasets/catalog/JRC_GHSL_P2023A_GHS_BUILT_S) population and built-surface layers. Temporal (5-year epochs).",
-      "subj": "Categorical raster of level-2 administrative subjurisdictions from [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), each zone given a distinct value. Used for JNR-style stratification."
+      "subj": "Categorical raster of level-2 administrative subjurisdictions from [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), each zone given a distinct value. Used for JNR-style stratification.",
+      "precipitation": "Total annual precipitation (mm/year) for the chosen year, summing the 12 monthly totals of [ERA5-Land Monthly Aggregates](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_MONTHLY_AGGR) (~11 km). Continuous. Temporal.",
+      "temperature_2m": "Air temperature at 2 m (°C) for the chosen year, combining the 12 monthly means of [ERA5-Land Monthly Aggregates](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_MONTHLY_AGGR) with the chosen aggregation metric (~11 km). Continuous. Temporal."
     },
     "modal": {
       "title_add": "Add Variable",
@@ -40,6 +44,12 @@
       "predefined_raster_type_label": "Raster type",
       "param_tree_cover_threshold": "Tree cover threshold (%)",
       "param_tree_cover_threshold_hint": "Minimum canopy cover in 2000 counted as forest (1-100). It becomes part of the variable name, so several thresholds can coexist.",
+      "param_aggregation": "Aggregation metric",
+      "param_aggregation_hint": "How the 12 monthly values are combined into the yearly value. It becomes part of the variable name, so several metrics can coexist.",
+      "agg_mean": "Mean",
+      "agg_max": "Max",
+      "agg_min": "Min",
+      "agg_median": "Median",
       "custom_name_label": "Name",
       "custom_type_label": "Variable type",
       "custom_type_hint": "Local raster file = GeoTIFF on disk; Google Earth Engine asset = GEE asset; Local vector file = vector file, rasterized during harmonization.",
@@ -57,6 +67,7 @@
       "error_no_predefined_selected": "Select a variable from the list.",
       "error_year_required": "Year is required for this variable.",
       "error_param_range": "{label} must be a whole number between {min} and {max}.",
+      "error_param_choice": "{label} must be one of: {options}.",
       "error_name_required": "Variable name is required."
     }
   }
