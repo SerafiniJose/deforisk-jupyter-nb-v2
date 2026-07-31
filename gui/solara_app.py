@@ -20,6 +20,7 @@ from pysepal.solara import (
     setup_sessions,
     setup_solara_server,
     setup_theme_colors,
+    use_notifications,
     with_sepal_sessions,
 )
 from pysepal.solara.locale import resolve_locale_state
@@ -28,7 +29,7 @@ from solara.lab.components.theming import theme
 from gui.i18n import get_translator, reset_translator, set_app_locale, t
 from gui.scripts.aoi_io import load_aoi, persist_aoi
 from gui.scripts.map_helpers import clear_project_overlays, show_aoi_on_map
-from gui.scripts.notify_bridge import install_task_log_handler
+from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT, install_task_log_handler
 from gui.scripts.project_io import (
     delete_project,
     list_project_infos,
@@ -116,6 +117,7 @@ def ProjectPanel(on_close=None):
     p = app_state.project.value
     dirty = app_state.project_dirty.value
     last_saved = app_state.last_saved.value
+    notifications = use_notifications()
 
     # Dialog / transient UI state
     load_open, set_load_open = solara.use_state(False)
@@ -186,8 +188,7 @@ def ProjectPanel(on_close=None):
                 load_aoi(DATA_DIR / loaded.project_name, loaded.aoi)
             )
             app_state.load_project_state(loaded, when)
-            app_state.status_message.set(t("project.status_loaded", name=name))
-            app_state.error_message.set(None)
+            notifications.success(t("project.status_loaded", name=name))
             set_load_open(False)
             if on_close is not None:
                 on_close()
@@ -261,11 +262,7 @@ def ProjectPanel(on_close=None):
             if gone and live is not None and live.project_name == info.name:
                 app_state.close_project_state()
             if gone:
-                # After close_project_state, which deliberately leaves status
-                # alone (§3).
-                app_state.status_message.set(
-                    t("project.status_deleted", name=info.name)
-                )
+                notifications.success(t("project.status_deleted", name=info.name))
                 pending_delete.set(None)  # closes the confirm dialog; manage stays open
 
     def confirm_delete():
@@ -301,9 +298,7 @@ def ProjectPanel(on_close=None):
         # new_project_state bumps project_loaded_signal, so the shell's
         # on-switch effects clear the previous project's map overlays/tracking
         # and reset the (empty) Train/Inference job lists — no manual reset here.
-        app_state.status_message.set(
-            t("project.status_created", name=validation.cleaned)
-        )
+        notifications.success(t("project.status_created", name=validation.cleaned))
         set_new_open(False)
         # Dismiss the whole Project popup too, not just the inner New dialog, so
         # a freshly created project returns the user to the map (mirrors do_load).
@@ -322,7 +317,9 @@ def ProjectPanel(on_close=None):
         if delete_task.pending:
             return  # a delete is in flight; nothing else may be staged
         if p is None:
-            app_state.error_message.set(t("project.error_no_project_to_save"))
+            notifications.error(
+                t("project.error_no_project_to_save"), timeout=ERROR_TOAST_TIMEOUT
+            )
             return
         if overwrite_needed(p.project_name, last_saved, existing_names()):
             set_overwrite_open(True)
@@ -352,12 +349,9 @@ def ProjectPanel(on_close=None):
                 note = t("project.status_saved_note_no_vars")
             elif p.base_raster is None:
                 note = t("project.status_saved_note_no_base")
-            app_state.status_message.set(
-                t("project.status_saved", path=path, note=note)
-            )
-            app_state.error_message.set(None)
+            notifications.success(t("project.status_saved", path=path, note=note))
         except Exception as exc:
-            app_state.error_message.set(str(exc))
+            notifications.error(str(exc), timeout=ERROR_TOAST_TIMEOUT)
 
     # ---- Status block ---------------------------------------------------
     with solara.Column(style="gap: 8px; padding: 8px;"):
@@ -585,16 +579,6 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
     Step order/gating live in gui/store/workflow_steps.py.
     """
     active_tab, set_active_tab = solara.use_state(0)
-
-    # The global load/save status banner shows on whatever tab the user is on
-    # when they load/create/save, but it's stale once they move on. Clear it the
-    # moment they navigate to another step. Keyed on active_tab: the mount run is
-    # a harmless no-op (nothing set yet) and a load never changes active_tab, so
-    # the message survives until the user actually switches tabs.
-    def _clear_status_on_tab_switch():
-        app_state.status_message.set(None)
-
-    solara.use_effect(_clear_status_on_tab_switch, [active_tab])
 
     PipelineHeader(
         active_step=active_tab,
