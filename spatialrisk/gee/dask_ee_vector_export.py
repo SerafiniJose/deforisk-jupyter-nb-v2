@@ -3,9 +3,10 @@
 # --------------------------------------------------------------
 
 """
-Utility to export an Earth Engine geometry/FeatureCollection/Feature to a Shapefile using Dask for parallelism.
+Utility to export an Earth Engine geometry/FeatureCollection/Feature to a Shapefile.
 
-The helper keeps the following items as explicit function parameters:
+Dask is used for parallelism. The helper keeps the following items as
+explicit function parameters:
 
 * `client` - the :class:`dask.distributed.Client`
 * `ee_obj` - an ``ee.Geometry | ee.FeatureCollection | ee.Feature`` instance
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 import ee  # Earth Engine
 from dask.distributed import Client, Future
@@ -46,7 +47,8 @@ def export_vector_with_dask(
     Parameters
     ----------
     ee_fc : ee.FeatureCollection
-        The EE FeatureCollection you want to export.  Must be serialisable via ``serialize()``.
+        The EE FeatureCollection you want to export.  Must be serialisable
+        via ``serialize()``.
     filename : str
         Path where the exported Shapefile (or ZIP) should be written.
     overwrite : bool, optional
