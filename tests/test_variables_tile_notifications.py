@@ -17,13 +17,16 @@ def test_variables_tile_has_no_process_error_parameter():
 
 
 def test_variables_tile_toasts_every_failure_path():
-    """All failure paths in VariablesTile use notifications.error, not process_error."""
+    """All failure paths in VariablesTile toast, not process_error."""
     src = inspect.getsource(VariablesTile.f)
     assert "process_error" not in src, "no reactive writes may survive"
     # Download is a tracked job: its message goes through tracked_job.
     assert "error_format=" in src
-    # Every direct toast passes the shared dwell constant.
-    assert src.count("notifications.error(") == src.count("ERROR_TOAST_TIMEOUT")
+    # Every direct toast (error or warning) passes the shared dwell constant.
+    direct_toasts = src.count("notifications.error(") + src.count(
+        "notifications.warning("
+    )
+    assert direct_toasts == src.count("ERROR_TOAST_TIMEOUT")
     for key in (
         "tiles.variables.error_download",
         "tiles.variables.error_toggle_map",
@@ -34,3 +37,36 @@ def test_variables_tile_toasts_every_failure_path():
         "tiles.variables.error_save_variable",
     ):
         assert key in src, f"{key} lost its call site"
+
+
+def test_base_raster_notices_use_the_warning_channel():
+    """Base-raster reset/removal report a side effect, not a failure.
+
+    pysepal's NotificationBus drops every existing ERROR toast when a new one
+    arrives, so these notices must not use notifications.error — that would
+    silently wipe a real error toast (and vice versa). They use the warning
+    channel instead, which dedups rather than clobbering.
+    """
+    src = inspect.getsource(VariablesTile.f)
+    for key in (
+        "tiles.variables.error_base_raster_reset",
+        "tiles.variables.error_base_raster_removed",
+    ):
+        # Find every call site of this key and check it hangs off
+        # notifications.warning(.
+        idx = 0
+        found = 0
+        while True:
+            idx = src.find(key, idx)
+            if idx == -1:
+                break
+            found += 1
+            call_start = src.rfind("notifications.", 0, idx)
+            assert src[call_start : call_start + len("notifications.warning(")] == (
+                "notifications.warning("
+            ), f"{key} call site is not on the warning channel"
+            idx += len(key)
+        assert found > 0, f"{key} lost its call site"
+    # Three sites total: two for reset (_do_add, on_save), one for removed (_do_remove).
+    assert src.count("tiles.variables.error_base_raster_reset") == 2
+    assert src.count("tiles.variables.error_base_raster_removed") == 1

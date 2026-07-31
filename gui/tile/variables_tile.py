@@ -353,7 +353,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
             try:
                 await to_thread_in_context(_tracked_download)
             except Exception:
-                logger.exception("download failed")
+                logger.exception("download failed")  # toast raised by tracked_job
             publish_if_current(project, p)
 
     def on_download(key=None):
@@ -442,7 +442,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
             if old is not None:
                 if p.base_raster is not None and p.base_raster.name == old.name:
                     p.base_raster = None
-                    notifications.error(
+                    notifications.warning(
                         t("tiles.variables.error_base_raster_reset", name=old.name),
                         timeout=ERROR_TOAST_TIMEOUT,
                     )
@@ -490,7 +490,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
             old_var = p.raw_variables.pop(old_key, None)
             if old_var and p.base_raster and p.base_raster.name == old_var.name:
                 p.base_raster = None
-                notifications.error(
+                notifications.warning(
                     t("tiles.variables.error_base_raster_reset", name=old_var.name),
                     timeout=ERROR_TOAST_TIMEOUT,
                 )
@@ -517,7 +517,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
         removed = p.raw_variables.pop(key, None)
         if removed and p.base_raster and p.base_raster.name == removed.name:
             p.base_raster = None
-            notifications.error(
+            notifications.warning(
                 t("tiles.variables.error_base_raster_removed", name=removed.name),
                 timeout=ERROR_TOAST_TIMEOUT,
             )

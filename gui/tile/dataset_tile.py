@@ -75,7 +75,9 @@ def DatasetTile(project):
             # Persist immediately so the dataset survives a reload without a
             # manual Save (matches add_sample/add_model/add_prediction).
             p.add_dataset(ds, key=key, auto_save=True)
-            logger.debug("Registered dataset '%s' with %d features", key, len(entry["features"]))
+            logger.debug(
+                "Registered dataset '%s' with %d features", key, len(entry["features"])
+            )
             set_editing_key(None)
             set_initial(None)
             project.set(p.model_copy())
@@ -104,7 +106,7 @@ def DatasetTile(project):
         )
 
         # Registration errors surface here (the dialog is closed by then —
-        # same pattern as the Variables tile's process_error).
+        # this tile's own `form_error` state set in on_submit above).
         if form_error:
             rv.Alert(type_="error", dense=True, children=[form_error])
 
@@ -115,7 +117,9 @@ def DatasetTile(project):
             on_cancel=lambda: set_pending_remove(None),
             on_confirm=lambda: (_do_remove(pending_remove), set_pending_remove(None)),
             title=t("tiles.dataset.confirm_remove_title"),
-            message=t("tiles.dataset.confirm_remove_message", name=pending_remove or ""),
+            message=t(
+                "tiles.dataset.confirm_remove_message", name=pending_remove or ""
+            ),
             confirm_label=t("common.remove"),
         )
 

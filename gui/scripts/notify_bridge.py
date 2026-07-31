@@ -169,7 +169,11 @@ def tracked_job(notifier, title: str, total_steps=None, error_format=None):
         except asyncio.CancelledError:
             raise  # pysepal's __exit__ marks the task CANCELLED; not a failure
         except Exception as exc:
-            message = error_format(exc) if error_format is not None else str(exc)
+            try:
+                message = error_format(exc) if error_format is not None else str(exc)
+            except Exception:  # a broken formatter must never mask the real failure
+                logging.getLogger(_LOGGER_NAME).exception("error_format failed")
+                message = str(exc)
             task.fail(message)
             notifier.error(message, timeout=ERROR_TOAST_TIMEOUT)
             raise

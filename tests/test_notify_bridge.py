@@ -311,6 +311,30 @@ def test_error_format_localizes_the_failure_toast_and_task():
     assert errors[0].effective_timeout() == notify_bridge.ERROR_TOAST_TIMEOUT
 
 
+def test_broken_error_format_does_not_mask_the_original_exception():
+    """A raising error_format must not replace the real failure.
+
+    The task still fails and toasts with str(exc) of the ORIGINAL exception,
+    and the ORIGINAL exception is what propagates — not the formatter's.
+    """
+    _logger, bus, notifier = _fresh()
+
+    def broken_formatter(exc):
+        raise RuntimeError("formatter is broken")
+
+    with pytest.raises(ValueError, match="^boom$"):
+        with notify_bridge.tracked_job(
+            notifier, "Fragile job", error_format=broken_formatter
+        ):
+            raise ValueError("boom")
+
+    task = next(t for t in bus.tasks.value if t.title == "Fragile job")
+    assert task.status == TaskStatus.FAILED
+    assert task.error_message == "boom"
+    errors = [t for t in bus.toasts.value if t.type == ToastType.ERROR]
+    assert [t.message for t in errors] == ["boom"]
+
+
 def test_failure_publishes_exactly_one_error_toast():
     """Pysepal's own __exit__ toast must not fire on top of ours.
 
