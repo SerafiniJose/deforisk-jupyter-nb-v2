@@ -194,23 +194,6 @@ def test_page_wires_locale_state_to_locale_select():
     assert "solara.use_effect(_bind_locale, [id(locale_state)])" in src
 
 
-def test_notification_compute_is_registry_driven():
-    """No more hand-maintained `if tab == N` ladder.
-
-    the step key comes from the STEPS...
-    """
-    import inspect
-
-    from gui.widget import notification_area
-
-    src = inspect.getsource(notification_area._compute)
-    assert "tab ==" not in src
-    assert "STEPS[" in src
-    # Count/"run X first" messages moved into the pipeline header.
-    assert "dataset_count" not in src
-    assert "train_no_dataset" not in src
-
-
 def test_toolbox_is_a_third_left_rail_entry():
     """The Toolbox sits beside Project and Project Summary in the left rail."""
     import inspect
@@ -240,3 +223,12 @@ def test_page_resets_allocation_jobs_and_density_on_load():
     src = inspect.getsource(Page.f)
     assert "allocation_jobs.set([])" in src
     assert "density_on_map.set(set())" in src
+
+
+def test_notification_area_is_gone():
+    """The home-grown message bar was replaced by pysepal notifications."""
+    import importlib.util
+
+    # find_spec returns None for a missing submodule of an existing package —
+    # no dependency on the test runner's working directory.
+    assert importlib.util.find_spec("gui.widget.notification_area") is None

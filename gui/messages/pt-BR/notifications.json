@@ -1,6 +1,5 @@
 {
   "notifications": {
-    "process_no_base_raster": "Defina um raster de referência na etapa Harmonização antes de executá-la.",
     "task_training": "Treinando o modelo '{name}'",
     "task_inference": "Predizendo: {model} em {dataset}",
     "task_import": "Importando a predição '{name}'",

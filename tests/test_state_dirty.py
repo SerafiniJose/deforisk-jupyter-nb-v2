@@ -48,13 +48,11 @@ def test_new_project_resets_context_and_marks_dirty():
     """new_project_state installs a dirty, unsaved project and resets context."""
     s = AppState()
     s.aoi_result.set("stale-aoi")
-    s.process_error.set("old-error")
     s.new_project_state(_P("fresh"))
     assert s.project.value.project_name == "fresh"
     assert s.project_dirty.value is True
     assert s.last_saved.value is None
     assert s.aoi_result.value is None
-    assert s.process_error.value is None
 
 
 def test_new_project_bumps_loaded_signal():
@@ -97,13 +95,11 @@ def test_close_project_state_returns_to_empty():
     assert s.project_loaded_signal.value == before + 1
 
 
-def test_close_project_state_leaves_status_message_for_the_caller():
-    """close_project_state does not clear status_message.
+def test_message_reactives_are_gone():
+    """Messages are pysepal toasts now — no app-level banner state survives.
 
-    close() is followed by "Project 'X' deleted." — clearing here would race it.
+    Any reappearance means a second, competing feedback channel is back.
     """
     s = AppState()
-    s.project.set(_P("GUY"))
-    s.status_message.set("Project 'GUY' deleted.")
-    s.close_project_state()
-    assert s.status_message.value == "Project 'GUY' deleted."
+    for gone in ("process_error", "status_message", "error_message"):
+        assert not hasattr(s, gone), f"{gone} must not come back"

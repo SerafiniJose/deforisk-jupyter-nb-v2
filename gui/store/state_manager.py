@@ -32,12 +32,9 @@ class AppState:
 
         # Variable processing
         self.processing = solara.reactive(False)
-        self.process_error = solara.reactive(None)
 
         # Global UI state
         self.loading = solara.reactive(False)
-        self.error_message = solara.reactive(None)
-        self.status_message = solara.reactive(None)
 
         # Mark the project dirty whenever its reference changes (tiles call
         # project.set(p.model_copy()) on every mutation). Suppressed during load
@@ -74,9 +71,6 @@ class AppState:
         self.project.set(project)  # subscription marks dirty=True
         self.last_saved.set(None)
         self.aoi_result.set(None)
-        self.process_error.set(None)
-        self.status_message.set(None)
-        self.error_message.set(None)
         # Bump the same signal a load does so the shell's on-switch effects run
         # (clear the previous project's map overlays + tracking, rebuild the
         # empty Train/Inference job lists). The signal means "a project was
@@ -91,15 +85,12 @@ class AppState:
         signal bump re-runs the shell's on-switch effects, so the map overlays,
         job lists and log console are torn down by the existing code.
 
-        Unlike ``new_project_state`` this deliberately leaves ``status_message``
-        alone: the caller sets "Project 'X' deleted." right after, and clearing it
-        here would race that.
+        Message state is not reset here: load/save/delete outcomes are pysepal
+        toasts, which expire on their own.
         """
         self.project.set(None)  # subscription sets dirty=False
         self.last_saved.set(None)
         self.aoi_result.set(None)
-        self.process_error.set(None)
-        self.error_message.set(None)
         self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
     @property

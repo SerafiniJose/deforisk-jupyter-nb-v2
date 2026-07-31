@@ -60,7 +60,6 @@ from gui.tile.toolbox_tile import ToolboxTile, allocation_jobs, density_on_map
 from gui.tile.train_tile import TrainTile, train_jobs
 from gui.tile.variables_tile import VariablesTile, vars_on_map
 from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProjectsDialog
-from gui.widget.notification_area import NotificationArea
 from gui.widget.pipeline_header import PipelineHeader
 from gui.widget.text_style import MUTED
 from spatialrisk.project import DATA_DIR, Project
@@ -626,14 +625,6 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
 
         with rv.TabItem():
             EvaluationTile(project=app_state.project)
-
-    NotificationArea(
-        active_tab=active_tab,
-        project=app_state.project,
-        process_error=app_state.process_error,
-        status_message=app_state.status_message,
-        error_message=app_state.error_message,
-    )
 
 
 @solara.component
