@@ -7,6 +7,8 @@ test_predefined_params.py.
 
 import types
 
+import pytest
+
 import gui.scripts.predefined_variables as pv
 from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
 
@@ -69,3 +71,52 @@ def test_precipitation_catalogue_entry():
     assert "min" not in cat["vis_params"] and "max" not in cat["vis_params"]
     assert cat["label_key"] == "vars.predefined.precipitation"
     assert cat["description_key"] == "vars.predefined_info.precipitation"
+
+
+@pytest.mark.parametrize("metric", ["mean", "max", "min", "median"])
+def test_temperature_uses_selected_reducer_in_celsius(monkeypatch, metric):
+    """The chosen metric drives the collection reducer; Kelvin -> Celsius."""
+    calls = _record_recipe(
+        monkeypatch, pv._get_temperature, "AOI", 2020, aggregation=metric
+    )
+
+    assert ("ImageCollection", ("ECMWF/ERA5_LAND/MONTHLY_AGGR",)) in calls
+    assert ("filterDate", ("2020-01-01", "2021-01-01")) in calls
+    assert ("select", ("temperature_2m",)) in calls
+    assert (metric, ()) in calls
+    other_metrics = {"mean", "max", "min", "median"} - {metric}
+    assert not other_metrics & {method for method, _ in calls}
+    assert ("subtract", (273.15,)) in calls  # applied AFTER the reducer
+    assert ("clip", ("AOI",)) in calls
+    assert ("rename", ("B1",)) in calls
+
+
+def test_temperature_defaults_to_median(monkeypatch):
+    """Omitting the kwarg must match the catalogue default (median)."""
+    calls = _record_recipe(monkeypatch, pv._get_temperature, "AOI", 2020)
+
+    assert ("median", ()) in calls
+
+
+def test_temperature_catalogue_entry():
+    """Continuous, temporal 2001-2025, ~11 km, one choice param."""
+    cat = PREDEFINED_CATALOGUE["temperature_2m"]
+
+    assert cat["var_type"] == "GEEVar"
+    assert cat["raster_type"] == "continuous"
+    assert cat["temporal"] is True
+    assert cat["years"] == list(range(2001, 2026))
+    assert cat["default_scale"] == 11132
+    assert cat["get_image"] is pv._get_temperature
+    assert cat["vis_params"]["palette"]
+    assert "min" not in cat["vis_params"] and "max" not in cat["vis_params"]
+
+    (spec,) = cat["params"]
+    assert spec["key"] == "aggregation"
+    assert spec["type"] == "choice"
+    assert spec["default"] == "median"
+    assert spec["options"] == ["mean", "max", "min", "median"]
+    assert spec["suffix_prefix"] == ""
+    assert spec["option_label_key_prefix"] == "vars.modal.agg_"
+    assert spec["label_key"] == "vars.modal.param_aggregation"
+    assert spec["hint_key"] == "vars.modal.param_aggregation_hint"

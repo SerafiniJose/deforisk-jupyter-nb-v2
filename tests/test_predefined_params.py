@@ -42,10 +42,11 @@ def test_get_image_default_matches_catalogue_default():
 
 
 def test_layers_without_params_report_empty():
-    """The other eight entries are unparameterised and must stay that way."""
+    """Unparameterised entries must stay that way."""
     assert param_specs("altitude") == []
     assert default_param_values("altitude") == {}
     assert param_specs("not_a_layer") == []
+    assert param_specs("precipitation") == []
 
 
 def test_default_param_values():
@@ -119,13 +120,20 @@ def test_suffix_values_can_never_reach_four_digits():
     """Guard: a four-digit suffix would be parsed as a year downstream.
 
     ``spatialrisk.evaluation.interval_from_target`` pulls years out of a name
-    with a four-consecutive-digits regex, so a param whose value could reach
-    four digits would corrupt derived change-layer intervals. Every declared
-    param's ``max`` must therefore stay below 1000.
+    with a four-consecutive-digits regex. Int params must keep ``max`` below
+    1000; choice params must have digit-free option strings.
     """
     for key in PREDEFINED_CATALOGUE:
         for spec in param_specs(key):
-            assert spec["max"] < 1000, f"{key}.{spec['key']} allows a 4-digit suffix"
+            if spec.get("type", "int") == "choice":
+                assert all(
+                    not any(ch.isdigit() for ch in str(option))
+                    for option in spec["options"]
+                ), f"{key}.{spec['key']} has a digit-bearing option"
+            else:
+                assert (
+                    spec["max"] < 1000
+                ), f"{key}.{spec['key']} allows a 4-digit suffix"
 
 
 def test_resolve_is_not_injective_over_non_canonical_suffixes():
@@ -198,3 +206,82 @@ def test_threshold_reaches_the_gee_expression(monkeypatch):
     pv._get_forest_gfc("AOI", 2020, tree_cover_threshold=45)
 
     assert ("gte", (45,)) in calls
+
+
+# ---------------------------------------------------------------------------
+# choice-type params (temperature_2m aggregation metric)
+# ---------------------------------------------------------------------------
+
+
+def test_temperature_get_image_default_matches_catalogue_default():
+    """Single source of truth: kwarg default == spec default (median)."""
+    import inspect
+
+    sig = inspect.signature(PREDEFINED_CATALOGUE["temperature_2m"]["get_image"])
+    (spec,) = param_specs("temperature_2m")
+    assert sig.parameters["aggregation"].default == spec["default"] == "median"
+
+
+def test_default_param_values_for_choice():
+    """Retrieve default param values for a choice-typed catalogue entry."""
+    assert default_param_values("temperature_2m") == {"aggregation": "median"}
+
+
+@pytest.mark.parametrize("metric", ["mean", "max", "min", "median"])
+def test_coerce_accepts_each_choice_option(metric):
+    """Choice values stay strings — no int coercion."""
+    values, bad = coerce_param_values("temperature_2m", {"aggregation": metric})
+
+    assert bad is None
+    assert values == {"aggregation": metric}
+    assert isinstance(values["aggregation"], str)
+
+
+@pytest.mark.parametrize("raw", ["", "  ", "banana", "30", None])
+def test_coerce_rejects_non_member_choice(raw):
+    """Blank, unknown, or numeric-looking text is rejected — not just int-shaped."""
+    values, bad = coerce_param_values("temperature_2m", {"aggregation": raw})
+
+    assert values == {}
+    assert bad is not None and bad["key"] == "aggregation"
+
+
+def test_coerce_reports_missing_choice():
+    """A choice param the form never filled in is an error, not a silent default."""
+    values, bad = coerce_param_values("temperature_2m", {})
+
+    assert values == {}
+    assert bad["key"] == "aggregation"
+
+
+def test_build_name_appends_bare_choice_suffix():
+    """suffix_prefix is empty -> the metric string is the whole suffix."""
+    assert (
+        build_predefined_name("temperature_2m", {"aggregation": "median"})
+        == "temperature_2m_median"
+    )
+
+
+@pytest.mark.parametrize("metric", ["mean", "max", "min", "median"])
+def test_choice_roundtrip_is_exact(metric):
+    """Build and resolve are exact inverses for every choice option."""
+    name = build_predefined_name("temperature_2m", {"aggregation": metric})
+    assert resolve_predefined(name) == ("temperature_2m", {"aggregation": metric})
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "temperature_2m_banana",  # unknown metric
+        "temperature_2m_median_2020",  # storage key, not a variable name
+        "temperature_2m_mean_max",  # too many segments
+    ],
+)
+def test_resolve_rejects_malformed_choice_names(name):
+    """Unknown metrics and storage/post-process shapes fall through, not crash."""
+    assert resolve_predefined(name) == (None, {})
+
+
+def test_resolve_bare_temperature_key():
+    """The bare key resolves with no params (same contract as forest_gfc)."""
+    assert resolve_predefined("temperature_2m") == ("temperature_2m", {})
