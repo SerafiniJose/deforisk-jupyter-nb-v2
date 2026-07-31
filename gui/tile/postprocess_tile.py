@@ -25,9 +25,9 @@ def PostProcessTile(project, process_error, map_=None):
     dialog_open = solara.use_reactive(False)
     pending_change = solara.use_reactive(None)
     pending_post = solara.use_reactive(None)
-    on_toggle_map = use_derived_map_toggle(project, map_, process_error)
-    pending_remove, set_pending_remove = solara.use_state(None)
     notifications = use_notifications()
+    on_toggle_map = use_derived_map_toggle(project, map_, notifications)
+    pending_remove, set_pending_remove = solara.use_state(None)
 
     p = project.value
 

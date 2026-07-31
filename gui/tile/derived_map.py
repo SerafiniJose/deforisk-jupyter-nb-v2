@@ -18,6 +18,7 @@ import solara
 
 from gui.i18n import t
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
+from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT
 from gui.scripts.variable_map import add_raster_var_on_map
 
 logger = logging.getLogger("spatial_risk")
@@ -42,14 +43,16 @@ def drop_derived_from_map(key: str, map_) -> None:
         derived_on_map.set(remaining)
 
 
-def use_derived_map_toggle(project, map_, process_error):
+def use_derived_map_toggle(project, map_, notifier):
     """Hook: an ``on_toggle_map(key)`` callback for processed variables.
 
     Returns None when there is no map (the caller then renders no toggle). The
     hooks below are called unconditionally, as reacton requires.
 
     Every layer-add is offloaded to a worker thread — the ``TileClient`` /
-    geopandas reads block, exactly like the source-variable toggle.
+    geopandas reads block, exactly like the source-variable toggle. ``notifier``
+    is passed in rather than resolved with ``use_notifications()`` so the hook
+    stays usable from tests with no NotificationProvider mounted.
     """
     pending_toggle = solara.use_reactive(None)
 
@@ -85,7 +88,10 @@ def use_derived_map_toggle(project, map_, process_error):
             derived_on_map.set(set(derived_on_map.value) | {key})
         except Exception as exc:
             logger.exception("map toggle failed for processed var %s", key)
-            process_error.set(t("tiles.variables.error_toggle_map", key=key, exc=exc))
+            notifier.error(
+                t("tiles.variables.error_toggle_map", key=key, exc=exc),
+                timeout=ERROR_TOAST_TIMEOUT,
+            )
 
     def on_toggle_map(key: str):
         pending_toggle.set(key)

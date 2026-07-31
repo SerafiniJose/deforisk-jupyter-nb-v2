@@ -124,9 +124,9 @@ def ProcessTile(project, processing, process_error, map_=None):
     base_key, set_base_key = solara.use_state("")
     epsg, set_epsg = solara.use_state("")
     resolution, set_resolution = solara.use_state("30")
-    on_toggle_map = use_derived_map_toggle(project, map_, process_error)
-    pending_remove, set_pending_remove = solara.use_state(None)
     notifications = use_notifications()
+    on_toggle_map = use_derived_map_toggle(project, map_, notifications)
+    pending_remove, set_pending_remove = solara.use_state(None)
 
     def _do_remove(key: str):
         """Unregister a harmonized output (the raster stays on disk)."""
