@@ -1,5 +1,4 @@
-"""Regression: the workflow NotificationArea must refresh when the project
-changes *without* a tab switch.
+"""Regression: NotificationArea refreshes on a project change without a tab switch.
 
 Same root cause as the Project Summary bug: NotificationArea was handed
 ``app_state.project.value`` (a plain Project). When only the project changes
@@ -18,12 +17,17 @@ def _raster(name):
     from spatialrisk.variables.local_raster_var import LocalRasterVar
 
     return LocalRasterVar.model_construct(
-        name=name, year=None, data_type="raster",
-        raster_type="continuous", path=None, project=None,
+        name=name,
+        year=None,
+        data_type="raster",
+        raster_type="continuous",
+        path=None,
+        project=None,
     )
 
 
 def test_notification_refreshes_on_project_change_same_tab(monkeypatch):
+    """A project-only change re-renders the bar; no tab switch needed."""
     import gui.widget.notification_area as na
     from spatialrisk.project import Project
 
@@ -41,12 +45,13 @@ def test_notification_refreshes_on_project_change_same_tab(monkeypatch):
     proj = Project(project_name="demo")
     proj.raw_variables["v"] = _raster("v")
     project = solara.reactive(proj, equals=lambda a, b: a is b)
-    empty = lambda: solara.reactive(None)
+
+    def empty():
+        return solara.reactive(None)
 
     box, rc = reacton.render(
         na.NotificationArea(
             active_tab=2,
-            aoi_result=empty(),
             project=project,
             process_error=empty(),
             status_message=empty(),
@@ -61,5 +66,7 @@ def test_notification_refreshes_on_project_change_same_tab(monkeypatch):
     p.base_raster = _raster("v")
     project.set(p.model_copy())
 
-    assert results[-1] is None, f"notification did not refresh on project change; results={results}"
+    assert (
+        results[-1] is None
+    ), f"notification did not refresh on project change; results={results}"
     rc.close()

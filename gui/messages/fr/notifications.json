@@ -1,6 +1,5 @@
 {
   "notifications": {
-    "aoi_selected": "Zone d'intérêt sélectionnée : {name}",
     "process_no_base_raster": "Définissez un raster de référence à l'étape Harmonisation avant de la lancer.",
     "task_training": "Entraînement du modèle '{name}'",
     "task_inference": "Prédiction : {model} sur {dataset}",

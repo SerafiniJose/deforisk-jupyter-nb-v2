@@ -1,6 +1,5 @@
 {
   "notifications": {
-    "aoi_selected": "AOI seleccionada: {name}",
     "process_no_base_raster": "Definí un ráster de referencia en el paso Armonización antes de ejecutarla.",
     "task_training": "Entrenando el modelo '{name}'",
     "task_inference": "Prediciendo: {model} sobre {dataset}",

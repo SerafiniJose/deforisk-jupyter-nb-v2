@@ -4,25 +4,23 @@ import reacton.ipyvuetify as rv
 import solara
 
 from gui.i18n import t
-
 from gui.store.workflow_steps import STEPS
 
 
-def _compute(tab, aoi_result, project, process_error, status_message, error_message):
+def _compute(tab, project, process_error, status_message, error_message):
     """Return (message, type_) for the current step, or None.
 
     Step identity comes from the STEPS registry (never a hardcoded index).
     Lock reasons and per-step output counts are NOT shown here anymore — the
-    pipeline header owns them (jump-menu reasons, count badges).
+    pipeline header owns them (jump-menu reasons, count badges). The AOI step
+    shows nothing either: the selection is already visible in the AOI widget
+    and in the header chip.
     """
     # Global error always takes priority
     if error_message:
         return (error_message, "error")
 
     key = STEPS[tab].key if 0 <= tab < len(STEPS) else None
-
-    if key == "aoi" and aoi_result is not None:
-        return (t("notifications.aoi_selected", name=aoi_result.name), "success")
 
     if key in ("variables", "process", "postprocess") and process_error:
         return (process_error, "error")
@@ -43,7 +41,7 @@ def _compute(tab, aoi_result, project, process_error, status_message, error_mess
 
 
 @solara.component
-def NotificationArea(active_tab, aoi_result, project, process_error, status_message, error_message):
+def NotificationArea(active_tab, project, process_error, status_message, error_message):
     """Sticky floating notification rendered at the bottom of the workflow panel.
 
     Takes the ``app_state`` *reactives* (not their values) and reads ``.value``
@@ -55,7 +53,6 @@ def NotificationArea(active_tab, aoi_result, project, process_error, status_mess
     """
     notif = _compute(
         active_tab,
-        aoi_result.value,
         project.value,
         process_error.value,
         status_message.value,
