@@ -154,6 +154,20 @@ def _get_towns(aoi, year):
     return ee.Image(0).where(pop.gte(15).And(built.gte(90)), 1).clip(aoi)
 
 
+def _get_precipitation(aoi, year):
+    """ERA5-Land annual precipitation (mm/year): sum of the 12 monthly totals.
+
+    ``total_precipitation_sum`` is the monthly total in metres of water depth;
+    the yearly sum is converted to millimetres.
+    """
+    col = (
+        ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
+        .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+        .select("total_precipitation_sum")
+    )
+    return col.sum().multiply(1000).clip(aoi).rename("B1")
+
+
 def _get_subj(aoi, year=None):
     """FAO GAUL level-2 subjurisdiction — categorical raster."""
     from spatialrisk.gee.ee_fao_gaul import get_fao_gaul_subj
@@ -287,6 +301,21 @@ PREDEFINED_CATALOGUE = {
         "years": list(range(1975, 2021, 5)),
         "get_image": _get_towns,
         "vis_params": {"palette": ["ffffff", "e91e63"], "min": 0, "max": 1},
+    },
+    "precipitation": {
+        "label_key": "vars.predefined.precipitation",
+        "description_key": "vars.predefined_info.precipitation",
+        "var_type": "GEEVar",
+        "raster_type": "continuous",
+        "temporal": True,
+        "years": list(range(2001, 2026)),
+        "get_image": _get_precipitation,
+        # ERA5-Land native resolution (~0.1 deg). Without this the download
+        # path's ``default_scale or 30`` fallback would export ~11 km pixels
+        # at 30 m. Picked up by _build_predefined (gui/tile/variables_tile.py).
+        "default_scale": 11132,
+        # mm/year, AOI-dependent range -> palette-only dynamic stretch.
+        "vis_params": {"palette": ["ffffff", "c6dbef", "4292c6", "08306b"]},
     },
     "subj": {
         "label_key": "vars.predefined.subj",
