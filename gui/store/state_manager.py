@@ -1,3 +1,5 @@
+"""Reactive application state for the Spatial Risk GUI."""
+
 from datetime import datetime
 from typing import Optional
 
@@ -8,6 +10,7 @@ class AppState:
     """Reactive application state for Spatial Risk."""
 
     def __init__(self):
+        """Build the reactives that back the app's project/UI state."""
         # Project (spatialrisk.project.Project | None)
         # Use identity equality: Project is a mutable pydantic model — field-value
         # comparison (pydantic __eq__) would suppress re-renders after in-place
@@ -64,8 +67,10 @@ class AppState:
         self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
     def new_project_state(self, project) -> None:
-        """Install a freshly created project (dirty, never saved) and reset the
-        workflow context so the user starts clean at the AOI step."""
+        """Install a freshly created project (dirty, never saved).
+
+        Resets the workflow context so the user starts clean at the AOI step.
+        """
         self.project.set(project)  # subscription marks dirty=True
         self.last_saved.set(None)
         self.aoi_result.set(None)
@@ -99,10 +104,12 @@ class AppState:
 
     @property
     def aoi_complete(self) -> bool:
+        """Whether an AOI has been captured."""
         return self.aoi_result.value is not None
 
     @property
     def variables_complete(self) -> bool:
+        """Whether the project has raw variables and a base raster."""
         p = self.project.value
         if p is None:
             return False
