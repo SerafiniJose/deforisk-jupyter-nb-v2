@@ -25,6 +25,7 @@ from gui.widget.allocation_form import AllocationDetailsDialog, AllocationFormDi
 from gui.widget.allocation_list import AllocationList
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.help import InfoButton
+from gui.widget.text_style import MUTED
 
 logger = logging.getLogger("spatial_risk")
 
@@ -37,6 +38,7 @@ _TOOLS = [
         "key": "allocation",
         "label_key": "toolbox.tool_allocation",
         "description_key": "toolbox.allocation.description",
+        "info_key": "toolbox.allocation.info_details",
         "icon": "mdi-earth-off",
     }
 ]
@@ -153,8 +155,8 @@ def ToolboxTile(project, map_=None, sepal_client=None):
 
         # Icon rail + the selected tool's panel. The rail mirrors the app
         # drawer: icon-only buttons, tooltip = tool name, selected in primary.
-        # The panel header carries the title and the description popup that
-        # used to sit next to each tool-list entry.
+        # The panel header carries the title, the one-line description under
+        # it, and an info popup with the method details and references.
         tool = next(entry for entry in _TOOLS if entry["key"] == selected_tool)
         with solara.Row(style="gap:16px;align-items:stretch;"):
             with solara.Column(
@@ -174,18 +176,23 @@ def ToolboxTile(project, map_=None, sepal_client=None):
                         )
 
             with solara.Column(style="flex:1;min-width:0;gap:12px;"):
-                with solara.Row(
-                    style="gap:6px;align-items:center;"
+                with solara.Column(
+                    style="gap:2px;"
                     "border-bottom:1px solid rgba(128,128,128,0.25);"
-                    "padding-bottom:6px;"
+                    "padding-bottom:8px;"
                 ):
+                    with solara.Row(style="gap:6px;align-items:center;"):
+                        solara.Text(
+                            t(tool["label_key"]),
+                            style="font-weight:600;font-size:0.95rem;",
+                        )
+                        InfoButton(
+                            title=t(tool["label_key"]),
+                            markdown=t(tool["info_key"]),
+                        )
                     solara.Text(
-                        t(tool["label_key"]),
-                        style="font-weight:600;font-size:0.95rem;",
-                    )
-                    InfoButton(
-                        title=t(tool["label_key"]),
-                        markdown=t(tool["description_key"]),
+                        t(tool["description_key"]),
+                        style=MUTED + "font-size:0.8rem;",
                     )
 
                 AllocationList(

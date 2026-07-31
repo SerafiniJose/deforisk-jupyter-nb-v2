@@ -124,18 +124,17 @@ def test_tile_has_no_latest_run_card():
     assert "AllocationResultCard" not in src
 
 
-def test_body_has_no_heading_and_defers_description_to_an_info_button():
-    """The body starts at the panes; the description is an InfoButton popup.
+def test_body_has_no_duplicated_heading():
+    """The body repeats neither the dialog's heading nor its subtitle.
 
-    The dialog frame already says 'Tools', so the body repeats neither the
-    heading nor the subtitle.
+    The dialog frame already says 'Tools'. (The tool's own description DOES
+    render, under the panel-header title — see the header test.)
     """
     src = inspect.getsource(toolbox_tile)
     assert "InfoButton" in src
-    assert "toolbox.allocation.description" in src  # still the popup's content
+    assert "toolbox.allocation.description" in src  # the under-title blurb
     assert "toolbox.title" not in src  # no duplicated heading
     assert "toolbox.subtitle" not in src
-    assert 'solara.Text(t("toolbox.allocation.description")' not in src
 
 
 def _rail_button(box):
@@ -182,8 +181,8 @@ def test_rail_is_icon_only_with_primary_selection():
     assert not [c for c in (btn.children or []) if isinstance(c, str) and c.strip()]
 
 
-def test_panel_header_carries_title_and_info_button():
-    """The pane header owns the tool title; the description stays an InfoButton."""
+def test_panel_header_carries_title_description_and_info_button():
+    """Header = tool title + description under it; details live in the popup."""
     import ipyvuetify as vw
     import reacton
 
@@ -207,12 +206,15 @@ def test_panel_header_carries_title_and_info_button():
     assert tool_name in tooltip_texts, f"{tool_name} not in tooltip texts"
     assert any(tt.right for tt in tooltips), "rail tooltip must open to the right"
 
-    # Assert the header title (tool name) renders in the panel
-    assert tool_name in _all_text(box)
+    # The header title AND the one-line description both render in the panel.
+    flat = _all_text(box)
+    assert tool_name in flat
+    assert t("toolbox.allocation.description") in flat
 
-    # Assert InfoButton is in the source (description stays as InfoButton popup)
+    # The info popup carries the method details/references, not the short blurb.
     src = inspect.getsource(toolbox_tile)
     assert "InfoButton" in src
+    assert 'markdown=t(tool["info_key"])' in src
 
 
 def test_tile_mounts_the_details_dialog():

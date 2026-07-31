@@ -6,6 +6,7 @@
     "allocation": {
       "title": "Deforestation allocation",
       "description": "Allocate expected jurisdictional deforestation to a project area, using a risk map and its deforestation-rate table.",
+      "info_details": "**Method** — a port of `forestatrisk.allocate_deforestation` (the deforisk plugin's allocation step). The expected jurisdictional deforestation (ha over the forecast period) is converted into an annual per-pixel deforestation density for every risk-map class, using the class's rate table (`cat`, `nfor`, `rate_mod`, `pixel_area`). Risk-map pixels inside the project borders — optionally restricted to a forest mask — are counted per class; the project's annual allocation is the sum of pixel counts × class density, and the entire-period figure multiplies that by the forecast years. The run can also write the jurisdiction-wide density raster (ha/pixel/yr).\n\n**References**\n\n- Vieilledent G. (2021). *forestatrisk: a Python package for modelling and forecasting deforestation in the tropics.* Journal of Open Source Software, 6(59), 2975.\n- Vieilledent G. — *riskmapjnr*: deforestation-risk mapping following the Verra JNR Risk Mapping Tool.\n- The *deforisk* QGIS plugin, whose allocation step this tool mirrors.",
       "new": "New allocation",
       "empty": "No allocation runs yet.",
       "no_predictions": "No predictions in this project yet — run Inference first (external risk maps are imported there).",

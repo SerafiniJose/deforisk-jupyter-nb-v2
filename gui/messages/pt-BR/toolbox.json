@@ -6,6 +6,7 @@
     "allocation": {
       "title": "Alocação de desmatamento",
       "description": "Aloque o desmatamento jurisdicional esperado para uma área de projeto, usando um mapa de risco e sua tabela de taxas de desmatamento.",
+      "info_details": "**Método** — adaptação de `forestatrisk.allocate_deforestation` (a etapa de alocação do plugin deforisk). O desmatamento jurisdicional esperado (ha ao longo do período de previsão) é convertido em uma densidade anual de desmatamento por pixel para cada classe do mapa de risco, usando a tabela de taxas da classe (`cat`, `nfor`, `rate_mod`, `pixel_area`). Os pixels do mapa de risco dentro dos limites do projeto — opcionalmente restritos a uma máscara florestal — são contados por classe; a alocação anual do projeto é a soma de pixels × densidade da classe, e o valor do período completo a multiplica pelos anos de previsão. A execução também pode gravar o raster de densidade de toda a jurisdição (ha/pixel/ano).\n\n**Referências**\n\n- Vieilledent G. (2021). *forestatrisk: a Python package for modelling and forecasting deforestation in the tropics.* Journal of Open Source Software, 6(59), 2975.\n- Vieilledent G. — *riskmapjnr*: mapeamento do risco de desmatamento segundo a ferramenta Verra JNR Risk Mapping Tool.\n- O plugin QGIS *deforisk*, cuja etapa de alocação esta ferramenta reproduz.",
       "new": "Nova alocação",
       "empty": "Ainda não há execuções de alocação.",
       "no_predictions": "Ainda não há previsões neste projeto — execute a inferência primeiro (mapas de risco externos são importados lá).",
