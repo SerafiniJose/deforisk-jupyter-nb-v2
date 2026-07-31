@@ -197,3 +197,96 @@ def test_build_predefined_without_params_is_unchanged(monkeypatch):
     )
 
     assert seen["params"] == {}
+
+
+def test_build_predefined_passes_catalogue_scale(monkeypatch):
+    """ERA5's ~11 km native scale must reach the GEEVar.
+
+    ``GEEVar.download`` exports at ``default_scale or 30``; without the
+    pass-through the ~11 km pixels would be exported at 30 m (~370x
+    oversampled files).
+    """
+    import ee
+
+    import gui.scripts.predefined_variables as pv
+    from gui.tile.variables_tile import _build_predefined
+    from spatialrisk.variables.models import DataType, RasterType
+
+    monkeypatch.setitem(
+        pv.PREDEFINED_CATALOGUE,
+        "precipitation",
+        {
+            **pv.PREDEFINED_CATALOGUE["precipitation"],
+            "get_image": lambda aoi, year=None, **params: "IMAGE",
+        },
+    )
+    monkeypatch.setattr(
+        pv, "resolve_aoi_ee", lambda _result: ee.Geometry.__new__(ee.Geometry)
+    )
+
+    class _Reactive:
+        value = object()
+
+    class _FakeState:
+        aoi_result = _Reactive()
+
+    monkeypatch.setattr("gui.store.state_manager.app_state", _FakeState)
+
+    var = _build_predefined(
+        {
+            "source": "predefined",
+            "type": "GEEVar",
+            "name": "precipitation",
+            "predefined_key": "precipitation",
+            "year": 2020,
+            "data_type": DataType.raster,
+            "raster_type": RasterType.continuous,
+        },
+        None,
+    )
+
+    assert var.default_scale == 11132
+
+
+def test_build_predefined_without_scale_stays_none(monkeypatch):
+    """Entries that declare no default_scale keep today's behaviour."""
+    import ee
+
+    import gui.scripts.predefined_variables as pv
+    from gui.tile.variables_tile import _build_predefined
+    from spatialrisk.variables.models import DataType, RasterType
+
+    monkeypatch.setitem(
+        pv.PREDEFINED_CATALOGUE,
+        "altitude",
+        {
+            **pv.PREDEFINED_CATALOGUE["altitude"],
+            "get_image": lambda aoi, year=None, **params: "IMAGE",
+        },
+    )
+    monkeypatch.setattr(
+        pv, "resolve_aoi_ee", lambda _result: ee.Geometry.__new__(ee.Geometry)
+    )
+
+    class _Reactive:
+        value = object()
+
+    class _FakeState:
+        aoi_result = _Reactive()
+
+    monkeypatch.setattr("gui.store.state_manager.app_state", _FakeState)
+
+    var = _build_predefined(
+        {
+            "source": "predefined",
+            "type": "GEEVar",
+            "name": "altitude",
+            "predefined_key": "altitude",
+            "year": None,
+            "data_type": DataType.raster,
+            "raster_type": RasterType.continuous,
+        },
+        None,
+    )
+
+    assert var.default_scale is None

@@ -6,8 +6,6 @@ readme = "README.rst"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 dependencies = [
-    "cudf-cu12>=25.8.0",
-    "cuml-cu12>=25.8.0",
     "dask-ml>=2025.1.0",
     "earthengine-api",
     "fiona>=1.10.1",
@@ -80,4 +78,4 @@ convention = "google"
 # words (e.g. pt "nome" -> "gnome", fr "ans" -> "and", es "termine" ->
 # "determine"). Extend this when adding a locale, after checking each hit is a
 # genuine word and not a real typo.
-ignore-words-list = "absolue,absorve,alignement,ans,anual,approche,attendent,bloc,bord,celles,clases,classe,complet,conter,convient,eles,erro,espaces,existant,explicite,fixe,fonction,formule,formules,gere,hace,initiales,itens,limite,momento,nome,persistant,posible,projet,projets,relie,requiere,ressource,ser,somme,termine,transforme,valide,vetor"
+ignore-words-list = "absolue,absorve,alignement,ans,anual,approche,attendent,bloc,bord,celles,clases,classe,complet,conter,convient,eles,erro,espaces,existant,explicite,fixe,fonction,formule,formules,gere,hace,initiales,itens,limite,medias,momento,nome,persistant,posible,projet,projets,relie,requiere,ressource,ser,somme,termine,transforme,valide,vetor"

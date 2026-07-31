@@ -75,3 +75,62 @@ def test_param_edits_use_a_functional_state_update():
     assert "set_params_raw(" in src
     assert "lambda prev: {**prev," in src  # the update reads the LATEST state
     assert "{**params_raw" not in src  # never the render's snapshot
+
+
+def _temperature_select(initial_params):
+    box, _rc = reacton.render(
+        VariableModal(
+            open_=solara.reactive(True),
+            on_add=lambda entry: None,
+            initial_entry={
+                "source": "predefined",
+                "predefined_key": "temperature_2m",
+                "params": initial_params,
+                "year": 2020,
+            },
+        )
+    )
+    label = t("vars.modal.param_aggregation")
+    return next(s for s in _find(box, vw.Select) if s.label == label)
+
+
+def test_choice_param_renders_a_select_seeded_with_default():
+    """No params in the entry -> prefill seeds the catalogue default (median)."""
+    sel = _temperature_select(None)
+
+    assert sel.v_model == "median"
+    assert [item["value"] for item in sel.items] == ["mean", "max", "min", "median"]
+
+
+def test_choice_param_prefills_the_saved_metric():
+    """Editing temperature_2m_max reopens the dropdown on max."""
+    assert _temperature_select({"aggregation": "max"}).v_model == "max"
+
+
+def test_choice_param_does_not_render_a_text_field():
+    """The metric must never be free-typed — only the dropdown."""
+    box, _rc = reacton.render(
+        VariableModal(
+            open_=solara.reactive(True),
+            on_add=lambda entry: None,
+            initial_entry={
+                "source": "predefined",
+                "predefined_key": "temperature_2m",
+                "params": None,
+                "year": 2020,
+            },
+        )
+    )
+    label = t("vars.modal.param_aggregation")
+    assert not [f for f in _find(box, vw.TextField) if f.label == label]
+
+
+def test_choice_error_message_lists_the_options():
+    """A choice spec has no min/max, so the range message cannot be used.
+
+    Source inspection (the codebase's pattern for handler-closure behaviour):
+    the submit path must branch on the spec type and format the choice key.
+    """
+    src = " ".join(inspect.getsource(mod.VariableModal).split())
+    assert "error_param_choice" in src
+    assert "error_param_range" in src  # int path must remain

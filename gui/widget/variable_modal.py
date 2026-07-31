@@ -185,14 +185,23 @@ def VariableModal(
             return
         values, bad_param = coerce_param_values(predefined_key, params_raw)
         if bad_param is not None:
-            set_error(
-                t(
-                    "vars.modal.error_param_range",
-                    label=t(bad_param["label_key"]),
-                    min=bad_param["min"],
-                    max=bad_param["max"],
+            if bad_param.get("type", "int") == "choice":
+                set_error(
+                    t(
+                        "vars.modal.error_param_choice",
+                        label=t(bad_param["label_key"]),
+                        options=", ".join(bad_param["options"]),
+                    )
                 )
-            )
+            else:
+                set_error(
+                    t(
+                        "vars.modal.error_param_range",
+                        label=t(bad_param["label_key"]),
+                        min=bad_param["min"],
+                        max=bad_param["max"],
+                    )
+                )
             return
         entry = {
             "source": "predefined",
@@ -401,6 +410,25 @@ def _render_predefined_fields(
         # params in the model dialog — no per-layer branching here.
         for spec in param_specs(predefined_key):
             pkey = spec["key"]
+            if spec.get("type", "int") == "choice":
+                rv.Select(
+                    label=t(spec["label_key"]),
+                    items=[
+                        {"text": t(spec["option_label_key_prefix"] + o), "value": o}
+                        for o in spec["options"]
+                    ],
+                    # Same no-fallback contract as the TextField below: show
+                    # exactly what will be submitted.
+                    v_model=params_raw.get(pkey, ""),
+                    on_v_model=lambda v, k=pkey: set_params_raw(
+                        lambda prev: {**prev, k: v or ""}
+                    ),
+                    dense=True,
+                    outlined=True,
+                    hint=t(spec["hint_key"]),
+                    persistent_hint=True,
+                )
+                continue
             rv.TextField(
                 label=t(spec["label_key"]),
                 # No catalogue-default fallback: the field must show exactly

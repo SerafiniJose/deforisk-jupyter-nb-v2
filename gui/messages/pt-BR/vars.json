@@ -9,7 +9,9 @@
       "forest_gfc": "Cobertura florestal (Hansen GFC)",
       "forest_tmf": "Cobertura florestal (JRC TMF)",
       "towns": "Cidades / áreas urbanas (JRC GHSL)",
-      "subj": "Subjurisdição (FAO GAUL)"
+      "subj": "Subjurisdição (FAO GAUL)",
+      "precipitation": "Precipitação (ERA5-Land, anual)",
+      "temperature_2m": "Temperatura 2 m (ERA5-Land)"
     },
     "predefined_info": {
       "altitude": "Altitude (m) do modelo digital de elevação [NASA SRTM 30 m](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003), recortada para a sua área de interesse. Contínua.",
@@ -20,7 +22,9 @@
       "forest_gfc": "Máscara floresta/não floresta (1 = floresta) para o ano escolhido, derivada do [Hansen Global Forest Change](https://developers.google.com/earth-engine/datasets/catalog/UMD_hansen_global_forest_change_2024_v1_12): pixels acima do limiar de cobertura arbórea em 2000 menos a perda até aquele ano. Temporal.",
       "forest_tmf": "Máscara floresta/não floresta (1 = floresta) para o ano escolhido, do produto de mudanças anuais [JRC Tropical Moist Forest](https://developers.google.com/earth-engine/datasets/catalog/projects_JRC_TMF_v1_2024_AnnualChanges) (floresta não perturbada mantida como floresta). Temporal.",
       "towns": "Máscara binária de área urbana (1 = construída + povoada) para a época mais próxima, das camadas de população e superfície construída do [JRC GHSL](https://developers.google.com/earth-engine/datasets/catalog/JRC_GHSL_P2023A_GHS_BUILT_S). Temporal (épocas de 5 anos).",
-      "subj": "Raster categórico das subjurisdições administrativas de nível 2 do [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), com um valor distinto para cada zona. Usado na estratificação no estilo JNR."
+      "subj": "Raster categórico das subjurisdições administrativas de nível 2 do [FAO GAUL](https://developers.google.com/earth-engine/datasets/catalog/FAO_GAUL_2015_level2), com um valor distinto para cada zona. Usado na estratificação no estilo JNR.",
+      "precipitation": "Precipitação total anual (mm/ano) do ano escolhido, somando os 12 totais mensais do [ERA5-Land Monthly Aggregates](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_MONTHLY_AGGR) (~11 km). Contínua. Temporal.",
+      "temperature_2m": "Temperatura do ar a 2 m (°C) do ano escolhido, combinando as 12 médias mensais do [ERA5-Land Monthly Aggregates](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_MONTHLY_AGGR) com a métrica de agregação escolhida (~11 km). Contínua. Temporal."
     },
     "modal": {
       "title_add": "Adicionar variável",
@@ -40,6 +44,12 @@
       "predefined_raster_type_label": "Tipo de raster",
       "param_tree_cover_threshold": "Limiar de cobertura arbórea (%)",
       "param_tree_cover_threshold_hint": "Cobertura de dossel mínima em 2000 contada como floresta (1-100). Ela faz parte do nome da variável, então vários limiares podem coexistir.",
+      "param_aggregation": "Métrica de agregação",
+      "param_aggregation_hint": "Como os 12 valores mensais são combinados no valor anual. Faz parte do nome da variável, então várias métricas podem coexistir.",
+      "agg_mean": "Média",
+      "agg_max": "Máximo",
+      "agg_min": "Mínimo",
+      "agg_median": "Mediana",
       "custom_name_label": "Nome",
       "custom_type_label": "Tipo de variável",
       "custom_type_hint": "Arquivo raster local = GeoTIFF no disco; Asset do Google Earth Engine = asset do GEE; Arquivo vetorial local = arquivo vetorial, rasterizado durante a harmonização.",
@@ -57,6 +67,7 @@
       "error_no_predefined_selected": "Selecione uma variável na lista.",
       "error_year_required": "O ano é obrigatório para esta variável.",
       "error_param_range": "{label} deve ser um número inteiro entre {min} e {max}.",
+      "error_param_choice": "{label} deve ser um de: {options}.",
       "error_name_required": "O nome da variável é obrigatório."
     }
   }
