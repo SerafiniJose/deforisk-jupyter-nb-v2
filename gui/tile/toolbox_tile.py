@@ -7,6 +7,7 @@ own panel component plus an entry here; the workflow steps are untouched.
 import logging
 import uuid
 
+import reacton.ipyvuetify as rv
 import solara
 from pysepal.solara.notifications import use_notifications
 
@@ -45,6 +46,28 @@ _TOOLS = [
 # render_map_on_switch) — add any new reactive here to those effects too.
 allocation_jobs = solara.reactive([])
 density_on_map = solara.reactive(set())
+
+
+@solara.component
+def _RailTooltip(label, children=[]):
+    """solara.Tooltip, pinned to the activator's right.
+
+    The rail hugs the dialog's left edge, so solara.Tooltip's hardcoded
+    ``bottom`` placement clips against it; same v_on wiring, ``right=True``.
+    """
+
+    def set_v_on():
+        for child in children:
+            widget = solara.get_widget(child)
+            widget.v_on = "tooltip.on"
+
+    solara.use_effect(set_v_on, children)
+
+    return rv.Tooltip(
+        right=True,
+        v_slots=[{"name": "activator", "variable": "tooltip", "children": children}],
+        children=[label],
+    )
 
 
 def _run_allocation_job(job_id, form, project, project_reactive=None, notifier=None):
@@ -139,7 +162,7 @@ def ToolboxTile(project, map_=None, sepal_client=None):
                 "padding:4px 0;border-right:1px solid rgba(128,128,128,0.25);"
             ):
                 for entry in _TOOLS:
-                    with solara.Tooltip(t(entry["label_key"])):
+                    with _RailTooltip(t(entry["label_key"])):
                         solara.Button(
                             "",
                             icon_name=entry["icon"],

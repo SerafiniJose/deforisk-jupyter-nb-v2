@@ -195,8 +195,8 @@ def test_panel_header_carries_title_and_info_button():
         toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
     )
 
-    # Assert a rendered vw.Tooltip exists with the tool name (rail buttons announce
-    # their tool name via tooltip)
+    # Rail buttons announce their tool name via a tooltip pinned to the RIGHT:
+    # the rail hugs the dialog's left edge, so a bottom tooltip clips there.
     tooltips = _find(box, vw.Tooltip)
     tool_name = t("toolbox.tool_allocation")
     assert len(tooltips) > 0, "No tooltips rendered"
@@ -205,6 +205,7 @@ def test_panel_header_carries_title_and_info_button():
         if tooltip.children:
             tooltip_texts.extend([str(c) for c in tooltip.children])
     assert tool_name in tooltip_texts, f"{tool_name} not in tooltip texts"
+    assert any(tt.right for tt in tooltips), "rail tooltip must open to the right"
 
     # Assert the header title (tool name) renders in the panel
     assert tool_name in _all_text(box)
