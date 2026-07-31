@@ -121,7 +121,9 @@ def test_suffix_values_can_never_reach_four_digits():
 
     ``spatialrisk.evaluation.interval_from_target`` pulls years out of a name
     with a four-consecutive-digits regex. Int params must keep ``max`` below
-    1000; choice params must have digit-free option strings.
+    1000; choice params must have digit-free option strings. Additionally,
+    choice options must be underscore-free since ``resolve_predefined`` splits
+    the name suffix on ``_``.
     """
     for key in PREDEFINED_CATALOGUE:
         for spec in param_specs(key):
@@ -130,6 +132,10 @@ def test_suffix_values_can_never_reach_four_digits():
                     not any(ch.isdigit() for ch in str(option))
                     for option in spec["options"]
                 ), f"{key}.{spec['key']} has a digit-bearing option"
+                # resolve_predefined splits on _, so underscores break roundtrip
+                assert all(
+                    "_" not in str(option) for option in spec["options"]
+                ), f"{key}.{spec['key']} has an underscore-bearing option"
             else:
                 assert (
                     spec["max"] < 1000
