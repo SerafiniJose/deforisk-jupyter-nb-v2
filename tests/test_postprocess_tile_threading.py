@@ -42,7 +42,25 @@ def _project_with_processed_var():
     return p
 
 
-def _render_capturing_on_submit(monkeypatch, project, process_error):
+class _RecordingNotifier:
+    """Stands in for pysepal's Notifier; records what the tile publishes."""
+
+    def __init__(self):
+        self.errors = []
+
+    def error(self, message, *, timeout=None):
+        self.errors.append((message, timeout))
+
+    def success(self, message, *, timeout=None):
+        pass
+
+    def track(self, title, total_steps=None):
+        from pysepal.solara.notifications.notifier import _NoopTaskTrackerContextManager
+
+        return _NoopTaskTrackerContextManager()
+
+
+def _render_capturing_on_submit(monkeypatch, project, notifier=None):
     """Render PostProcessTile with the dialog stubbed out to hand back on_submit."""
     from gui.tile import postprocess_tile
 
@@ -54,11 +72,11 @@ def _render_capturing_on_submit(monkeypatch, project, process_error):
         solara.Text("")
 
     monkeypatch.setattr(postprocess_tile, "DerivedLayerDialog", _StubDialog)
+    if notifier is not None:
+        monkeypatch.setattr(postprocess_tile, "use_notifications", lambda: notifier)
 
     box, rc = reacton.render(
-        postprocess_tile.PostProcessTile(
-            project=project, process_error=process_error, map_=None
-        ),
+        postprocess_tile.PostProcessTile(project=project, map_=None),
         handle_error=False,
     )
     return captured["on_submit"], rc
@@ -80,8 +98,7 @@ def test_edge_dist_does_not_block_the_event_handler(monkeypatch):
     monkeypatch.setattr(process_actions, "apply_post_processing", _blocking_apply)
 
     project = solara.reactive(_project_with_processed_var(), equals=lambda a, b: a is b)
-    process_error = solara.reactive(None)
-    on_submit, rc = _render_capturing_on_submit(monkeypatch, project, process_error)
+    on_submit, rc = _render_capturing_on_submit(monkeypatch, project)
 
     handler_ident = threading.get_ident()
     on_submit({"op": "dist", "start_key": "", "end_key": "", "pp_key": "forest_2010"})
@@ -102,27 +119,30 @@ def test_edge_dist_does_not_block_the_event_handler(monkeypatch):
         rc.close()
 
 
-def test_edge_dist_reports_failures_through_process_error(monkeypatch):
+def test_edge_dist_reports_failures_as_an_error_toast(monkeypatch):
     """Moving to a thread must not lose the error path the sync version had."""
     from gui.scripts import process_actions
+    from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT
 
     def _boom(project, key, step):
         raise RuntimeError("gdal exploded")
 
     monkeypatch.setattr(process_actions, "apply_post_processing", _boom)
 
+    notifier = _RecordingNotifier()
     project = solara.reactive(_project_with_processed_var(), equals=lambda a, b: a is b)
-    process_error = solara.reactive(None)
-    on_submit, rc = _render_capturing_on_submit(monkeypatch, project, process_error)
+    on_submit, rc = _render_capturing_on_submit(monkeypatch, project, notifier)
 
     on_submit({"op": "dist", "start_key": "", "end_key": "", "pp_key": "forest_2010"})
 
     deadline = threading.Event()
     for _ in range(int(BLOCK_TIMEOUT * 100)):
-        if process_error.value is not None:
+        if notifier.errors:
             break
         deadline.wait(0.01)
 
-    assert process_error.value is not None, "the failure never reached the UI"
-    assert "gdal exploded" in process_error.value
+    assert notifier.errors, "the failure never reached the UI"
+    message, timeout = notifier.errors[0]
+    assert "gdal exploded" in message
+    assert timeout == ERROR_TOAST_TIMEOUT
     rc.close()

@@ -20,7 +20,7 @@ logger = logging.getLogger("spatial_risk")
 
 
 @solara.component
-def PostProcessTile(project, process_error, map_=None):
+def PostProcessTile(project, map_=None):
     """Derived layers: change detection (loss/gain) + edge/dist on harmonized vars."""
     dialog_open = solara.use_reactive(False)
     pending_change = solara.use_reactive(None)
@@ -41,11 +41,14 @@ def PostProcessTile(project, process_error, map_=None):
         entry = pending_change.value
         if p is None or entry is None:
             return
-        process_error.set(None)
         title = t("notifications.task_change", op=entry["op"])
 
         def _tracked_change():
-            with tracked_job(notifications, title):
+            with tracked_job(
+                notifications,
+                title,
+                error_format=lambda exc: t("tiles.postprocess.error_change", exc=exc),
+            ):
                 process_actions.generate_change_var(
                     p,
                     entry["op"],
@@ -56,9 +59,8 @@ def PostProcessTile(project, process_error, map_=None):
         with writing(p.project_name):
             try:
                 await to_thread_in_context(_tracked_change)
-            except Exception as exc:
-                logger.exception("change detection failed")
-                process_error.set(t("tiles.postprocess.error_change", exc=exc))
+            except Exception:
+                logger.exception("change detection failed")  # toast from tracked_job
                 return
             publish_if_current(project, p)
 
@@ -67,7 +69,6 @@ def PostProcessTile(project, process_error, map_=None):
         entry = pending_post.value
         if p is None or entry is None:
             return
-        process_error.set(None)
         title = t(
             "notifications.task_postprocess",
             step=entry["op"],
@@ -75,15 +76,20 @@ def PostProcessTile(project, process_error, map_=None):
         )
 
         def _tracked_post():
-            with tracked_job(notifications, title):
+            with tracked_job(
+                notifications,
+                title,
+                error_format=lambda exc: t(
+                    "tiles.postprocess.error_post_processing", exc=exc
+                ),
+            ):
                 process_actions.apply_post_processing(p, entry["pp_key"], entry["op"])
 
         with writing(p.project_name):
             try:
                 await to_thread_in_context(_tracked_post)
-            except Exception as exc:
-                logger.exception("post-processing failed")
-                process_error.set(t("tiles.postprocess.error_post_processing", exc=exc))
+            except Exception:
+                logger.exception("post-processing failed")  # toast from tracked_job
                 return
             publish_if_current(project, p)
 
