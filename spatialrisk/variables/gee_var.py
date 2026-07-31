@@ -90,9 +90,9 @@ class GEEVar(Variable):
         if overwrite or not output_path.exists():
 
             if self.data_type == DataType.vector:
-                import geemap
+                from spatialrisk.gee.vector_export import ee_export_vector
 
-                geemap.ee_export_vector(
+                ee_export_vector(
                     self.gee_images[0],
                     output_path,
                     selectors=["gaul0_name", "iso3_code"],

@@ -59,15 +59,16 @@ def export_vector_with_dask(
     project : str | None, optional
         Earth Engine project name.  If omitted the default EE project will be used.
     **kwargs : Any
-        Additional keyword arguments forwarded to :func:`geemap.ee_export_vector`.
+        Additional keyword arguments forwarded to
+        :func:`spatialrisk.gee.vector_export.ee_export_vector`.
         Common ones include ``project`` (EE project name), ``timeout``,
         ``keep_zip``, etc.
 
     Returns:
     -------
     dask.distributed.Future
-        Future that resolves to the result of `geemap.ee_export_vector`
-        (usually ``None``; you may use it purely for its side effects).
+        Future that resolves to the result of `ee_export_vector`
+        (the written path; you may use it purely for its side effects).
     """
     # ------------------------------------------------------------------
     # 1. Check if file exists and overwrite is False
@@ -101,18 +102,19 @@ def export_vector_with_dask(
         **kw: Any,
     ) -> Any:
         """
-        Minimal wrapper that reinitialises EE and calls `geemap.ee_export_vector`.
+        Minimal wrapper that reinitialises EE and calls `ee_export_vector`.
 
         Parameters are intentionally typed to aid static analysis.
         """
         import ee  # Import inside the worker
-        import geemap
+
+        from spatialrisk.gee.vector_export import ee_export_vector
 
         ee.Initialize(project=project)
 
         ee_obj_local = ee.deserializer.fromJSON(ee_object_json)
 
-        return geemap.ee_export_vector(
+        return ee_export_vector(
             ee_object=ee_obj_local,
             filename=fn,
             selectors=sel or [],

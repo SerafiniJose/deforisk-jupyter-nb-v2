@@ -291,10 +291,10 @@ def _build_asset_fc(asset):
 
 
 def _ee_export_vector(fc, filename, selectors=None, verbose=True, **kwargs):
-    """Indirection so tests can stub the (network-bound) geemap export."""
-    import geemap
+    """Indirection so tests can stub the (network-bound) EE export."""
+    from spatialrisk.gee.vector_export import ee_export_vector
 
-    return geemap.ee_export_vector(
+    return ee_export_vector(
         fc, filename, selectors=selectors, verbose=verbose, **kwargs
     )
 
@@ -329,10 +329,10 @@ def _admin_gdf(method: str, admin_code: str):
 def _asset_gdf(asset: Optional[Dict[str, Any]], out_dir: Path):
     """Local geometry for a GEE asset selection.
 
-    The pinned geemap cannot write GPKG (csv/geojson/json/kml/kmz/shp only), so
-    the export lands as GeoJSON and geopandas rewrites it to the canonical file.
-    ``selectors=[]`` keeps the payload to geometry — a cutline needs no
-    attributes — and skips geemap's ``propertyNames().getInfo()`` round-trip.
+    The EE table download cannot write GPKG (csv/geojson/json/kml/kmz/shp
+    only), so the export lands as GeoJSON and geopandas rewrites it to the
+    canonical file. ``selectors=[]`` keeps the payload to geometry — a cutline
+    needs no attributes — and skips a ``propertyNames().getInfo()`` round-trip.
     """
     import geopandas as gpd
     from pysepal.scripts import utils as su

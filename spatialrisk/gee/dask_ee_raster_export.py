@@ -34,9 +34,6 @@ import ee  # Earth Engine
 
 # geedim: used only inside the worker - imported here for typing
 import geedim as gd  # noqa: F401
-
-# geemap: only required for its'ee_export_vector' fallback
-import geemap  # noqa: F401
 from dask.distributed import Client, Future
 
 

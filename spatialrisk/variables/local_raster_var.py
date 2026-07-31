@@ -544,7 +544,7 @@ class LocalRasterVar(Variable):
 
         raise NotImplementedError(
             "Converting local raster to GEE Image requires uploading to GEE assets. "
-            "Please use GEE's asset upload tools or geemap.upload_to_gee() manually."
+            "Please use GEE's asset upload tools manually."
         )
 
     def use_as_base_raster(self, auto_save: bool = True) -> "LocalRasterVar":
