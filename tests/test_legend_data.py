@@ -175,6 +175,36 @@ def test_format_number_keeps_three_significant_digits():
     assert format_number(30) == "30"
 
 
+def test_format_number_returns_empty_string_for_non_finite_values():
+    """NaN and +-Inf don't crash format_number; they render as empty text."""
+    import math
+
+    from gui.scripts.legend_data import format_number
+
+    assert format_number(float("nan")) == ""
+    assert format_number(float("inf")) == ""
+    assert format_number(float("-inf")) == ""
+    assert math.isnan(float("nan"))  # sanity: the literal itself is non-finite
+
+
+def test_value_labels_falls_back_to_low_high_for_non_finite_vmin_vmax():
+    """A non-finite vmin/vmax degrades to the Low/High fallback, not a crash."""
+    from gui.scripts.legend_data import _value_labels
+
+    for vmin, vmax in [
+        (float("nan"), 10.0),
+        (0.0, float("nan")),
+        (float("-inf"), 10.0),
+        (0.0, float("inf")),
+        (float("-inf"), float("inf")),
+    ]:
+        labels = _value_labels(vmin, vmax, "legend.unit.plain_value")
+        assert [label.key for label in labels] == [
+            "legend.range.low",
+            "legend.range.high",
+        ]
+
+
 class _Var:
     """Minimal stand-in for a variable object."""
 

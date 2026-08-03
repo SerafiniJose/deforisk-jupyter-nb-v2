@@ -252,7 +252,11 @@ def test_drop_pred_layers_removes_layers_and_legends():
     port, registered, unregistered, _bump = _fake_legend_port()
     row = {"key": "row1", "storage_keys": ["pred_a", "pred_b"]}
     for storage_key in row["storage_keys"]:
-        port.register(inference_tile._pred_legend(storage_key, "rf_2020", None))
+        port.register(
+            inference_tile._pred_legend(
+                storage_key, "rf_2020", None, "my prediction", True
+            )
+        )
     assert len(registered) == 2
 
     inference_tile._drop_pred_layers(row, FakeMap(), port)
@@ -288,11 +292,31 @@ def test_pred_legend_is_keyed_by_the_map_layer_key():
     """_pred_legend keys its LayerLegend by the map layer key, not raw name."""
     from gui.tile import inference_tile
 
-    legend = inference_tile._pred_legend("pred_a", "rf_2020", None)
+    legend = inference_tile._pred_legend("pred_a", "rf_2020", None, "My run", False)
     assert legend.layer_id == inference_tile._pred_layer_key("pred_a")
-    assert legend.label.literal == "pred_a"
+    assert legend.label.literal == "My run"
     assert legend.spec.kind == "gradient"
     assert legend.spec.title.key == "legend.prediction.title"
+
+
+def test_pred_legend_uses_the_display_name_not_the_storage_key():
+    """A single-raster row shows the prediction's display name alone."""
+    from gui.tile import inference_tile
+
+    legend = inference_tile._pred_legend(
+        "glm__ds1_2020", "glm", None, "My glm run", False
+    )
+    assert legend.label.literal == "My glm run"
+
+
+def test_pred_legend_disambiguates_multi_raster_rows_with_the_storage_key():
+    """A multi-raster row appends the storage key so entries stay distinct."""
+    from gui.tile import inference_tile
+
+    legend = inference_tile._pred_legend(
+        "glm__ds1_2020", "glm", None, "My glm run", True
+    )
+    assert legend.label.literal == "My glm run — glm__ds1_2020"
 
 
 def test_pred_legend_honours_an_imported_display_palette():
@@ -300,7 +324,9 @@ def test_pred_legend_honours_an_imported_display_palette():
     from gui.scripts.legend_data import prediction_spec
     from gui.tile import inference_tile
 
-    legend = inference_tile._pred_legend("imported", "imported", "jnr")
+    legend = inference_tile._pred_legend(
+        "imported", "imported", "jnr", "My import", False
+    )
     assert legend.spec.colors == prediction_spec("jnr_x").colors
 
 

@@ -116,6 +116,8 @@ def format_number(value: float) -> str:
     endpoints legends actually see.
     """
     value = float(value)
+    if not math.isfinite(value):
+        return ""
     if value == 0:
         return "0"
     digits = 3
@@ -211,7 +213,13 @@ def _is_categorical(render_kind: str, cat) -> bool:
 
 def _value_labels(vmin, vmax, unit_key: str):
     """Endpoint labels for a gradient: real numbers, or Low/High when unpinned."""
-    if vmin is None or vmax is None or float(vmax) <= float(vmin):
+    if (
+        vmin is None
+        or vmax is None
+        or not math.isfinite(float(vmin))
+        or not math.isfinite(float(vmax))
+        or float(vmax) <= float(vmin)
+    ):
         return (Label(key="legend.range.low"), Label(key="legend.range.high"))
     key = unit_key or "legend.unit.plain_value"
     return (
@@ -292,10 +300,12 @@ def variable_spec_from_style(style: dict, var, title: Label) -> LegendSpec:
     render_kind = style.get("render_kind", "continuous_fallback")
     if render_kind == "random_visualizer":
         colors = ()
-    elif (
-        _is_categorical(render_kind, _catalogue_entry(var))
-        or render_kind == "postprocess_change"
-    ):
+    elif render_kind == "postprocess_change":
+        # variable_spec discards `colors` for this render_kind in favour of
+        # resolve_postprocess_legend's own class_colors, so there is nothing
+        # useful to sample from the colormap here.
+        colors = ()
+    elif _is_categorical(render_kind, _catalogue_entry(var)):
         # Chips need the palette's own colours, not a sampled ramp: read the
         # colormap at its ends (0/1 masks) so the chips match the tiles.
         colors = (

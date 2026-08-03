@@ -42,14 +42,25 @@ def _pred_layer_key(storage_key: str) -> str:
     return f"pred_{storage_key}"
 
 
-def _pred_legend(storage_key: str, model_key: str, display_palette):
-    """The legend one prediction raster publishes while it is on the map."""
+def _pred_legend(
+    storage_key: str, model_key: str, display_palette, pred_name: str, multi: bool
+):
+    """The legend one prediction raster publishes while it is on the map.
+
+    ``pred_name`` is the row's human display name; ``multi`` says whether the
+    row carries more than one storage key. A single-raster row shows
+    ``pred_name`` alone, a multi-raster row (several storage keys under one
+    prediction group) appends the storage key so the dropdown can still tell
+    them apart.
+    """
     from gui.scripts.legend_data import Label, prediction_spec
     from gui.scripts.legend_registry import LayerLegend
 
+    label_text = f"{pred_name} — {storage_key}" if multi else pred_name
+
     return LayerLegend(
         layer_id=_pred_layer_key(storage_key),
-        label=Label(literal=storage_key),
+        label=Label(literal=label_text),
         spec=prediction_spec(model_key, display_palette),
     )
 
@@ -340,13 +351,10 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
 
                 # Reached only when the add loop above completed without
                 # raising — an in-flight exception skips straight to the
-                # outer `except Exception` below instead.
-                if legend_port is None:
-                    # No port to publish through (e.g. a test render) — the
-                    # staleness check exists only to protect legend
-                    # publication, so there is nothing to guard here.
-                    pass
-                elif legend_port.generation() != generation:
+                # outer `except Exception` below instead. No port to publish
+                # through (e.g. a test render) means there is nothing left to
+                # guard or publish here.
+                if legend_port is not None and legend_port.generation() != generation:
                     # A project switch during the await clears the map;
                     # anything that landed afterwards is stale, so take it
                     # back off instead of publishing a legend for a layer
@@ -354,10 +362,13 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
                     for sk, _palette in landed:
                         map_.remove_layer(_pred_layer_key(sk), none_ok=True)
                     _forget_on_map(row_key)
-                elif added_any:
+                elif legend_port is not None and added_any:
+                    multi = len(storage_keys) > 1
                     legend_port.register(
                         *[
-                            _pred_legend(sk, row["model_key"], palette)
+                            _pred_legend(
+                                sk, row["model_key"], palette, row["name"], multi
+                            )
                             for sk, palette in landed
                         ]
                     )
