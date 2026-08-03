@@ -1,6 +1,9 @@
-"""Tests for displaying variable layers on the map: predefined-catalogue
-visualization (palettes / randomVisualizer), the black/white fallback, and the
-threaded GEE-layer add that avoids the cross-event-loop crash."""
+"""Tests for displaying variable layers on the map.
+
+Covers predefined-catalogue visualization (palettes / randomVisualizer), the
+black/white fallback, and the threaded GEE-layer add that avoids the
+cross-event-loop crash.
+"""
 
 import inspect
 
@@ -23,8 +26,10 @@ def test_is_mappable_predicate():
 
 
 def test_styled_layer_categorical_is_black_white_not_random():
-    """Categorical rasters must render as a 0=black, 1=white palette — never the
-    old ``ee.Image.randomVisualizer()`` (random RGB)."""
+    """Categorical rasters must render as a 0=black, 1=white palette.
+
+    Never the old ``ee.Image.randomVisualizer()`` (random RGB).
+    """
     from gui.tile.variables_tile import _styled_layer
 
     class FakeImage:
@@ -43,8 +48,10 @@ def test_styled_layer_categorical_is_black_white_not_random():
 
 
 def test_styled_layer_predefined_binary_uses_catalogue_palette():
-    """A predefined binary mask (e.g. rivers) renders with its catalogue palette
-    (white background, feature colour) — not the generic black/white default."""
+    """A predefined binary mask (e.g. rivers) renders with its catalogue palette.
+
+    White background, feature colour — not the generic black/white default.
+    """
     from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
     from gui.tile.variables_tile import _styled_layer
 
@@ -61,8 +68,10 @@ def test_styled_layer_predefined_binary_uses_catalogue_palette():
 
 
 def test_styled_layer_predefined_continuous_stretches_palette():
-    """A predefined continuous var (altitude) keeps its terrain palette and omits
-    min/max when the AOI stretch can't be computed (no gee_interface)."""
+    """A predefined continuous var (altitude) keeps its terrain palette.
+
+    Omits min/max when the AOI stretch can't be computed (no gee_interface).
+    """
     from gui.tile.variables_tile import _styled_layer
 
     var = _named("GEEVar", raster_type=_named("RT", value="continuous"))
@@ -75,8 +84,10 @@ def test_styled_layer_predefined_continuous_stretches_palette():
 
 
 def test_styled_layer_subj_uses_random_visualizer():
-    """The multi-class subjurisdiction layer routes through randomVisualizer()
-    (random RGB per class) and is added with empty vis params."""
+    """The multi-class subjurisdiction layer routes through randomVisualizer().
+
+    Random RGB per class, and is added with empty vis params.
+    """
     from gui.tile.variables_tile import _styled_layer
 
     class FakeImage:
@@ -93,10 +104,12 @@ def test_styled_layer_subj_uses_random_visualizer():
 
 
 def test_gee_layer_add_uses_sync_api_off_the_solara_loop():
-    """GEE layers must be added via the blocking interface offloaded to a thread,
-    never the async map API. ``add_ee_layer_async`` awaited on Solara's loop
+    """GEE layers must be added via the blocking interface offloaded to a thread.
+
+    Never the async map API. ``add_ee_layer_async`` awaited on Solara's loop
     touches eeclient session locks bound to the GEE interface's private loop and
-    crashes with "bound to a different event loop"."""
+    crashes with "bound to a different event loop".
+    """
     from gui.tile import variables_tile
     from gui.tile.variables_tile import _add_gee_layer
 
@@ -111,8 +124,10 @@ def test_gee_layer_add_uses_sync_api_off_the_solara_loop():
 
 
 def test_add_vector_on_map_registers_layer_under_key(tmp_path):
-    """A local vector file is drawn as a GeoJSON layer registered under its key
-    (replacing any prior layer with the same key)."""
+    """A local vector file is drawn as a GeoJSON layer registered under its key.
+
+    Replacing any prior layer with the same key.
+    """
     import geopandas as gpd
     from shapely.geometry import box
 
@@ -138,8 +153,10 @@ def test_add_vector_on_map_registers_layer_under_key(tmp_path):
 
 
 def test_variables_tile_does_not_render_derived_list():
-    """The Variables tile must not show derived (processed) variables — that list
-    now lives only in the Process tile."""
+    """The Variables tile must not show derived (processed) variables.
+
+    That list now lives only in the Process tile.
+    """
     from gui.tile import variables_tile
 
     src = inspect.getsource(variables_tile.VariablesTile)
