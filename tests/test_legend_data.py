@@ -173,3 +173,151 @@ def test_format_number_keeps_three_significant_digits():
     assert format_number(0.012456) == "0.0125"
     assert format_number(1234.0) == "1234"
     assert format_number(30) == "30"
+
+
+class _Var:
+    """Minimal stand-in for a variable object."""
+
+    def __init__(self, name="", raster_type="continuous", tags=None, history=None):
+        """Store the variable attributes the legend builders read."""
+        self.name = name
+        self.raster_type = raster_type
+        self.tags = tags or []
+        self.processing_history = history or []
+
+
+def test_variable_spec_from_vis_renders_a_categorical_mask_as_chips():
+    """A categorical GEE vis dict becomes chips with default class labels."""
+    from gui.scripts.legend_data import Label, variable_spec_from_vis
+
+    vis = {"palette": ["ffffff", "4caf50"], "min": 0, "max": 1}
+    var = _Var(name="protected_area", raster_type="categorical")
+    spec = variable_spec_from_vis(
+        vis, "catalogue_palette", var, title=Label(literal="protected_area")
+    )
+    assert spec.kind == "chips"
+    assert spec.colors == ("#ffffff", "#4caf50")
+    assert [label.key for label in spec.labels] == [
+        "legend.class.absent",
+        "legend.class.present",
+    ]
+
+
+def test_variable_spec_uses_catalogue_class_key_overrides():
+    """A catalogue entry's legend_class_keys overrides the default chip labels."""
+    from gui.scripts.legend_data import Label, variable_spec_from_vis
+
+    vis = {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1}
+    spec = variable_spec_from_vis(
+        vis,
+        "catalogue_palette",
+        _Var(name="forest_gfc", raster_type="categorical"),
+        title=Label(literal="forest_gfc"),
+    )
+    assert [label.key for label in spec.labels] == [
+        "legend.class.non_forest",
+        "legend.class.forest",
+    ]
+
+
+def test_variable_spec_pins_numeric_endpoints_with_a_unit():
+    """A continuous catalogue palette with a unit_key labels real endpoints."""
+    from gui.scripts.legend_data import Label, variable_spec_from_vis
+
+    vis = {"palette": ["1a9850", "ffffbf", "d73027"], "min": 0, "max": 60}
+    spec = variable_spec_from_vis(
+        vis, "catalogue_palette", _Var(name="slope"), title=Label(literal="slope")
+    )
+    assert spec.kind == "gradient"
+    assert len(spec.colors) == 256
+    assert [(label.key, dict(label.args)) for label in spec.labels] == [
+        ("legend.unit.deg_value", {"value": "0"}),
+        ("legend.unit.deg_value", {"value": "60"}),
+    ]
+
+
+def test_variable_spec_without_a_unit_uses_the_plain_value_key():
+    """A layer with no unit_key falls back to the plain value label."""
+    from gui.scripts.legend_data import Label, variable_spec
+
+    spec = variable_spec(
+        colors=("#000000", "#ffffff"),
+        vmin=0,
+        vmax=5,
+        render_kind="continuous_fallback",
+        var=_Var(name="mystery"),
+        title=Label(literal="mystery"),
+    )
+    assert [(label.key, dict(label.args)) for label in spec.labels] == [
+        ("legend.unit.plain_value", {"value": "0"}),
+        ("legend.unit.plain_value", {"value": "5"}),
+    ]
+
+
+def test_variable_spec_stretched_range_falls_back_to_low_high():
+    """An unpinned (None) value range falls back to Low/High labels."""
+    from gui.scripts.legend_data import Label, variable_spec
+
+    spec = variable_spec(
+        colors=("#000000", "#ffffff"),
+        vmin=None,
+        vmax=None,
+        render_kind="continuous_fallback",
+        var=_Var(name="mystery"),
+        title=Label(literal="mystery"),
+    )
+    assert spec.kind == "gradient"
+    assert [label.key for label in spec.labels] == [
+        "legend.range.low",
+        "legend.range.high",
+    ]
+
+
+def test_variable_spec_random_visualizer_is_a_note():
+    """A random_visualizer render_kind renders as a colourless note."""
+    from gui.scripts.legend_data import Label, variable_spec
+
+    spec = variable_spec(
+        colors=(),
+        vmin=None,
+        vmax=None,
+        render_kind="random_visualizer",
+        var=_Var(name="subj", raster_type="categorical"),
+        title=Label(literal="subj"),
+    )
+    assert spec.kind == "note"
+    assert spec.colors == ()
+    assert [label.key for label in spec.labels] == ["legend.note.random_classes"]
+
+
+def test_variable_spec_from_style_renders_a_change_mask_as_chips():
+    """A post-process change-mask style renders as stable/loss chips."""
+    from gui.scripts.legend_data import Label, variable_spec_from_style
+    from gui.scripts.variable_styles import resolve_variable_style
+
+    var = _Var(name="loss_forest_2015_2020", tags=["loss"], raster_type="categorical")
+    spec = variable_spec_from_style(
+        resolve_variable_style(var), var, title=Label(literal="loss_forest_2015_2020")
+    )
+    assert spec.kind == "chips"
+    assert spec.colors == ("#d9d9d9", "#e31a1c")
+    assert [label.key for label in spec.labels] == [
+        "legend.class.stable",
+        "legend.class.loss",
+    ]
+
+
+def test_variable_spec_from_style_renders_a_distance_raster_in_metres():
+    """A post-process distance style labels its endpoints in metres."""
+    from gui.scripts.legend_data import Label, variable_spec_from_style
+    from gui.scripts.variable_styles import resolve_variable_style
+
+    var = _Var(name="forest_gfc_edge", history=["edge"])
+    spec = variable_spec_from_style(
+        resolve_variable_style(var), var, title=Label(literal="forest_gfc_edge")
+    )
+    assert spec.kind == "gradient"
+    assert [(label.key, dict(label.args)) for label in spec.labels] == [
+        ("legend.unit.m_value", {"value": "30"}),
+        ("legend.unit.m_value", {"value": "1000"}),
+    ]
