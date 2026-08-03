@@ -42,6 +42,33 @@ def _pred_layer_key(storage_key: str) -> str:
     return f"pred_{storage_key}"
 
 
+def _pred_legend(storage_key: str, model_key: str, display_palette):
+    """The legend one prediction raster publishes while it is on the map."""
+    from gui.scripts.legend_data import Label, prediction_spec
+    from gui.scripts.legend_registry import LayerLegend
+
+    return LayerLegend(
+        layer_id=_pred_layer_key(storage_key),
+        label=Label(literal=storage_key),
+        spec=prediction_spec(model_key, display_palette),
+    )
+
+
+def _drop_pred_layers(row, map_) -> None:
+    """Remove every layer a prediction row put on the map, and its legends.
+
+    The single removal chokepoint: the toggle's off-branch and the delete path
+    both go through it, so a legend can never outlive its layer.
+    """
+    from gui.store.state_manager import app_state
+
+    storage_keys = list(row.get("storage_keys", []))
+    if map_ is not None:
+        for storage_key in storage_keys:
+            map_.remove_layer(_pred_layer_key(storage_key), none_ok=True)
+    app_state.unregister_legends(*[_pred_layer_key(k) for k in storage_keys])
+
+
 def _run_inference(
     job_id,
     model_key,
@@ -270,13 +297,15 @@ def InferenceTile(project, map_=None, sepal_client=None):
         row_key = row["key"]
         try:
             if row_key in preds_on_map.value:
-                for sk in storage_keys:
-                    map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+                _drop_pred_layers(row, map_)
                 _forget_on_map(row_key)
             else:
                 from gui.scripts.prediction_map import add_prediction_on_map
+                from gui.store.state_manager import app_state
 
+                generation = app_state.project_loaded_signal.value
                 added_any = False
+                landed = []
                 try:
                     for sk in storage_keys:
                         pred = p.predictions[sk]
@@ -292,12 +321,26 @@ def InferenceTile(project, map_=None, sepal_client=None):
                             display_palette=getattr(pred, "display_palette", None),
                         )
                         added_any = True
+                        landed.append((sk, getattr(pred, "display_palette", None)))
                 finally:
+                    # A project switch during the await clears the map; anything
+                    # that landed afterwards is stale, so take it back off
+                    # instead of publishing a legend for a layer nobody wants.
+                    if app_state.project_loaded_signal.value != generation:
+                        for sk, _palette in landed:
+                            map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+                        return
                     # Mark the row on-map if ANY layer landed (even on partial
                     # failure) so toggle-off can remove all its keys; fire the
                     # reactive once, not per-iteration.
                     if added_any:
                         preds_on_map.set(set(preds_on_map.value) | {row_key})
+                        app_state.register_legends(
+                            *[
+                                _pred_legend(sk, row["model_key"], palette)
+                                for sk, palette in landed
+                            ]
+                        )
         except Exception as exc:
             logger.exception("prediction map toggle failed for row %s", row.get("key"))
             set_form_error(t("tiles.inference.error_map_toggle", exc=exc))
@@ -321,8 +364,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             return
         row_key = row["key"]
         if map_ is not None and row_key in preds_on_map.value:
-            for sk in row.get("storage_keys", []):
-                map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+            _drop_pred_layers(row, map_)
             _forget_on_map(row_key)
         deleted = False
         for sk in row.get("storage_keys", []):

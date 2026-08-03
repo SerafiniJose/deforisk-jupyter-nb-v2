@@ -1,30 +1,42 @@
-"""Predictions are drawn with the QGIS-faithful palette (pinned vmin/vmax), and
-overviews are built only when the opt-in flag is set."""
+"""Prediction map layers.
+
+Predictions are drawn with the QGIS-faithful palette (pinned vmin/vmax), and
+overviews are built only when the opt-in flag is set.
+"""
 
 import gui.scripts.prediction_map as pm
 
 
 class FakeClient:
+    """Stand-in for localtileserver's TileClient."""
+
     def __init__(self, path):
+        """Record the raster path a real TileClient would open."""
         self.path = path
 
     def center(self):
+        """Report a fixed center, like a real TileClient would."""
         return (0.0, 0.0)
 
     default_zoom = 5
 
 
 class FakeMap:
+    """Stand-in for the ipyleaflet map passed to add_prediction_on_map."""
+
     def __init__(self):
+        """Track layers added/removed instead of touching a real map."""
         self.removed = []
         self.added = []
         self.center = None
         self.zoom = None
 
     def remove_layer(self, key, none_ok=False):
+        """Record the removed layer key."""
         self.removed.append(key)
 
     def add_layer(self, layer, key=""):
+        """Record the added (layer, key) pair."""
         self.added.append((layer, key))
 
 
@@ -46,6 +58,7 @@ def _patch_localtileserver(monkeypatch):
 
 
 def test_prediction_added_with_pinned_far_palette(monkeypatch, tmp_path):
+    """A FAR prediction gets the QGIS-faithful ramp pinned to 1..65535."""
     captured = _patch_localtileserver(monkeypatch)
     tif = tmp_path / "p.tif"
     tif.write_bytes(b"")
@@ -63,43 +76,63 @@ def test_prediction_added_with_pinned_far_palette(monkeypatch, tmp_path):
     assert captured["vmin"] == 1 and captured["vmax"] == 65535
     assert captured["nodata"] == 0
     from matplotlib.colors import Colormap
+
     assert isinstance(captured["colormap"], Colormap)
-    assert tuple(round(x * 255) for x in captured["colormap"](0.0)[:3]) == (34, 139, 34)  # FAR green
-    assert fake_map.removed == ["pred_glm_m1__d"]          # replaced existing
+    assert tuple(round(x * 255) for x in captured["colormap"](0.0)[:3]) == (
+        34,
+        139,
+        34,
+    )  # FAR green
+    assert fake_map.removed == ["pred_glm_m1__d"]  # replaced existing
     assert fake_map.added[0][1] == "pred_glm_m1__d"
 
 
 def test_stretch_palette_omits_vmin_vmax_for_autostretch(monkeypatch, tmp_path):
-    """display_palette='stretch' lets localtileserver auto-stretch the ramp to the
-    file's range: no pinned vmin/vmax are passed to the tile layer."""
+    """display_palette='stretch' auto-stretches the ramp to the file's range.
+
+    No pinned vmin/vmax are passed to the tile layer.
+    """
     captured = _patch_localtileserver(monkeypatch)
     tif = tmp_path / "p.tif"
     tif.write_bytes(b"")
 
     pm.add_prediction_on_map(
-        FakeMap(), str(tif), model_key="imported-map",
-        layer_name="n", key="k", display_palette="stretch",
+        FakeMap(),
+        str(tif),
+        model_key="imported-map",
+        layer_name="n",
+        key="k",
+        display_palette="stretch",
     )
     from matplotlib.colors import Colormap
-    assert isinstance(captured["colormap"], Colormap)   # still a ramp, just unpinned
+
+    assert isinstance(captured["colormap"], Colormap)  # still a ramp, just unpinned
     assert captured["vmin"] is None and captured["vmax"] is None
 
 
 def test_far_palette_pins_range_regardless_of_model_key(monkeypatch, tmp_path):
-    """display_palette='far' pins the 1..65535 FAR ramp even when the model_key
-    is an imported name that wouldn't resolve to the far family on its own."""
+    """display_palette='far' pins the 1..65535 FAR ramp regardless of model_key.
+
+    Even an imported name that wouldn't resolve to the far family on its own
+    still gets the pinned range.
+    """
     captured = _patch_localtileserver(monkeypatch)
     tif = tmp_path / "p.tif"
     tif.write_bytes(b"")
 
     pm.add_prediction_on_map(
-        FakeMap(), str(tif), model_key="imported-map",
-        layer_name="n", key="k", display_palette="far",
+        FakeMap(),
+        str(tif),
+        model_key="imported-map",
+        layer_name="n",
+        key="k",
+        display_palette="far",
     )
     assert captured["vmin"] == 1 and captured["vmax"] == 65535
 
 
 def test_overviews_built_only_when_flag_set(monkeypatch, tmp_path):
+    """Overviews are built only when build_overviews=True is passed."""
     _patch_localtileserver(monkeypatch)
     calls = []
     monkeypatch.setattr(
@@ -110,34 +143,44 @@ def test_overviews_built_only_when_flag_set(monkeypatch, tmp_path):
     tif.write_bytes(b"")
 
     pm.add_prediction_on_map(
-        FakeMap(), str(tif), model_key="mw_5",
-        layer_name="n", key="k", build_overviews=False,
+        FakeMap(),
+        str(tif),
+        model_key="mw_5",
+        layer_name="n",
+        key="k",
+        build_overviews=False,
     )
     assert calls == []  # flag off -> no build
 
     pm.add_prediction_on_map(
-        FakeMap(), str(tif), model_key="mw_5",
-        layer_name="n", key="k", build_overviews=True,
+        FakeMap(),
+        str(tif),
+        model_key="mw_5",
+        layer_name="n",
+        key="k",
+        build_overviews=True,
     )
     assert calls == [str(tif)]  # flag on -> built once
 
 
 def test_inference_tile_uses_palette_helper_and_overview_option():
-    """Predictions route through the QGIS-faithful helper (not bare add_raster),
-    overviews are an opt-in checkbox, and the add runs off the Solara loop."""
+    """Predictions route through the QGIS-faithful helper, not bare add_raster.
+
+    Overviews are an opt-in checkbox, and the add runs off the Solara loop.
+    """
     import inspect
 
     from gui.tile import inference_tile
 
     src = inspect.getsource(inference_tile.InferenceTile)
-    assert "add_prediction_on_map" in src         # value-pinned palette path
-    assert "map_.add_raster(" not in src           # no more bare grayscale add
-    assert "gen_overviews" in src                  # opt-in overviews reactive
-    assert 'tiles.inference.generate_overviews_label' in src  # localized checkbox label
-    assert "build_overviews=" in src               # flag forwarded to helper
-    assert "to_thread" in src                       # add offloaded to a thread
-    assert "use_task" in src                        # threaded via solara.lab.use_task
-    assert "pending_toggle" in src                  # toggle routed through the reactive
+    assert "add_prediction_on_map" in src  # value-pinned palette path
+    assert "map_.add_raster(" not in src  # no more bare grayscale add
+    assert "gen_overviews" in src  # opt-in overviews reactive
+    assert "tiles.inference.generate_overviews_label" in src  # localized checkbox label
+    assert "build_overviews=" in src  # flag forwarded to helper
+    assert "to_thread" in src  # add offloaded to a thread
+    assert "use_task" in src  # threaded via solara.lab.use_task
+    assert "pending_toggle" in src  # toggle routed through the reactive
     # Adding a prediction must NOT recenter/rezoom the map — keep the user's view.
     assert "fit_bounds=False" in src
     assert "fit_bounds=True" not in src
@@ -146,21 +189,73 @@ def test_inference_tile_uses_palette_helper_and_overview_option():
 
 
 def test_inference_tile_supports_local_prediction_import():
-    """Step 7 lets the user import a local raster as a prediction: the New
-    prediction dialog has an import mode (file picker + palette choice), and
-    the import script is wired to the registry + reactive. The picker/palette
-    form lives in PredictionFormDialog (unified creation dialog)."""
+    """Step 7 lets the user import a local raster as a prediction.
+
+    The New prediction dialog has an import mode (file picker + palette
+    choice), and the import script is wired to the registry + reactive. The
+    picker/palette form lives in PredictionFormDialog (unified creation
+    dialog).
+    """
     import inspect
 
     from gui.tile import inference_tile
     from gui.widget import prediction_form_dialog
 
     src = inspect.getsource(inference_tile)
-    assert "import_prediction" in src           # routes through the import adapter
-    assert "sepal_client" in src                # picker needs the SEPAL client
+    assert "import_prediction" in src  # routes through the import adapter
+    assert "sepal_client" in src  # picker needs the SEPAL client
     # New prediction is published so the outputs list + Evaluation maps update.
     assert "project.set(" in src or "project_reactive.set(" in src
 
     dialog_src = inspect.getsource(prediction_form_dialog)
-    assert "FileInputComponent" in dialog_src   # local raster file picker
-    assert "_import_palette_items" in dialog_src     # palette choice
+    assert "FileInputComponent" in dialog_src  # local raster file picker
+    assert "_import_palette_items" in dialog_src  # palette choice
+
+
+def test_drop_pred_layers_removes_layers_and_legends(monkeypatch):
+    """_drop_pred_layers removes every map layer a row added and its legends."""
+    from gui.store.state_manager import app_state
+    from gui.tile import inference_tile
+
+    removed = []
+
+    class FakeMap:
+        def remove_layer(self, key, none_ok=False):
+            removed.append(key)
+
+    app_state.clear_legends()
+    row = {"key": "row1", "storage_keys": ["pred_a", "pred_b"]}
+    for storage_key in row["storage_keys"]:
+        app_state.register_legends(
+            inference_tile._pred_legend(storage_key, "rf_2020", None)
+        )
+    assert len(app_state.layer_legends.value) == 2
+
+    inference_tile._drop_pred_layers(row, FakeMap())
+
+    assert removed == [
+        inference_tile._pred_layer_key("pred_a"),
+        inference_tile._pred_layer_key("pred_b"),
+    ]
+    assert app_state.layer_legends.value == ()
+    assert app_state.selected_legend.value == ""
+
+
+def test_pred_legend_is_keyed_by_the_map_layer_key():
+    """_pred_legend keys its LayerLegend by the map layer key, not raw name."""
+    from gui.tile import inference_tile
+
+    legend = inference_tile._pred_legend("pred_a", "rf_2020", None)
+    assert legend.layer_id == inference_tile._pred_layer_key("pred_a")
+    assert legend.label.literal == "pred_a"
+    assert legend.spec.kind == "gradient"
+    assert legend.spec.title.key == "legend.prediction.title"
+
+
+def test_pred_legend_honours_an_imported_display_palette():
+    """_pred_legend forwards an imported prediction's display_palette."""
+    from gui.scripts.legend_data import prediction_spec
+    from gui.tile import inference_tile
+
+    legend = inference_tile._pred_legend("imported", "imported", "jnr")
+    assert legend.spec.colors == prediction_spec("jnr_x").colors
