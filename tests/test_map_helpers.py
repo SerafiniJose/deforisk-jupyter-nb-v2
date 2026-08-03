@@ -1,3 +1,9 @@
+"""Tests for gui.scripts.map_helpers — the map-interaction helpers.
+
+The SepalMap is faked (it pulls in the whole ipyleaflet/pysepal stack), so these
+tests assert on the calls the helpers make rather than on rendered layers.
+"""
+
 import sys
 import types
 
@@ -12,40 +18,53 @@ class FakeMap:
     """Records the SepalMap zoom/layer calls made against it."""
 
     def __init__(self):
+        """Start with an empty log of every recorded call."""
         self.zoom_bounds_calls = []
         self.zoom_ee_object_calls = []
-        self.added_layers = []          # list of (layer, key)
+        self.added_layers = []  # list of (layer, key)
         self.removed_layer_keys = []
-        self.remove_all_calls = []      # list of {"base": ..., "keep_names": ...}
+        self.remove_all_calls = []  # list of {"base": ..., "keep_names": ...}
 
     def remove_all(self, base=False, keep_names=None):
+        """Log a bulk layer removal."""
         self.remove_all_calls.append({"base": base, "keep_names": keep_names})
 
     def zoom_bounds(self, bounds):
+        """Log a zoom to a WGS84 bounding box."""
         self.zoom_bounds_calls.append(bounds)
 
     def zoom_ee_object(self, item):
+        """Log a zoom to an Earth Engine object."""
         self.zoom_ee_object_calls.append(item)
 
     def add_layer(self, layer, key=None):
+        """Log a layer addition."""
         self.added_layers.append((layer, key))
 
     def remove_layer(self, key, none_ok=False):
+        """Log a layer removal by key."""
         self.removed_layer_keys.append(key)
 
 
 class FakeGdf:
+    """Duck-typed stand-in for a GeoDataFrame (bounds only)."""
+
     def __init__(self, total_bounds):
+        """Hand back the canned WGS84 ``total_bounds``."""
         self.total_bounds = total_bounds
 
 
 class FakeAoi:
+    """Duck-typed stand-in for pysepal's AoiResult."""
+
     def __init__(self, gdf=None, feature_collection=None):
+        """Carry either a vector geometry, a GEE collection, or neither."""
         self.gdf = gdf
         self.feature_collection = feature_collection
 
 
 def test_vector_aoi_zooms_to_total_bounds():
+    """A vector AOI frames the map on its WGS84 total_bounds."""
     m = FakeMap()
     bounds = (12.403, 43.893, 12.517, 43.993)
     aoi = FakeAoi(gdf=FakeGdf(bounds))
@@ -56,6 +75,7 @@ def test_vector_aoi_zooms_to_total_bounds():
 
 
 def test_gee_only_aoi_zooms_to_feature_collection():
+    """A GEE-lazy AOI frames the map through zoom_ee_object."""
     m = FakeMap()
     fc = object()  # stand-in for an ee.FeatureCollection
     aoi = FakeAoi(gdf=None, feature_collection=fc)
@@ -66,6 +86,7 @@ def test_gee_only_aoi_zooms_to_feature_collection():
 
 
 def test_gdf_takes_precedence_over_feature_collection():
+    """Local geometry wins over the GEE round-trip when both are present."""
     m = FakeMap()
     bounds = (0.0, 0.0, 1.0, 1.0)
     aoi = FakeAoi(gdf=FakeGdf(bounds), feature_collection=object())
@@ -76,6 +97,7 @@ def test_gdf_takes_precedence_over_feature_collection():
 
 
 def test_aoi_without_geometry_or_fc_is_noop():
+    """An AOI carrying nothing to zoom to leaves the map alone."""
     m = FakeMap()
     aoi = FakeAoi(gdf=None, feature_collection=None)
 
@@ -85,17 +107,20 @@ def test_aoi_without_geometry_or_fc_is_noop():
 
 
 def test_none_aoi_is_noop():
+    """No AOI, no zoom."""
     m = FakeMap()
     assert zoom_map_to_aoi(m, None) is False
     assert m.zoom_bounds_calls == []
 
 
 def test_none_map_is_noop():
+    """No map, no zoom."""
     aoi = FakeAoi(gdf=FakeGdf((0.0, 0.0, 1.0, 1.0)))
     assert zoom_map_to_aoi(None, aoi) is False
 
 
 # --- draw_aoi_on_map --------------------------------------------------------
+
 
 def _fake_pysepal_mapping(monkeypatch, recorder):
     """Inject a stub pysepal.mapping so draw_aoi_on_map's lazy import is cheap."""
@@ -110,6 +135,7 @@ def _fake_pysepal_mapping(monkeypatch, recorder):
 
 
 def test_draw_replaces_existing_layer_and_adds_geojson(monkeypatch):
+    """Drawing an AOI clears the stale layer under the same key first."""
     calls = []
     _fake_pysepal_mapping(monkeypatch, calls)
 
@@ -119,12 +145,13 @@ def test_draw_replaces_existing_layer_and_adds_geojson(monkeypatch):
     aoi.name = "san_marino"
 
     assert draw_aoi_on_map(m, aoi) is True
-    assert m.removed_layer_keys == ["aoi"]            # clears stale layer first
+    assert m.removed_layer_keys == ["aoi"]  # clears stale layer first
     assert m.added_layers == [("layer:san_marino", "aoi")]
     assert calls == [(gdf, "san_marino", None)]
 
 
 def test_draw_without_geometry_is_noop(monkeypatch):
+    """A GEE-lazy AOI has no geometry to draw."""
     calls = []
     _fake_pysepal_mapping(monkeypatch, calls)
 
@@ -135,17 +162,22 @@ def test_draw_without_geometry_is_noop(monkeypatch):
 
 
 def test_draw_none_inputs_are_noop():
+    """Neither a missing map nor a missing AOI raises."""
     assert draw_aoi_on_map(None, FakeAoi(gdf=FakeGdf((0, 0, 1, 1)))) is False
     assert draw_aoi_on_map(FakeMap(), None) is False
 
 
 def test_clear_project_overlays_removes_non_base_layers():
-    """Project switch must drop every app overlay (variables, samples,
-    predictions, old AOI) while keeping basemaps (base layers)."""
+    """Drop every app overlay on a project switch, keep the basemaps.
+
+    Overlays are the variables, samples, predictions and old AOI; base layers
+    (basemaps) must survive.
+    """
     m = FakeMap()
     clear_project_overlays(m)
     assert m.remove_all_calls == [{"base": False, "keep_names": None}]
 
 
 def test_clear_project_overlays_noop_without_map():
+    """Clearing overlays without a map must not raise."""
     clear_project_overlays(None)  # must not raise

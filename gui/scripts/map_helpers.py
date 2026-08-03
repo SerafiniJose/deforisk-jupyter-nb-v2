@@ -164,6 +164,7 @@ def add_sample_points_on_map(map_, points_path, name: str, key: str):
     gdf = gpd.read_file(points_path)
     if gdf.crs is None:
         import warnings
+
         warnings.warn(
             f"Sample points '{key}' have no CRS; drawing as-is without "
             "reprojection to WGS84.",
@@ -177,8 +178,11 @@ def add_sample_points_on_map(map_, points_path, name: str, key: str):
 
     def _point_style(color):
         return {
-            "radius": 4, "color": color, "fillColor": color,
-            "fillOpacity": 0.7, "weight": 1,
+            "radius": 4,
+            "color": color,
+            "fillColor": color,
+            "fillOpacity": 0.7,
+            "weight": 1,
         }
 
     for subset, layer_key, color, suffix in (
