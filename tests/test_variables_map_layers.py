@@ -161,3 +161,18 @@ def test_variables_tile_does_not_render_derived_list():
 
     src = inspect.getsource(variables_tile.VariablesTile)
     assert "DerivedVariableList" not in src
+
+
+def test_source_toggle_labels_layers_as_raw():
+    """The source-variable toggle must label its layers with an origin marker.
+
+    It must hand the renderers a "[R] "-prefixed name, not the bare registry
+    key — otherwise a raw variable and its harmonized counterpart render
+    under identical names.
+    """
+    from gui.tile import variables_tile
+
+    src = inspect.getsource(variables_tile.VariablesTile)
+    assert "raw_layer_label(key)" in src
+    assert "layer_name=key," not in src  # bare key must be gone
+    assert "add_vector_on_map, map_, str(var.path), key," not in src

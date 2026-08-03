@@ -9,6 +9,7 @@ from pysepal.solara.notifications import use_notifications
 
 from gui.i18n import t
 from gui.scripts import process_actions
+from gui.scripts.layer_labels import raw_layer_label
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
 from gui.scripts.notify_bridge import (
     ERROR_TOAST_TIMEOUT,
@@ -391,13 +392,14 @@ def VariablesTile(project, map_=None, sepal_client=None):
 
             images = getattr(var, "gee_images", None)
             layer_key = _map_layer_key(key)
+            label = raw_layer_label(key)
             if images:
                 await asyncio.to_thread(
-                    _add_gee_layer, map_, images[0], var, key, layer_key
+                    _add_gee_layer, map_, images[0], var, label, layer_key
                 )
             elif type(var).__name__ == "LocalVectorVar":
                 await asyncio.to_thread(
-                    add_vector_on_map, map_, str(var.path), key, layer_key
+                    add_vector_on_map, map_, str(var.path), label, layer_key
                 )
             else:  # LocalRasterVar — reuse the palette it had as a GEE layer
                 await asyncio.to_thread(
@@ -405,7 +407,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
                     map_,
                     str(var.path),
                     var=var,
-                    layer_name=key,
+                    layer_name=label,
                     key=layer_key,
                     fit_bounds=False,
                 )

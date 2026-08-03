@@ -8,7 +8,11 @@ tiles share one layer-key namespace.
 
 Rendering reuses the source-variable helpers (``add_raster_var_on_map`` /
 ``add_vector_on_map``): processed rasters keep the variable's ``name``, so a
-downloaded catalogue layer keeps its palette after alignment.
+downloaded catalogue layer keeps its palette after alignment. The *displayed*
+name is prefixed with an origin marker (``[H]`` / ``[D]``, see
+``gui.scripts.layer_labels``) because a raw variable and its harmonized
+counterpart share a registry key and would otherwise be indistinguishable in
+the layer control.
 """
 
 import asyncio
@@ -17,6 +21,7 @@ import logging
 import solara
 
 from gui.i18n import t
+from gui.scripts.layer_labels import processed_layer_label
 from gui.scripts.map_helpers import add_vector_on_map, is_mappable
 from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT
 from gui.scripts.variable_map import add_raster_var_on_map
@@ -71,9 +76,10 @@ def use_derived_map_toggle(project, map_, notifier):
                 return
 
             layer_key = derived_layer_key(key)
+            label = processed_layer_label(p, key)
             if type(var).__name__ == "LocalVectorVar":
                 await asyncio.to_thread(
-                    add_vector_on_map, map_, str(var.path), key, layer_key
+                    add_vector_on_map, map_, str(var.path), label, layer_key
                 )
             else:  # LocalRasterVar — same palette resolution as source rasters
                 await asyncio.to_thread(
@@ -81,7 +87,7 @@ def use_derived_map_toggle(project, map_, notifier):
                     map_,
                     str(var.path),
                     var=var,
-                    layer_name=key,
+                    layer_name=label,
                     key=layer_key,
                     fit_bounds=False,
                 )
