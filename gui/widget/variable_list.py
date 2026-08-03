@@ -6,24 +6,34 @@ import solara
 
 from gui.i18n import t
 from gui.scripts.map_helpers import is_mappable
+from gui.scripts.variable_identity import is_base_raster
 from gui.widget.product_table import ProductTable
 
 
-def derived_source_key(p, var_name, fallback):
+def derived_source_key(p, var_name, fallback, year=None):
     """Raw-variable key a derived name traces back to.
 
     Change layers are named ``{op}_{source}_...`` — strip the operation prefix
     so they resolve to their start layer instead of "unknown".
+
+    A name can belong to several raw variables (one temporal layer, one entry
+    per year), and a reprojected copy keeps its source's ``year``, so prefer the
+    candidate whose year matches. Change layers carry no year — their span lives
+    in ``tags`` — and fall back to the first name match.
     """
     base = var_name
     for prefix in ("loss_", "gain_"):
         if base.startswith(prefix):
             base = base[len(prefix) :]
             break
-    return next(
-        (k for k, raw_var in p.raw_variables.items() if base.startswith(raw_var.name)),
-        fallback,
-    )
+    matches = [
+        k for k, raw_var in p.raw_variables.items() if base.startswith(raw_var.name)
+    ]
+    if year is not None:
+        for key in matches:
+            if getattr(p.raw_variables[key], "year", None) == year:
+                return key
+    return matches[0] if matches else fallback
 
 
 @solara.component
@@ -50,7 +60,7 @@ def SourceVariableList(
 
     rows = []
     for key, var in raw_variables.items():
-        is_base = p.base_raster is not None and p.base_raster.name == var.name
+        is_base = is_base_raster(p, var)
         data_type_label = (
             var.data_type if isinstance(var.data_type, str) else var.data_type.value
         )
@@ -164,7 +174,10 @@ def DerivedVariableList(
     rows = []
     for key, var in variables.items():
         source_name = derived_source_key(
-            p, var.name, t("widgets.variable_list.derived_source_unknown")
+            p,
+            var.name,
+            t("widgets.variable_list.derived_source_unknown"),
+            year=getattr(var, "year", None),
         )
         actions = []
         if on_toggle_map is not None and is_mappable(var):

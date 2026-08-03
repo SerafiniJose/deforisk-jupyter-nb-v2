@@ -11,6 +11,7 @@ from gui.i18n import t
 from gui.scripts import process_actions
 from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT, tracked_job
 from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
+from gui.scripts.variable_identity import base_raster_key, is_base_raster
 from gui.store.project_writers import writing
 from gui.tile.derived_map import derived_on_map, use_derived_map_toggle
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -32,23 +33,6 @@ def _raw_raster_keys(p):
         for k, v in p.raw_variables.items()
         if getattr(v, "data_type", None) != DataType.vector
     ]
-
-
-def base_raster_key(p) -> str:
-    """Raw-variable key backing the current base raster ('' if none/unmatched).
-
-    The base raster is a reprojected copy that keeps the source variable's
-    ``name``, while the Process-tile Select is keyed by raw-variable key. We map
-    name -> key so the Select can be restored after a project is loaded (the
-    base lives in the model, but the Select's state is transient ``use_state``).
-    """
-    if p is None or getattr(p, "base_raster", None) is None:
-        return ""
-    name = p.base_raster.name
-    for k, v in p.raw_variables.items():
-        if getattr(v, "name", None) == name:
-            return k
-    return ""
 
 
 @solara.component
@@ -178,10 +162,7 @@ def ProcessTile(project, processing, map_=None):
         # after a project load): keep its stored CRS / resolution rather than
         # recomputing them from the source file, which could differ (e.g. a
         # non-UTM base CRS).
-        if (
-            p.base_raster is not None
-            and getattr(var, "name", None) == p.base_raster.name
-        ):
+        if is_base_raster(p, var):
             return
         res = await asyncio.to_thread(process_actions.base_raster_resolution, var)
         if res:

@@ -8,6 +8,8 @@ must never raise on a partially-populated or legacy component object.
 
 from typing import Any, Dict, List, Tuple
 
+from gui.scripts.variable_identity import is_base_raster
+
 
 def _enum_str(v: Any) -> Any:
     """An enum's ``.value`` (variables use ``use_enum_values``), or the value as-is."""
@@ -58,8 +60,6 @@ def _count_kinds(items) -> Tuple[int, int]:
 def raw_variable_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Source variables, flagging the one backing the base raster."""
     variables = getattr(p, "raw_variables", {})
-    base = getattr(p, "base_raster", None)
-    base_name = getattr(base, "name", None)
     rows = []
     for key, v in variables.items():
         name = getattr(v, "name", key)
@@ -70,7 +70,7 @@ def raw_variable_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
                 "data_type": _fmt(_enum_str(getattr(v, "data_type", None))),
                 "raster_type": _fmt(_enum_str(getattr(v, "raster_type", None))),
                 "year": _fmt(getattr(v, "year", None)),
-                "is_base": base_name is not None and name == base_name,
+                "is_base": is_base_raster(p, v),
             }
         )
     vec, ras = _count_kinds(variables.values())

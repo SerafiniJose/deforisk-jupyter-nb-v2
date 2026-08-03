@@ -17,6 +17,7 @@ from gui.scripts.notify_bridge import (
     tracked_job,
 )
 from gui.scripts.solara_threads import publish_if_current, to_thread_in_context
+from gui.scripts.variable_identity import is_base_raster
 from gui.scripts.variable_map import add_raster_var_on_map
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
@@ -445,7 +446,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
             # its source (the replacement starts cloud-backed again).
             old = p.raw_variables.pop(key, None)
             if old is not None:
-                if p.base_raster is not None and p.base_raster.name == old.name:
+                if is_base_raster(p, old):
                     p.base_raster = None
                     notifications.warning(
                         t("tiles.variables.error_base_raster_reset", name=old.name),
@@ -493,7 +494,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
             return
         try:
             old_var = p.raw_variables.pop(old_key, None)
-            if old_var and p.base_raster and p.base_raster.name == old_var.name:
+            if is_base_raster(p, old_var):
                 p.base_raster = None
                 notifications.warning(
                     t("tiles.variables.error_base_raster_reset", name=old_var.name),
@@ -520,7 +521,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
         if p is None:
             return
         removed = p.raw_variables.pop(key, None)
-        if removed and p.base_raster and p.base_raster.name == removed.name:
+        if is_base_raster(p, removed):
             p.base_raster = None
             notifications.warning(
                 t("tiles.variables.error_base_raster_removed", name=removed.name),
@@ -595,9 +596,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
     _pending_var = (
         p.raw_variables.get(pending_remove) if (p and pending_remove) else None
     )
-    _pending_is_base = bool(
-        _pending_var and p.base_raster and p.base_raster.name == _pending_var.name
-    )
+    _pending_is_base = is_base_raster(p, _pending_var)
     _confirm_msg = t(
         "tiles.variables.confirm_remove_message", name=pending_remove or ""
     )
@@ -619,11 +618,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
     _replace_msg = t("tiles.variables.confirm_replace_message", key=_add_key or "")
     if _add_old is not None and type(_add_old).__name__ != "GEEVar":
         _replace_msg += " " + t("tiles.variables.confirm_replace_downloaded_warning")
-    if (
-        _add_old is not None
-        and p.base_raster is not None
-        and p.base_raster.name == _add_old.name
-    ):
+    if is_base_raster(p, _add_old):
         _replace_msg += " " + t("tiles.variables.confirm_replace_base_warning")
     ConfirmDialog(
         open=pending_add is not None,

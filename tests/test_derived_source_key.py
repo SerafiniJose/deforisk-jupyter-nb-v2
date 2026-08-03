@@ -35,3 +35,26 @@ def test_gain_prefix_stripped():
 def test_unknown_falls_back():
     """A name matching no raw variable yields the caller's fallback."""
     assert derived_source_key(_P(), "loss_mangrove_2015_2020", "?") == "?"
+
+
+class _Temporal:
+    """One layer, two years — same ``name``, distinct raw keys."""
+
+    def __init__(self):
+        self.raw_variables = {
+            "forest_2000": SimpleNamespace(name="forest", year=2000),
+            "forest_2010": SimpleNamespace(name="forest", year=2010),
+        }
+
+
+def test_same_named_years_resolve_by_year():
+    """A reprojected copy keeps its source's name AND year — match on both."""
+    assert derived_source_key(_Temporal(), "forest", "?", year=2010) == "forest_2010"
+    assert derived_source_key(_Temporal(), "forest", "?", year=2000) == "forest_2000"
+
+
+def test_yearless_derived_still_matches_by_name():
+    """Change layers carry no year (it lives in ``tags``): keep prefix matching."""
+    assert (
+        derived_source_key(_P(), "loss_forest_gfc_2015_2020", "?") == "forest_gfc_2015"
+    )
