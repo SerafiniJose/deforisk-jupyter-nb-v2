@@ -242,17 +242,17 @@ class JNRBenchmarkModel(BaseRiskModel):
                 "No dataset available. Pass dataset= or set model.dataset "
                 "before calling fit()."
             )
-        # Resolve the forest-loss variable (defor_var override, else the target)
-        # and validate it is a deforestation variable (by tag).
+        # Resolve the forest-loss variable (defor_var override, else the target).
+        # Any binary 0/1 layer the user selects is accepted — as in MW and in
+        # apply() — since the 'deforestation' tag only records which
+        # processing.py factory built a layer, not whether it is valid input.
+        # What does matter is that the layer is binary: deforrate reads
+        # ``defor == 1`` as the event, so anything else trains silently on a
+        # wrong numerator.
         defor_var_obj = self._resolve_defor_var(active)
-        defor_tags = getattr(defor_var_obj, "tags", []) or []
-        if "deforestation" not in defor_tags:
-            raise ValueError(
-                f"JNRBenchmarkModel requires the forest-loss variable to be tagged "
-                f"'deforestation', but '{defor_var_obj.name}' has tags {defor_tags}. "
-                f"Ensure the variable was created/processed with the "
-                f"'deforestation' tag."
-            )
+        deforrate.validate_binary_defor(
+            defor_var_obj.path, layer_name=defor_var_obj.name
+        )
 
         period = active.name or self.name
         if period is None:
@@ -381,8 +381,13 @@ class JNRBenchmarkModel(BaseRiskModel):
                 "Provide the number of years in the period, e.g. time_interval=5."
             )
 
-        # Extract file paths from dataset
-        deforestation_file = self._resolve_defor_var(active).path
+        # Extract file paths from dataset. This period's forest-loss layer is
+        # not the one fit() saw, so it gets the same binary check.
+        defor_var_obj = self._resolve_defor_var(active)
+        deforrate.validate_binary_defor(
+            defor_var_obj.path, layer_name=defor_var_obj.name
+        )
+        deforestation_file = defor_var_obj.path
         forest_file = self._get_feature(active, self.forest_var)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         subj_file = self._get_feature(active, self.subj_var)
