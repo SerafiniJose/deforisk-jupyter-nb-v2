@@ -14,16 +14,24 @@ class _P:
 
 
 def test_plain_derived_name_matches_raw():
+    """A post-processed layer resolves to the raw variable it extends."""
     assert derived_source_key(_P(), "rivers_dist", "?") == "rivers"
 
 
 def test_loss_prefix_stripped():
-    assert derived_source_key(_P(), "loss_forest_gfc_2015_2020", "?") == "forest_gfc_2015"
+    """A loss layer resolves to its start layer, not to "unknown"."""
+    assert (
+        derived_source_key(_P(), "loss_forest_gfc_2015_2020", "?") == "forest_gfc_2015"
+    )
 
 
 def test_gain_prefix_stripped():
-    assert derived_source_key(_P(), "gain_forest_gfc_2015_2020", "?") == "forest_gfc_2015"
+    """Same for a gain layer — both operation prefixes are stripped."""
+    assert (
+        derived_source_key(_P(), "gain_forest_gfc_2015_2020", "?") == "forest_gfc_2015"
+    )
 
 
 def test_unknown_falls_back():
+    """A name matching no raw variable yields the caller's fallback."""
     assert derived_source_key(_P(), "loss_mangrove_2015_2020", "?") == "?"

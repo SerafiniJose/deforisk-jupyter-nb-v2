@@ -18,7 +18,7 @@ def derived_source_key(p, var_name, fallback):
     base = var_name
     for prefix in ("loss_", "gain_"):
         if base.startswith(prefix):
-            base = base[len(prefix):]
+            base = base[len(prefix) :]
             break
     return next(
         (k for k, raw_var in p.raw_variables.items() if base.startswith(raw_var.name)),
@@ -89,7 +89,13 @@ def SourceVariableList(
         actions.append({"kind": "delete", "on_click": lambda *_, k=key: on_remove(k)})
 
         name_chips = (
-            [{"value": t("widgets.variable_list.chip_base"), "color": "info", "outlined": False}]
+            [
+                {
+                    "value": t("widgets.variable_list.chip_base"),
+                    "color": "info",
+                    "outlined": False,
+                }
+            ]
             if is_base
             else []
         )
@@ -118,7 +124,10 @@ def SourceVariableList(
     ProductTable(
         title=t("widgets.variable_list.source_title"),
         columns=[
-            {"label": t("widgets.variable_list.source_col_name"), "width": "minmax(0,2fr)"},
+            {
+                "label": t("widgets.variable_list.source_col_name"),
+                "width": "minmax(0,2fr)",
+            },
             {"label": t("widgets.variable_list.source_col_type"), "width": "150px"},
             {"label": t("widgets.variable_list.source_col_year"), "width": "44px"},
         ],
@@ -167,7 +176,9 @@ def DerivedVariableList(
                 }
             )
         if on_remove is not None:
-            actions.append({"kind": "delete", "on_click": lambda *_, k=key: on_remove(k)})
+            actions.append(
+                {"kind": "delete", "on_click": lambda *_, k=key: on_remove(k)}
+            )
         rows.append(
             {
                 "key": key,
@@ -183,7 +194,10 @@ def DerivedVariableList(
     ProductTable(
         title=title or t("widgets.variable_list.derived_title"),
         columns=[
-            {"label": t("widgets.variable_list.derived_col_name"), "width": "minmax(0,2fr)"},
+            {
+                "label": t("widgets.variable_list.derived_col_name"),
+                "width": "minmax(0,2fr)",
+            },
             {"label": t("widgets.variable_list.derived_col_source"), "width": "120px"},
             {"label": t("widgets.variable_list.derived_col_status"), "width": "90px"},
         ],

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 
 def _enum_str(v: Any) -> Any:
-    """Return an enum's ``.value`` (variables use ``use_enum_values``) or the value as-is."""
+    """An enum's ``.value`` (variables use ``use_enum_values``), or the value as-is."""
     return getattr(v, "value", v)
 
 
@@ -21,7 +21,9 @@ def _fmt(v: Any, dash: str = "—") -> Any:
     return v
 
 
-def project_overview(p: Any, last_saved: Any = None, dirty: bool = False) -> Dict[str, Any]:
+def project_overview(
+    p: Any, last_saved: Any = None, dirty: bool = False
+) -> Dict[str, Any]:
     """Header facts for the popup: name, AOI, discovered years, per-registry counts."""
     aoi = getattr(p, "aoi", None) or {}
     return {
@@ -54,60 +56,74 @@ def _count_kinds(items) -> Tuple[int, int]:
 
 
 def raw_variable_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Source variables, flagging the one backing the base raster."""
     variables = getattr(p, "raw_variables", {})
     base = getattr(p, "base_raster", None)
     base_name = getattr(base, "name", None)
     rows = []
     for key, v in variables.items():
         name = getattr(v, "name", key)
-        rows.append({
-            "key": key,
-            "name": name,
-            "data_type": _fmt(_enum_str(getattr(v, "data_type", None))),
-            "raster_type": _fmt(_enum_str(getattr(v, "raster_type", None))),
-            "year": _fmt(getattr(v, "year", None)),
-            "is_base": base_name is not None and name == base_name,
-        })
+        rows.append(
+            {
+                "key": key,
+                "name": name,
+                "data_type": _fmt(_enum_str(getattr(v, "data_type", None))),
+                "raster_type": _fmt(_enum_str(getattr(v, "raster_type", None))),
+                "year": _fmt(getattr(v, "year", None)),
+                "is_base": base_name is not None and name == base_name,
+            }
+        )
     vec, ras = _count_kinds(variables.values())
     return {"total": len(rows), "vector": vec, "raster": ras}, rows
 
 
 def processed_variable_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Derived variables, each resolved back to the raw variable it came from."""
     raw = getattr(p, "raw_variables", {})
     processed = getattr(p, "processed_variables", {})
     rows = []
     for key, v in processed.items():
         name = getattr(v, "name", key)
         source = next(
-            (rk for rk, rv in raw.items() if name.startswith(getattr(rv, "name", "\0"))),
+            (
+                rk
+                for rk, rv in raw.items()
+                if name.startswith(getattr(rv, "name", "\0"))
+            ),
             "—",
         )
-        rows.append({
-            "key": key,
-            "name": name,
-            "source": source,
-            "raster_type": _fmt(_enum_str(getattr(v, "raster_type", None))),
-            "year": _fmt(getattr(v, "year", None)),
-        })
+        rows.append(
+            {
+                "key": key,
+                "name": name,
+                "source": source,
+                "raster_type": _fmt(_enum_str(getattr(v, "raster_type", None))),
+                "year": _fmt(getattr(v, "year", None)),
+            }
+        )
     vec, ras = _count_kinds(processed.values())
     return {"total": len(rows), "vector": vec, "raster": ras}, rows
 
 
 def dataset_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Registered datasets with their target name and feature count."""
     rows = []
     for key, ds in getattr(p, "datasets", {}).items():
         target = getattr(ds, "target", None)
-        rows.append({
-            "key": key,
-            "name": getattr(ds, "name", None) or key,
-            "target_name": getattr(target, "name", None) or "—",
-            "feature_count": len(getattr(ds, "features", []) or []),
-            "year": _fmt(getattr(ds, "year", None)),
-        })
+        rows.append(
+            {
+                "key": key,
+                "name": getattr(ds, "name", None) or key,
+                "target_name": getattr(target, "name", None) or "—",
+                "feature_count": len(getattr(ds, "features", []) or []),
+                "year": _fmt(getattr(ds, "year", None)),
+            }
+        )
     return {"total": len(rows)}, rows
 
 
 def sample_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Registered sample sets, with the total point count across them."""
     rows = []
     points = 0
     for key, s in getattr(p, "samples", {}).items():
@@ -115,19 +131,22 @@ def sample_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         points += n_total
         allocation = getattr(s, "allocation", None)
         class_counts = getattr(s, "class_counts", {}) or {}
-        rows.append({
-            "key": key,
-            "name": getattr(s, "name", None) or key,
-            "strategy": _fmt(getattr(s, "strategy", None)),
-            "allocation": _fmt(allocation),
-            "n_total": n_total,
-            "class_counts": class_counts,
-            "seed": _fmt(getattr(s, "seed", None)),
-        })
+        rows.append(
+            {
+                "key": key,
+                "name": getattr(s, "name", None) or key,
+                "strategy": _fmt(getattr(s, "strategy", None)),
+                "allocation": _fmt(allocation),
+                "n_total": n_total,
+                "class_counts": class_counts,
+                "seed": _fmt(getattr(s, "seed", None)),
+            }
+        )
     return {"total": len(rows), "points": points}, rows
 
 
 def model_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Registered models, with how many of them are trained."""
     rows = []
     n_trained = 0
     for key, m in getattr(p, "models", {}).items():
@@ -137,51 +156,61 @@ def model_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         params = getattr(m, "parameters", {}) or {}
         params_str = " · ".join(f"{k}={v}" for k, v in params.items()) or "—"
         dev = getattr(m, "deviance", None)
-        rows.append({
-            "key": key,
-            "name": getattr(m, "name", None) or key,
-            "model_type": _fmt(getattr(m, "model_type", None)),
-            "year": _fmt(getattr(m, "year", None)),
-            "trained": trained,
-            "trained_at": _fmt(getattr(m, "trained_at", None)),
-            "n_samples": _fmt(getattr(m, "n_samples", None)),
-            "deviance": round(dev, 3) if isinstance(dev, (int, float)) else "—",
-            "params": params_str,
-        })
+        rows.append(
+            {
+                "key": key,
+                "name": getattr(m, "name", None) or key,
+                "model_type": _fmt(getattr(m, "model_type", None)),
+                "year": _fmt(getattr(m, "year", None)),
+                "trained": trained,
+                "trained_at": _fmt(getattr(m, "trained_at", None)),
+                "n_samples": _fmt(getattr(m, "n_samples", None)),
+                "deviance": round(dev, 3) if isinstance(dev, (int, float)) else "—",
+                "params": params_str,
+            }
+        )
     return {"total": len(rows), "trained": n_trained}, rows
 
 
 def prediction_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Registered predictions, with how many of them are active."""
     rows = []
     n_active = 0
     for key, pr in getattr(p, "predictions", {}).items():
         active = bool(getattr(pr, "active", False))
         if active:
             n_active += 1
-        rows.append({
-            "key": key,
-            "model_key": _fmt(getattr(pr, "model_key", None)),
-            "dataset_name": _fmt(getattr(pr, "dataset_name", None)),
-            "year": _fmt(getattr(pr, "year", None)),
-            "window": _fmt(getattr(pr, "window", None)),
-            "active": active,
-        })
+        rows.append(
+            {
+                "key": key,
+                "model_key": _fmt(getattr(pr, "model_key", None)),
+                "dataset_name": _fmt(getattr(pr, "dataset_name", None)),
+                "year": _fmt(getattr(pr, "year", None)),
+                "window": _fmt(getattr(pr, "window", None)),
+                "active": active,
+            }
+        )
     return {"total": len(rows), "active": n_active}, rows
 
 
 def evaluation_rows(p: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Registered evaluations: truth tag, predictions compared, cell sizes, metrics."""
     rows = []
     for key, ev in getattr(p, "evaluations", {}).items():
         pkeys = list(getattr(ev, "prediction_keys", []) or [])
         csizes = list(getattr(ev, "csizes", []) or [])
         metrics = list(getattr(ev, "metrics", []) or [])
-        rows.append({
-            "key": key,
-            "name": getattr(ev, "name", None) or getattr(ev, "truth_tag", None) or key,
-            "truth_tag": _fmt(getattr(ev, "truth_tag", None)),
-            "n_predictions": len(pkeys),
-            "csizes": ", ".join(str(c) for c in csizes) or "—",
-            "metrics": ", ".join(metrics) if metrics else "all",
-            "created_at": _fmt(getattr(ev, "created_at", None)),
-        })
+        rows.append(
+            {
+                "key": key,
+                "name": getattr(ev, "name", None)
+                or getattr(ev, "truth_tag", None)
+                or key,
+                "truth_tag": _fmt(getattr(ev, "truth_tag", None)),
+                "n_predictions": len(pkeys),
+                "csizes": ", ".join(str(c) for c in csizes) or "—",
+                "metrics": ", ".join(metrics) if metrics else "all",
+                "created_at": _fmt(getattr(ev, "created_at", None)),
+            }
+        )
     return {"total": len(rows)}, rows
