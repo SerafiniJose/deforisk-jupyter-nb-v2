@@ -1,6 +1,6 @@
 {
   "models": {
-    "benchmark": {
+    "jnr": {
       "label": "Référence (JNR)",
       "short": "JNR",
       "summary_md": "- **Approche :** stratification non paramétrique par distance à la lisière forestière et sous-juridiction — la référence [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/).\n- **Données d'entraînement :** couches du jeu de données uniquement (pas d'échantillon de points).\n- **Sortie :** une carte de risque en classes de vulnérabilité, utilisée comme référence à laquelle les autres modèles sont comparés.",

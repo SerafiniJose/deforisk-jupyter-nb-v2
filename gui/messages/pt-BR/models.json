@@ -1,6 +1,6 @@
 {
   "models": {
-    "benchmark": {
+    "jnr": {
       "label": "Referência (JNR)",
       "short": "JNR",
       "summary_md": "- **Abordagem:** estratificação não paramétrica por distância até a borda da floresta e subjurisdição — a linha de base [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/).\n- **Dados de treinamento:** apenas camadas do conjunto de dados (sem amostra de pontos).\n- **Saída:** um mapa de risco em classes de vulnerabilidade, usado como linha de base para comparar os demais modelos.",

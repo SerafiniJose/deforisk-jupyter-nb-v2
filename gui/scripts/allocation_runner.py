@@ -18,7 +18,13 @@ logger = logging.getLogger("spatial_risk")
 
 #: Families whose apply() writes a per-category rate table next to the raster.
 _MW_FAMILY = "mw"
-_JNR_FAMILY = "benchmark"
+_JNR_FAMILY = "jnr"
+
+
+def _family(model_key) -> str:
+    """First token of a model key — same derivation as run_inference's."""
+    return str(model_key or "").split("_")[0]
+
 
 _JNR_CAVEAT = (
     "This table's rates are the deforestation observed in the prediction's own "
@@ -85,12 +91,12 @@ def resolve_defrate_table(
 
     persisted = getattr(pred, "defrate_path", None)
     if persisted and Path(persisted).exists():
-        caveat = _JNR_CAVEAT if pred.model_key == _JNR_FAMILY else None
+        caveat = _JNR_CAVEAT if _family(pred.model_key) == _JNR_FAMILY else None
         return DefrateSource(
             path=Path(persisted), provenance="persisted", caveat=caveat
         )
 
-    if pred.model_key == _MW_FAMILY:
+    if _family(pred.model_key) == _MW_FAMILY:
         sibling = Path(pred.path).parent / (
             f"defrate_cat_mw_{pred.window}_{pred.dataset_name}.csv"
         )
@@ -102,7 +108,7 @@ def resolve_defrate_table(
             "manually."
         )
 
-    if pred.model_key == _JNR_FAMILY:
+    if _family(pred.model_key) == _JNR_FAMILY:
         raise AllocationResolveError(
             f"No rate table recorded for JNR prediction '{pred_key}'. Re-run "
             "inference or select a table manually."
@@ -159,7 +165,7 @@ def preview_defrate_source(
     try:
         return resolve_defrate_table(project, pred_key, compute=False)
     except AllocationResolveError as exc:
-        if pred.model_key in (_MW_FAMILY, _JNR_FAMILY):
+        if _family(pred.model_key) in (_MW_FAMILY, _JNR_FAMILY):
             return DefrateSource(path=None, provenance="unavailable", caveat=str(exc))
         out = (
             Path(pred.path).parent

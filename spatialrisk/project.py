@@ -933,6 +933,13 @@ class Project(BaseModel):
             }
             for key, model_data in data["models"].items():
                 model_type = model_data.get("model_type", "")
+                # Legacy GUI keys: the JNR benchmark was stored under a
+                # "benchmark[_name]" key before the family token was unified
+                # on model_type ("jnr[_name]").
+                if model_type == "jnr" and key.split("_")[0] == "benchmark":
+                    new_key = "jnr" + key[len("benchmark") :]
+                    print(f"  Migrating legacy model key '{key}' → '{new_key}'")
+                    key = new_key
                 model_cls = _MODEL_REGISTRY.get(model_type)
                 if model_cls is None:
                     print(

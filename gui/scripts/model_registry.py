@@ -13,47 +13,47 @@ from spatialrisk.mlmodels import (
 )
 
 MODEL_REGISTRY = {
-    "benchmark": {
-        "label_key": "models.benchmark.label",
+    "jnr": {
+        "label_key": "models.jnr.label",
         "class": JNRBenchmarkModel,
-        "description_key": "models.benchmark.description",
+        "description_key": "models.jnr.description",
         "params": [
             {
                 "key": "blk_rows",
-                "label_key": "models.benchmark.params.blk_rows.label",
+                "label_key": "models.jnr.params.blk_rows.label",
                 "type": "int",
                 "default": 128,
             },
             {
                 "key": "defor_threshold",
-                "label_key": "models.benchmark.params.defor_threshold.label",
+                "label_key": "models.jnr.params.defor_threshold.label",
                 "type": "float",
                 "default": 99.5,
             },
             {
                 "key": "defor_var",
-                "label_key": "models.benchmark.params.defor_var.label",
+                "label_key": "models.jnr.params.defor_var.label",
                 "type": "select",
                 "default": "",
                 "group": "variables",
             },
             {
                 "key": "forest_edge_var",
-                "label_key": "models.benchmark.params.forest_edge_var.label",
+                "label_key": "models.jnr.params.forest_edge_var.label",
                 "type": "select",
                 "default": "",
                 "group": "variables",
             },
             {
                 "key": "forest_var",
-                "label_key": "models.benchmark.params.forest_var.label",
+                "label_key": "models.jnr.params.forest_var.label",
                 "type": "select",
                 "default": "",
                 "group": "variables",
             },
             {
                 "key": "subj_var",
-                "label_key": "models.benchmark.params.subj_var.label",
+                "label_key": "models.jnr.params.subj_var.label",
                 "type": "select",
                 "default": "",
                 "group": "variables",

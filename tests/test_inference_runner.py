@@ -394,3 +394,20 @@ def test_run_inference_accepts_a_dataset_built_from_a_parameterised_layer(tmp_pa
 
     (args, _kwargs) = m.apply_calls[0]
     assert args[2] == Path(f"/tmp/{forest_name}.tif")
+
+
+# --- family-token consistency ------------------------------------------------
+
+
+def test_every_gui_registry_key_is_a_dispatchable_family():
+    """Every family the GUI can train must be one run_inference dispatches on.
+
+    The train tile keys models as '{registry key}_{name}', and run_inference
+    derives the family back from that key. Regression: the JNR benchmark was
+    registered under 'benchmark' while run_inference only knew 'jnr', so a
+    trained benchmark failed with "Unknown model family 'benchmark'".
+    """
+    from gui.scripts.inference_runner import _ML_FOLDER
+    from gui.scripts.model_registry import MODEL_KEYS
+
+    assert set(MODEL_KEYS) == set(_ML_FOLDER) | {"jnr", "mw"}

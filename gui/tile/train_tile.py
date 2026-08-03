@@ -70,7 +70,7 @@ def build_fit_kwargs(model_key, dataset, project):
             "time_interval": interval_from_target(dataset.target.name),
             "folder": project.folders.rmj_mw,
         }
-    if model_key == "benchmark":
+    if model_key == "jnr":
         return {"folder": project.folders.rmj_bm}
     return {}
 

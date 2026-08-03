@@ -67,7 +67,7 @@ def test_formula_flag_on_patsy_models_only():
 
     flags = {k: v.get("has_formula", False) for k, v in MODEL_REGISTRY.items()}
     assert flags == {
-        "benchmark": False,
+        "jnr": False,
         "mw": False,
         "glm": True,
         "rf": True,

@@ -1,6 +1,6 @@
 {
   "models": {
-    "benchmark": {
+    "jnr": {
       "label": "Benchmark (JNR)",
       "short": "JNR",
       "summary_md": "- **Approach:** non-parametric stratification by distance-to-forest-edge and subjurisdiction — the [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/) baseline.\n- **Training data:** dataset layers only (no point sample).\n- **Output:** a vulnerability-class risk map, used as the baseline other models are compared against.",

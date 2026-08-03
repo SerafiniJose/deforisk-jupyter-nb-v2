@@ -334,7 +334,7 @@ def test_preview_shows_a_persisted_table_without_computing(tmp_path):
     csv = tmp_path / "defrate_cat_bm_forecast.csv"
     csv.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
     project = _preview_project(
-        {"jnr_run": _preview_pred(model_key="benchmark", defrate_path=csv)}
+        {"jnr_run": _preview_pred(model_key="jnr", defrate_path=csv)}
     )
 
     src = preview_defrate_source(project, "jnr_run")

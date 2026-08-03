@@ -33,7 +33,7 @@ def test_persisted_defrate_path_wins(tmp_path):
     """A table recorded on the Prediction is used as-is."""
     csv = tmp_path / "defrate_cat_bm_forecast.csv"
     csv.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
-    project = _project({"jnr_run": _pred(model_key="benchmark", defrate_path=csv)})
+    project = _project({"jnr_run": _pred(model_key="jnr", defrate_path=csv)})
 
     src = resolve_defrate_table(project, "jnr_run")
 
@@ -45,7 +45,7 @@ def test_jnr_without_model_table_carries_a_caveat(tmp_path):
     """JNR tables hold observed-period rates, so the user is warned."""
     csv = tmp_path / "defrate_cat_bm_forecast.csv"
     csv.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
-    project = _project({"jnr_run": _pred(model_key="benchmark", defrate_path=csv)})
+    project = _project({"jnr_run": _pred(model_key="jnr", defrate_path=csv)})
 
     src = resolve_defrate_table(project, "jnr_run")
 
@@ -150,3 +150,32 @@ def test_unknown_prediction_key_raises():
     """Resolving against a missing registry key fails loudly."""
     with pytest.raises(AllocationResolveError, match="not found"):
         resolve_defrate_table(_project({}), "nope")
+
+
+def test_named_jnr_prediction_is_recognized_by_family(tmp_path):
+    """Family detection is by key prefix, not equality.
+
+    A *named* benchmark model produces predictions keyed 'jnr_<name>' and
+    must still get the JNR caveat.
+    """
+    csv = tmp_path / "defrate_cat_bm_forecast.csv"
+    csv.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
+    project = _project({"jnr_run": _pred(model_key="jnr_v1", defrate_path=csv)})
+
+    src = resolve_defrate_table(project, "jnr_run")
+
+    assert src.caveat is not None
+
+
+def test_named_mw_prediction_finds_its_sibling_table(tmp_path):
+    """Same for MW: 'mw_<name>' predictions resolve like plain 'mw' ones."""
+    prob = tmp_path / "prob_mw_11_forecast.tif"
+    prob.write_bytes(b"")
+    sibling = tmp_path / "defrate_cat_mw_11_forecast.csv"
+    sibling.write_text("cat,nfor,rate_mod,pixel_area\n1,10,0.0,0.09\n")
+    project = _project({"mw_run_w11": _pred(model_key="mw_v2", window=11, path=prob)})
+
+    src = resolve_defrate_table(project, "mw_run_w11")
+
+    assert src.path == sibling
+    assert src.provenance == "mw-sibling"

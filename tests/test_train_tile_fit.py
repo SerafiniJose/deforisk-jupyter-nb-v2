@@ -35,7 +35,7 @@ def test_mw_gets_time_interval_and_folder():
 
 def test_jnr_gets_folder_only():
     """The JNR benchmark gets only a folder."""
-    kw = build_fit_kwargs("benchmark", _dataset(), _project())
+    kw = build_fit_kwargs("jnr", _dataset(), _project())
     assert kw["folder"] == Path("/tmp/rmj_bm")
     assert "time_interval" not in kw  # JNR.fit() has no time_interval arg
 
@@ -328,3 +328,16 @@ def test_prepare_samples_records_dataset_name():
     m.sample = types.SimpleNamespace(load_points=lambda: None)
     df, formula = m._prepare_samples(formula="tgt ~ x")
     assert m.dataset_name == "calibration"
+
+
+def test_registry_keys_match_the_core_model_type():
+    """The GUI family token must equal the core model_type everywhere.
+
+    Storage keys are '{registry key}_{name}' while predictions and core
+    registration use '{model_type}_{name}'; a mismatch (the old 'benchmark'
+    vs 'jnr') makes trained models undispatchable.
+    """
+    from gui.scripts.model_registry import MODEL_REGISTRY
+
+    for key, entry in MODEL_REGISTRY.items():
+        assert entry["class"].model_fields["model_type"].default == key

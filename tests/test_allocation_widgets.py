@@ -246,7 +246,7 @@ def test_defrate_hint_names_a_persisted_table(tmp_path):
         predictions={
             "jnr_run": SimpleNamespace(
                 path=tmp_path / "prob.tif",
-                model_key="benchmark",
+                model_key="jnr",
                 dataset_name="forecast",
                 window=None,
                 defrate_path=csv,
