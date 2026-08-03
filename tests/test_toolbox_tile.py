@@ -24,14 +24,10 @@ def test_worker_runs_in_context_with_tracked_job_and_writing():
 
 
 def test_tile_takes_project_reactive_not_app_state():
-    """Tiles receive the project reactive directly (see the tile contract).
-
-    ``app_state`` is now used internally (legend publish/withdraw on density
-    toggle and delete, mirroring inference_tile/variables_tile), so this only
-    checks the project-reactive contract, not app_state's absence.
-    """
+    """Tiles receive the project reactive directly (see the tile contract)."""
     sig = inspect.signature(toolbox_tile.ToolboxTile.f)
     assert list(sig.parameters)[0] == "project"
+    assert "app_state" not in inspect.getsource(toolbox_tile)
 
 
 def test_tile_mounts_with_a_project():

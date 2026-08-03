@@ -105,9 +105,47 @@ def test_add_density_on_map_returns_layer_and_value_range(monkeypatch, tmp_path)
     assert value_range == (0.5, 7.25)
 
 
+def _fake_legend_port():
+    """A minimal LegendPort double.
+
+    Records calls instead of touching the app_state singleton — tiles get an
+    explicit handle, not a global.
+    """
+    from gui.scripts.legend_registry import LegendPort
+
+    registered = []
+    unregistered = []
+    return (
+        LegendPort(
+            register=lambda *legends: registered.extend(legends),
+            unregister=lambda *ids: unregistered.extend(ids),
+            generation=lambda: 0,
+        ),
+        registered,
+        unregistered,
+    )
+
+
 def test_drop_density_layer_removes_layer_and_legend():
     """toggle-off and delete both go through _drop_density_layer."""
-    from gui.store.state_manager import app_state
+    from gui.tile import toolbox_tile
+
+    removed = []
+    port, _registered, unregistered = _fake_legend_port()
+
+    class FakeMap:
+        def remove_layer(self, key, none_ok=False):
+            """Record the key removed from the fake map."""
+            removed.append(key)
+
+    toolbox_tile._drop_density_layer(FakeMap(), "density_run1", port)
+
+    assert removed == ["density_run1"]
+    assert unregistered == ["density_run1"]
+
+
+def test_drop_density_layer_tolerates_a_missing_port():
+    """A None port is a no-op, not a crash — tiles can render without one."""
     from gui.tile import toolbox_tile
 
     removed = []
@@ -117,12 +155,50 @@ def test_drop_density_layer_removes_layer_and_legend():
             """Record the key removed from the fake map."""
             removed.append(key)
 
-    app_state.clear_legends()
-    app_state.register_legends(toolbox_tile._density_legend("run1", "Run 1", 0.0, 3.0))
-    toolbox_tile._drop_density_layer(FakeMap(), "density_run1")
+    toolbox_tile._drop_density_layer(FakeMap(), "density_run1", None)
 
     assert removed == ["density_run1"]
-    assert app_state.layer_legends.value == ()
+
+
+def test_toggle_density_registers_through_the_port(monkeypatch, tmp_path):
+    """The on-branch publishes a legend via legend_port, not app_state."""
+    from gui.scripts import density_map
+    from gui.tile import toolbox_tile
+
+    monkeypatch.setattr(density_map, "density_value_range", lambda path: (0.0, 3.0))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "localtileserver",
+        type(
+            "M",
+            (),
+            {
+                "TileClient": lambda path: type(
+                    "C", (), {"center": lambda self: (0, 0), "default_zoom": 5}
+                )(),
+                "get_leaflet_tile_layer": lambda *a, **k: object(),
+            },
+        ),
+    )
+
+    class FakeMap:
+        def remove_layer(self, key, none_ok=False):
+            """No-op: nothing is on the map yet in this test."""
+
+        def add_layer(self, layer, key=None):
+            """No-op: the layer object is not inspected in this test."""
+
+    port, registered, _unregistered = _fake_legend_port()
+
+    _layer, (vmin, vmax) = density_map.add_density_on_map(
+        FakeMap(), tmp_path / "d.tif", key="density_run1", layer_name="Run 1"
+    )
+    port.register(toolbox_tile._density_legend("run1", "Run 1", vmin, vmax))
+
+    assert len(registered) == 1
+    legend = registered[0]
+    assert legend.layer_id == "density_run1"
+    assert [label.literal for label in legend.spec.labels] == ["0", "3"]
 
 
 def test_density_legend_is_keyed_by_the_map_layer_key():

@@ -944,6 +944,7 @@ def Page():
                 project=app_state.project,
                 map_=sepal_map,
                 sepal_client=sepal_client,
+                legend_port=app_state.legend_port,
             ),
             "width": 780,
         },

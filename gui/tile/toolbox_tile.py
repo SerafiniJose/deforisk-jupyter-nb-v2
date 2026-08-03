@@ -42,13 +42,12 @@ def _density_legend(run_key: str, name: str, vmin: float, vmax: float):
     )
 
 
-def _drop_density_layer(map_, key: str) -> None:
+def _drop_density_layer(map_, key: str, legend_port) -> None:
     """Remove a density layer and its legend. Used by toggle-off AND delete."""
-    from gui.store.state_manager import app_state
-
     if map_ is not None:
         map_.remove_layer(key, none_ok=True)
-    app_state.unregister_legends(key)
+    if legend_port is not None:
+        legend_port.unregister(key)
 
 
 #: The toolbox's tool list (the dialog's icon rail). One entry per tool; the
@@ -124,13 +123,15 @@ def _run_allocation_job(job_id, form, project, project_reactive=None, notifier=N
 
 
 @solara.component
-def ToolboxTile(project, map_=None, sepal_client=None):
+def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
     """Tool list + the selected tool's panel.
 
     Args:
         project: solara.Reactive[Project] — the live project.
         map_: SepalMap for the density-raster toggle; None disables it.
         sepal_client: passed to the form's file pickers.
+        legend_port: LegendPort for publishing/withdrawing density legends;
+            None disables legend publication (e.g. in tests without one).
     """
     notifications = use_notifications()
     p = project.value
@@ -158,26 +159,25 @@ def ToolboxTile(project, map_=None, sepal_client=None):
             # its legend too) — drop both before the record goes away.
             layer_key = density_layer_key(key)
             if layer_key in density_on_map.value:
-                _drop_density_layer(map_, layer_key)
+                _drop_density_layer(map_, layer_key, legend_port)
                 density_on_map.set(density_on_map.value - {layer_key})
             delete_allocation_run(p, key)
             project.set(p.model_copy())
 
     def toggle_density(row):
-        from gui.store.state_manager import app_state
-
         key = density_layer_key(row["key"])
         if key in density_on_map.value:
-            _drop_density_layer(map_, key)
+            _drop_density_layer(map_, key, legend_port)
             density_on_map.set(density_on_map.value - {key})
         else:
             _layer, (vmin, vmax) = add_density_on_map(
                 map_, row["density_map_path"], key=key, layer_name=row["name"]
             )
             density_on_map.set(density_on_map.value | {key})
-            app_state.register_legends(
-                _density_legend(row["key"], row["name"], vmin, vmax)
-            )
+            if legend_port is not None:
+                legend_port.register(
+                    _density_legend(row["key"], row["name"], vmin, vmax)
+                )
 
     rows = allocation_rows(p, allocation_jobs.value) if p is not None else []
 
