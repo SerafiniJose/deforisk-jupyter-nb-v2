@@ -8,6 +8,8 @@ import sys
 import types
 
 from gui.scripts.map_helpers import (
+    GOOGLE_SATELLITE,
+    add_satellite_basemap,
     clear_project_overlays,
     draw_aoi_on_map,
     zoom_map_to_aoi,
@@ -181,3 +183,74 @@ def test_clear_project_overlays_removes_non_base_layers():
 def test_clear_project_overlays_noop_without_map():
     """Clearing overlays without a map must not raise."""
     clear_project_overlays(None)  # must not raise
+
+
+# --- add_satellite_basemap --------------------------------------------------
+
+SATELLITE_NAME = "Google Satellite"
+
+
+class FakeTileLayer:
+    """Duck-typed stand-in for an ipyleaflet TileLayer."""
+
+    def __init__(self, name, base=True, visible=True):
+        """Carry the traits the basemap helper reads and writes."""
+        self.name = name
+        self.base = base
+        self.visible = visible
+
+
+class FakeBasemapMap:
+    """Stand-in for the SepalMap basemap API (layers tuple + add_basemap)."""
+
+    def __init__(self, layers=()):
+        """Start from the given base layers, logging nothing yet."""
+        self.layers = tuple(layers)
+        self.add_basemap_calls = []
+
+    def add_basemap(self, basemap):
+        """Append a base layer the way SepalMap.add_basemap does."""
+        self.add_basemap_calls.append(basemap)
+        self.layers = self.layers + (FakeTileLayer(SATELLITE_NAME),)
+
+
+def _fake_pysepal_basemaps(monkeypatch):
+    """Stub pysepal.mapping.basemaps so the lazy name lookup stays cheap."""
+    module = types.ModuleType("pysepal.mapping.basemaps")
+    module.basemap_tiles = {GOOGLE_SATELLITE: FakeTileLayer(SATELLITE_NAME)}
+    monkeypatch.setitem(sys.modules, "pysepal.mapping.basemaps", module)
+
+
+def test_satellite_is_added_hidden_next_to_the_cartodb_base(monkeypatch):
+    """The user gets a second basemap to pick from.
+
+    The theme-driven CartoDB layer stays the one actually drawn, so the map
+    looks unchanged until satellite is selected.
+    """
+    _fake_pysepal_basemaps(monkeypatch)
+    cartodb = FakeTileLayer("CartoDB.Positron")
+    m = FakeBasemapMap([cartodb])
+
+    assert add_satellite_basemap(m) is True
+    assert m.add_basemap_calls == [GOOGLE_SATELLITE]
+
+    bases = [lyr.name for lyr in m.layers if lyr.base]
+    assert bases == ["CartoDB.Positron", SATELLITE_NAME]
+    assert cartodb.visible is True
+    assert m.layers[-1].visible is False
+
+
+def test_satellite_is_not_added_twice(monkeypatch):
+    """Re-running on the session-memoized map is a no-op."""
+    _fake_pysepal_basemaps(monkeypatch)
+    m = FakeBasemapMap([FakeTileLayer("CartoDB.Positron")])
+    add_satellite_basemap(m)
+
+    assert add_satellite_basemap(m) is False
+    assert m.add_basemap_calls == [GOOGLE_SATELLITE]
+    assert len(m.layers) == 2
+
+
+def test_add_satellite_basemap_noop_without_map():
+    """No map, no basemap."""
+    assert add_satellite_basemap(None) is False

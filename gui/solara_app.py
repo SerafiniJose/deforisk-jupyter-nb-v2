@@ -28,7 +28,11 @@ from solara.lab.components.theming import theme
 
 from gui.i18n import get_translator, reset_translator, set_app_locale, t
 from gui.scripts.aoi_io import load_aoi, persist_aoi
-from gui.scripts.map_helpers import clear_project_overlays, show_aoi_on_map
+from gui.scripts.map_helpers import (
+    add_satellite_basemap,
+    clear_project_overlays,
+    show_aoi_on_map,
+)
 from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT, install_task_log_handler
 from gui.scripts.project_io import (
     delete_project,
@@ -669,8 +673,8 @@ def Page():
 
     solara.use_effect(_observe_theme, [])
 
-    sepal_map = solara.use_memo(
-        lambda: sm.SepalMap(
+    def create_map():
+        map_ = sm.SepalMap(
             zoom=3,
             min_zoom=3,
             center=[0, 0],
@@ -678,9 +682,13 @@ def Page():
             gee_interface=gee_interface,
             theme_toggle=theme_toggle,
             fullscreen=True,
-        ),
-        [id(gee_interface)],
-    )
+        )
+        # Second basemap (hidden) so the layers control offers a satellite
+        # imagery choice next to the theme-driven CartoDB base.
+        add_satellite_basemap(map_)
+        return map_
+
+    sepal_map = solara.use_memo(create_map, [id(gee_interface)])
 
     def sync_project_from_aoi():
         aoi = app_state.aoi_result.value

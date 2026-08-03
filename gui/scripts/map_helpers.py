@@ -5,6 +5,52 @@ without a render harness.
 """
 
 
+GOOGLE_SATELLITE = "SATELLITE"
+"""pysepal basemap key for the Google Satellite XYZ tiles (imagery, no labels)."""
+
+
+def add_satellite_basemap(map_, basemap: str = GOOGLE_SATELLITE) -> bool:
+    """Add a satellite basemap alongside the theme-driven CartoDB one.
+
+    ``SepalMap`` starts with a single base layer (``CartoDB.Positron`` /
+    ``DarkMatter``, swapped on theme change), so the layers control offers no
+    basemap choice. Adding Google Satellite gives the user two entries in the
+    basemap radio group. The new layer starts hidden, keeping CartoDB the one
+    actually drawn until satellite is picked.
+
+    Idempotent, so it stays safe on the session-memoized map.
+
+    Note: pysepal replaces the CartoDB layer on every theme change and its
+    layers control re-selects the first visible base layer, which sends the
+    selection back to CartoDB after a light/dark toggle.
+
+    Args:
+        map_: SepalMap instance (or None).
+        basemap: key from pysepal's ``basemap_tiles``.
+
+    Returns:
+        True if the basemap was added, False if there was no map or it was
+        already present.
+    """
+    if map_ is None:
+        return False
+
+    # Lazy so the rest of this module stays free of the pysepal import chain.
+    from pysepal.mapping.basemaps import basemap_tiles
+
+    name = basemap_tiles[basemap].name
+    if any(getattr(lyr, "name", None) == name for lyr in map_.layers):
+        return False
+
+    map_.add_basemap(basemap)
+
+    for lyr in map_.layers:
+        if getattr(lyr, "name", None) == name:
+            lyr.visible = False
+
+    return True
+
+
 def is_mappable(var) -> bool:
     """True if a variable can be drawn on the map.
 
