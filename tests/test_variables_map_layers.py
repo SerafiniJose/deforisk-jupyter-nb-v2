@@ -176,3 +176,4 @@ def test_source_toggle_labels_layers_as_raw():
     assert "raw_layer_label(key)" in src
     assert "layer_name=key," not in src  # bare key must be gone
     assert "add_vector_on_map, map_, str(var.path), key," not in src
+    assert "_add_gee_layer, map_, images[0], var, key, layer_key" not in src
