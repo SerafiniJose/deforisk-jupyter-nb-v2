@@ -37,6 +37,11 @@ class AppState:
         self.layer_legends = solara.reactive(())
         self.selected_legend = solara.reactive("")
 
+        # Explicit handle tiles receive as an argument (they must not import
+        # this singleton — see the tile contract). Built once so its identity
+        # is stable: a port rebuilt per render would churn reacton props.
+        self.legend_port = self._build_legend_port()
+
         # Variable processing
         self.processing = solara.reactive(False)
 
@@ -123,6 +128,16 @@ class AppState:
         """Drop every legend (project switch / close)."""
         self.layer_legends.set(())
         self.selected_legend.set("")
+
+    def _build_legend_port(self):
+        """Bundle the legend operations a tile is allowed to reach."""
+        from gui.scripts.legend_registry import LegendPort
+
+        return LegendPort(
+            register=self.register_legends,
+            unregister=self.unregister_legends,
+            generation=lambda: self.project_loaded_signal.value,
+        )
 
     @property
     def aoi_complete(self) -> bool:

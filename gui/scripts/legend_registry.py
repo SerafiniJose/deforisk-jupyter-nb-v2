@@ -7,7 +7,7 @@ added under (``_pred_layer_key``, ``density_layer_key``, the variable tile's
 """
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Callable, Tuple
 
 from gui.scripts.legend_data import Label, LegendSpec
 
@@ -50,3 +50,25 @@ def next_selection(remaining: Tuple[LayerLegend, ...], previous: str) -> str:
     if any(entry.layer_id == previous for entry in remaining):
         return previous
     return remaining[-1].layer_id if remaining else ""
+
+
+@dataclass(frozen=True)
+class LegendPort:
+    """A tile's explicit handle on the legend registry.
+
+    Tiles take this as an argument rather than importing the ``app_state``
+    singleton, per the project's tile contract (tiles receive reactives and
+    handles as explicit args). ``gui/solara_app.py`` owns the singleton and
+    passes ``app_state.legend_port`` down.
+
+    Args:
+        register: Publish (or replace) legends; the newest becomes selected.
+        unregister: Withdraw legends by map-layer key.
+        generation: The current project-load generation. Toggles that add a
+            layer across an ``await`` capture it before and re-check it after,
+            so a project switch mid-add cannot publish a stale legend.
+    """
+
+    register: Callable[..., None]
+    unregister: Callable[..., None]
+    generation: Callable[[], int]

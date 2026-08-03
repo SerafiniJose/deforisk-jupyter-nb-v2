@@ -97,3 +97,41 @@ def test_app_state_unregister_of_unknown_id_is_a_noop():
     state.unregister_legends("never-added")
     assert [e.layer_id for e in state.layer_legends.value] == ["a"]
     assert state.selected_legend.value == "a"
+
+
+def test_legend_port_registers_through_app_state():
+    """The port's register call publishes into the owning AppState."""
+    from gui.store.state_manager import AppState
+
+    state = AppState()
+    state.legend_port.register(_legend("a"))
+    assert [e.layer_id for e in state.layer_legends.value] == ["a"]
+    assert state.selected_legend.value == "a"
+
+
+def test_legend_port_unregisters_through_app_state():
+    """The port's unregister call withdraws from the owning AppState."""
+    from gui.store.state_manager import AppState
+
+    state = AppState()
+    state.legend_port.register(_legend("a"), _legend("b"))
+    state.legend_port.unregister("b")
+    assert [e.layer_id for e in state.layer_legends.value] == ["a"]
+
+
+def test_legend_port_generation_tracks_the_project_signal():
+    """generation() reports the current project-load signal, for staleness checks."""
+    from gui.store.state_manager import AppState
+
+    state = AppState()
+    before = state.legend_port.generation()
+    state.project_loaded_signal.set(before + 1)
+    assert state.legend_port.generation() == before + 1
+
+
+def test_legend_port_identity_is_stable():
+    """The port is built once, so it never churns reacton props."""
+    from gui.store.state_manager import AppState
+
+    state = AppState()
+    assert state.legend_port is state.legend_port
