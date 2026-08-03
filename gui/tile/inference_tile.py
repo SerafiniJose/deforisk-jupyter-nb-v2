@@ -323,24 +323,36 @@ def InferenceTile(project, map_=None, sepal_client=None):
                         added_any = True
                         landed.append((sk, getattr(pred, "display_palette", None)))
                 finally:
-                    # A project switch during the await clears the map; anything
-                    # that landed afterwards is stale, so take it back off
-                    # instead of publishing a legend for a layer nobody wants.
-                    if app_state.project_loaded_signal.value != generation:
-                        for sk, _palette in landed:
-                            map_.remove_layer(_pred_layer_key(sk), none_ok=True)
-                        return
                     # Mark the row on-map if ANY layer landed (even on partial
                     # failure) so toggle-off can remove all its keys; fire the
-                    # reactive once, not per-iteration.
+                    # reactive once, not per-iteration. This bookkeeping must
+                    # run even when add_prediction_on_map raises, so it stays
+                    # in `finally` — but the staleness check below must NOT
+                    # live here: a `return` inside `finally` discards any
+                    # exception propagating from the `try` body, which would
+                    # silently swallow a real failure instead of letting it
+                    # reach the outer `except Exception` handler.
                     if added_any:
                         preds_on_map.set(set(preds_on_map.value) | {row_key})
-                        app_state.register_legends(
-                            *[
-                                _pred_legend(sk, row["model_key"], palette)
-                                for sk, palette in landed
-                            ]
-                        )
+
+                # Reached only when the add loop above completed without
+                # raising — an in-flight exception skips straight to the
+                # outer `except Exception` below instead.
+                if app_state.project_loaded_signal.value != generation:
+                    # A project switch during the await clears the map;
+                    # anything that landed afterwards is stale, so take it
+                    # back off instead of publishing a legend for a layer
+                    # nobody wants.
+                    for sk, _palette in landed:
+                        map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+                    _forget_on_map(row_key)
+                elif added_any:
+                    app_state.register_legends(
+                        *[
+                            _pred_legend(sk, row["model_key"], palette)
+                            for sk, palette in landed
+                        ]
+                    )
         except Exception as exc:
             logger.exception("prediction map toggle failed for row %s", row.get("key"))
             set_form_error(t("tiles.inference.error_map_toggle", exc=exc))

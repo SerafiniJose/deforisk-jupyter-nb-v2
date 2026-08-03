@@ -259,3 +259,187 @@ def test_pred_legend_honours_an_imported_display_palette():
 
     legend = inference_tile._pred_legend("imported", "imported", "jnr")
     assert legend.spec.colors == prediction_spec("jnr_x").colors
+
+
+# --- add-branch staleness guard (fix round 1) ---------------------------------
+#
+# These render the real InferenceTile and drive its use_task through a worker
+# thread, mirroring tests/test_postprocess_tile_threading.py's approach to
+# pinning behaviour that only shows up once real background execution is
+# involved. `InferenceOutputList` is stubbed out (as in
+# test_postprocess_tile_threading's `_StubDialog`) purely to capture
+# `on_toggle_map` without needing the full products table to render.
+
+
+def _stale_guard_project(storage_key, path="/tmp/pred_a.tif"):
+    """A minimal fake Project with one prediction.
+
+    Shaped like PredictionFormDialog and InferenceTile expect (see
+    tests/test_inference_edit_failed.py's `_project` helper for the same
+    shape).
+    """
+    import types
+
+    pred = types.SimpleNamespace(path=path, display_palette=None)
+    return types.SimpleNamespace(
+        models={},
+        datasets={},
+        processed_variables={},
+        predictions={storage_key: pred},
+        filter_predictions=lambda **kw: [],
+        folders=types.SimpleNamespace(project_folder="/tmp"),
+    )
+
+
+def _render_capturing_on_toggle_map(monkeypatch, project, map_):
+    """Render InferenceTile with InferenceOutputList stubbed out.
+
+    Hands back on_toggle_map, so a test can drive the toggle without a real
+    table.
+    """
+    import reacton
+    import solara
+
+    from gui.tile import inference_tile
+
+    captured = {}
+
+    @solara.component
+    def _StubList(
+        project,
+        inference_jobs,
+        preds_on_map=None,
+        on_toggle_map=None,
+        on_dismiss=None,
+        on_delete=None,
+        on_edit=None,
+    ):
+        captured["on_toggle_map"] = on_toggle_map
+        solara.Text("")
+
+    monkeypatch.setattr(inference_tile, "InferenceOutputList", _StubList)
+
+    box, rc = reacton.render(
+        inference_tile.InferenceTile(project=solara.reactive(project), map_=map_),
+        handle_error=False,
+    )
+    return captured["on_toggle_map"], rc
+
+
+def test_stale_project_generation_rolls_back_without_registering_a_legend(
+    monkeypatch,
+):
+    """A project switch mid-add is rolled back: layer removed, no legend.
+
+    Regression for the fix-round-1 defect: the staleness check used to live
+    inside the add branch's `finally:` block and `return` from there, which
+    (on the non-exception path this test exercises) rolled back correctly —
+    this pins that the rollback itself still works after moving the check
+    out of `finally`.
+    """
+    import threading
+    import time
+
+    from gui.store.state_manager import app_state
+    from gui.tile import inference_tile
+
+    app_state.clear_legends()
+
+    class FakeMap:
+        def __init__(self):
+            self.removed = []
+
+        def remove_layer(self, key, none_ok=False):
+            self.removed.append(key)
+
+    fake_map = FakeMap()
+    project = _stale_guard_project("pred_a")
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_add(map_, path, **kwargs):
+        # Stands in for the blocking add; holds until the test has bumped
+        # the project generation, simulating a project switch mid-await.
+        started.set()
+        release.wait(5.0)
+        return "FAKE_LAYER"
+
+    monkeypatch.setattr("gui.scripts.prediction_map.add_prediction_on_map", fake_add)
+
+    on_toggle_map, rc = _render_capturing_on_toggle_map(monkeypatch, project, fake_map)
+    try:
+        row = {"key": "row1", "storage_keys": ["pred_a"], "model_key": "rf_2020"}
+        on_toggle_map(row)
+
+        assert started.wait(5.0), "add_prediction_on_map never ran"
+        app_state.project_loaded_signal.set(app_state.project_loaded_signal.value + 1)
+        release.set()
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not fake_map.removed:
+            time.sleep(0.01)
+
+        assert fake_map.removed == [inference_tile._pred_layer_key("pred_a")]
+        assert app_state.layer_legends.value == ()
+        assert "row1" not in inference_tile.preds_on_map.value
+    finally:
+        rc.close()
+        inference_tile.preds_on_map.set(set())
+
+
+def test_add_exception_still_reaches_the_error_path(monkeypatch, caplog):
+    """A raised add error propagates to the outer handler, not swallowed.
+
+    Regression for the fix-round-1 defect: `return` inside the `finally:`
+    block discards any exception in flight from the `try` body. The bug only
+    shows up on the *combination* the review flagged — an add that raises
+    AND a project switch in the same await window — so this bumps the
+    project generation before raising, exactly like
+    `test_stale_project_generation_rolls_back_without_registering_a_legend`
+    does, but with a failing add instead of a successful one. Before the
+    fix, the generation mismatch made the old `finally:` block `return`
+    before the exception could propagate, so neither `logger.exception` nor
+    `set_form_error` ever ran.
+    """
+    import logging
+
+    from gui.store.state_manager import app_state
+    from gui.tile import inference_tile
+
+    app_state.clear_legends()
+
+    class FakeMap:
+        def remove_layer(self, key, none_ok=False):
+            pass
+
+    project = _stale_guard_project("pred_a")
+
+    def fake_add(map_, path, **kwargs):
+        # Simulate a project switch landing in the same await window as a
+        # failing add — the exact combination that used to be swallowed.
+        app_state.project_loaded_signal.set(app_state.project_loaded_signal.value + 1)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("gui.scripts.prediction_map.add_prediction_on_map", fake_add)
+
+    on_toggle_map, rc = _render_capturing_on_toggle_map(monkeypatch, project, FakeMap())
+    try:
+        with caplog.at_level(logging.ERROR, logger="spatial_risk"):
+            row = {"key": "row1", "storage_keys": ["pred_a"], "model_key": "rf_2020"}
+            on_toggle_map(row)
+
+            import time
+
+            deadline = time.time() + 5.0
+            while time.time() < deadline and not caplog.records:
+                time.sleep(0.01)
+
+        assert any(
+            "prediction map toggle failed" in r.message for r in caplog.records
+        ), "the exception was swallowed instead of reaching the error path"
+        # No legend for a layer that never successfully landed.
+        assert app_state.layer_legends.value == ()
+    finally:
+        rc.close()
+        inference_tile.preds_on_map.set(set())
