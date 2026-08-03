@@ -60,6 +60,9 @@ def add_density_on_map(
     get_leaflet_tile_layer wiring and the same replace-by-key behaviour, but the
     colour range is stretched to this raster's own min/max because density is a
     continuous quantity with no fixed classification.
+
+    Returns ``(layer, (vmin, vmax))`` — the caller needs the range to label the
+    layer's legend, and re-deriving it would mean a second full band read.
     """
     from localtileserver import TileClient, get_leaflet_tile_layer
 
@@ -88,4 +91,4 @@ def add_density_on_map(
     logger.info(
         "Density map on map: %s (%.4f to %.4f ha/px/yr)", layer_name, vmin, vmax
     )
-    return layer
+    return layer, (vmin, vmax)
