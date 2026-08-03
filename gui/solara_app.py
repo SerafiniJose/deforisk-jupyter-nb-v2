@@ -631,6 +631,52 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
             EvaluationTile(project=app_state.project)
 
 
+def legend_props(state, translate) -> dict:
+    """Props for pysepal's LegendComponent, derived from the legend registry.
+
+    Pure and translation-time: the registry stores language-neutral specs, so
+    everything visible is resolved here, on every render. That is what makes a
+    locale switch re-translate legends that are already on screen.
+    """
+    from dataclasses import asdict
+
+    from gui.scripts.legend_data import resolve_label, to_legend_data
+
+    legends = state.layer_legends.value
+    selected = state.selected_legend.value
+    current = next((e for e in legends if e.layer_id == selected), None)
+
+    return {
+        "legend_data": asdict(to_legend_data(current.spec, translate))
+        if current
+        else {},
+        "selector_options": [
+            {"value": e.layer_id, "text": resolve_label(e.label, translate)}
+            for e in legends
+        ],
+        "selected": current.layer_id if current else "",
+    }
+
+
+@solara.component
+def MapLegend(state):
+    """Floating map legend for the layers the app has added.
+
+    Mounted as a sibling of MapApp (pysepal's own template does the same): the
+    component is fixed bottom-center at z-index 150, above the map's 0/100, so it
+    overlays the map rather than being clipped by it.
+    """
+    from pysepal.solara.components.legend import LegendComponent
+
+    props = legend_props(state, t)
+    LegendComponent(
+        legend_data=props["legend_data"],
+        selector_options=props["selector_options"],
+        selected=props["selected"],
+        event_set_selected=state.selected_legend.set,
+    )
+
+
 @solara.component
 @with_sepal_sessions(module_name="spatial_risk")
 def Page():
@@ -717,6 +763,7 @@ def Page():
         samples_on_map.set(set())
         preds_on_map.set(set())
         density_on_map.set(set())
+        app_state.clear_legends()
         show_aoi_on_map(sepal_map, app_state.aoi_result.value)
 
     solara.use_effect(render_map_on_switch, [project_loaded_signal])
@@ -946,6 +993,10 @@ def Page():
     # time the workflow tiles first render — their use_notifications() then
     # resolves a real Notifier instead of a first-render NoopNotifier.
     NotificationProvider()
+
+    # Floating layer legend (bottom-center over the map). Mounted before MapApp,
+    # like NotificationProvider, so it is present from the first render.
+    MapLegend(app_state)
 
     map_app_el = MapApp.element(
         app_title=app_title,
