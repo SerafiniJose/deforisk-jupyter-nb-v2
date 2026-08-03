@@ -31,3 +31,15 @@ def test_both_tiles_pass_their_notifier():
     for module in (process_tile, postprocess_tile):
         src = inspect.getsource(module)
         assert "use_derived_map_toggle(project, map_, notifications)" in src
+
+
+def test_processed_toggle_labels_layers_by_origin():
+    """The shared processed toggle must label its layers with an origin marker.
+
+    It serves both the Harmonization and Derived-layers tabs, so it
+    classifies per variable rather than using one fixed marker.
+    """
+    src = inspect.getsource(use_derived_map_toggle)
+    assert "processed_layer_label(p, key)" in src
+    assert "layer_name=key," not in src  # bare key must be gone
+    assert "add_vector_on_map, map_, str(var.path), key," not in src

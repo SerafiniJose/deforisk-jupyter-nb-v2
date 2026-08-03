@@ -276,6 +276,9 @@ class MWModel(BaseRiskModel):
         # explicit input to local_defor_rate (the moving-window denominator),
         # so it is required at fit() time as well as apply() time.
         deforestation_file = self._resolve_defor_file(active)
+        # deforrate reads ``defor == 1`` as the event, so a categorical or
+        # continuous layer would train silently on a wrong numerator.
+        deforrate.validate_binary_defor(deforestation_file)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
@@ -409,8 +412,10 @@ class MWModel(BaseRiskModel):
 
         period = active.name or self.name
 
-        # Extract file paths from dataset
+        # Extract file paths from dataset. This period's forest-loss layer is
+        # not the one fit() saw, so it gets the same binary check.
         deforestation_file = self._resolve_defor_file(active)
+        deforrate.validate_binary_defor(deforestation_file)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
