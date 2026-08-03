@@ -17,7 +17,7 @@ no ``fcc123`` convention, no ``check_fcc``):
 
 The union makes the denominator robust to whether ``forest_file`` encodes forest
 at the *start* or the *end* of the period, since
-``forest_at_start = forest_remaining ∪ deforested``.
+``forest_at_start = forest_remaining UNION deforested``.
 
 Numerics (``rescale``, block iteration, the moving-window ``uniform_filter``) are
 inherited verbatim from ``riskmapjnr.misc`` / SciPy, so results are identical to
@@ -28,7 +28,7 @@ check in the single-layer migration plan).
 from __future__ import annotations
 
 import os
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -84,7 +84,7 @@ def dist_edge_threshold(
     fig_file_dist : path or None
         PNG plot output. Skipped if ``None``.
 
-    Returns
+    Returns:
     -------
     dict
         ``{"tot_def", "dist_thresh", "perc_thresh"}`` (matches rmj).
@@ -112,11 +112,7 @@ def dist_edge_threshold(
         dist_def = dist_def[dist_def > 0]
         # Categorize distance and count per bin
         dist_cat = pd.cut(dist_def.flatten(), dist_bins, right=True)
-        counts = (
-            pd.DataFrame({"dist": dist_cat})
-            .groupby("dist", observed=False)
-            .size()
-        )
+        counts = pd.DataFrame({"dist": dist_cat}).groupby("dist", observed=False).size()
         res_df.loc[:, "npix"] += counts.values
 
     # Areas (ha) and cumulative percentage of total deforestation
@@ -149,11 +145,18 @@ def dist_edge_threshold(
         plt.subplot(111)
         plt.plot(res_df["distance"], res_df["perc"], "b-")
         plt.vlines(
-            dist_thresh, ymin=np.min(res_df["perc"]), ymax=perc_thresh,
-            colors="k", linestyles="dashed",
+            dist_thresh,
+            ymin=np.min(res_df["perc"]),
+            ymax=perc_thresh,
+            colors="k",
+            linestyles="dashed",
         )
         plt.hlines(
-            perc_thresh, xmin=0, xmax=dist_thresh, colors="k", linestyles="dashed",
+            perc_thresh,
+            xmin=0,
+            xmax=dist_thresh,
+            colors="k",
+            linestyles="dashed",
         )
         plt.xlabel("Distance to forest edge (m)")
         plt.ylabel("Percentage of total deforestation (%)")
@@ -161,7 +164,11 @@ def dist_edge_threshold(
         plt.close(fig)
 
     del defor_ds, dist_ds
-    return {"tot_def": tot_area_def, "dist_thresh": dist_thresh, "perc_thresh": perc_thresh}
+    return {
+        "tot_def": tot_area_def,
+        "dist_thresh": dist_thresh,
+        "perc_thresh": perc_thresh,
+    }
 
 
 def local_defor_rate(
@@ -211,7 +218,11 @@ def local_defor_rate(
     if os.path.isfile(str(ldefrate_file)):
         os.remove(str(ldefrate_file))
     out_ds = driver.Create(
-        str(ldefrate_file), xsize, ysize, 1, gdal.GDT_UInt16,
+        str(ldefrate_file),
+        xsize,
+        ysize,
+        1,
+        gdal.GDT_UInt16,
         ["COMPRESS=LZW", "PREDICTOR=2", "BIGTIFF=YES"],
     )
     out_ds.SetProjection(defor_ds.GetProjection())
@@ -245,7 +256,7 @@ def local_defor_rate(
         defor_data = defor_mask.astype(int)
         win_defor = scipy.ndimage.uniform_filter(
             defor_data, size=win_size, mode="constant", cval=0, output=float
-        ) * (win_size ** 2)
+        ) * (win_size**2)
         win_defor = np.rint(win_defor).astype(int)
 
         # Windowed count of forest-at-start pixels
@@ -253,7 +264,7 @@ def local_defor_rate(
         w = np.where(for_data > 0)
         win_for = scipy.ndimage.uniform_filter(
             for_data, size=win_size, mode="constant", cval=0, output=float
-        ) * (win_size ** 2)
+        ) * (win_size**2)
         win_for = np.rint(win_for).astype(int)
 
         # Annual deforestation rate, rescaled
@@ -298,7 +309,7 @@ def defrate_per_cat(
     time_interval : float
         Period length in years.
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         Per-category table (cat, nfor, ndefor, rate_obs, rate_mod, rate_abs, ...),
@@ -312,7 +323,9 @@ def defrate_per_cat(
     xres = gt[1]
     yres = -gt[5]
 
-    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[:7]
+    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[
+        :7
+    ]
 
     n_cat = 65535
     cat = [c + 1 for c in range(n_cat)]
@@ -407,10 +420,10 @@ def defrate_per_class(
         correction; ``rate_mod`` comes from the model. When ``None``,
         ``rate_mod = ndefor / nfor``.
     n_cat_max : int
-        Highest vulnerability-class code (default 30999 = 30 classes × ~1000
+        Highest vulnerability-class code (default 30999 = 30 classes x ~1000
         subjurisdiction ids).
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         Per-class table (cat, nfor, ndefor, rate_obs, rate_mod, rate_abs, ...),
@@ -424,7 +437,9 @@ def defrate_per_class(
     xres = gt[1]
     yres = -gt[5]
 
-    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[:7]
+    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[
+        :7
+    ]
 
     cat = [c + 1 for c in range(n_cat_max)]
     df = pd.DataFrame({"cat": cat, "nfor": 0, "ndefor": 0})
