@@ -624,7 +624,10 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
 
         with rv.TabItem():
             InferenceTile(
-                project=app_state.project, map_=map_, sepal_client=sepal_client
+                project=app_state.project,
+                map_=map_,
+                sepal_client=sepal_client,
+                legend_port=app_state.legend_port,
             )
 
         with rv.TabItem():

@@ -54,19 +54,19 @@ def _pred_legend(storage_key: str, model_key: str, display_palette):
     )
 
 
-def _drop_pred_layers(row, map_) -> None:
+def _drop_pred_layers(row, map_, legend_port) -> None:
     """Remove every layer a prediction row put on the map, and its legends.
 
     The single removal chokepoint: the toggle's off-branch and the delete path
-    both go through it, so a legend can never outlive its layer.
+    both go through it, so a legend can never outlive its layer. ``legend_port``
+    may be None (e.g. in tests without one) — that is a no-op, not a crash.
     """
-    from gui.store.state_manager import app_state
-
     storage_keys = list(row.get("storage_keys", []))
     if map_ is not None:
         for storage_key in storage_keys:
             map_.remove_layer(_pred_layer_key(storage_key), none_ok=True)
-    app_state.unregister_legends(*[_pred_layer_key(k) for k in storage_keys])
+    if legend_port is not None:
+        legend_port.unregister(*[_pred_layer_key(k) for k in storage_keys])
 
 
 def _run_inference(
@@ -168,13 +168,15 @@ def _run_import(
 
 
 @solara.component
-def InferenceTile(project, map_=None, sepal_client=None):
+def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
     """Inference tab: select trained model and dataset, run prediction.
 
     Args:
         project: Reactive holding the current Project (or None).
         map_: SepalMap instance used by the per-prediction "add to map" toggle.
         sepal_client: SEPAL client backing the local-raster import file picker.
+        legend_port: LegendPort for publishing/withdrawing prediction legends;
+            None disables legend publication (e.g. in tests without one).
     """
     p = project.value
 
@@ -297,13 +299,14 @@ def InferenceTile(project, map_=None, sepal_client=None):
         row_key = row["key"]
         try:
             if row_key in preds_on_map.value:
-                _drop_pred_layers(row, map_)
+                _drop_pred_layers(row, map_, legend_port)
                 _forget_on_map(row_key)
             else:
                 from gui.scripts.prediction_map import add_prediction_on_map
-                from gui.store.state_manager import app_state
 
-                generation = app_state.project_loaded_signal.value
+                generation = (
+                    legend_port.generation() if legend_port is not None else None
+                )
                 added_any = False
                 landed = []
                 try:
@@ -338,7 +341,12 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 # Reached only when the add loop above completed without
                 # raising — an in-flight exception skips straight to the
                 # outer `except Exception` below instead.
-                if app_state.project_loaded_signal.value != generation:
+                if legend_port is None:
+                    # No port to publish through (e.g. a test render) — the
+                    # staleness check exists only to protect legend
+                    # publication, so there is nothing to guard here.
+                    pass
+                elif legend_port.generation() != generation:
                     # A project switch during the await clears the map;
                     # anything that landed afterwards is stale, so take it
                     # back off instead of publishing a legend for a layer
@@ -347,7 +355,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
                         map_.remove_layer(_pred_layer_key(sk), none_ok=True)
                     _forget_on_map(row_key)
                 elif added_any:
-                    app_state.register_legends(
+                    legend_port.register(
                         *[
                             _pred_legend(sk, row["model_key"], palette)
                             for sk, palette in landed
@@ -376,7 +384,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             return
         row_key = row["key"]
         if map_ is not None and row_key in preds_on_map.value:
-            _drop_pred_layers(row, map_)
+            _drop_pred_layers(row, map_, legend_port)
             _forget_on_map(row_key)
         deleted = False
         for sk in row.get("storage_keys", []):

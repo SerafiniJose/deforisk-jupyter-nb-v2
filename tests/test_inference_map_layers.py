@@ -212,33 +212,76 @@ def test_inference_tile_supports_local_prediction_import():
     assert "_import_palette_items" in dialog_src  # palette choice
 
 
-def test_drop_pred_layers_removes_layers_and_legends(monkeypatch):
+def _fake_legend_port():
+    """A minimal LegendPort double with a bumpable generation.
+
+    Records calls instead of touching the app_state singleton — tiles get an
+    explicit handle, not a global (see tests/test_density_map.py's
+    ``_fake_legend_port`` for the sibling shape used by the density tile;
+    this one also exposes a ``bump`` to drive the staleness guard, which
+    density's synchronous add does not need).
+    """
+    from gui.scripts.legend_registry import LegendPort
+
+    registered = []
+    unregistered = []
+    state = {"generation": 0}
+
+    def bump():
+        state["generation"] += 1
+
+    port = LegendPort(
+        register=lambda *legends: registered.extend(legends),
+        unregister=lambda *ids: unregistered.extend(ids),
+        generation=lambda: state["generation"],
+    )
+    return port, registered, unregistered, bump
+
+
+def test_drop_pred_layers_removes_layers_and_legends():
     """_drop_pred_layers removes every map layer a row added and its legends."""
-    from gui.store.state_manager import app_state
     from gui.tile import inference_tile
 
     removed = []
 
     class FakeMap:
         def remove_layer(self, key, none_ok=False):
+            """Record the removed layer key."""
             removed.append(key)
 
-    app_state.clear_legends()
+    port, registered, unregistered, _bump = _fake_legend_port()
     row = {"key": "row1", "storage_keys": ["pred_a", "pred_b"]}
     for storage_key in row["storage_keys"]:
-        app_state.register_legends(
-            inference_tile._pred_legend(storage_key, "rf_2020", None)
-        )
-    assert len(app_state.layer_legends.value) == 2
+        port.register(inference_tile._pred_legend(storage_key, "rf_2020", None))
+    assert len(registered) == 2
 
-    inference_tile._drop_pred_layers(row, FakeMap())
+    inference_tile._drop_pred_layers(row, FakeMap(), port)
 
     assert removed == [
         inference_tile._pred_layer_key("pred_a"),
         inference_tile._pred_layer_key("pred_b"),
     ]
-    assert app_state.layer_legends.value == ()
-    assert app_state.selected_legend.value == ""
+    assert unregistered == [
+        inference_tile._pred_layer_key("pred_a"),
+        inference_tile._pred_layer_key("pred_b"),
+    ]
+
+
+def test_drop_pred_layers_tolerates_a_missing_port():
+    """A None legend_port is a no-op, not a crash — tiles render without one."""
+    from gui.tile import inference_tile
+
+    removed = []
+
+    class FakeMap:
+        def remove_layer(self, key, none_ok=False):
+            """Record the removed layer key."""
+            removed.append(key)
+
+    row = {"key": "row1", "storage_keys": ["pred_a"]}
+    inference_tile._drop_pred_layers(row, FakeMap(), None)
+
+    assert removed == [inference_tile._pred_layer_key("pred_a")]
 
 
 def test_pred_legend_is_keyed_by_the_map_layer_key():
@@ -291,7 +334,7 @@ def _stale_guard_project(storage_key, path="/tmp/pred_a.tif"):
     )
 
 
-def _render_capturing_on_toggle_map(monkeypatch, project, map_):
+def _render_capturing_on_toggle_map(monkeypatch, project, map_, legend_port=None):
     """Render InferenceTile with InferenceOutputList stubbed out.
 
     Hands back on_toggle_map, so a test can drive the toggle without a real
@@ -320,7 +363,9 @@ def _render_capturing_on_toggle_map(monkeypatch, project, map_):
     monkeypatch.setattr(inference_tile, "InferenceOutputList", _StubList)
 
     box, rc = reacton.render(
-        inference_tile.InferenceTile(project=solara.reactive(project), map_=map_),
+        inference_tile.InferenceTile(
+            project=solara.reactive(project), map_=map_, legend_port=legend_port
+        ),
         handle_error=False,
     )
     return captured["on_toggle_map"], rc
@@ -335,45 +380,48 @@ def test_stale_project_generation_rolls_back_without_registering_a_legend(
     inside the add branch's `finally:` block and `return` from there, which
     (on the non-exception path this test exercises) rolled back correctly —
     this pins that the rollback itself still works after moving the check
-    out of `finally`.
+    out of `finally`. Uses a fake LegendPort (round-2: tiles get an explicit
+    handle, not the app_state singleton) whose generation the test bumps
+    directly, standing in for a project switch during the await.
     """
     import threading
     import time
 
-    from gui.store.state_manager import app_state
     from gui.tile import inference_tile
-
-    app_state.clear_legends()
 
     class FakeMap:
         def __init__(self):
             self.removed = []
 
         def remove_layer(self, key, none_ok=False):
+            """Record the removed layer key."""
             self.removed.append(key)
 
     fake_map = FakeMap()
     project = _stale_guard_project("pred_a")
+    port, registered, _unregistered, bump = _fake_legend_port()
 
     started = threading.Event()
     release = threading.Event()
 
     def fake_add(map_, path, **kwargs):
         # Stands in for the blocking add; holds until the test has bumped
-        # the project generation, simulating a project switch mid-await.
+        # the port's generation, simulating a project switch mid-await.
         started.set()
         release.wait(5.0)
         return "FAKE_LAYER"
 
     monkeypatch.setattr("gui.scripts.prediction_map.add_prediction_on_map", fake_add)
 
-    on_toggle_map, rc = _render_capturing_on_toggle_map(monkeypatch, project, fake_map)
+    on_toggle_map, rc = _render_capturing_on_toggle_map(
+        monkeypatch, project, fake_map, legend_port=port
+    )
     try:
         row = {"key": "row1", "storage_keys": ["pred_a"], "model_key": "rf_2020"}
         on_toggle_map(row)
 
         assert started.wait(5.0), "add_prediction_on_map never ran"
-        app_state.project_loaded_signal.set(app_state.project_loaded_signal.value + 1)
+        bump()
         release.set()
 
         deadline = time.time() + 5.0
@@ -381,7 +429,7 @@ def test_stale_project_generation_rolls_back_without_registering_a_legend(
             time.sleep(0.01)
 
         assert fake_map.removed == [inference_tile._pred_layer_key("pred_a")]
-        assert app_state.layer_legends.value == ()
+        assert registered == []
         assert "row1" not in inference_tile.preds_on_map.value
     finally:
         rc.close()
@@ -395,7 +443,7 @@ def test_add_exception_still_reaches_the_error_path(monkeypatch, caplog):
     block discards any exception in flight from the `try` body. The bug only
     shows up on the *combination* the review flagged — an add that raises
     AND a project switch in the same await window — so this bumps the
-    project generation before raising, exactly like
+    port's generation before raising, exactly like
     `test_stale_project_generation_rolls_back_without_registering_a_legend`
     does, but with a failing add instead of a successful one. Before the
     fix, the generation mismatch made the old `finally:` block `return`
@@ -404,26 +452,26 @@ def test_add_exception_still_reaches_the_error_path(monkeypatch, caplog):
     """
     import logging
 
-    from gui.store.state_manager import app_state
     from gui.tile import inference_tile
-
-    app_state.clear_legends()
 
     class FakeMap:
         def remove_layer(self, key, none_ok=False):
-            pass
+            """No-op remove; this scenario never lands a layer."""
 
     project = _stale_guard_project("pred_a")
+    port, registered, _unregistered, bump = _fake_legend_port()
 
     def fake_add(map_, path, **kwargs):
         # Simulate a project switch landing in the same await window as a
         # failing add — the exact combination that used to be swallowed.
-        app_state.project_loaded_signal.set(app_state.project_loaded_signal.value + 1)
+        bump()
         raise RuntimeError("boom")
 
     monkeypatch.setattr("gui.scripts.prediction_map.add_prediction_on_map", fake_add)
 
-    on_toggle_map, rc = _render_capturing_on_toggle_map(monkeypatch, project, FakeMap())
+    on_toggle_map, rc = _render_capturing_on_toggle_map(
+        monkeypatch, project, FakeMap(), legend_port=port
+    )
     try:
         with caplog.at_level(logging.ERROR, logger="spatial_risk"):
             row = {"key": "row1", "storage_keys": ["pred_a"], "model_key": "rf_2020"}
@@ -439,7 +487,7 @@ def test_add_exception_still_reaches_the_error_path(monkeypatch, caplog):
             "prediction map toggle failed" in r.message for r in caplog.records
         ), "the exception was swallowed instead of reaching the error path"
         # No legend for a layer that never successfully landed.
-        assert app_state.layer_legends.value == ()
+        assert registered == []
     finally:
         rc.close()
         inference_tile.preds_on_map.set(set())
