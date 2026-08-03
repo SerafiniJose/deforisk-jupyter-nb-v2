@@ -70,9 +70,10 @@ def add_raster_var_on_map(
 def _file_nodata(path):
     """Best-effort read of a raster's nodata tag (so masked fill isn't painted).
 
-    Downloaded layers are written with ``nodata_value=255`` (see ``GEEVar._download``);
-    honouring that keeps the unmasked background from clamping to the top palette
-    colour. Returns ``None`` when it can't be read (localtileserver then falls back
+    Downloaded layers carry a raster_type-dependent nodata (255 for categorical,
+    -32768 for continuous — see ``GEEVar._resolve_export_nodata``); honouring the
+    file's tag keeps the unmasked background from clamping to a palette colour.
+    Returns ``None`` when it can't be read (localtileserver then falls back
     to the file's own tag / no masking).
     """
     try:

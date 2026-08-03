@@ -35,6 +35,11 @@ class GEEVar(Variable):
     raster_type: Optional[RasterType] = None  # for raster data
     rasterization_method: Optional[RasterizationMethod] = None  # for vector data
     post_processing: List[PostProcessing] = []  # for raster data
+    # Explicit export fill/nodata. When unset, derived from raster_type:
+    # continuous -> -32768, categorical/unset -> 255. A layer whose values can
+    # collide with the default sentinel must set this (e.g. a categorical
+    # export whose class ids can reach 255).
+    export_nodata: Optional[float] = None
 
     @model_validator(mode="after")
     def _chk_source(self):
@@ -49,15 +54,36 @@ class GEEVar(Variable):
             "`path` set to an asset id."
         )
 
+    def _resolve_export_nodata(self, raster_type: Optional[RasterType] = None) -> float:
+        """Fill/nodata for the GeoTIFF export: a value the layer cannot contain.
+
+        ``export_nodata`` wins when set. Otherwise continuous layers get
+        -32768 (int16-safe; impossible for altitude in m, precipitation in mm,
+        slope in degrees, temperature in degC), and categorical/unset layers
+        keep the byte convention 255. 255 on a continuous layer punched holes
+        through real data — every genuine 255 m elevation pixel became fill.
+        """
+        if self.export_nodata is not None:
+            return self.export_nodata
+        _raster_type = raster_type or self.raster_type
+        if _raster_type == RasterType.continuous:
+            return -32768
+        return 255
+
     def _download(
         self,
         overwrite: bool = False,
+        raster_type: Optional[RasterType] = None,
     ) -> List[Path]:
         """
         Internal method to download GEE data to local file(s).
 
         Parameters
         ----------
+        raster_type : RasterType, optional
+            Conversion-time override from ``to_local_raster`` — must be
+            resolved here, before the export, so it also drives the
+            nodata sentinel (not only the LocalRasterVar metadata).
         overwrite : bool, optional
             Whether to overwrite existing files (default: False).
 
@@ -102,6 +128,7 @@ class GEEVar(Variable):
                 )
 
             elif self.data_type == DataType.raster:
+                nodata = self._resolve_export_nodata(raster_type)
                 download_ee_image(
                     self.gee_images[0],
                     output_path,
@@ -109,8 +136,8 @@ class GEEVar(Variable):
                     crs=self.default_crs or "EPSG:4326",
                     region=self.aoi.geometry(),
                     overwrite=True,
-                    unmask_value=255,
-                    nodata_value=255,
+                    unmask_value=nodata,
+                    nodata_value=nodata,
                 )
         elif output_path.exists():
             print(f"{output_path} already exists. Skipping download.")
@@ -261,11 +288,11 @@ class GEEVar(Variable):
             return local_rasters[0] if len(local_rasters) == 1 else local_rasters
 
         else:  # DataType.raster
-            # For raster data: download directly
-            local_paths = self._download(overwrite=overwrite)
-
-            # Use provided raster_type or fall back to self's value
+            # Resolve raster_type BEFORE downloading: it drives the export's
+            # nodata sentinel, not just the LocalRasterVar metadata.
             _raster_type = raster_type or self.raster_type
+            local_paths = self._download(overwrite=overwrite, raster_type=_raster_type)
+
             if _raster_type is None:
                 raise ValueError(
                     "raster_type must be provided either as parameter or set "
