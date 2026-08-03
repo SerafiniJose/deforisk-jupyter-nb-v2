@@ -10,6 +10,7 @@ Kept free of Solara / ipyvuetify / ipyleaflet / localtileserver so it stays
 unit-testable, like its ``*_styles.py`` siblings.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Callable, Tuple
 
@@ -102,3 +103,71 @@ def to_legend_data(spec: LegendSpec, t: Callable[..., str]):
         color = spec.colors[index] if index < len(spec.colors) else ""
         items.append(DiscreteEntry(resolve_label(label, t), color))
     return LegendData(items=items)
+
+
+def format_number(value: float) -> str:
+    """Format a legend endpoint: 3 significant digits, no trailing zeros.
+
+    ``30`` stays ``"30"`` (not ``"30.0"``); ``0.012456`` becomes ``"0.0125"``.
+
+    Uses fixed-point rather than ``:g`` formatting: Python's ``:g`` switches to
+    scientific notation once the exponent reaches the requested precision (e.g.
+    ``f"{1234.0:.3g}"`` -> ``"1.23e+03"``), which would misrender the larger
+    endpoints legends actually see.
+    """
+    value = float(value)
+    if value == 0:
+        return "0"
+    digits = 3
+    magnitude = math.floor(math.log10(abs(value)))
+    decimals = max(digits - magnitude - 1, 0)
+    rounded = round(value, decimals)
+    if decimals <= 0:
+        return f"{rounded:.0f}"
+    text = f"{rounded:.{decimals}f}"
+    return text.rstrip("0").rstrip(".")
+
+
+def prediction_spec(model_key: str, display_palette: str = None) -> LegendSpec:
+    """Legend for a prediction raster: its QGIS ramp with semantic endpoints.
+
+    The pixel values are rescaled integers (far.misc.rescale -> 1..65535, jnr
+    1001..30999), which mean nothing to a reader, so the endpoints are labelled
+    as risk instead. ``display_palette`` mirrors ``resolve_display_style`` and is
+    what imported predictions carry.
+    """
+    from gui.scripts.prediction_styles import resolve_display_style
+
+    style = resolve_display_style(model_key, display_palette)
+    return LegendSpec(
+        kind="gradient",
+        title=Label(key="legend.prediction.title"),
+        colors=gradient_colors(style["colormap"]),
+        labels=(Label(key="legend.risk.low"), Label(key="legend.risk.high")),
+    )
+
+
+def density_spec(vmin: float, vmax: float) -> LegendSpec:
+    """Legend for a deforestation-density raster, labelled with its real range.
+
+    ``add_density_on_map`` stretches the ramp to the raster's own min/max and
+    hands that range here, so no second band read is needed. A degenerate range
+    (constant or all-nodata raster) falls back to Low/High rather than printing
+    the same number twice.
+    """
+    from gui.scripts.density_map import density_colormap
+
+    if vmax > vmin:
+        labels = (
+            Label(literal=format_number(vmin)),
+            Label(literal=format_number(vmax)),
+        )
+    else:
+        labels = (Label(key="legend.range.low"), Label(key="legend.range.high"))
+
+    return LegendSpec(
+        kind="gradient",
+        title=Label(key="legend.density.title"),
+        colors=gradient_colors(density_colormap()),
+        labels=labels,
+    )

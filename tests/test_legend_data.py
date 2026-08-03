@@ -103,3 +103,73 @@ def test_to_legend_data_builds_fresh_objects_each_call():
     assert first is not second
     assert first.gradients[0] is not second.gradients[0]
     assert first.gradients[0].colors is not second.gradients[0].colors
+
+
+def test_prediction_spec_is_a_gradient_with_semantic_endpoints():
+    """prediction_spec builds a 256-stop gradient labelled Low/High risk."""
+    from gui.scripts.legend_data import prediction_spec
+
+    spec = prediction_spec("rf_2020")
+    assert spec.kind == "gradient"
+    assert spec.title.key == "legend.prediction.title"
+    assert len(spec.colors) == 256
+    assert [label.key for label in spec.labels] == [
+        "legend.risk.low",
+        "legend.risk.high",
+    ]
+
+
+def test_prediction_spec_labels_are_identical_across_families():
+    """Every model family shares the same Low/High risk label keys."""
+    from gui.scripts.legend_data import prediction_spec
+
+    labels = {
+        family: tuple(label.key for label in prediction_spec(f"{family}_x").labels)
+        for family in ("rf", "jnr", "mw")
+    }
+    assert len(set(labels.values())) == 1
+
+
+def test_prediction_spec_colors_differ_between_families():
+    """Different model families render distinct colour ramps."""
+    from gui.scripts.legend_data import prediction_spec
+
+    assert prediction_spec("rf_x").colors != prediction_spec("mw_x").colors
+
+
+def test_prediction_spec_honours_a_display_palette_override():
+    """An explicit display_palette overrides the model-family palette."""
+    from gui.scripts.legend_data import prediction_spec
+
+    imported = prediction_spec("imported_thing", display_palette="jnr")
+    assert imported.colors == prediction_spec("jnr_x").colors
+
+
+def test_density_spec_labels_carry_the_real_range():
+    """density_spec labels its endpoints with the raster's own min/max."""
+    from gui.scripts.legend_data import density_spec
+
+    spec = density_spec(0.0125, 4.5)
+    assert spec.kind == "gradient"
+    assert spec.title.key == "legend.density.title"
+    assert [label.literal for label in spec.labels] == ["0.0125", "4.5"]
+
+
+def test_density_spec_collapses_a_degenerate_range_to_low_high():
+    """A degenerate (vmin == vmax) range falls back to Low/High labels."""
+    from gui.scripts.legend_data import density_spec
+
+    spec = density_spec(2.0, 2.0)
+    assert [label.key for label in spec.labels] == [
+        "legend.range.low",
+        "legend.range.high",
+    ]
+
+
+def test_format_number_keeps_three_significant_digits():
+    """format_number keeps 3 significant digits and drops trailing zeros."""
+    from gui.scripts.legend_data import format_number
+
+    assert format_number(0.012456) == "0.0125"
+    assert format_number(1234.0) == "1234"
+    assert format_number(30) == "30"
