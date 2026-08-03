@@ -611,9 +611,14 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
                 project=app_state.project,
                 processing=app_state.processing,
                 map_=map_,
+                legend_port=app_state.legend_port,
             )
         with rv.TabItem():
-            PostProcessTile(project=app_state.project, map_=map_)
+            PostProcessTile(
+                project=app_state.project,
+                map_=map_,
+                legend_port=app_state.legend_port,
+            )
         with rv.TabItem():
             DatasetTile(project=app_state.project)
 

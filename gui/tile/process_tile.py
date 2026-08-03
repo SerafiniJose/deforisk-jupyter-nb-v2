@@ -103,19 +103,30 @@ def BaseProjectionForm(
 
 
 @solara.component
-def ProcessTile(project, processing, map_=None):
-    """Base/projection → run harmonization (downloading lives in Step 2 — Variables)."""
+def ProcessTile(project, processing, map_=None, legend_port=None):
+    """Base/projection → run harmonization (downloading lives in Step 2 — Variables).
+
+    Args:
+        project: Reactive holding the current Project (or None).
+        processing: Reactive processing-settings state.
+        map_: SepalMap instance used by the "show on map" toggle.
+        legend_port: LegendPort for publishing/withdrawing harmonized-output
+            legends; None disables legend publication (e.g. in tests without
+            one).
+    """
     base_key, set_base_key = solara.use_state("")
     epsg, set_epsg = solara.use_state("")
     resolution, set_resolution = solara.use_state("30")
     notifications = use_notifications()
-    on_toggle_map = use_derived_map_toggle(project, map_, notifications)
+    on_toggle_map = use_derived_map_toggle(
+        project, map_, notifications, legend_port=legend_port
+    )
     pending_remove, set_pending_remove = solara.use_state(None)
 
     def _do_remove(key: str):
         """Unregister a harmonized output (the raster stays on disk)."""
         p = project.value
-        if process_actions.remove_processed_variable(p, key, map_):
+        if process_actions.remove_processed_variable(p, key, map_, legend_port):
             project.set(p.model_copy())
 
     p = project.value
