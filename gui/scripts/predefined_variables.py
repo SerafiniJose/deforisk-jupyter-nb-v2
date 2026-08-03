@@ -158,14 +158,16 @@ def _get_precipitation(aoi, year):
     """ERA5-Land annual precipitation (mm/year): sum of the 12 monthly totals.
 
     ``total_precipitation_sum`` is the monthly total in metres of water depth;
-    the yearly sum is converted to millimetres.
+    the yearly sum is converted to millimetres and rounded to whole mm (int16 —
+    sub-mm precision is meaningless at ~11 km pixels and float64 quadruples the
+    exported raster size).
     """
     col = (
         ee.ImageCollection("ECMWF/ERA5_LAND/MONTHLY_AGGR")
         .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
         .select("total_precipitation_sum")
     )
-    return col.sum().multiply(1000).clip(aoi).rename("B1")
+    return col.sum().multiply(1000).round().toInt16().clip(aoi).rename("B1")
 
 
 def _get_temperature(aoi, year, aggregation="median"):
@@ -189,7 +191,9 @@ def _get_temperature(aoi, year, aggregation="median"):
         "min": col.min,
         "median": col.median,
     }[aggregation]()
-    return reduced.subtract(273.15).clip(aoi).rename("B1")
+    # Whole degrees C as int16 (signed — temperatures go negative); float64
+    # decimals are noise at ~11 km pixels and quadruple the raster size.
+    return reduced.subtract(273.15).round().toInt16().clip(aoi).rename("B1")
 
 
 def _get_subj(aoi, year=None):

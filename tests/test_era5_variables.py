@@ -51,6 +51,9 @@ def test_precipitation_sums_the_year_in_mm(monkeypatch):
     assert ("select", ("total_precipitation_sum",)) in calls
     assert ("sum", ()) in calls
     assert ("multiply", (1000,)) in calls  # metres of water -> mm
+    # Whole mm, stored as int16 — float64 rasters waste 4x the disk space.
+    assert calls.index(("round", ())) > calls.index(("multiply", (1000,)))
+    assert ("toInt16", ()) in calls
     assert ("clip", ("AOI",)) in calls
     assert ("rename", ("B1",)) in calls
 
@@ -87,6 +90,9 @@ def test_temperature_uses_selected_reducer_in_celsius(monkeypatch, metric):
     other_metrics = {"mean", "max", "min", "median"} - {metric}
     assert not other_metrics & {method for method, _ in calls}
     assert ("subtract", (273.15,)) in calls  # applied AFTER the reducer
+    # Whole degrees C, stored as int16 (signed: temperatures go negative).
+    assert calls.index(("round", ())) > calls.index(("subtract", (273.15,)))
+    assert ("toInt16", ()) in calls
     assert ("clip", ("AOI",)) in calls
     assert ("rename", ("B1",)) in calls
 
