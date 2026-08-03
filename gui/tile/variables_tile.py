@@ -102,8 +102,12 @@ def _styled_layer(image, var, gee_interface):
     binary masks) -> black/white palette (0=black, 1=white); continuous ->
     grayscale stretched to the image's min/max.
 
-    Returns (image_to_add, vis_params). Synchronous — any GEE stretch it computes
-    goes through the blocking interface, so call it from a worker thread.
+    Returns (image_to_add, vis_params, render_kind). GEE variables are never
+    post-process outputs (post-processing runs on downloaded rasters), so its
+    render_kind vocabulary is the catalogue subset: "random_visualizer",
+    "catalogue_palette", "categorical_fallback", "continuous_fallback".
+    Synchronous — any GEE stretch it computes goes through the blocking
+    interface, so call it from a worker thread.
     """
     from gui.scripts.predefined_variables import (
         PREDEFINED_CATALOGUE,
@@ -116,7 +120,7 @@ def _styled_layer(image, var, gee_interface):
     cat = PREDEFINED_CATALOGUE.get(cat_key) if cat_key else None
     if cat:
         if cat.get("random_visualizer"):
-            return image.randomVisualizer(), {}
+            return image.randomVisualizer(), {}, "random_visualizer"
         vis = cat.get("vis_params")
         if vis:
             vis = dict(vis)
@@ -125,17 +129,23 @@ def _styled_layer(image, var, gee_interface):
                 if mm:
                     vis.setdefault("min", mm[0])
                     vis.setdefault("max", mm[1])
-            return image, vis
+            return image, vis, "catalogue_palette"
 
     rt = getattr(var, "raster_type", None)
     rt = rt.value if hasattr(rt, "value") else (str(rt) if rt is not None else "")
     if rt == "categorical":
-        return image, {"palette": ["000000", "ffffff"], "min": 0, "max": 1}
-    return image, _grayscale_vis(image, var, gee_interface)
+        vis = {"palette": ["000000", "ffffff"], "min": 0, "max": 1}
+        return image, vis, "categorical_fallback"
+    return image, _grayscale_vis(image, var, gee_interface), "continuous_fallback"
 
 
 def _add_gee_layer(map_, image, var, name: str, layer_key: str):
     """Style and add a GEE image layer to ``map_`` (blocking; run in a thread).
+
+    Returns ``(vis, render_kind)`` — plain data the caller uses to build the
+    layer's legend on the main thread. Legend text must not be resolved here:
+    ``t()`` reads a session-scoped reactive translator, and this runs on a
+    worker thread.
 
     Uses the GEE interface's *synchronous* API (``add_ee_layer`` / ``get_info``),
     which schedules the underlying eeclient session calls onto the interface's
@@ -145,8 +155,9 @@ def _add_gee_layer(map_, image, var, name: str, layer_key: str):
     this blocking call with ``asyncio.to_thread`` keeps Solara's loop free, the
     same pattern the local raster/vector branches use.
     """
-    styled_image, vis = _styled_layer(image, var, map_.gee_interface)
+    styled_image, vis, render_kind = _styled_layer(image, var, map_.gee_interface)
     map_.add_ee_layer(styled_image, vis, name=name, key=layer_key, use_map_vis=False)
+    return vis, render_kind
 
 
 def _variable_to_entry(key: str, var, project) -> dict:

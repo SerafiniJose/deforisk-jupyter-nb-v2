@@ -221,6 +221,10 @@ def _get_subj(aoi, year=None):
 #   * ``random_visualizer`` — render via ``image.randomVisualizer()`` (one random
 #     RGB colour per distinct value); used for multi-class categorical rasters
 #     whose value range is arbitrary. Takes precedence over ``vis_params``.
+#   * ``legend_class_keys`` — optional (label key for value 0, label key for 1);
+#     categorical entries default to legend.class.absent / legend.class.present.
+#   * ``unit_key`` — optional i18n key formatting a continuous value with its
+#     unit, e.g. "legend.unit.m_value" -> "{value} m".
 PREDEFINED_CATALOGUE = {
     "altitude": {
         "label_key": "vars.predefined.altitude",
@@ -233,6 +237,7 @@ PREDEFINED_CATALOGUE = {
         "vis_params": {
             "palette": ["006633", "E5FFCC", "662A00", "D8D8D8", "F5F5F5"],
         },
+        "unit_key": "legend.unit.m_value",
     },
     "slope": {
         "label_key": "vars.predefined.slope",
@@ -247,6 +252,7 @@ PREDEFINED_CATALOGUE = {
             "min": 0,
             "max": 60,
         },
+        "unit_key": "legend.unit.deg_value",
     },
     "protected_area": {
         "label_key": "vars.predefined.protected_area",
@@ -309,6 +315,7 @@ PREDEFINED_CATALOGUE = {
         ],
         "get_image": _get_forest_gfc,
         "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
+        "legend_class_keys": ("legend.class.non_forest", "legend.class.forest"),
     },
     "forest_tmf": {
         "label_key": "vars.predefined.forest_tmf",
@@ -319,6 +326,7 @@ PREDEFINED_CATALOGUE = {
         "years": list(range(2001, 2025)),
         "get_image": _get_forest_tmf,
         "vis_params": {"palette": ["ffffff", "2e7d32"], "min": 0, "max": 1},
+        "legend_class_keys": ("legend.class.non_forest", "legend.class.forest"),
     },
     "towns": {
         "label_key": "vars.predefined.towns",

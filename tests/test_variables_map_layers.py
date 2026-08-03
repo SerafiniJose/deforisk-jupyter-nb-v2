@@ -39,12 +39,13 @@ def test_styled_layer_categorical_is_black_white_not_random():
     var = _named("LocalRasterVar", raster_type=_named("RT", value="categorical"))
     image = FakeImage()
 
-    out_image, vis = _styled_layer(image, var, None)
+    out_image, vis, render_kind = _styled_layer(image, var, None)
 
     assert out_image is image
     assert vis.get("palette") == ["000000", "ffffff"]
     assert vis.get("min") == 0
     assert vis.get("max") == 1
+    assert render_kind == "categorical_fallback"
 
 
 def test_styled_layer_predefined_binary_uses_catalogue_palette():
@@ -59,12 +60,13 @@ def test_styled_layer_predefined_binary_uses_catalogue_palette():
     var.name = "rivers"
     image = object()
 
-    out_image, vis = _styled_layer(image, var, None)
+    out_image, vis, render_kind = _styled_layer(image, var, None)
 
     assert out_image is image
     assert vis["palette"] == PREDEFINED_CATALOGUE["rivers"]["vis_params"]["palette"]
     assert vis["palette"][0] == "ffffff"
     assert vis["min"] == 0 and vis["max"] == 1
+    assert render_kind == "catalogue_palette"
 
 
 def test_styled_layer_predefined_continuous_stretches_palette():
@@ -77,10 +79,11 @@ def test_styled_layer_predefined_continuous_stretches_palette():
     var = _named("GEEVar", raster_type=_named("RT", value="continuous"))
     var.name = "altitude"
 
-    out_image, vis = _styled_layer(object(), var, None)
+    out_image, vis, render_kind = _styled_layer(object(), var, None)
 
     assert vis["palette"][0] == "006633"  # terrain ramp, not grayscale
     assert "min" not in vis and "max" not in vis
+    assert render_kind == "catalogue_palette"
 
 
 def test_styled_layer_subj_uses_random_visualizer():
@@ -97,10 +100,11 @@ def test_styled_layer_subj_uses_random_visualizer():
     var = _named("GEEVar", raster_type=_named("RT", value="categorical"))
     var.name = "subj"
 
-    out_image, vis = _styled_layer(FakeImage(), var, None)
+    out_image, vis, render_kind = _styled_layer(FakeImage(), var, None)
 
     assert out_image == "RGB_IMAGE"
     assert vis == {}
+    assert render_kind == "random_visualizer"
 
 
 def test_gee_layer_add_uses_sync_api_off_the_solara_loop():
