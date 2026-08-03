@@ -1,4 +1,5 @@
-# tests/test_train_tile_fit.py
+"""build_fit_kwargs, train-job state updates, and model naming/overwrite rules."""
+
 import types
 from pathlib import Path
 
@@ -11,32 +12,38 @@ def _dataset():
 
 
 def _project():
-    return types.SimpleNamespace(folders=types.SimpleNamespace(
-        rmj_mw=Path("/tmp/rmj_mw"), rmj_bm=Path("/tmp/rmj_bm")))
+    return types.SimpleNamespace(
+        folders=types.SimpleNamespace(
+            rmj_mw=Path("/tmp/rmj_mw"), rmj_bm=Path("/tmp/rmj_bm")
+        )
+    )
 
 
 def test_ml_models_get_empty_fit_kwargs():
+    """ML families fit on the attached dataset — no fit() kwargs."""
     assert build_fit_kwargs("glm", _dataset(), _project()) == {}
     assert build_fit_kwargs("rf", _dataset(), _project()) == {}
     assert build_fit_kwargs("icar", _dataset(), _project()) == {}
 
 
 def test_mw_gets_time_interval_and_folder():
+    """MW derives its time interval from the target name and gets a folder."""
     kw = build_fit_kwargs("mw", _dataset(), _project())
     assert kw["time_interval"] == 5
     assert kw["folder"] == Path("/tmp/rmj_mw")
 
 
 def test_jnr_gets_folder_only():
+    """The JNR benchmark gets only a folder."""
     kw = build_fit_kwargs("benchmark", _dataset(), _project())
     assert kw["folder"] == Path("/tmp/rmj_bm")
-    assert "time_interval" not in kw     # JNR.fit() has no time_interval arg
+    assert "time_interval" not in kw  # JNR.fit() has no time_interval arg
 
 
 def test_job_status_update_notifies_subscribers():
-    """Regression: marking a job completed must fire reactive subscribers so the
-    UI re-renders and the spinner stops.
+    """Regression: marking a job completed must fire reactive subscribers.
 
+    That firing is what makes the UI re-render and the spinner stop.
     The original code mutated job dicts in place inside a shallow-copied list,
     so the old and new lists shared the same dicts. Solara's set() short-circuits
     when equals_extra(old, new) is True and never fires its listeners, leaving
@@ -90,12 +97,13 @@ def test_job_status_update_skips_cancelled_job():
 
 
 def test_training_publishes_project_for_rerender(monkeypatch):
-    """Regression: a finished training run must publish the mutated project on the
-    reactive so dependent tiles (Step 7 — Inference) re-render and list the new model.
+    """Regression: a finished run must publish the mutated project on the reactive.
 
-    register() mutates project.models in place; without project.set(p.model_copy())
-    the identity-equality reactive never fires, so the Inference model dropdown stays
-    empty until an unrelated project edit forces a re-render.
+    Otherwise dependent tiles (Step 7 — Inference) never re-render to list
+    the new model: register() mutates project.models in place; without
+    project.set(p.model_copy()) the identity-equality reactive never fires,
+    so the Inference model dropdown stays empty until an unrelated project
+    edit forces a re-render.
     """
     import copy
 
@@ -169,7 +177,7 @@ def test_sanitize_name_is_path_safe():
     assert _sanitize_name("  glm/v2  ") == "glm_v2"
     assert _sanitize_name("a..b!!c") == "a_b_c"
     assert _sanitize_name("keep-this_one") == "keep-this_one"
-    assert _sanitize_name("***") == ""        # nothing salvageable → empty
+    assert _sanitize_name("***") == ""  # nothing salvageable → empty
     assert _sanitize_name("") == ""
 
 
@@ -178,12 +186,13 @@ def test_storage_key_matches_base_formula():
     from gui.tile.train_tile import _storage_key
 
     assert _storage_key("glm", "v1") == "glm_v1"
-    assert _storage_key("rf", "") == "rf"     # no name → bare model type
+    assert _storage_key("rf", "") == "rf"  # no name → bare model type
 
 
 def _name_test_harness(monkeypatch):
     """Shared dummy model + project for the naming/overwrite tests."""
     import copy
+
     import solara
 
     solara.settings.main.allow_global_context = True
@@ -235,44 +244,56 @@ def test_distinct_names_do_not_overwrite(monkeypatch):
     train_tile, _FakeProject = _name_test_harness(monkeypatch)
 
     fake = _FakeProject()
-    train_tile.train_jobs.set([
-        {"id": "j1", "status": "running"}, {"id": "j2", "status": "running"},
-    ])
+    train_tile.train_jobs.set(
+        [
+            {"id": "j1", "status": "running"},
+            {"id": "j2", "status": "running"},
+        ]
+    )
     try:
         train_tile._run_training("j1", "glm", {}, None, None, fake, None, "v1")
         train_tile._run_training("j2", "glm", {}, None, None, fake, None, "v2")
 
         assert set(fake.models) == {"glm_v1", "glm_v2"}
-        assert fake.deleted == []   # nothing was overwritten
+        assert fake.deleted == []  # nothing was overwritten
     finally:
         train_tile.train_jobs.set([])
 
 
 def test_same_name_overwrites_and_cleans_old_files(monkeypatch):
-    """Re-training under an existing name replaces it and deletes the old model
-    first (so its on-disk files are cleaned up, not orphaned)."""
+    """Re-training under an existing name replaces the old model.
+
+    The old model is deleted first so its on-disk files are cleaned up,
+    not orphaned.
+    """
     train_tile, _FakeProject = _name_test_harness(monkeypatch)
 
     fake = _FakeProject()
-    train_tile.train_jobs.set([
-        {"id": "j1", "status": "running"}, {"id": "j2", "status": "running"},
-    ])
+    train_tile.train_jobs.set(
+        [
+            {"id": "j1", "status": "running"},
+            {"id": "j2", "status": "running"},
+        ]
+    )
     try:
         train_tile._run_training("j1", "glm", {}, None, None, fake, None, "v1")
         first = fake.models["glm_v1"]
         train_tile._run_training("j2", "glm", {}, None, None, fake, None, "v1")
 
-        assert fake.deleted == ["glm_v1"]          # old model removed first
-        assert set(fake.models) == {"glm_v1"}       # single entry, replaced
-        assert fake.models["glm_v1"] is not first   # by the new model
+        assert fake.deleted == ["glm_v1"]  # old model removed first
+        assert set(fake.models) == {"glm_v1"}  # single entry, replaced
+        assert fake.models["glm_v1"] is not first  # by the new model
     finally:
         train_tile.train_jobs.set([])
 
 
 def test_spawn_in_context_runs_target_without_active_context():
-    """spawn_in_context falls back to a plain thread when no Solara context
-    is active (e.g. unit tests) and still executes the target."""
+    """spawn_in_context falls back to a plain thread without a Solara context.
+
+    No context is active in unit tests; the target must still execute.
+    """
     import threading
+
     from gui.scripts.solara_threads import spawn_in_context
 
     done = threading.Event()
@@ -289,9 +310,11 @@ def test_spawn_in_context_runs_target_without_active_context():
 
 
 def test_prepare_samples_records_dataset_name():
-    """Regression: ML-family models never recorded which dataset they trained
-    on (only MW/JNR set dataset_name in their own fit()), so the models list
-    showed "—" for every GLM/RF/iCAR model."""
+    """Regression: ML-family models must record which dataset they trained on.
+
+    Only MW/JNR set dataset_name in their own fit(), so the models list
+    showed "—" for every GLM/RF/iCAR model.
+    """
     from spatialrisk.mlmodels import GLMModel
 
     m = GLMModel()
