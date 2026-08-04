@@ -115,7 +115,7 @@ def _get_forest_gfc(aoi, year, tree_cover_threshold=30):
     default here must match the catalogue's declared default (see ``params``
     on the ``forest_gfc`` entry), which is the single source of truth.
     """
-    gfc = ee.Image("UMD/hansen/global_forest_change_2024_v1_12").clip(aoi)
+    gfc = ee.Image("UMD/hansen/global_forest_change_2025_v1_13").clip(aoi)
     forest2000 = gfc.select("treecover2000")
     forest2000_thr = (
         ee.Image(0).where(forest2000.gte(tree_cover_threshold), 1).clip(aoi)
@@ -287,7 +287,11 @@ PREDEFINED_CATALOGUE = {
         "var_type": "GEEVar",
         "raster_type": "categorical",
         "temporal": True,
-        "years": list(range(2001, 2025)),
+        # Forest at 1 Jan of ``year`` needs loss years 1..year-2001, so the GFC
+        # release bounds this list: v1.13 carries lossyear up to 25 (2025) and
+        # therefore supports years up to 2026. Bump this alongside the asset ID
+        # in ``_get_forest_gfc`` whenever a new GFC version is adopted.
+        "years": list(range(2001, 2027)),
         # User-selectable knobs, rendered generically by the Add Variable modal
         # (same shape as MODEL_REGISTRY["params"] in gui/tile/train_tile.py).
         # ``suffix_prefix`` makes the value part of the variable name

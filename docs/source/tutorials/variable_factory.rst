@@ -88,7 +88,7 @@ loss, and gain from 2000 to present.
 .. code-block:: python
 
    # Example: Getting forest cover for 2015
-   gfcImage = ee.Image("UMD/hansen/global_forest_change_2024_v1_12")
+   gfcImage = ee.Image("UMD/hansen/global_forest_change_2025_v1_13")
    forest2000 = gfcImage.select(["treecover2000"])
 
 **Protected Areas (WDPA)**
