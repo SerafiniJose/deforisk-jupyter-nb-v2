@@ -197,7 +197,7 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
     # Form messages
     form_error, set_form_error = solara.use_state(None)
 
-    def _launch_import(name, path, palette):
+    def _launch_import(name, path, palette, entry=None):
         """Spawn a background copy for a raster the dialog validated.
 
         The dialog enforced the required fields and the no-project guard; the
@@ -219,6 +219,8 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
                     "status": "running",
                     "error": None,
                     "output_path": None,
+                    # Submission entry, kept so a failed row can be re-edited.
+                    "entry": entry,
                 }
             ]
         )
@@ -237,7 +239,7 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
-    def _launch_inference(model_key, dataset_key, name, mask_layer=None):
+    def _launch_inference(model_key, dataset_key, name, mask_layer=None, entry=None):
         """Create the output job row and spawn the worker. Inputs pre-validated."""
         job_id = str(uuid.uuid4())[:8]
         job = {
@@ -248,6 +250,8 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
             "status": "running",
             "error": None,
             "output_path": None,
+            # Submission entry, kept so a failed row can be re-edited.
+            "entry": entry,
         }
         inference_jobs.set(list(inference_jobs.value) + [job])
         spawn_in_context(
@@ -272,9 +276,25 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
             job_id,
         )
 
+    # Failed-job editing: the pencil action reopens the dialog seeded with the
+    # job's submission entry; submitting launches a fresh run and drops the old
+    # failed row so the rerun replaces it instead of piling up next to it.
+    prefill = solara.use_reactive(None)
+    editing_job_id = solara.use_ref(None)
+
+    def on_edit(row):
+        editing_job_id.current = row["job_id"]
+        prefill.set(row["entry"])
+        dialog_open.set(True)
+
+    def open_new_dialog():
+        editing_job_id.current = None
+        prefill.set(None)
+        dialog_open.set(True)
+
     def on_submit(entry):
         if entry["kind"] == "import":
-            _launch_import(entry["name"], entry["path"], entry["palette"])
+            _launch_import(entry["name"], entry["path"], entry["palette"], entry=entry)
         else:
             # mask_layer is absent for the JNR/MW families, which resolve
             # their own layers rather than masking with a project raster.
@@ -283,7 +303,12 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
                 entry["dataset_key"],
                 entry["name"],
                 entry.get("mask_layer"),
+                entry=entry,
             )
+        if editing_job_id.current is not None:
+            on_dismiss(editing_job_id.current)
+            editing_job_id.current = None
+            prefill.set(None)
 
     def _forget_on_map(row_key):
         remaining = set(preds_on_map.value)
@@ -423,7 +448,7 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
             color="primary",
             small=True,
             block=True,
-            on_click=lambda: dialog_open.set(True),
+            on_click=open_new_dialog,
         )
 
         if form_error:
@@ -446,6 +471,7 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
             on_toggle_map=on_toggle_map if map_ is not None else None,
             on_dismiss=on_dismiss,
             on_delete=set_pending_delete,
+            on_edit=on_edit,
         )
 
         _pending_count = (
@@ -469,4 +495,5 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
         open_=dialog_open,
         on_submit=on_submit,
         sepal_client=sepal_client,
+        prefill=prefill,
     )

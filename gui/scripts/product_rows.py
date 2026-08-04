@@ -132,6 +132,9 @@ def inference_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
                 "storage_keys": [],
                 "status": job.get("status", "running"),
                 "error": job.get("error"),
+                # The submission entry the job was launched from, so a failed
+                # row can reopen the Predict dialog prefilled for a rerun.
+                "entry": job.get("entry"),
             }
         )
     for row_key, group in groups.items():
