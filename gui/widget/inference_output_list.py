@@ -15,6 +15,7 @@ def InferenceOutputList(
     on_toggle_map=None,
     on_dismiss=None,
     on_delete=None,
+    on_edit=None,
 ):
     """Predictions table: one row per registered prediction group plus jobs.
 
@@ -26,6 +27,8 @@ def InferenceOutputList(
         on_dismiss: callback(job_id) — discard a failed job row.
         on_delete: callback(row) — delete ALL the row's registered rasters
             (confirmed by the tile).
+        on_edit: callback(row) — reopen the Predict dialog prefilled with a
+            failed job's submission entry so the user can fix and rerun.
     """
     p = project.value
     data = inference_rows(p, inference_jobs.value)
@@ -47,10 +50,19 @@ def InferenceOutputList(
                 actions.append(
                     {"kind": "delete", "on_click": lambda *_, rr=r: on_delete(rr)}
                 )
-        elif r["status"] != "running" and on_dismiss is not None:
-            actions.append(
-                {"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}
-            )
+        elif r["status"] != "running":
+            # Only jobs that recorded their submission entry can be re-edited.
+            if r["status"] == "failed" and r.get("entry") and on_edit is not None:
+                actions.append(
+                    {"kind": "edit", "on_click": lambda *_, rr=r: on_edit(rr)}
+                )
+            if on_dismiss is not None:
+                actions.append(
+                    {
+                        "kind": "dismiss",
+                        "on_click": lambda *_, i=r["job_id"]: on_dismiss(i),
+                    }
+                )
 
         error = r.get("error")
         if r["status"] == "failed" and not error:
@@ -61,7 +73,12 @@ def InferenceOutputList(
                 "cells": [
                     {"type": "text", "value": r["name"]},
                     {"type": "chip", "value": r["model_key"], "color": "primary"},
-                    {"type": "text", "value": r["dataset_name"], "size": "0.8rem", "muted": True},
+                    {
+                        "type": "text",
+                        "value": r["dataset_name"],
+                        "size": "0.8rem",
+                        "muted": True,
+                    },
                     {"type": "status", "status": r["status"]},
                 ],
                 "actions": actions,
@@ -72,9 +89,15 @@ def InferenceOutputList(
     ProductTable(
         title=t("widgets.inference_output_list.predictions_title"),
         columns=[
-            {"label": t("widgets.inference_output_list.col_name"), "width": "minmax(0,2fr)"},
+            {
+                "label": t("widgets.inference_output_list.col_name"),
+                "width": "minmax(0,2fr)",
+            },
             {"label": t("widgets.inference_output_list.col_model"), "width": "90px"},
-            {"label": t("widgets.inference_output_list.col_dataset"), "width": "minmax(0,1fr)"},
+            {
+                "label": t("widgets.inference_output_list.col_dataset"),
+                "width": "minmax(0,1fr)",
+            },
             {"label": t("widgets.inference_output_list.col_status"), "width": "95px"},
         ],
         rows=rows,

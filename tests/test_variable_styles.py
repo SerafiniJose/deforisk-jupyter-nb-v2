@@ -188,3 +188,52 @@ def test_unparameterised_forest_gfc_still_resolves():
     style = resolve_variable_style(_local_raster("forest_gfc", "categorical"))
 
     assert tuple(round(x * 255) for x in style["colormap"](1.0)[:3]) == (46, 125, 50)
+
+
+# --- render_kind reporting ----------------------------------------------------
+
+
+def test_render_kind_for_a_postprocess_distance_raster():
+    """A distance-classified raster reports render_kind postprocess_distance."""
+    style = resolve_variable_style(
+        _postprocess_raster("forest_gfc_edge", "continuous", history=["edge"])
+    )
+    assert style["render_kind"] == "postprocess_distance"
+
+
+def test_render_kind_for_a_change_mask():
+    """A change-classified raster reports render_kind postprocess_change."""
+    style = resolve_variable_style(
+        _postprocess_raster("loss_x", "categorical", tags=["loss"])
+    )
+    assert style["render_kind"] == "postprocess_change"
+
+
+def test_render_kind_for_a_catalogue_palette_variable():
+    """A catalogue variable with a palette reports render_kind catalogue_palette."""
+    style = resolve_variable_style(_local_raster("slope", "continuous"))
+    assert style["render_kind"] == "catalogue_palette"
+
+
+def test_render_kind_for_a_random_visualizer_variable():
+    """Subj (the random_visualizer catalogue entry) reports random_visualizer."""
+    style = resolve_variable_style(_local_raster("subj", "categorical"))
+    assert style["render_kind"] == "random_visualizer"
+
+
+def test_render_kind_for_an_unknown_categorical_raster():
+    """A non-catalogue categorical raster reports render_kind categorical_fallback."""
+    style = resolve_variable_style(_local_raster("mystery", "categorical"))
+    assert style["render_kind"] == "categorical_fallback"
+
+
+def test_render_kind_for_an_unknown_continuous_raster():
+    """A non-catalogue continuous raster reports render_kind continuous_fallback."""
+    style = resolve_variable_style(_local_raster("mystery", "continuous"))
+    assert style["render_kind"] == "continuous_fallback"
+
+
+def test_existing_style_keys_are_unchanged():
+    """render_kind is additive: colormap/vmin/vmax remain in the returned dict."""
+    style = resolve_variable_style(_local_raster("slope", "continuous"))
+    assert set(style) >= {"colormap", "vmin", "vmax", "render_kind"}

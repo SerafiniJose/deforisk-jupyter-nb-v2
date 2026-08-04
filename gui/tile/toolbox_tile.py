@@ -29,6 +29,27 @@ from gui.widget.text_style import MUTED
 
 logger = logging.getLogger("spatial_risk")
 
+
+def _density_legend(run_key: str, name: str, vmin: float, vmax: float):
+    """The legend one allocation run's density raster publishes."""
+    from gui.scripts.legend_data import Label, density_spec
+    from gui.scripts.legend_registry import LayerLegend
+
+    return LayerLegend(
+        layer_id=density_layer_key(run_key),
+        label=Label(literal=name),
+        spec=density_spec(vmin, vmax),
+    )
+
+
+def _drop_density_layer(map_, key: str, legend_port) -> None:
+    """Remove a density layer and its legend. Used by toggle-off AND delete."""
+    if map_ is not None:
+        map_.remove_layer(key, none_ok=True)
+    if legend_port is not None:
+        legend_port.unregister(key)
+
+
 #: The toolbox's tool list (the dialog's icon rail). One entry per tool; the
 #: panel itself is selected on ``key`` in the component body.
 #: ``icon`` must exist in the MDI font jupyter-vuetify bundles (~4.9):
@@ -102,13 +123,15 @@ def _run_allocation_job(job_id, form, project, project_reactive=None, notifier=N
 
 
 @solara.component
-def ToolboxTile(project, map_=None, sepal_client=None):
+def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
     """Tool list + the selected tool's panel.
 
     Args:
         project: solara.Reactive[Project] — the live project.
         map_: SepalMap for the density-raster toggle; None disables it.
         sepal_client: passed to the form's file pickers.
+        legend_port: LegendPort for publishing/withdrawing density legends;
+            None disables legend publication (e.g. in tests without one).
     """
     notifications = use_notifications()
     p = project.value
@@ -132,19 +155,29 @@ def ToolboxTile(project, map_=None, sepal_client=None):
         key = pending_delete
         set_pending_delete(None)
         if key and p is not None:
+            # Deleting a run used to leave its density layer on the map (and now
+            # its legend too) — drop both before the record goes away.
+            layer_key = density_layer_key(key)
+            if layer_key in density_on_map.value:
+                _drop_density_layer(map_, layer_key, legend_port)
+                density_on_map.set(density_on_map.value - {layer_key})
             delete_allocation_run(p, key)
             project.set(p.model_copy())
 
     def toggle_density(row):
         key = density_layer_key(row["key"])
         if key in density_on_map.value:
-            map_.remove_layer(key, none_ok=True)
+            _drop_density_layer(map_, key, legend_port)
             density_on_map.set(density_on_map.value - {key})
         else:
-            add_density_on_map(
+            _layer, (vmin, vmax) = add_density_on_map(
                 map_, row["density_map_path"], key=key, layer_name=row["name"]
             )
             density_on_map.set(density_on_map.value | {key})
+            if legend_port is not None:
+                legend_port.register(
+                    _density_legend(row["key"], row["name"], vmin, vmax)
+                )
 
     rows = allocation_rows(p, allocation_jobs.value) if p is not None else []
 

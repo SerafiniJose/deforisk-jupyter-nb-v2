@@ -30,6 +30,18 @@ class AppState:
         # watch would also fire on every in-place mutation).
         self.project_loaded_signal = solara.reactive(0)
 
+        # Legends published by the layers currently on the map, newest last.
+        # Entries are language-neutral (see gui/scripts/legend_data.py); Page()
+        # translates the selected one at render time so legends follow a locale
+        # switch. Keyed by map-layer key.
+        self.layer_legends = solara.reactive(())
+        self.selected_legend = solara.reactive("")
+
+        # Explicit handle tiles receive as an argument (they must not import
+        # this singleton — see the tile contract). Built once so its identity
+        # is stable: a port rebuilt per render would churn reacton props.
+        self.legend_port = self._build_legend_port()
+
         # Variable processing
         self.processing = solara.reactive(False)
 
@@ -92,6 +104,40 @@ class AppState:
         self.last_saved.set(None)
         self.aoi_result.set(None)
         self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+
+    def register_legends(self, *legends) -> None:
+        """Publish (or replace) legends and select the newest one."""
+        from gui.scripts.legend_registry import upsert
+
+        if not legends:
+            return
+        self.layer_legends.set(upsert(self.layer_legends.value, *legends))
+        self.selected_legend.set(legends[-1].layer_id)
+
+    def unregister_legends(self, *layer_ids: str) -> None:
+        """Withdraw legends for layers that left the map."""
+        from gui.scripts.legend_registry import next_selection, remove
+
+        if not layer_ids:
+            return
+        remaining = remove(self.layer_legends.value, *layer_ids)
+        self.layer_legends.set(remaining)
+        self.selected_legend.set(next_selection(remaining, self.selected_legend.value))
+
+    def clear_legends(self) -> None:
+        """Drop every legend (project switch / close)."""
+        self.layer_legends.set(())
+        self.selected_legend.set("")
+
+    def _build_legend_port(self):
+        """Bundle the legend operations a tile is allowed to reach."""
+        from gui.scripts.legend_registry import LegendPort
+
+        return LegendPort(
+            register=self.register_legends,
+            unregister=self.unregister_legends,
+            generation=lambda: self.project_loaded_signal.value,
+        )
 
     @property
     def aoi_complete(self) -> bool:

@@ -49,9 +49,13 @@ def _colormap_from_palette(hexes, name: str = "variable") -> Colormap:
 def resolve_variable_style(var) -> dict:
     """Resolve tile-layer styling for a downloaded variable raster.
 
-    Returns ``{"colormap": Colormap, "vmin": float|None, "vmax": float|None}``.
-    ``vmin``/``vmax`` are ``None`` when the value range should auto-stretch to the
-    file's actual min/max (localtileserver does this when they are not pinned).
+    Returns ``{"colormap": Colormap, "vmin": float|None, "vmax": float|None,
+    "render_kind": str}``. ``vmin``/``vmax`` are ``None`` when the value range
+    should auto-stretch to the file's actual min/max (localtileserver does this
+    when they are not pinned). ``render_kind`` names which branch was taken, one
+    of ``"postprocess_distance"``, ``"postprocess_change"``, ``"catalogue_palette"``,
+    ``"random_visualizer"``, ``"categorical_fallback"``, ``"continuous_fallback"`` —
+    the legend builder uses it instead of re-deriving this dispatch logic.
 
     Selection mirrors ``_styled_layer`` (the GEE-side authority):
 
@@ -75,7 +79,11 @@ def resolve_variable_style(var) -> dict:
     # for them — and their names miss the catalogue anyway. None => not one of ours.
     postprocess = resolve_postprocess_style(var)
     if postprocess is not None:
-        return postprocess
+        from gui.scripts.postprocess_styles import resolve_postprocess_legend
+
+        legend = resolve_postprocess_legend(var) or {}
+        render_kind = legend.get("render_kind", "postprocess_change")
+        return {**postprocess, "render_kind": render_kind}
 
     name = getattr(var, "name", "") or ""
     # Parameterised layers are named <key>_<suffix> (forest_gfc_tc30) — resolve
@@ -90,6 +98,7 @@ def resolve_variable_style(var) -> dict:
                 "colormap": matplotlib.colormaps["tab20"],
                 "vmin": None,
                 "vmax": None,
+                "render_kind": "random_visualizer",
             }
         vis = cat.get("vis_params")
         if vis and vis.get("palette"):
@@ -97,6 +106,7 @@ def resolve_variable_style(var) -> dict:
                 "colormap": _colormap_from_palette(vis["palette"], name),
                 "vmin": vis.get("min"),
                 "vmax": vis.get("max"),
+                "render_kind": "catalogue_palette",
             }
 
     rt = _raster_type_str(var)
@@ -105,8 +115,14 @@ def resolve_variable_style(var) -> dict:
             "colormap": _colormap_from_palette(["000000", "ffffff"], name),
             "vmin": 0,
             "vmax": 1,
+            "render_kind": "categorical_fallback",
         }
-    return {"colormap": matplotlib.colormaps["gray"], "vmin": None, "vmax": None}
+    return {
+        "colormap": matplotlib.colormaps["gray"],
+        "vmin": None,
+        "vmax": None,
+        "render_kind": "continuous_fallback",
+    }
 
 
 def _raster_type_str(var) -> Optional[str]:

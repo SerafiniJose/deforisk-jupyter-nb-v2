@@ -16,5 +16,26 @@
     "_test_fmt": "bonjour {name}",
     "_test_one": "{n} élément",
     "_test_other": "{n} éléments"
+  },
+  "legend": {
+    "prediction": { "title": "Risque de déforestation" },
+    "density": { "title": "Densité de déforestation (ha/pixel/an)" },
+    "risk": { "low": "Risque plus faible", "high": "Risque plus élevé" },
+    "range": { "low": "Faible", "high": "Élevé" },
+    "class": {
+      "absent": "Absent",
+      "present": "Présent",
+      "stable": "Stable",
+      "loss": "Perte de forêt",
+      "gain": "Gain de forêt",
+      "non_forest": "Non-forêt",
+      "forest": "Forêt"
+    },
+    "note": { "random_classes": "Catégoriel — couleurs attribuées au hasard" },
+    "unit": {
+      "m_value": "{value} m",
+      "deg_value": "{value}°",
+      "plain_value": "{value}"
+    }
   }
 }

@@ -10,9 +10,9 @@ from gui.tile.derived_map import use_derived_map_toggle
 
 
 def test_hook_takes_a_notifier():
-    """Verify the hook takes project, map_, and notifier parameters."""
+    """Verify the hook takes project, map_, notifier, and legend_port params."""
     params = list(inspect.signature(use_derived_map_toggle).parameters)
-    assert params == ["project", "map_", "notifier"]
+    assert params == ["project", "map_", "notifier", "legend_port"]
 
 
 def test_hook_toasts_the_toggle_failure():
@@ -25,12 +25,12 @@ def test_hook_toasts_the_toggle_failure():
 
 
 def test_both_tiles_pass_their_notifier():
-    """Verify both tiles pass their notifier object to the hook."""
+    """Verify both tiles pass their notifier and legend_port to the hook."""
     from gui.tile import postprocess_tile, process_tile
 
     for module in (process_tile, postprocess_tile):
         src = inspect.getsource(module)
-        assert "use_derived_map_toggle(project, map_, notifications)" in src
+        assert "notifications, legend_port=legend_port" in src
 
 
 def test_processed_toggle_labels_layers_by_origin():

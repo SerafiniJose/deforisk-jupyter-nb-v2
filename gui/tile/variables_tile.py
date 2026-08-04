@@ -102,8 +102,12 @@ def _styled_layer(image, var, gee_interface):
     binary masks) -> black/white palette (0=black, 1=white); continuous ->
     grayscale stretched to the image's min/max.
 
-    Returns (image_to_add, vis_params). Synchronous — any GEE stretch it computes
-    goes through the blocking interface, so call it from a worker thread.
+    Returns (image_to_add, vis_params, render_kind). GEE variables are never
+    post-process outputs (post-processing runs on downloaded rasters), so its
+    render_kind vocabulary is the catalogue subset: "random_visualizer",
+    "catalogue_palette", "categorical_fallback", "continuous_fallback".
+    Synchronous — any GEE stretch it computes goes through the blocking
+    interface, so call it from a worker thread.
     """
     from gui.scripts.predefined_variables import (
         PREDEFINED_CATALOGUE,
@@ -116,7 +120,7 @@ def _styled_layer(image, var, gee_interface):
     cat = PREDEFINED_CATALOGUE.get(cat_key) if cat_key else None
     if cat:
         if cat.get("random_visualizer"):
-            return image.randomVisualizer(), {}
+            return image.randomVisualizer(), {}, "random_visualizer"
         vis = cat.get("vis_params")
         if vis:
             vis = dict(vis)
@@ -125,17 +129,23 @@ def _styled_layer(image, var, gee_interface):
                 if mm:
                     vis.setdefault("min", mm[0])
                     vis.setdefault("max", mm[1])
-            return image, vis
+            return image, vis, "catalogue_palette"
 
     rt = getattr(var, "raster_type", None)
     rt = rt.value if hasattr(rt, "value") else (str(rt) if rt is not None else "")
     if rt == "categorical":
-        return image, {"palette": ["000000", "ffffff"], "min": 0, "max": 1}
-    return image, _grayscale_vis(image, var, gee_interface)
+        vis = {"palette": ["000000", "ffffff"], "min": 0, "max": 1}
+        return image, vis, "categorical_fallback"
+    return image, _grayscale_vis(image, var, gee_interface), "continuous_fallback"
 
 
 def _add_gee_layer(map_, image, var, name: str, layer_key: str):
     """Style and add a GEE image layer to ``map_`` (blocking; run in a thread).
+
+    Returns ``(vis, render_kind)`` — plain data the caller uses to build the
+    layer's legend on the main thread. Legend text must not be resolved here:
+    ``t()`` reads a session-scoped reactive translator, and this runs on a
+    worker thread.
 
     Uses the GEE interface's *synchronous* API (``add_ee_layer`` / ``get_info``),
     which schedules the underlying eeclient session calls onto the interface's
@@ -145,8 +155,9 @@ def _add_gee_layer(map_, image, var, name: str, layer_key: str):
     this blocking call with ``asyncio.to_thread`` keeps Solara's loop free, the
     same pattern the local raster/vector branches use.
     """
-    styled_image, vis = _styled_layer(image, var, map_.gee_interface)
+    styled_image, vis, render_kind = _styled_layer(image, var, map_.gee_interface)
     map_.add_ee_layer(styled_image, vis, name=name, key=layer_key, use_map_vis=False)
+    return vis, render_kind
 
 
 def _variable_to_entry(key: str, var, project) -> dict:
@@ -279,10 +290,55 @@ def _build_predefined(entry: dict, project):
     )
 
 
-def _drop_from_map(key: str, map_):
-    """Remove a variable's layer from the map and forget its on-map state."""
+def _var_legend(key: str, var, *, vis=None, render_kind=None):
+    """The legend a source-variable layer publishes while it is on the map.
+
+    ``vis`` / ``render_kind`` come from ``_add_gee_layer`` for GEE-backed
+    layers; a local raster resolves its own style instead. Vector layers
+    publish nothing and never reach here.
+    """
+    from gui.scripts.legend_data import (
+        Label,
+        variable_spec_from_style,
+        variable_spec_from_vis,
+    )
+    from gui.scripts.legend_registry import LayerLegend
+    from gui.scripts.predefined_variables import (
+        PREDEFINED_CATALOGUE,
+        resolve_predefined,
+    )
+    from gui.scripts.variable_styles import resolve_variable_style
+
+    cat_key, _params = resolve_predefined(getattr(var, "name", "") or "")
+    cat = PREDEFINED_CATALOGUE.get(cat_key) if cat_key else None
+    label = (
+        Label(key=cat["label_key"])
+        if cat and cat.get("label_key")
+        else Label(literal=key)
+    )
+
+    if vis is not None:
+        spec = variable_spec_from_vis(
+            vis, render_kind or "continuous_fallback", var, label
+        )
+    else:
+        spec = variable_spec_from_style(resolve_variable_style(var), var, label)
+
+    return LayerLegend(layer_id=_map_layer_key(key), label=label, spec=spec)
+
+
+def _drop_from_map(key: str, map_, legend_port=None):
+    """Remove a variable's layer from the map and forget its on-map state.
+
+    The single removal chokepoint for source variables — toggle-off, delete,
+    replace and edit all route through it, so a legend cannot outlive its
+    layer. ``legend_port`` may be None (e.g. in tests without one) — that is
+    a no-op, not a crash.
+    """
     if map_ is not None:
         map_.remove_layer(_map_layer_key(key), none_ok=True)
+    if legend_port is not None:
+        legend_port.unregister(_map_layer_key(key))
     if key in vars_on_map.value:
         remaining = set(vars_on_map.value)
         remaining.discard(key)
@@ -290,13 +346,16 @@ def _drop_from_map(key: str, map_):
 
 
 @solara.component
-def VariablesTile(project, map_=None, sepal_client=None):
+def VariablesTile(project, map_=None, sepal_client=None, legend_port=None):
     """Variables step: add, inspect, and process variables.
 
     Args:
         project: Reactive holding the current Project (or None).
         map_: SepalMap instance used by the per-variable "show on map" toggle.
         sepal_client: SEPAL client passed through to the Add Variable modal.
+        legend_port: LegendPort for publishing/withdrawing source-variable
+            legends; None disables legend publication (e.g. in tests without
+            one).
     """
     modal_open = solara.use_reactive(False)
     editing_key, set_editing_key = solara.use_state(None)
@@ -388,16 +447,19 @@ def VariablesTile(project, map_=None, sepal_client=None):
             return
         try:
             if key in vars_on_map.value:
-                _drop_from_map(key, map_)
+                _drop_from_map(key, map_, legend_port)
                 return
 
             images = getattr(var, "gee_images", None)
             layer_key = _map_layer_key(key)
             label = raw_layer_label(key)
+            generation = legend_port.generation() if legend_port is not None else None
+            legend = None
             if images:
-                await asyncio.to_thread(
+                vis, render_kind = await asyncio.to_thread(
                     _add_gee_layer, map_, images[0], var, label, layer_key
                 )
+                legend = _var_legend(key, var, vis=vis, render_kind=render_kind)
             elif type(var).__name__ == "LocalVectorVar":
                 await asyncio.to_thread(
                     add_vector_on_map, map_, str(var.path), label, layer_key
@@ -412,7 +474,20 @@ def VariablesTile(project, map_=None, sepal_client=None):
                     key=layer_key,
                     fit_bounds=False,
                 )
+                legend = _var_legend(key, var)
+
+            # A project switch during the await means this layer is stale
+            # (see the InferenceTile add branch for the same guard, kept
+            # outside `finally` there because a `return` inside `finally`
+            # would discard an in-flight exception) — take it back off
+            # rather than publish a legend for it.
+            if legend_port is not None and legend_port.generation() != generation:
+                map_.remove_layer(layer_key, none_ok=True)
+                return
+
             vars_on_map.set(set(vars_on_map.value) | {key})
+            if legend is not None and legend_port is not None:
+                legend_port.register(legend)
         except Exception as exc:
             logger.exception("map toggle failed for %s", key)
             notifications.error(
@@ -452,7 +527,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
                         t("tiles.variables.error_base_raster_reset", name=old.name),
                         timeout=ERROR_TOAST_TIMEOUT,
                     )
-                _drop_from_map(key, map_)
+                _drop_from_map(key, map_, legend_port)
             p.raw_variables[key] = var
             logger.debug(
                 "Added var '%s', raw_variables now: %s",
@@ -501,7 +576,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
                     timeout=ERROR_TOAST_TIMEOUT,
                 )
             # The key may change on edit — drop the stale layer so it doesn't linger.
-            _drop_from_map(old_key, map_)
+            _drop_from_map(old_key, map_, legend_port)
             var = _build_variable(new_entry, p)
             new_key = f"{var.name}_{var.year}" if var.year else var.name
             p.raw_variables[new_key] = var
@@ -527,7 +602,7 @@ def VariablesTile(project, map_=None, sepal_client=None):
                 t("tiles.variables.error_base_raster_removed", name=removed.name),
                 timeout=ERROR_TOAST_TIMEOUT,
             )
-        _drop_from_map(key, map_)
+        _drop_from_map(key, map_, legend_port)
         project.set(p.model_copy())
 
     p = project.value

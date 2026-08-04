@@ -42,6 +42,44 @@ def _pred_layer_key(storage_key: str) -> str:
     return f"pred_{storage_key}"
 
 
+def _pred_legend(
+    storage_key: str, model_key: str, display_palette, pred_name: str, multi: bool
+):
+    """The legend one prediction raster publishes while it is on the map.
+
+    ``pred_name`` is the row's human display name; ``multi`` says whether the
+    row carries more than one storage key. A single-raster row shows
+    ``pred_name`` alone, a multi-raster row (several storage keys under one
+    prediction group) appends the storage key so the dropdown can still tell
+    them apart.
+    """
+    from gui.scripts.legend_data import Label, prediction_spec
+    from gui.scripts.legend_registry import LayerLegend
+
+    label_text = f"{pred_name} — {storage_key}" if multi else pred_name
+
+    return LayerLegend(
+        layer_id=_pred_layer_key(storage_key),
+        label=Label(literal=label_text),
+        spec=prediction_spec(model_key, display_palette),
+    )
+
+
+def _drop_pred_layers(row, map_, legend_port) -> None:
+    """Remove every layer a prediction row put on the map, and its legends.
+
+    The single removal chokepoint: the toggle's off-branch and the delete path
+    both go through it, so a legend can never outlive its layer. ``legend_port``
+    may be None (e.g. in tests without one) — that is a no-op, not a crash.
+    """
+    storage_keys = list(row.get("storage_keys", []))
+    if map_ is not None:
+        for storage_key in storage_keys:
+            map_.remove_layer(_pred_layer_key(storage_key), none_ok=True)
+    if legend_port is not None:
+        legend_port.unregister(*[_pred_layer_key(k) for k in storage_keys])
+
+
 def _run_inference(
     job_id,
     model_key,
@@ -141,13 +179,15 @@ def _run_import(
 
 
 @solara.component
-def InferenceTile(project, map_=None, sepal_client=None):
+def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
     """Inference tab: select trained model and dataset, run prediction.
 
     Args:
         project: Reactive holding the current Project (or None).
         map_: SepalMap instance used by the per-prediction "add to map" toggle.
         sepal_client: SEPAL client backing the local-raster import file picker.
+        legend_port: LegendPort for publishing/withdrawing prediction legends;
+            None disables legend publication (e.g. in tests without one).
     """
     p = project.value
 
@@ -157,7 +197,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
     # Form messages
     form_error, set_form_error = solara.use_state(None)
 
-    def _launch_import(name, path, palette):
+    def _launch_import(name, path, palette, entry=None):
         """Spawn a background copy for a raster the dialog validated.
 
         The dialog enforced the required fields and the no-project guard; the
@@ -179,6 +219,8 @@ def InferenceTile(project, map_=None, sepal_client=None):
                     "status": "running",
                     "error": None,
                     "output_path": None,
+                    # Submission entry, kept so a failed row can be re-edited.
+                    "entry": entry,
                 }
             ]
         )
@@ -197,7 +239,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
-    def _launch_inference(model_key, dataset_key, name, mask_layer=None):
+    def _launch_inference(model_key, dataset_key, name, mask_layer=None, entry=None):
         """Create the output job row and spawn the worker. Inputs pre-validated."""
         job_id = str(uuid.uuid4())[:8]
         job = {
@@ -208,6 +250,8 @@ def InferenceTile(project, map_=None, sepal_client=None):
             "status": "running",
             "error": None,
             "output_path": None,
+            # Submission entry, kept so a failed row can be re-edited.
+            "entry": entry,
         }
         inference_jobs.set(list(inference_jobs.value) + [job])
         spawn_in_context(
@@ -232,9 +276,25 @@ def InferenceTile(project, map_=None, sepal_client=None):
             job_id,
         )
 
+    # Failed-job editing: the pencil action reopens the dialog seeded with the
+    # job's submission entry; submitting launches a fresh run and drops the old
+    # failed row so the rerun replaces it instead of piling up next to it.
+    prefill = solara.use_reactive(None)
+    editing_job_id = solara.use_ref(None)
+
+    def on_edit(row):
+        editing_job_id.current = row["job_id"]
+        prefill.set(row["entry"])
+        dialog_open.set(True)
+
+    def open_new_dialog():
+        editing_job_id.current = None
+        prefill.set(None)
+        dialog_open.set(True)
+
     def on_submit(entry):
         if entry["kind"] == "import":
-            _launch_import(entry["name"], entry["path"], entry["palette"])
+            _launch_import(entry["name"], entry["path"], entry["palette"], entry=entry)
         else:
             # mask_layer is absent for the JNR/MW families, which resolve
             # their own layers rather than masking with a project raster.
@@ -243,7 +303,12 @@ def InferenceTile(project, map_=None, sepal_client=None):
                 entry["dataset_key"],
                 entry["name"],
                 entry.get("mask_layer"),
+                entry=entry,
             )
+        if editing_job_id.current is not None:
+            on_dismiss(editing_job_id.current)
+            editing_job_id.current = None
+            prefill.set(None)
 
     def _forget_on_map(row_key):
         remaining = set(preds_on_map.value)
@@ -270,13 +335,16 @@ def InferenceTile(project, map_=None, sepal_client=None):
         row_key = row["key"]
         try:
             if row_key in preds_on_map.value:
-                for sk in storage_keys:
-                    map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+                _drop_pred_layers(row, map_, legend_port)
                 _forget_on_map(row_key)
             else:
                 from gui.scripts.prediction_map import add_prediction_on_map
 
+                generation = (
+                    legend_port.generation() if legend_port is not None else None
+                )
                 added_any = False
+                landed = []
                 try:
                     for sk in storage_keys:
                         pred = p.predictions[sk]
@@ -292,12 +360,43 @@ def InferenceTile(project, map_=None, sepal_client=None):
                             display_palette=getattr(pred, "display_palette", None),
                         )
                         added_any = True
+                        landed.append((sk, getattr(pred, "display_palette", None)))
                 finally:
                     # Mark the row on-map if ANY layer landed (even on partial
                     # failure) so toggle-off can remove all its keys; fire the
-                    # reactive once, not per-iteration.
+                    # reactive once, not per-iteration. This bookkeeping must
+                    # run even when add_prediction_on_map raises, so it stays
+                    # in `finally` — but the staleness check below must NOT
+                    # live here: a `return` inside `finally` discards any
+                    # exception propagating from the `try` body, which would
+                    # silently swallow a real failure instead of letting it
+                    # reach the outer `except Exception` handler.
                     if added_any:
                         preds_on_map.set(set(preds_on_map.value) | {row_key})
+
+                # Reached only when the add loop above completed without
+                # raising — an in-flight exception skips straight to the
+                # outer `except Exception` below instead. No port to publish
+                # through (e.g. a test render) means there is nothing left to
+                # guard or publish here.
+                if legend_port is not None and legend_port.generation() != generation:
+                    # A project switch during the await clears the map;
+                    # anything that landed afterwards is stale, so take it
+                    # back off instead of publishing a legend for a layer
+                    # nobody wants.
+                    for sk, _palette in landed:
+                        map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+                    _forget_on_map(row_key)
+                elif legend_port is not None and added_any:
+                    multi = len(storage_keys) > 1
+                    legend_port.register(
+                        *[
+                            _pred_legend(
+                                sk, row["model_key"], palette, row["name"], multi
+                            )
+                            for sk, palette in landed
+                        ]
+                    )
         except Exception as exc:
             logger.exception("prediction map toggle failed for row %s", row.get("key"))
             set_form_error(t("tiles.inference.error_map_toggle", exc=exc))
@@ -321,8 +420,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             return
         row_key = row["key"]
         if map_ is not None and row_key in preds_on_map.value:
-            for sk in row.get("storage_keys", []):
-                map_.remove_layer(_pred_layer_key(sk), none_ok=True)
+            _drop_pred_layers(row, map_, legend_port)
             _forget_on_map(row_key)
         deleted = False
         for sk in row.get("storage_keys", []):
@@ -350,7 +448,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             color="primary",
             small=True,
             block=True,
-            on_click=lambda: dialog_open.set(True),
+            on_click=open_new_dialog,
         )
 
         if form_error:
@@ -373,6 +471,7 @@ def InferenceTile(project, map_=None, sepal_client=None):
             on_toggle_map=on_toggle_map if map_ is not None else None,
             on_dismiss=on_dismiss,
             on_delete=set_pending_delete,
+            on_edit=on_edit,
         )
 
         _pending_count = (
@@ -396,4 +495,5 @@ def InferenceTile(project, map_=None, sepal_client=None):
         open_=dialog_open,
         on_submit=on_submit,
         sepal_client=sepal_client,
+        prefill=prefill,
     )

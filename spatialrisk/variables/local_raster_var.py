@@ -9,7 +9,7 @@ import odc.geo.xr  # noqa: F401  # do not delete this - registers the .odc acces
 import rioxarray
 from pydantic import Field, field_validator
 
-from spatialrisk.geo_utils import xr_reproject
+from spatialrisk.geo_utils import RASTER_CHUNKS, raster_is_all_nodata, xr_reproject
 from spatialrisk.processing import (
     display_raster,
     distance_to_edge_gdal_no_mask,
@@ -188,7 +188,7 @@ class LocalRasterVar(Variable):
 
         raster_array = rioxarray.open_rasterio(
             str(self.path),
-            chunks="auto",
+            chunks=RASTER_CHUNKS,
             cache=False,
             lock=False,
         )
@@ -354,6 +354,16 @@ class LocalRasterVar(Variable):
             resampling_method=resampling,
             output_path=str(output_path),
         )
+
+        # An all-nodata output from a valid input is silent corruption (seen
+        # 2026-08-03: a full 27.5M-px constant-nodata write). Fail loudly and
+        # keep the bad file on disk for diagnosis; a re-run overwrites it.
+        if raster_is_all_nodata(output_path) and not raster_is_all_nodata(self.path):
+            raise ValueError(
+                f"Reprojection of '{self.name}' produced an all-nodata "
+                f"raster ({output_path}) from a valid input ({self.path}). "
+                "The output was not registered; re-run the processing step."
+            )
 
         # Extract CRS and resolution from geobox
         target_crs = f"EPSG:{geobox.crs.to_epsg()}"

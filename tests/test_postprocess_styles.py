@@ -43,6 +43,7 @@ def _assert_close(actual, expected, tol=8):
 
 # --- classification ---------------------------------------------------------
 
+
 def test_classifies_change_layer_by_tag():
     """generate_change_var tags its output [op, "change", years]."""
     assert classify_postprocess(_var(tags=["loss", "change", "2015_2020"])) == "loss"
@@ -80,11 +81,13 @@ def test_classifier_tolerates_missing_attributes():
 
 
 def test_classifier_tolerates_a_variable_with_no_name():
+    """A variable with no name attribute at all is not our business -> None."""
     nameless = type("Nameless", (), {})()
     assert classify_postprocess(nameless) is None
 
 
 # --- resolution -------------------------------------------------------------
+
 
 def test_distance_style_pins_the_qgis_range_and_stops():
     """dist_edge.qml: interpolated, 30..1000 m, red at the edge -> green inland."""
@@ -120,6 +123,7 @@ def test_loss_style_paints_the_event_red_over_an_opaque_stable_class():
 
 
 def test_gain_style_paints_the_event_green():
+    """1 = event (gain) -> green; 0 = stable -> neutral grey."""
     style = resolve_postprocess_style(_var(tags=["gain", "change", "2015_2020"]))
 
     assert style["vmin"] == 0 and style["vmax"] == 1
@@ -131,3 +135,53 @@ def test_gain_style_paints_the_event_green():
 def test_resolve_returns_none_for_a_non_postprocess_variable():
     """The caller must be able to fall through to its own default."""
     assert resolve_postprocess_style(_var(name="slope")) is None
+
+
+# --- legend metadata ---------------------------------------------------------
+
+
+def test_resolve_postprocess_legend_is_none_for_a_plain_variable():
+    """A non-postprocess variable has no post-process legend metadata."""
+    from gui.scripts.postprocess_styles import resolve_postprocess_legend
+
+    class Var:
+        name = "altitude"
+        tags = []
+        processing_history = []
+
+    assert resolve_postprocess_legend(Var()) is None
+
+
+def test_resolve_postprocess_legend_describes_a_distance_raster():
+    """A distance raster's legend has no classes, just a metre unit."""
+    from gui.scripts.postprocess_styles import resolve_postprocess_legend
+
+    class Var:
+        name = "forest_gfc_edge"
+        tags = []
+        processing_history = ["edge"]
+
+    legend = resolve_postprocess_legend(Var())
+    assert legend["render_kind"] == "postprocess_distance"
+    assert legend["unit_key"] == "legend.unit.m_value"
+    assert legend["class_keys"] == ()
+
+
+def test_resolve_postprocess_legend_describes_a_loss_mask():
+    """A loss mask's legend carries stable/loss class keys and palette colours."""
+    from gui.scripts.postprocess_styles import (
+        POSTPROCESS_PALETTES,
+        resolve_postprocess_legend,
+    )
+
+    class Var:
+        name = "loss_forest_2015_2020"
+        tags = ["loss"]
+        processing_history = []
+
+    legend = resolve_postprocess_legend(Var())
+    assert legend["render_kind"] == "postprocess_change"
+    assert legend["class_keys"] == ("legend.class.stable", "legend.class.loss")
+    assert legend["class_colors"] == tuple(
+        hex_ for _value, hex_ in POSTPROCESS_PALETTES["loss"]["nodes"]
+    )

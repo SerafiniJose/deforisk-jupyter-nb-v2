@@ -20,20 +20,30 @@ logger = logging.getLogger("spatial_risk")
 
 
 @solara.component
-def PostProcessTile(project, map_=None):
-    """Derived layers: change detection (loss/gain) + edge/dist on harmonized vars."""
+def PostProcessTile(project, map_=None, legend_port=None):
+    """Derived layers: change detection (loss/gain) + edge/dist on harmonized vars.
+
+    Args:
+        project: Reactive holding the current Project (or None).
+        map_: SepalMap instance used by the "show on map" toggle.
+        legend_port: LegendPort for publishing/withdrawing derived-layer
+            legends; None disables legend publication (e.g. in tests without
+            one).
+    """
     dialog_open = solara.use_reactive(False)
     pending_change = solara.use_reactive(None)
     pending_post = solara.use_reactive(None)
     notifications = use_notifications()
-    on_toggle_map = use_derived_map_toggle(project, map_, notifications)
+    on_toggle_map = use_derived_map_toggle(
+        project, map_, notifications, legend_port=legend_port
+    )
     pending_remove, set_pending_remove = solara.use_state(None)
 
     p = project.value
 
     def _do_remove(key: str):
         """Unregister a derived layer (the raster stays on disk)."""
-        if process_actions.remove_processed_variable(p, key, map_):
+        if process_actions.remove_processed_variable(p, key, map_, legend_port):
             project.set(p.model_copy())
 
     @solara.lab.use_task(dependencies=None, raise_error=False, prefer_threaded=True)

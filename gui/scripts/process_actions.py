@@ -175,13 +175,15 @@ def processing_output_keys(project) -> List[str]:
     return [k for k in project.processed_variables if k not in postprocess]
 
 
-def remove_processed_variable(project, key: str, map_=None) -> bool:
-    """Unregister a processed variable and drop its map layer.
+def remove_processed_variable(project, key: str, map_=None, legend_port=None) -> bool:
+    """Unregister a processed variable and drop its map layer and legend.
 
     Serves both lists that render ``processed_variables`` — Harmonization
     outputs and Derived layers — so removal behaves identically in either tile.
     Like the source-variable remove this only unregisters: the raster stays on
     disk, so re-running harmonization or the derived op simply re-registers it.
+    ``legend_port`` is threaded through rather than imported (this module is
+    Solara-free); None disables legend withdrawal.
 
     Returns True when an entry was actually removed.
     """
@@ -190,7 +192,7 @@ def remove_processed_variable(project, key: str, map_=None) -> bool:
     if project is None or key not in project.processed_variables:
         return False
     del project.processed_variables[key]
-    drop_derived_from_map(key, map_)
+    drop_derived_from_map(key, map_, legend_port)
     return True
 
 

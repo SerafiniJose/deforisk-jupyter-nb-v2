@@ -57,7 +57,7 @@ def _import_palette_items():
 
 @solara.component
 def PredictionFormDialog(
-    project, open_, on_submit: Callable[[dict], None], sepal_client=None
+    project, open_, on_submit: Callable[[dict], None], sepal_client=None, prefill=None
 ):
     """Prediction form in the shared CreationDialog frame.
 
@@ -73,6 +73,10 @@ def PredictionFormDialog(
         open_: solara.Reactive[bool].
         on_submit: callback receiving the entry dict described above.
         sepal_client: SEPAL client backing the import file picker.
+        prefill: optional solara.Reactive holding a previously submitted entry
+            dict (or None). While the dialog is open with a non-empty prefill,
+            the fields are seeded from it — this is how a failed run reopens
+            for editing. The tile owns clearing it before a fresh "New" open.
     """
     p = project.value
 
@@ -96,8 +100,17 @@ def PredictionFormDialog(
     mask_candidates = mask_layer_candidates(p) if ml_family else []
     show_mask = ml_family
 
+    # A prefilled mask choice must survive the re-seed that fires when the
+    # prefilled model changes the candidate set — the seed consumes it instead
+    # of overwriting it with the forest suggestion.
+    pending_mask = solara.use_ref(None)
+
     def seed_mask_layer():
         """Suggest the sole forest layer; anything ambiguous starts unset."""
+        if pending_mask.current is not None and ml_family:
+            set_mask_layer(pending_mask.current)
+            pending_mask.current = None
+            return
         set_mask_layer(suggested_mask_layer(p) if ml_family else "")
 
     # Re-seeds whenever the candidate set changes (a model-family switch) and
@@ -118,6 +131,34 @@ def PredictionFormDialog(
         )
     name_value, on_name_input, reset_name = use_artifact_name(suggestion)
 
+    def seed_from_prefill():
+        """Seed every field from the prefill entry each time the dialog opens.
+
+        Keyed on the open flag as well as the entry so re-editing the same
+        failed job after a cancel (same entry, fields reset on close) seeds
+        again. A fresh open with the prefill cleared is a no-op.
+        """
+        entry = prefill.value if prefill is not None else None
+        if not open_.value or not entry:
+            return
+        if entry.get("kind") == "import":
+            set_source("import")
+            set_file_path(entry.get("path", ""))
+            set_palette(entry.get("palette", "far"))
+        else:
+            set_source("model")
+            set_selected_model(entry.get("model_key", ""))
+            set_selected_dataset(entry.get("dataset_key", ""))
+            if "mask_layer" in entry:
+                # None was the explicit "no mask" submission — show the sentinel.
+                pending_mask.current = entry["mask_layer"] or NO_MASK
+        on_name_input(entry.get("name", ""))
+
+    solara.use_effect(
+        seed_from_prefill,
+        [open_.value, prefill.value if prefill is not None else None],
+    )
+
     clean = sanitize_key(name_value)
     exists = prediction_name_exists(p, clean)
     # Import never replaces: preview the key the import would actually get.
@@ -129,6 +170,7 @@ def PredictionFormDialog(
     )
 
     def reset():
+        pending_mask.current = None
         set_source("model")
         set_selected_model("")
         set_selected_dataset("")

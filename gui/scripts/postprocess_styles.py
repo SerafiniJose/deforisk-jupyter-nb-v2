@@ -78,6 +78,27 @@ POSTPROCESS_PALETTES = {
 _DISTANCE_STEPS = ("edge", "dist")
 _CHANGE_OPS = ("loss", "gain")
 
+# Legend metadata per post-process kind. Distances are metres (DISTUNITS=GEO in
+# spatialrisk/processing.py); change masks are the 1 = event / 0 = stable
+# convention written by generate_change_var.
+POSTPROCESS_LEGEND = {
+    "distance": {
+        "render_kind": "postprocess_distance",
+        "unit_key": "legend.unit.m_value",
+        "class_keys": (),
+    },
+    "loss": {
+        "render_kind": "postprocess_change",
+        "unit_key": "",
+        "class_keys": ("legend.class.stable", "legend.class.loss"),
+    },
+    "gain": {
+        "render_kind": "postprocess_change",
+        "unit_key": "",
+        "class_keys": ("legend.class.stable", "legend.class.gain"),
+    },
+}
+
 
 def classify_postprocess(var) -> Optional[str]:
     """Which post-process output ``var`` is: 'distance', 'loss', 'gain', or None.
@@ -141,6 +162,29 @@ def resolve_postprocess_style(var) -> Optional[dict]:
         "vmin": palette["vmin"],
         "vmax": palette["vmax"],
         "nodata": palette["nodata"],
+    }
+
+
+def resolve_postprocess_legend(var) -> Optional[dict]:
+    """Legend metadata for a post-process raster, or None if it isn't one.
+
+    Returns ``{"render_kind", "class_colors", "class_keys", "unit_key"}``.
+    ``class_colors`` are the palette's node colours in value order, so a change
+    mask's chips use exactly the colours the tiles are drawn with. Classification
+    is delegated to ``classify_postprocess`` — the single authority — so the
+    legend never re-derives it.
+    """
+    kind = classify_postprocess(var)
+    if kind is None:
+        return None
+
+    meta = POSTPROCESS_LEGEND[kind]
+    nodes = POSTPROCESS_PALETTES[kind]["nodes"]
+    return {
+        "render_kind": meta["render_kind"],
+        "class_colors": tuple(hex_ for _value, hex_ in nodes),
+        "class_keys": meta["class_keys"],
+        "unit_key": meta["unit_key"],
     }
 
 
