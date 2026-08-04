@@ -61,7 +61,12 @@ def InferenceOutputList(
                 "cells": [
                     {"type": "text", "value": r["name"]},
                     {"type": "chip", "value": r["model_key"], "color": "primary"},
-                    {"type": "text", "value": r["dataset_name"], "size": "0.8rem", "muted": True},
+                    {
+                        "type": "text",
+                        "value": r["dataset_name"],
+                        "size": "0.8rem",
+                        "muted": True,
+                    },
                     {"type": "status", "status": r["status"]},
                 ],
                 "actions": actions,
@@ -72,9 +77,15 @@ def InferenceOutputList(
     ProductTable(
         title=t("widgets.inference_output_list.predictions_title"),
         columns=[
-            {"label": t("widgets.inference_output_list.col_name"), "width": "minmax(0,2fr)"},
+            {
+                "label": t("widgets.inference_output_list.col_name"),
+                "width": "minmax(0,2fr)",
+            },
             {"label": t("widgets.inference_output_list.col_model"), "width": "90px"},
-            {"label": t("widgets.inference_output_list.col_dataset"), "width": "minmax(0,1fr)"},
+            {
+                "label": t("widgets.inference_output_list.col_dataset"),
+                "width": "minmax(0,1fr)",
+            },
             {"label": t("widgets.inference_output_list.col_status"), "width": "95px"},
         ],
         rows=rows,

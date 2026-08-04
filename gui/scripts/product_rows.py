@@ -25,8 +25,11 @@ def _active_jobs_first(jobs: Optional[List[dict]]) -> List[dict]:
 
 # --- Train ------------------------------------------------------------------
 
+
 def train_rows(
-    project: Any, jobs: Optional[List[dict]], model_labels: Optional[Dict[str, str]] = None
+    project: Any,
+    jobs: Optional[List[dict]],
+    model_labels: Optional[Dict[str, str]] = None,
 ) -> List[dict]:
     """Job rows (newest first) then one row per registered model."""
     labels = model_labels or {}
@@ -70,6 +73,7 @@ def train_rows(
 
 # --- Inference ---------------------------------------------------------------
 
+
 def prediction_row_key(pred: Any) -> str:
     """Row identity: the user-chosen name, else the legacy provenance token."""
     name = getattr(pred, "name", None)
@@ -89,7 +93,9 @@ def job_row_key(job: dict) -> str:
 
 def prediction_groups(project: Any) -> Dict[str, dict]:
     """Registered predictions grouped by row key (multi-raster runs share one)."""
-    predictions = (getattr(project, "predictions", None) or {}) if project is not None else {}
+    predictions = (
+        (getattr(project, "predictions", None) or {}) if project is not None else {}
+    )
     groups: Dict[str, dict] = {}
     for storage_key, pred in predictions.items():
         row_key = prediction_row_key(pred)
@@ -227,9 +233,12 @@ def sample_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
 
 # --- Evaluation ---------------------------------------------------------------
 
+
 def evaluation_tab_rows(project: Any, jobs: Optional[List[dict]]) -> List[dict]:
     """Job rows (newest first) then saved records, newest first."""
-    evaluations = (getattr(project, "evaluations", None) or {}) if project is not None else {}
+    evaluations = (
+        (getattr(project, "evaluations", None) or {}) if project is not None else {}
+    )
 
     rows: List[dict] = []
     for job in _active_jobs_first(jobs):
