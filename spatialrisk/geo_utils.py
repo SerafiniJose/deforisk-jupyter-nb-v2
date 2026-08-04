@@ -1,5 +1,6 @@
 """Raster/vector geo helpers: CRS estimation, reprojection, rasterization."""
 
+import warnings
 from pathlib import Path
 from typing import Literal
 
@@ -9,7 +10,15 @@ import numpy as np
 import rasterio
 import rioxarray
 from odc.geo import xr
+from rasterio.errors import NotGeoreferencedWarning
 from shapely.geometry import shape
+
+# Chunk spec for every lazy raster read in the package. rioxarray turns
+# ``chunks="auto"`` (and ``True``) into a dimension-order tuple internally,
+# which its own ``.chunk()`` call then deprecates -- one FutureWarning per
+# process, landing on whatever variable happens to be processed first. Naming
+# the dimensions avoids that path.
+RASTER_CHUNKS = {"band": 1, "x": "auto", "y": "auto"}
 
 
 def calculate_utm_rioxarray(
@@ -249,6 +258,14 @@ def reproject_shapefile(
     return None
 
 
+# Destination tile size (pixels) for the warp. odc.geo defaults the *output*
+# chunk shape to the *input* array's chunk shape, so a coarse source (ERA5-Land
+# precipitation is one ~55x54-pixel chunk) would tile a 20166x19960 30 m output
+# into 135790 blocks — one GDAL warp setup each, ~100x slower than necessary
+# and a stream of NotGeoreferencedWarnings from the temporary block datasets.
+DST_CHUNK = 2048
+
+
 def xr_reproject(
     raster_path: str = None,
     geobox=None,
@@ -281,30 +298,44 @@ def xr_reproject(
     # Read the raster
     raster_array = rioxarray.open_rasterio(
         raster_path,
-        chunks={"band": 1, "x": "auto", "y": "auto"},
+        chunks=RASTER_CHUNKS,
         cache=False,
         lock=False,
     )
 
     # Convert numpy array to a full xarray.DataArray
     # and set array name if supplied
+    # Pin the destination tiling to the output grid (see DST_CHUNK) instead of
+    # letting it inherit the source's chunk shape.
+    dst_ny, dst_nx = geobox.shape
     da_reprojected = xr.xr_reproject(
         src=raster_array,
         how=geobox,
         resampling=resampling_method,
+        chunks=(min(DST_CHUNK, dst_ny), min(DST_CHUNK, dst_nx)),
     )
 
     # DEFLATE predictor is dtype-specific: 2 (horizontal differencing) is only
     # defined for integer samples, 3 is the floating-point variant.
     predictor = 3 if np.issubdtype(da_reprojected.dtype, np.floating) else 2
-    da_reprojected.rio.to_raster(
-        output_path,
-        driver="GTiff",
-        compress="DEFLATE",
-        predictor=predictor,
-        bigtiff="YES",
-        tiled=True,
-    )
+
+    # odc.geo warps one in-memory numpy block at a time, passing the
+    # georeferencing beside the array as src_transform/dst_transform. GDAL still
+    # warns that the block dataset it wraps them in "has no geotransform" --
+    # noise about a temporary, never about the input (which the geobox above
+    # guarantees is georeferenced). Suppressed only around the warp, and only
+    # for that one category, so a genuinely non-georeferenced input still fails
+    # loudly in the read above.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", NotGeoreferencedWarning)
+        da_reprojected.rio.to_raster(
+            output_path,
+            driver="GTiff",
+            compress="DEFLATE",
+            predictor=predictor,
+            bigtiff="YES",
+            tiled=True,
+        )
 
     # Explicitly close references - not strictly required but tidy.
     del raster_array

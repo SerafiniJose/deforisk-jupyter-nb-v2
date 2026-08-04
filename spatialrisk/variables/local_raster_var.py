@@ -9,7 +9,7 @@ import odc.geo.xr  # noqa: F401  # do not delete this - registers the .odc acces
 import rioxarray
 from pydantic import Field, field_validator
 
-from spatialrisk.geo_utils import raster_is_all_nodata, xr_reproject
+from spatialrisk.geo_utils import RASTER_CHUNKS, raster_is_all_nodata, xr_reproject
 from spatialrisk.processing import (
     display_raster,
     distance_to_edge_gdal_no_mask,
@@ -188,7 +188,7 @@ class LocalRasterVar(Variable):
 
         raster_array = rioxarray.open_rasterio(
             str(self.path),
-            chunks="auto",
+            chunks=RASTER_CHUNKS,
             cache=False,
             lock=False,
         )
