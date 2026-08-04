@@ -559,6 +559,23 @@ def test_plot_box_is_horizontally_symmetric(tmp_path):
     assert grid["containLabel"] is True
 
 
+def test_grid_bottom_leaves_room_for_the_x_axis_title(tmp_path):
+    """`containLabel` fits the tick labels, never the axis `name`.
+
+    With too small a `bottom` the "Observed deforestation (ha)" title is drawn
+    below the canvas and never appears.
+    """
+    from gui.scripts.evaluation_echarts import pred_obs_scatter_option
+
+    _, plot_data = _loaded(tmp_path)
+    option = pred_obs_scatter_option(plot_data)
+
+    assert option["xAxis"]["nameLocation"] == "middle"
+    # Room for the half of the title that hangs below its own centre, past the
+    # band containLabel already reserved for the tick labels.
+    assert option["grid"]["bottom"] > option["xAxis"]["nameGap"] - 20
+
+
 def test_a_small_scatter_stays_on_svg_with_no_large_mode(tmp_path):
     """Small point counts render as SVG without ECharts' large-scatter mode."""
     from gui.scripts.echarts_options import RENDERER_SVG

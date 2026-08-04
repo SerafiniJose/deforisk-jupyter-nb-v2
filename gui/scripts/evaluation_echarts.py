@@ -142,6 +142,18 @@ _POINT_FILL = {True: "rgba(66,146,198,0.65)", False: "rgba(42,120,214,0.55)"}
 # lock for a cartesian grid — squareness is a container property (see
 # PRED_OBS_SQUARE_HEIGHT), and the option's job is only to not skew it.
 _GRID_INSET = 16
+# Vertical room under the plot box for the x-axis `name`. `containLabel` grows
+# the grid to fit the TICK LABELS only — an axis `name` is never counted — so
+# the title is drawn `X_NAME_GAP` below the axis line, i.e. below the band
+# containLabel reserved, and with the old `bottom: 8` it fell off the canvas.
+# The y-axis title escapes this because its own gap (48) happens to fit inside
+# the much wider band the numeric y-labels reserve.
+# Centre of the title sits X_NAME_GAP from the axis line, so its lowest ink is
+# ~X_NAME_GAP + half a 12px line; containLabel already gives back about
+# _AXIS_LABEL_BAND of that.
+_X_NAME_GAP = 28
+_AXIS_LABEL_BAND = 20
+_GRID_BOTTOM = _X_NAME_GAP + 6 - _AXIS_LABEL_BAND + 8  # = 22, incl. breathing
 # Side of the square card. Sized so at least three cards fit across the dialog
 # (90vw, capped at 1400px) without the tab scrolling vertically: 3 x 380 + two
 # 16px gaps = 1172, inside the card's usable width.
@@ -749,7 +761,7 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
             "left": _GRID_INSET,
             "right": _GRID_INSET,
             "top": 44,
-            "bottom": 8,
+            "bottom": _GRID_BOTTOM,
             "containLabel": True,
         },
         "tooltip": {"trigger": "item", "confine": True},
@@ -763,7 +775,7 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         # Wheel/pinch zoom over the plot itself, both axes together so the 1:1
         # line stays at 45 degrees through any zoom.
         "dataZoom": [{"type": "inside", "xAxisIndex": 0, "yAxisIndex": 0}],
-        "xAxis": {**axis, "name": text["x_axis"], "nameGap": 28},
+        "xAxis": {**axis, "name": text["x_axis"], "nameGap": _X_NAME_GAP},
         "yAxis": {**axis, "name": text["y_axis"], "nameGap": 48},
         "series": [scatter, reference],
         "graphic": [
