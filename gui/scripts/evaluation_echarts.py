@@ -40,8 +40,7 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from gui.scripts.echarts_options import (
-    RENDERER_CANVAS, RENDERER_SVG, theme_colors)
+from gui.scripts.echarts_options import RENDERER_CANVAS, RENDERER_SVG, theme_colors
 from gui.scripts.evaluation_charts import pred_obs_artifact_name
 
 logger = logging.getLogger("spatial_risk")
@@ -187,6 +186,7 @@ _POINT_CSV_COLUMNS = ["cell", "nfor_obs_ha", "ndefor_obs_ha", "ndefor_pred_ha"]
 # Artifact resolution — typed record first, legacy derivation second
 # ---------------------------------------------------------------------------
 
+
 def _record_artifacts(record):
     return list(getattr(record, "artifacts", None) or [])
 
@@ -194,8 +194,7 @@ def _record_artifacts(record):
 _ARTIFACT_KIND_EXT = {"points_csv": "csv", "png_path": "png"}
 
 
-def _typed_artifact_path(record, model, period, csize, kind,
-                         prediction_key=None):
+def _typed_artifact_path(record, model, period, csize, kind, prediction_key=None):
     """Recorded path for one map + cell size, or None. Typed tiers only.
 
     Tier 1 — the artifact whose ``prediction_key`` matches exactly. Its
@@ -213,12 +212,16 @@ def _typed_artifact_path(record, model, period, csize, kind,
     """
     loose = []
     for art in _record_artifacts(record):
-        if (getattr(art, "model", None) != model
-                or getattr(art, "period", None) != period
-                or int(getattr(art, "csize_px", -1)) != int(csize)):
+        if (
+            getattr(art, "model", None) != model
+            or getattr(art, "period", None) != period
+            or int(getattr(art, "csize_px", -1)) != int(csize)
+        ):
             continue
-        if (prediction_key is not None
-                and getattr(art, "prediction_key", None) == prediction_key):
+        if (
+            prediction_key is not None
+            and getattr(art, "prediction_key", None) == prediction_key
+        ):
             path = getattr(art, kind, None)
             return Path(path) if path else None
         path = getattr(art, kind, None)
@@ -227,8 +230,9 @@ def _typed_artifact_path(record, model, period, csize, kind,
     return loose[0] if loose else None
 
 
-def resolve_plot_artifact(record, *, prediction_key, model, period, csize,
-                          kind, fallback_dir=None):
+def resolve_plot_artifact(
+    record, *, prediction_key, model, period, csize, kind, fallback_dir=None
+):
     """Path of ONE map + cell size's artifact, or None.
 
     ``kind`` selects which of the pair: ``"points_csv"`` (the interactive
@@ -244,8 +248,9 @@ def resolve_plot_artifact(record, *, prediction_key, model, period, csize,
         raise ValueError(f"unknown artifact kind: {kind!r}")
     if csize is None or not model or not period:
         return None
-    typed = _typed_artifact_path(record, model, period, int(csize), kind,
-                                 prediction_key)
+    typed = _typed_artifact_path(
+        record, model, period, int(csize), kind, prediction_key
+    )
     if typed is not None:
         return typed
     if fallback_dir is None:
@@ -254,11 +259,11 @@ def resolve_plot_artifact(record, *, prediction_key, model, period, csize,
             return None
         fallback_dir = Path(csv_path).parent
     return Path(fallback_dir) / pred_obs_artifact_name(
-        model, period, int(csize), _ARTIFACT_KIND_EXT[kind])
+        model, period, int(csize), _ARTIFACT_KIND_EXT[kind]
+    )
 
 
-def points_csv_is_expected(record, model, period, csize, *,
-                           prediction_key=None):
+def points_csv_is_expected(record, model, period, csize, *, prediction_key=None):
     """True when THIS map + cell size has a recorded point-CSV artifact.
 
     A *per-artifact* question, deliberately not a per-record one. A run-scoped
@@ -271,12 +276,17 @@ def points_csv_is_expected(record, model, period, csize, *,
     """
     if csize is None or not model or not period:
         return False
-    return _typed_artifact_path(record, model, period, int(csize),
-                                "points_csv", prediction_key) is not None
+    return (
+        _typed_artifact_path(
+            record, model, period, int(csize), "points_csv", prediction_key
+        )
+        is not None
+    )
 
 
-def resolve_points_csv(record, model, period, csize, *,
-                       prediction_key=None, fig_dir=None):
+def resolve_points_csv(
+    record, model, period, csize, *, prediction_key=None, fig_dir=None
+):
     """Path of the point CSV for one map + cell size, or None.
 
     A thin wrapper over ``resolve_plot_artifact`` (``kind="points_csv"``) —
@@ -284,8 +294,14 @@ def resolve_points_csv(record, model, period, csize, *,
     entry point's name for that call's ``fallback_dir``.
     """
     return resolve_plot_artifact(
-        record, prediction_key=prediction_key, model=model, period=period,
-        csize=csize, kind="points_csv", fallback_dir=fig_dir)
+        record,
+        prediction_key=prediction_key,
+        model=model,
+        period=period,
+        csize=csize,
+        kind="points_csv",
+        fallback_dir=fig_dir,
+    )
 
 
 def _index_row_for(record, model, period, csize, prediction_key=None):
@@ -300,9 +316,13 @@ def _index_row_for(record, model, period, csize, prediction_key=None):
     match, so a legacy record without a ``"prediction"`` column behaves
     exactly as before.
     """
-    matches = [row for row in getattr(record, "indices", None) or []
-               if row.get("model") == model and row.get("period") == period
-               and row.get("csize_coarse_grid") == int(csize)]
+    matches = [
+        row
+        for row in getattr(record, "indices", None) or []
+        if row.get("model") == model
+        and row.get("period") == period
+        and row.get("csize_coarse_grid") == int(csize)
+    ]
     if prediction_key is not None:
         for row in matches:
             if row.get("prediction") == prediction_key:
@@ -330,7 +350,7 @@ def _record_key(record):
     if callable(storage_key):
         try:
             return str(storage_key())
-        except Exception:  # noqa: BLE001 - identity must never break a render
+        except Exception:
             pass
     return str(getattr(record, "run_id", None) or getattr(record, "csv_path", ""))
 
@@ -339,9 +359,9 @@ def _record_key(record):
 # Loading — memoized on the artifact's modification identity
 # ---------------------------------------------------------------------------
 
+
 @lru_cache(maxsize=POINTS_CACHE_SIZE)
-def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha,
-                 medae, r2):
+def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha, medae, r2):
     """Read one point CSV into a PredObsPlotData. Keyed by file identity.
 
     ``size``/``mtime_ns`` are in the key but unused in the body — that is the
@@ -372,10 +392,11 @@ def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha,
     import numpy as np
     import pandas as pd
 
-    from spatialrisk.evaluation import pred_obs_axis_bounds, PredObsPlotData
+    from spatialrisk.evaluation import PredObsPlotData, pred_obs_axis_bounds
 
-    points = pd.read_csv(path_str, usecols=_POINT_CSV_COLUMNS,
-                         float_precision="round_trip")[_POINT_CSV_COLUMNS]
+    points = pd.read_csv(
+        path_str, usecols=_POINT_CSV_COLUMNS, float_precision="round_trip"
+    )[_POINT_CSV_COLUMNS]
     # Every plotted/tooltip column is validated HERE, inside the boundary that
     # already degrades a bad file to the PNG (load_pred_obs_plot_data catches
     # any raise and returns None). Before this, a malformed value slipped
@@ -387,8 +408,9 @@ def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha,
     # nfor_obs_ha -> finite float64.
     for col in _POINT_CSV_COLUMNS:
         points[col] = pd.to_numeric(points[col], errors="coerce")
-    drawable = points[np.isfinite(points["ndefor_obs_ha"])
-                      & np.isfinite(points["ndefor_pred_ha"])]
+    drawable = points[
+        np.isfinite(points["ndefor_obs_ha"]) & np.isfinite(points["ndefor_pred_ha"])
+    ]
     cell = drawable["cell"].to_numpy(dtype="float64")
     if not np.isfinite(cell).all() or (cell != np.rint(cell)).any():
         raise ValueError("cell must hold finite integral ids on drawable rows")
@@ -396,14 +418,22 @@ def _load_cached(path_str, size, mtime_ns, model, period, csize, csize_ha,
         raise ValueError("nfor_obs_ha must be finite on drawable rows")
     axis_min, axis_max = pred_obs_axis_bounds(points)
     return PredObsPlotData(
-        model=model, period=period, csize_px=int(csize), csize_ha=csize_ha,
-        points=points, axis_min=axis_min, axis_max=axis_max,
-        medae=medae, r2=r2, ncell=len(points),
+        model=model,
+        period=period,
+        csize_px=int(csize),
+        csize_ha=csize_ha,
+        points=points,
+        axis_min=axis_min,
+        axis_max=axis_max,
+        medae=medae,
+        r2=r2,
+        ncell=len(points),
     )
 
 
-def load_pred_obs_plot_data(record, model, period, csize, *,
-                            prediction_key=None, fig_dir=None):
+def load_pred_obs_plot_data(
+    record, model, period, csize, *, prediction_key=None, fig_dir=None
+):
     """Load one map's saved point table as a ``PredObsPlotData``, or None.
 
     Returns None when the artifact cannot be resolved, does not exist, or cannot
@@ -419,8 +449,9 @@ def load_pred_obs_plot_data(record, model, period, csize, *,
     Repeated calls with an unchanged file return the SAME object (see
     ``_load_cached``), which is what lets the option builder memoize on it.
     """
-    path = resolve_points_csv(record, model, period, csize,
-                              prediction_key=prediction_key, fig_dir=fig_dir)
+    path = resolve_points_csv(
+        record, model, period, csize, prediction_key=prediction_key, fig_dir=fig_dir
+    )
     if path is None:
         return None
     identity = _modification_identity(path)
@@ -431,18 +462,26 @@ def load_pred_obs_plot_data(record, model, period, csize, *,
         # feeds the on-map log console at INFO+, so warning here would put in
         # front of the user exactly the message the UI decided not to show.
         # Same rung split as the card's (see `points_csv_is_expected`).
-        expected = points_csv_is_expected(record, model, period, csize,
-                                          prediction_key=prediction_key)
+        expected = points_csv_is_expected(
+            record, model, period, csize, prediction_key=prediction_key
+        )
         log = logger.warning if expected else logger.debug
         log("Evaluation point table is missing: %s", path)
         return None
     row = _index_row_for(record, model, period, csize, prediction_key)
     try:
-        return _load_cached(str(path), identity[0], identity[1],
-                            model, period, int(csize),
-                            row.get("csize_coarse_grid_ha"),
-                            row.get("MedAE"), row.get("R2"))
-    except Exception as exc:  # noqa: BLE001 - a bad CSV must not kill the dialog
+        return _load_cached(
+            str(path),
+            identity[0],
+            identity[1],
+            model,
+            period,
+            int(csize),
+            row.get("csize_coarse_grid_ha"),
+            row.get("MedAE"),
+            row.get("R2"),
+        )
+    except Exception as exc:
         logger.warning("Evaluation point table is unreadable (%s): %s", path, exc)
         return None
 
@@ -459,9 +498,18 @@ def _text_identity(labels, title):
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]
 
 
-def pred_obs_chart_identity(record, model, period, csize, *, dark=False,
-                            labels=None, title=None,
-                            prediction_key=None, fig_dir=None):
+def pred_obs_chart_identity(
+    record,
+    model,
+    period,
+    csize,
+    *,
+    dark=False,
+    labels=None,
+    title=None,
+    prediction_key=None,
+    fig_dir=None,
+):
     """Cheap, stable identity of the chart this call would draw.
 
     Folds in EVERY input of ``pred_obs_scatter_option``: the record, the
@@ -483,19 +531,30 @@ def pred_obs_chart_identity(record, model, period, csize, *, dark=False,
     names and defaults precisely so one call site can pass the same values to
     both.
     """
-    path = resolve_points_csv(record, model, period, csize,
-                              prediction_key=prediction_key, fig_dir=fig_dir)
+    path = resolve_points_csv(
+        record, model, period, csize, prediction_key=prediction_key, fig_dir=fig_dir
+    )
     if path is None:
         return None
     size, mtime_ns = _modification_identity(path) or (-1, -1)
-    return "|".join(str(part) for part in (
-        _record_key(record), path, size, mtime_ns, int(csize),
-        "dark" if dark else "light", _text_identity(labels, title)))
+    return "|".join(
+        str(part)
+        for part in (
+            _record_key(record),
+            path,
+            size,
+            mtime_ns,
+            int(csize),
+            "dark" if dark else "light",
+            _text_identity(labels, title),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
 # Option building
 # ---------------------------------------------------------------------------
+
 
 def pred_obs_renderer(plot_data):
     """SVG for a small scatter, canvas once it gets dense.
@@ -504,8 +563,11 @@ def pred_obs_renderer(plot_data):
     one DOM node per point; past ``PRED_OBS_LARGE_POINT_COUNT`` that is the
     bottleneck and canvas (with ``large``) wins outright.
     """
-    return (RENDERER_CANVAS if _plotted_count(plot_data) >= PRED_OBS_LARGE_POINT_COUNT
-            else RENDERER_SVG)
+    return (
+        RENDERER_CANVAS
+        if _plotted_count(plot_data) >= PRED_OBS_LARGE_POINT_COUNT
+        else RENDERER_SVG
+    )
 
 
 def _plotted_count(plot_data):
@@ -543,8 +605,9 @@ def _scatter_rows(plot_data):
     cells = points["cell"].to_numpy(dtype="int64").tolist()
     forest = points["nfor_obs_ha"].to_numpy(dtype="float64").tolist()
     residual = (pred - obs).tolist()
-    return [list(row) for row in zip(obs.tolist(), pred.tolist(),
-                                     cells, forest, residual)]
+    return [
+        list(row) for row in zip(obs.tolist(), pred.tolist(), cells, forest, residual)
+    ]
 
 
 def pred_obs_annotation(plot_data, labels=None):
@@ -610,8 +673,13 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         "data": data,
         # cell/forest/residual ride along in the value array purely to reach the
         # tooltip template; only the first two dimensions are coordinates.
-        "dimensions": [text["observed"], text["predicted"], text["cell"],
-                       text["forest"], text["residual"]],
+        "dimensions": [
+            text["observed"],
+            text["predicted"],
+            text["cell"],
+            text["forest"],
+            text["residual"],
+        ],
         "symbolSize": 7,
         "itemStyle": {
             "color": _POINT_FILL[bool(dark)],
@@ -637,12 +705,14 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
     if large:
         # Canvas-only fast path: one batched draw call instead of one shape per
         # point, rendered in chunks so the first frame does not block.
-        scatter.update({
-            "large": True,
-            "largeThreshold": PRED_OBS_LARGE_POINT_COUNT,
-            "progressive": PRED_OBS_PROGRESSIVE_CHUNK,
-            "progressiveThreshold": PRED_OBS_LARGE_POINT_COUNT,
-        })
+        scatter.update(
+            {
+                "large": True,
+                "largeThreshold": PRED_OBS_LARGE_POINT_COUNT,
+                "progressive": PRED_OBS_PROGRESSIVE_CHUNK,
+                "progressiveThreshold": PRED_OBS_LARGE_POINT_COUNT,
+            }
+        )
 
     reference = {
         # The PNG's `plt.plot(p, p, "r--")`. Deliberately nameless, silent and
@@ -654,8 +724,7 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         "silent": True,
         "legendHoverLink": False,
         "tooltip": {"show": False},
-        "lineStyle": {"color": REFERENCE_LINE_COLOR, "type": "dashed",
-                      "width": 1.2},
+        "lineStyle": {"color": REFERENCE_LINE_COLOR, "type": "dashed", "width": 1.2},
         "z": 1,
     }
 
@@ -676,8 +745,13 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         "animation": not large,  # animating 200k points helps nobody
         # `top` leaves room for the title plus the MedAE/R2/n block below it;
         # with the toolbox gone, that is all it has to clear.
-        "grid": {"left": _GRID_INSET, "right": _GRID_INSET, "top": 44,
-                 "bottom": 8, "containLabel": True},
+        "grid": {
+            "left": _GRID_INSET,
+            "right": _GRID_INSET,
+            "top": 44,
+            "bottom": 8,
+            "containLabel": True,
+        },
         "tooltip": {"trigger": "item", "confine": True},
         # Nothing toggleable: one data series, and the reference line must stay.
         "legend": {"show": False},
@@ -692,20 +766,27 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         "xAxis": {**axis, "name": text["x_axis"], "nameGap": 28},
         "yAxis": {**axis, "name": text["y_axis"], "nameGap": 48},
         "series": [scatter, reference],
-        "graphic": [{
-            # The PNG's top-left MedAE/R2/n block, in the same corner.
-            "type": "text",
-            "left": 56,
-            "top": 48,
-            "silent": True,
-            "style": {"text": pred_obs_annotation(plot_data, labels),
-                      "fill": ink, "fontSize": 12, "lineHeight": 16},
-        }],
+        "graphic": [
+            {
+                # The PNG's top-left MedAE/R2/n block, in the same corner.
+                "type": "text",
+                "left": 56,
+                "top": 48,
+                "silent": True,
+                "style": {
+                    "text": pred_obs_annotation(plot_data, labels),
+                    "fill": ink,
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                },
+            }
+        ],
     }
     if title is not None:
         option["title"] = {
-            "text": title, "left": "center", "top": 0,
-            "textStyle": {"color": ink, "fontSize": 13,
-                          "fontWeight": "normal"},
+            "text": title,
+            "left": "center",
+            "top": 0,
+            "textStyle": {"color": ink, "fontSize": 13, "fontWeight": "normal"},
         }
     return option
