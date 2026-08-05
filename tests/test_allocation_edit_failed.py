@@ -347,3 +347,63 @@ def test_edit_opens_the_form_seeded_with_the_failed_run():
         assert field.v_model == "reserve_north"
     finally:
         restore()
+
+
+def test_submitting_an_edit_removes_the_old_failed_job_row(monkeypatch, tmp_path):
+    """The whole point of the pencil: relaunching a failed run replaces its row.
+
+    The other tests in this file cover dismiss and edit-seeds-the-form in
+    isolation; neither exercises pencil -> edit -> Run -> job-list. This is
+    the only test that drives that full sequence, so it is the only one that
+    guards the `if editing_job_id.current is not None:` replace block at the
+    end of `launch` (gui/tile/toolbox_tile.py) — deleting that block leaves
+    every other test in this suite green (verified 2026-08-05).
+    """
+    from gui.tile import toolbox_tile
+    from spatialrisk.predictions.prediction import Prediction
+    from spatialrisk.project import Project
+
+    # A real project with one registered prediction matching the prefill's
+    # prediction_key, and a project-borders file that really exists on disk.
+    # validate_form only checks existence for a FILE borders selection (see
+    # tests/test_allocation_runner.py::test_validate_form_accepts_a_complete_form,
+    # which uses the same empty-file trick), so this drives the dialog's own
+    # validate_form() honestly rather than stubbing it out.
+    borders_file = tmp_path / "borders.gpkg"
+    borders_file.write_text("")
+
+    project = Project(project_name="p")
+    project.predictions = {
+        "icar_run": Prediction(
+            path="/tmp/p.tif", model_key="icar", dataset_name="calibration"
+        )
+    }
+
+    entry = _entry(
+        name="reserve_north",
+        borders=BordersSelection(method="FILE", file_path=str(borders_file)),
+    )
+    job = _failed_job(name="reserve_north")
+    job["entry"] = entry
+
+    # No background worker: the assertion is about the job list the tile
+    # manages, not about an allocation actually running.
+    monkeypatch.setattr(toolbox_tile, "spawn_in_context", lambda *a, **k: None)
+
+    previous = toolbox_tile.allocation_jobs.value
+    toolbox_tile.allocation_jobs.set([job])
+    try:
+        box, _rc = reacton.render(
+            toolbox_tile.ToolboxTile(project=solara.reactive(project))
+        )
+        _icon_button(box, "mdi-pencil-outline").fire_event("click", {})
+
+        run_label = t("toolbox.allocation.run")
+        run_btn = next(b for b in _find(box, vw.Btn) if run_label in b.children)
+        run_btn.fire_event("click", {})
+
+        jobs = toolbox_tile.allocation_jobs.value
+        assert "j1" not in [j["id"] for j in jobs]
+        assert len(jobs) == 1
+    finally:
+        toolbox_tile.allocation_jobs.set(previous)
