@@ -78,6 +78,8 @@ def AllocationList(
     on_open=None,
     on_toggle_density=None,
     density_on_map=frozenset(),
+    on_edit=None,
+    on_dismiss=None,
 ):
     """Allocation runs table: one row per saved run plus in-flight jobs.
 
@@ -89,10 +91,29 @@ def AllocationList(
         on_toggle_density: callback(row) — show/hide the density raster; None
             when there is no map to draw on.
         density_on_map: set of layer keys currently on the map.
+        on_edit: callback(row) — reopen the allocation form prefilled with a
+            failed job's submission entry so the user can fix and rerun.
+        on_dismiss: callback(job_id) — discard a job row that is no longer
+            running.
     """
     table_rows = []
     for r in rows:
         if r["kind"] == "job":
+            job_actions = []
+            # Only failed jobs that recorded their submission can be re-edited.
+            if r["status"] == "failed" and r.get("entry") and on_edit is not None:
+                job_actions.append(
+                    {"kind": "edit", "on_click": lambda *_, rr=r: on_edit(rr)}
+                )
+            # Never on a running row: dismissing it only hides the row, and the
+            # worker would still finish and register its run.
+            if r["status"] != "running" and on_dismiss is not None:
+                job_actions.append(
+                    {
+                        "kind": "dismiss",
+                        "on_click": lambda *_, i=r["job_id"]: on_dismiss(i),
+                    }
+                )
             table_rows.append(
                 {
                     "key": r["key"],
@@ -102,7 +123,7 @@ def AllocationList(
                         {"type": "text", "value": "—", "muted": True},
                         {"type": "status", "status": r["status"]},
                     ],
-                    "actions": [],
+                    "actions": job_actions,
                     "error": r.get("error"),
                 }
             )
