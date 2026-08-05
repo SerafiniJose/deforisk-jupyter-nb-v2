@@ -101,9 +101,11 @@ def AllocationFormDialog(
         on_launch: callback(AllocationForm) — start the run.
         on_close: callback() — the tile closes the dialog.
         sepal_client: passed through to the file pickers.
-        running_names: frozenset — names of in-flight allocation jobs. Taken
-            for the name suggestion only: run keys carry a run id, so a
-            duplicate name never replaces anything.
+        running_names: frozenset — names of every job currently in the tile's
+            job list, running or failed (the call site does not filter by
+            status; a failed job still holds its name — see
+            gui/tile/toolbox_tile.py). Taken for the name suggestion only: run
+            keys carry a run id, so a duplicate name never replaces anything.
     """
     p = project.value
 

@@ -853,3 +853,52 @@ def test_typing_overrides_the_suggested_run_name():
 
     # The typed value must survive the suggestion moving underneath it.
     assert _name_field(box).v_model == "reserve north"
+
+
+def test_non_dirty_field_tracks_a_live_suggestion():
+    """Never typed into, the field must keep tracking the suggestion live.
+
+    Swapping ``use_artifact_name`` for a plain ``use_state(suggest_name(...))``
+    seeded once would pass every other test in this file, yet the field would
+    then keep showing ``allocation_1`` after a background job or a new saved
+    run takes that name out from under it.
+    """
+    project = solara.reactive(Project(project_name="p"))
+    box, _rc = reacton.render(
+        AllocationFormDialog(
+            open_=solara.reactive(True),
+            project=project,
+            on_launch=lambda form: None,
+            on_close=lambda: None,
+        )
+    )
+    assert _name_field(box).v_model == "allocation_1"
+
+    # Never typed into: a saved run named allocation_1 must push the live
+    # suggestion to allocation_2. Reacton skips re-render on ==-equal props,
+    # so this has to be a genuinely distinct Project object (see _alloc_run).
+    updated = Project(project_name="p")
+    run = _alloc_run("allocation_1")
+    updated.allocations = {run.storage_key(): run}
+    project.value = updated
+
+    assert _name_field(box).v_model == "allocation_2"
+
+
+def test_reset_re_arms_the_suggestion_after_close():
+    """Cancel re-arms the suggestion: a typed name must not survive reopen.
+
+    ``reset()`` (gui/widget/allocation_form.py) calls ``reset_name()`` so the
+    dialog re-suggests on the next open instead of replaying whatever the
+    user last typed. Deleting that call makes this test fail while every
+    other test in this file keeps passing (verified 2026-08-05).
+    """
+    box, _rc = _render_form()
+    _name_field(box).v_model = "reserve north"
+    assert _name_field(box).v_model == "reserve north"
+
+    cancel_label = t("common.cancel")
+    cancel_btn = next(b for b in _find(box, vw.Btn) if b.children == [cancel_label])
+    cancel_btn.fire_event("click", None)
+
+    assert _name_field(box).v_model == "allocation_1"
