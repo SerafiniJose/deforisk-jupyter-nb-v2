@@ -255,6 +255,11 @@ def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
             on_launch=launch,
             on_close=lambda: form_open.set(False),
             sepal_client=sepal_client,
+            # Every job in the list — running or failed — still shows its name
+            # in the list above, so none is excluded by status.
+            running_names=frozenset(
+                job["name"] for job in allocation_jobs.value if job.get("name")
+            ),
         )
         AllocationDetailsDialog(
             project=project,

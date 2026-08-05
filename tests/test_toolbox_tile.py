@@ -222,3 +222,28 @@ def test_tile_mounts_the_details_dialog():
     src = inspect.getsource(toolbox_tile)
     assert "AllocationDetailsDialog" in src
     assert "on_open" in src
+
+
+def test_form_name_suggestion_skips_in_flight_jobs():
+    """A running job's name is taken, so the form opens on allocation_2."""
+    import ipyvuetify as vw
+    import reacton
+
+    from gui.i18n import t
+    from spatialrisk.project import Project
+
+    t("common.cancel")  # warm the translator before the first render
+    previous = toolbox_tile.allocation_jobs.value
+    toolbox_tile.allocation_jobs.set(
+        [{"id": "j1", "name": "allocation_1", "status": "running", "error": None}]
+    )
+    try:
+        box, _rc = reacton.render(
+            toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
+        )
+        label = t("toolbox.allocation.field_name")
+        fields = [f for f in _find(box, vw.TextField) if f.label == label]
+        assert fields, "the Run name field did not render"
+        assert fields[0].v_model == "allocation_2"
+    finally:
+        toolbox_tile.allocation_jobs.set(previous)
