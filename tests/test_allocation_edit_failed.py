@@ -120,7 +120,11 @@ def test_failed_row_dismiss_hands_back_the_job_id():
 
 # --- the form seeds itself from a prefill entry -------------------------------
 
+import inspect  # noqa: E402
 import types  # noqa: E402
+
+from pysepal.sepalwidgets.file_input import FileInput  # noqa: E402
+from pysepal.solara.components.inputs import AdminLevelSelector  # noqa: E402
 
 from gui.widget.allocation_form import AllocationFormDialog  # noqa: E402
 from gui.widget.borders_picker import BordersPicker  # noqa: E402
@@ -134,14 +138,27 @@ def _select(box, label):
     return next((s for s in _find(box, vw.Select) if s.label == label), None)
 
 
+def _checkbox(box, label):
+    return next((c for c in _find(box, vw.Checkbox) if c.label == label), None)
+
+
+def _file_input(box, label):
+    return next((f for f in _find(box, FileInput) if f.label == label), None)
+
+
 def _prefill_project():
-    """A project exposing one prediction, enough for the risk-map select."""
+    """A project exposing one prediction and one maskable raster.
+
+    Enough for the risk-map select and the mask select to both have a real
+    choice available to seed.
+    """
     pred = types.SimpleNamespace(
         model_key="icar", dataset_name="calibration", window=None, path="/tmp/p.tif"
     )
+    mask_var = types.SimpleNamespace(path="/tmp/mask.tif")
     return types.SimpleNamespace(
         predictions={"icar_run": pred},
-        processed_variables={},
+        processed_variables={"forest_mask": mask_var},
         allocations={},
     )
 
@@ -160,20 +177,60 @@ def _render_form(entry):
 
 
 def test_form_seeds_every_scalar_field_from_the_prefill():
-    """Name, risk map, hectares, years and the density flag all come back."""
-    box = _render_form(_entry(defor_juris_ha=1234.0, years_forecast=7.0))
-    assert (
-        _text_field(box, t("toolbox.allocation.field_name")).v_model == "allocation_1"
+    """Name, risk map, mask, borders, hectares, years and density all come back.
+
+    The seeded name ("retry_me") is deliberately different from the fresh
+    form's own suggestion ("allocation_1"): use_artifact_name only marks the
+    field dirty (and therefore keeps a typed/seeded value instead of tracking
+    the live suggestion) when the value differs from that suggestion, so a
+    same-as-suggestion name would pass this assertion whether or not
+    `on_name_input` actually ran. See test_form_without_a_prefill_keeps_its_
+    defaults below, which shares that "allocation_1" suggestion.
+    """
+    box = _render_form(
+        _entry(
+            name="retry_me",
+            defor_juris_ha=1234.0,
+            years_forecast=7.0,
+            mask_file="/tmp/mask.tif",
+            density_map=True,
+        )
     )
+    assert _text_field(box, t("toolbox.allocation.field_name")).v_model == "retry_me"
     assert _select(box, t("toolbox.allocation.field_riskmap")).v_model == "icar_run"
     assert _text_field(box, t("toolbox.allocation.field_juris_ha")).v_model == "1234"
     assert _text_field(box, t("toolbox.allocation.field_years")).v_model == "7"
+    assert _select(box, t("toolbox.allocation.field_mask")).v_model == "/tmp/mask.tif"
+    # Default _entry() borders is a FILE selection: the picker's own file
+    # input (not a bare TextField) is what carries the seeded path.
+    assert (
+        _file_input(box, t("toolbox.allocation.field_borders_file")).v_model
+        == "/data/borders.gpkg"
+    )
+    assert _checkbox(box, t("toolbox.allocation.field_density")).v_model is True
+
+
+def test_form_seeds_a_large_hectare_value_without_truncation():
+    """`:g` truncates to 6 significant digits; `.12g` must not.
+
+    A jurisdiction in the tens of millions of hectares is ordinary, and
+    `f"{12345678.0:g}"` renders as "1.23457e+07" — silently corrupting the
+    value a retry would run with.
+    """
+    box = _render_form(_entry(defor_juris_ha=12345678.0))
+    assert (
+        _text_field(box, t("toolbox.allocation.field_juris_ha")).v_model == "12345678"
+    )
 
 
 def test_form_seeds_a_custom_rate_table_as_custom_mode():
     """A run submitted with its own table reopens in custom mode, path shown."""
     box = _render_form(_entry(user_defrate_path="/data/rates.csv"))
     assert _select(box, t("toolbox.allocation.field_defrate")).v_model == "custom"
+    assert (
+        _file_input(box, t("toolbox.allocation.field_defrate_override")).v_model
+        == "/data/rates.csv"
+    )
 
 
 def test_form_without_a_prefill_keeps_its_defaults():
@@ -192,8 +249,12 @@ def test_borders_picker_passes_an_admin_restore_seed(monkeypatch):
     pysepal documents `value` as output-only and snapshots `initial` once at
     mount, so this prop is the only way a prefilled admin code can come back.
     A stub stands in for the real selector: the genuine one drives an async
-    pygaul/WFS cascade that a browserless render cannot resolve.
+    pygaul/WFS cascade that a browserless render cannot resolve. The
+    signature assertion below guards the stub itself — without it, this test
+    would still pass even if the real component dropped `initial` entirely.
     """
+    assert "initial" in inspect.signature(AdminLevelSelector.f).parameters
+
     import gui.widget.borders_picker as borders_picker_module
 
     seen = {}

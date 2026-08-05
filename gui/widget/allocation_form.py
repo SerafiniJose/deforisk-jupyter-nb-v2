@@ -166,9 +166,11 @@ def AllocationFormDialog(
         set_borders(entry.borders)
         set_mask(entry.mask_file or "")
         set_juris_ha(
-            "" if entry.defor_juris_ha is None else f"{entry.defor_juris_ha:g}"
+            "" if entry.defor_juris_ha is None else f"{entry.defor_juris_ha:.12g}"
         )
-        set_years("" if entry.years_forecast is None else f"{entry.years_forecast:g}")
+        set_years(
+            "" if entry.years_forecast is None else f"{entry.years_forecast:.12g}"
+        )
         set_density(bool(entry.density_map))
         set_borders_seed(borders_seed + 1)
 
