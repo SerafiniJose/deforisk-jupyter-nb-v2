@@ -25,16 +25,14 @@ root_folder: Path = Path.cwd().parent
 def _resolve_data_dir() -> Path:
     """Resolve the canonical project data directory.
 
-    Order: ``SPATIAL_RISK_DATA_DIR`` env var, else the package-relative
-    ``<module-root>/data`` (``spatial-risk-module/data``). Package-relative so
-    it does not depend on the current working directory — the previous
-    ``Path.cwd().parent / "data"`` diverged from the GUI's data dir depending on
-    where the app was launched, which broke loading.
+    Order: ``SPATIAL_RISK_DATA_DIR`` env var, else the SEPAL-wide convention
+    ``~/module_results/spatial_risk_module`` (every SEPAL module must write its
+    outputs under ``~/module_results/<module>``).
     """
     env = os.environ.get("SPATIAL_RISK_DATA_DIR")
     if env:
         return Path(env).resolve()
-    return (Path(__file__).resolve().parents[1] / "data").resolve()
+    return (Path.home() / "module_results" / "spatial_risk_module").resolve()
 
 
 DATA_DIR: Path = _resolve_data_dir()
