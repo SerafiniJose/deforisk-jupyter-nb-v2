@@ -31,3 +31,4 @@ test/
 # uv-managed files (env is defined by sepal_environment.yml)
 uv.lock
 .python-version
+gui/logging_config.toml
