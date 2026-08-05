@@ -722,8 +722,8 @@ def _capture_product_table(monkeypatch):
     return captured
 
 
-def test_list_record_rows_open_details_jobs_do_not(monkeypatch):
-    """Row click -> on_open(run_key); in-flight jobs are not clickable."""
+def test_list_record_rows_get_an_open_action_jobs_do_not(monkeypatch):
+    """Eye action -> on_open(run_key); in-flight jobs never get one."""
     captured = _capture_product_table(monkeypatch)
 
     opened = []
@@ -743,16 +743,18 @@ def test_list_record_rows_open_details_jobs_do_not(monkeypatch):
     )
 
     rows = {r["key"]: r for r in captured["rows"]}
-    rows["reserve_abc123"]["on_click"]()
+    open_actions = [a for a in rows["reserve_abc123"]["actions"] if a["kind"] == "open"]
+    assert len(open_actions) == 1
+    open_actions[0]["on_click"]()
     assert opened == ["reserve_abc123"]
-    assert rows["j1"].get("on_click") is None
+    assert not any(a["kind"] == "open" for a in rows["j1"]["actions"])
 
 
-def test_list_without_on_open_has_no_clickable_rows(monkeypatch):
-    """Summary-style consumers that pass no on_open get inert rows."""
+def test_list_without_on_open_has_no_open_action(monkeypatch):
+    """Summary-style consumers that pass no on_open get no eye button."""
     captured = _capture_product_table(monkeypatch)
     reacton.render(AllocationList(rows=[_record_row()], on_delete=lambda key: None))
-    assert captured["rows"][0].get("on_click") is None
+    assert not any(a["kind"] == "open" for a in captured["rows"][0]["actions"])
 
 
 # --- suggested run name -------------------------------------------------

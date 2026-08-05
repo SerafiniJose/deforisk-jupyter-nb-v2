@@ -18,19 +18,6 @@ logger = logging.getLogger("spatial_risk")
 # proportional digits make "312.4" and "1249.6" misalign at the decimal point.
 _NUM = "font-variant-numeric:tabular-nums;"
 
-_PROVENANCE_KEYS = {
-    "persisted": "toolbox.allocation.provenance_persisted",
-    "mw-sibling": "toolbox.allocation.provenance_mw_sibling",
-    "computed": "toolbox.allocation.provenance_computed",
-    "user": "toolbox.allocation.provenance_user",
-}
-
-
-def _provenance_label(provenance):
-    """Human label for a rate-table provenance, or None when unknown."""
-    key = _PROVENANCE_KEYS.get(provenance)
-    return t(key) if key else None
-
 
 def _run_meta(row):
     """'<source> · <years> yr · <date>' line under a run's name."""
@@ -86,8 +73,9 @@ def AllocationList(
     Args:
         rows: output of ``allocation_runner.allocation_rows``.
         on_delete: callback(run_key) — delete a saved run (confirmed by the tile).
-        on_open: callback(run_key) — open the run's read-only details dialog;
-            None leaves the rows inert. Job rows never fire it.
+        on_open: callback(run_key) — open the run's read-only details dialog
+            (the eye action button); None omits the button. Job rows never
+            get one.
         on_toggle_density: callback(row) — show/hide the density raster; None
             when there is no map to draw on.
         density_on_map: set of layer keys currently on the map.
@@ -120,7 +108,6 @@ def AllocationList(
                     "cells": [
                         {"type": "text", "value": r["name"]},
                         {"type": "text", "value": "—", "muted": True},
-                        {"type": "text", "value": "—", "muted": True},
                         {"type": "status", "status": r["status"]},
                     ],
                     "actions": job_actions,
@@ -130,6 +117,10 @@ def AllocationList(
             continue
 
         actions = []
+        if on_open is not None:
+            actions.append(
+                {"kind": "open", "on_click": lambda *_, k=r["key"]: on_open(k)}
+            )
         # Only runs that actually wrote a density raster can toggle one.
         if on_toggle_density is not None and r.get("density_map_path"):
             from gui.scripts.density_map import density_layer_key
@@ -145,22 +136,15 @@ def AllocationList(
             {"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)}
         )
 
-        provenance = _provenance_label(r.get("provenance"))
         warnings = r.get("warnings") or []
 
         table_rows.append(
             {
                 "key": r["key"],
-                "on_click": ((lambda *_, k=r["key"]: on_open(k)) if on_open else None),
                 "cells": [
                     _name_cell(r),
                     _hectares_cell(r["annual_ha"], "toolbox.allocation.unit_ha_yr"),
                     _hectares_cell(r["total_ha"], "toolbox.allocation.unit_ha"),
-                    {
-                        "type": "chip",
-                        "value": provenance or "—",
-                        "color": "primary",
-                    },
                 ],
                 "actions": actions,
                 # Warnings ride the error slot: it is the only full-width line a
@@ -175,7 +159,6 @@ def AllocationList(
             {"label": t("toolbox.allocation.field_name"), "width": "minmax(0,2fr)"},
             {"label": t("toolbox.allocation.result_annual"), "width": "minmax(0,1fr)"},
             {"label": t("toolbox.allocation.result_total"), "width": "minmax(0,1fr)"},
-            {"label": t("toolbox.allocation.field_defrate"), "width": "minmax(0,1fr)"},
         ],
         rows=table_rows,
         empty_text=t("toolbox.allocation.empty"),
