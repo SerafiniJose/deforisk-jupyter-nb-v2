@@ -163,14 +163,17 @@ def _prefill_project():
     )
 
 
-def _render_form(entry):
+def _render_form(entry, running_names=frozenset(), project=None):
+    if project is None:
+        project = solara.reactive(_prefill_project())
     box, _rc = reacton.render(
         AllocationFormDialog(
             open_=solara.reactive(True),
-            project=solara.reactive(_prefill_project()),
+            project=project,
             on_launch=lambda form: None,
             on_close=lambda: None,
             prefill=solara.reactive(entry),
+            running_names=running_names,
         )
     )
     return box
@@ -241,6 +244,57 @@ def test_form_without_a_prefill_keeps_its_defaults():
     )
     assert _select(box, t("toolbox.allocation.field_riskmap")).v_model is None
     assert _text_field(box, t("toolbox.allocation.field_years")).v_model == "4"
+
+
+def test_edit_keeps_the_seeded_name_when_the_edited_job_stays_in_running_names():
+    """`running_names` must include the job currently being edited.
+
+    See docs/superpowers/specs/2026-08-05-allocation-edit-failed-design.md §4:
+    the tile deliberately passes EVERY job in its list, including the failed
+    one the form is seeded from. Excluding it looks like a harmless cleanup
+    (an earlier external review actually proposed it) but breaks
+    `use_artifact_name`: with the edited job's own name removed from
+    `running_names`, the live suggestion for an "allocation_1" job becomes
+    "allocation_1" itself — identical to the seeded name — so
+    `on_name_input(entry.name)` finds nothing to mark dirty. The field then
+    silently tracks the live suggestion instead of the seeded name, and flips
+    the moment something else takes "allocation_1" out from under it.
+
+    The seeded value looks identical either way at first render (both land on
+    "allocation_1"), so this only diverges once the live suggestion changes
+    under the field — done here by pushing a *new* `Project` (not a mutation:
+    `Project` is a pydantic BaseModel and reacton skips re-render on
+    `==`-equal props, see test_summary_tile_reactivity.py) carrying a saved
+    run also named "allocation_1".
+    """
+    from spatialrisk.allocations.record import AllocationRun
+    from spatialrisk.project import Project
+
+    project = solara.reactive(Project(project_name="p"), equals=lambda a, b: a is b)
+    box = _render_form(
+        _entry(name="allocation_1"),
+        running_names=frozenset({"allocation_1"}),
+        project=project,
+    )
+    field = _text_field(box, t("toolbox.allocation.field_name"))
+    assert field.v_model == "allocation_1"
+
+    updated = Project(project_name="p")
+    updated.allocations["allocation_1_r1"] = AllocationRun(
+        name="allocation_1",
+        run_id="r1",
+        borders_file="/b.gpkg",
+        defor_juris_ha=20000.0,
+        years_forecast=4,
+        annual_ha=1.0,
+        total_ha=1.0,
+        out_dir="/out",
+        csv_path="/out/defor.csv",
+    )
+    project.set(updated)
+
+    field = _text_field(box, t("toolbox.allocation.field_name"))
+    assert field.v_model == "allocation_1"
 
 
 def test_borders_picker_passes_an_admin_restore_seed(monkeypatch):
