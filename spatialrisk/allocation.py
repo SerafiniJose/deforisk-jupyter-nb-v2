@@ -29,6 +29,9 @@ DENSITY_NODATA = -9999.0
 #: Required columns of a deforestation-rate-per-category table.
 REQUIRED_COLUMNS = ("cat", "nfor", "rate_mod", "pixel_area")
 
+#: Extents the optional density raster can be written for.
+DENSITY_EXTENTS = ("project", "aoi")
+
 
 class AllocationInputError(ValueError):
     """Raised when an allocation input is missing, malformed or inconsistent."""
@@ -88,6 +91,24 @@ def validate_defrate_table(df: pd.DataFrame) -> None:
         )
 
 
+def _normalize_density_extent(value):
+    """Map the ``defor_density_map`` argument to None, 'project' or 'aoi'.
+
+    Bools stay accepted: ``True`` meant "whole jurisdiction" before extents
+    existed, and callers written against that signature must keep working.
+    """
+    if value is None or value is False:
+        return None
+    if value is True:
+        return "aoi"
+    if value in DENSITY_EXTENTS:
+        return value
+    raise AllocationInputError(
+        "defor_density_map must be None, True, False, 'project' or 'aoi'; "
+        f"got {value!r}."
+    )
+
+
 def reproject_vector(src: PathLike, dst: PathLike, dst_crs) -> Path:
     """Reproject a vector file to *dst_crs* (anything geopandas' ``to_crs`` accepts)."""
     import geopandas as gpd
@@ -143,7 +164,7 @@ def allocate_deforestation(
     project_borders: PathLike,
     out_dir: PathLike,
     forest_mask_file: Optional[PathLike] = None,
-    defor_density_map: bool = False,
+    defor_density_map: Union[bool, str, None] = None,
     blk_rows: int = 128,
 ) -> AllocationResult:
     """Allocate *defor_juris_ha* of jurisdictional deforestation to a project area.
@@ -166,9 +187,12 @@ def allocate_deforestation(
     forest_mask_file : path, optional
         Binary raster (1 = eligible) aligned with the risk map. When given, only
         eligible pixels receive deforestation.
-    defor_density_map : bool
-        Also write the jurisdiction-wide density raster (ha/pixel/yr, Float64,
-        nodata ``-9999``). Large at high resolution.
+    defor_density_map : {None, 'project', 'aoi'} or bool
+        Also write the deforestation-density raster (ha/pixel/yr, Float64,
+        nodata ``-9999``): ``'project'`` covers the cropped project area only,
+        ``'aoi'`` the whole jurisdictional risk map (large at high
+        resolution). Booleans are the legacy form: ``True`` == ``'aoi'``,
+        ``False`` == ``None``.
     blk_rows : int
         Rows per block for the density-map write.
     """
@@ -180,6 +204,8 @@ def allocate_deforestation(
         raise AllocationInputError(
             "Expected jurisdictional deforestation cannot be negative."
         )
+
+    density_extent = _normalize_density_extent(defor_density_map)
 
     df_rate = _load_table(defrate_table)
     validate_defrate_table(df_rate)
@@ -267,7 +293,16 @@ def allocate_deforestation(
     ).to_csv(csv_path, header=True, index=False)
 
     density_map_path = None
-    if defor_density_map:
+    if density_extent == "project":
+        # project_mask.tif was warped onto the cropped grid by
+        # _count_categories, so it is the only mask aligned with `cropped`.
+        project_mask = (
+            out_dir / "project_mask.tif" if forest_mask_file is not None else None
+        )
+        density_map_path = _write_density_map(
+            cropped, dens_by_cat, out_dir, project_mask, blk_rows
+        )
+    elif density_extent == "aoi":
         density_map_path = _write_density_map(
             riskmap_file, dens_by_cat, out_dir, forest_mask_file, blk_rows
         )
@@ -322,11 +357,15 @@ def _count_categories(cropped, forest_mask_file, out_dir, copts) -> pd.DataFrame
     )
 
 
-def _write_density_map(riskmap_file, dens_by_cat, out_dir, forest_mask_file, blk_rows):
-    """Write the jurisdiction-wide ha/pixel/yr raster, block by block."""
+def _write_density_map(source_raster, dens_by_cat, out_dir, mask_file, blk_rows):
+    """Write the ha/pixel/yr density raster on *source_raster*'s grid, block by block.
+
+    *mask_file* (when given) MUST be grid-aligned with *source_raster*: blocks
+    are read from both at the same offsets with no warping.
+    """
     from osgeo import gdal
 
-    src = gdal.Open(str(riskmap_file))
+    src = gdal.Open(str(source_raster))
     band = src.GetRasterBand(1)
     ncol, nrow = src.RasterXSize, src.RasterYSize
     out_path = out_dir / "deforestation_density_map.tif"
@@ -346,7 +385,7 @@ def _write_density_map(riskmap_file, dens_by_cat, out_dir, forest_mask_file, blk
     dst_band = dst.GetRasterBand(1)
     dst_band.SetNoDataValue(DENSITY_NODATA)
 
-    mask_ds = gdal.Open(str(forest_mask_file)) if forest_mask_file is not None else None
+    mask_ds = gdal.Open(str(mask_file)) if mask_file is not None else None
     step = max(1, int(blk_rows))
     for y in range(0, nrow, step):
         rows = min(step, nrow - y)

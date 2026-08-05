@@ -291,3 +291,103 @@ def test_borders_outside_riskmap_raise(tmp_path):
             project_borders=far_away,
             out_dir=tmp_path / "run",
         )
+
+
+def test_project_extent_density_map_covers_only_the_cropped_grid(tmp_path):
+    """extent='project' writes the density raster on the cropped 4x4 grid."""
+    from osgeo import gdal
+
+    risk = np.full((8, 8), 0, dtype=np.uint16)
+    risk[0:4, 0:4] = 3
+    riskmap = _write_raster(tmp_path / "risk.tif", risk)
+    borders = _write_borders(tmp_path / "borders.shp")
+
+    res = allocate_deforestation(
+        riskmap_file=riskmap,
+        defrate_table=_dense_table(),
+        defor_juris_ha=1000.0,
+        years_forecast=4,
+        project_borders=borders,
+        out_dir=tmp_path / "run",
+        defor_density_map="project",
+        blk_rows=2,
+    )
+
+    assert res.density_map_path is not None and res.density_map_path.exists()
+    ds = gdal.Open(str(res.density_map_path))
+    assert (ds.RasterXSize, ds.RasterYSize) == (4, 4)
+    arr = ds.GetRasterBand(1).ReadAsArray()
+    ds = None
+    corr = 1000.0 / 1.1
+    assert arr[0, 0] == pytest.approx(0.003 * corr / 4, rel=1e-6)
+
+
+def test_project_extent_density_map_respects_the_forest_mask(tmp_path):
+    """Masked-out pixels of the cropped grid carry nodata, not a density."""
+    from osgeo import gdal
+
+    from spatialrisk.allocation import DENSITY_NODATA
+
+    risk = np.full((8, 8), 2, dtype=np.uint16)
+    riskmap = _write_raster(tmp_path / "risk.tif", risk)
+    borders = _write_borders(tmp_path / "borders.shp")
+    mask = np.zeros((8, 8), dtype=np.uint16)
+    mask[0:4, 0:2] = 1  # only the left half of the 4x4 project block is forest
+    mask_file = _write_raster(tmp_path / "mask.tif", mask)
+
+    res = allocate_deforestation(
+        riskmap_file=riskmap,
+        defrate_table=_dense_table(),
+        defor_juris_ha=1000.0,
+        years_forecast=4,
+        project_borders=borders,
+        out_dir=tmp_path / "run",
+        forest_mask_file=mask_file,
+        defor_density_map="project",
+    )
+
+    ds = gdal.Open(str(res.density_map_path))
+    arr = ds.GetRasterBand(1).ReadAsArray()
+    ds = None
+    corr = 1000.0 / 1.1
+    assert arr[0, 0] == pytest.approx(0.001 * corr / 4, rel=1e-6)
+    assert arr[0, 3] == pytest.approx(DENSITY_NODATA)
+
+
+def test_legacy_bool_true_still_writes_the_whole_aoi_raster(tmp_path):
+    """defor_density_map=True keeps its historical whole-AOI meaning."""
+    from osgeo import gdal
+
+    risk = np.full((8, 8), 2, dtype=np.uint16)
+    riskmap = _write_raster(tmp_path / "risk.tif", risk)
+    borders = _write_borders(tmp_path / "borders.shp")
+
+    res = allocate_deforestation(
+        riskmap_file=riskmap,
+        defrate_table=_dense_table(),
+        defor_juris_ha=1000.0,
+        years_forecast=4,
+        project_borders=borders,
+        out_dir=tmp_path / "run",
+        defor_density_map=True,
+    )
+
+    ds = gdal.Open(str(res.density_map_path))
+    assert (ds.RasterXSize, ds.RasterYSize) == (8, 8)
+    ds = None
+
+
+def test_invalid_density_extent_is_rejected(tmp_path):
+    """A typo'd extent fails loudly instead of silently skipping the raster."""
+    riskmap = _write_raster(tmp_path / "risk.tif", np.full((8, 8), 2, dtype=np.uint16))
+    borders = _write_borders(tmp_path / "borders.shp")
+    with pytest.raises(AllocationInputError, match="defor_density_map"):
+        allocate_deforestation(
+            riskmap_file=riskmap,
+            defrate_table=_dense_table(),
+            defor_juris_ha=1000.0,
+            years_forecast=4,
+            project_borders=borders,
+            out_dir=tmp_path / "run",
+            defor_density_map="everything",
+        )
