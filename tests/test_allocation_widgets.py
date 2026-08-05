@@ -820,8 +820,36 @@ def test_form_skips_an_in_flight_run_name():
 
 
 def test_typing_overrides_the_suggested_run_name():
-    """Once the user edits the field, the suggestion stops tracking."""
-    box, _rc = _render_form()
+    """Once the user edits the field, a NEW suggestion must not clobber it.
+
+    Round-tripping v_model alone would pass against the old plain
+    ``use_state("")`` too — that's just a controlled input. The behaviour
+    unique to the suggestion hook is dirty-tracking: after the user types,
+    the field must stop following ``suggest_name(...)`` even when the
+    underlying suggestion changes.
+    """
+    project = solara.reactive(Project(project_name="p"))
+    box, _rc = reacton.render(
+        AllocationFormDialog(
+            open_=solara.reactive(True),
+            project=project,
+            on_launch=lambda form: None,
+            on_close=lambda: None,
+        )
+    )
+    assert _name_field(box).v_model == "allocation_1"
+
     # reacton observes the trait -> on_v_model fires -> the form re-renders.
     _name_field(box).v_model = "reserve north"
+    assert _name_field(box).v_model == "reserve north"
+
+    # Now move the suggestion: a saved run named allocation_1 would push a
+    # fresh render's suggestion to allocation_2. Reacton skips re-render on
+    # ==-equal props, so push a genuinely distinct Project object.
+    updated = Project(project_name="p")
+    run = _alloc_run("allocation_1")
+    updated.allocations = {run.storage_key(): run}
+    project.value = updated
+
+    # The typed value must survive the suggestion moving underneath it.
     assert _name_field(box).v_model == "reserve north"
