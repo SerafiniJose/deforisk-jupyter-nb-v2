@@ -145,7 +145,16 @@ def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
         job_id = str(uuid.uuid4())[:8]
         allocation_jobs.set(
             list(allocation_jobs.value)
-            + [{"id": job_id, "name": form.name, "status": "running", "error": None}]
+            + [
+                {
+                    "id": job_id,
+                    "name": form.name,
+                    "status": "running",
+                    "error": None,
+                    # Submission snapshot, kept so a failed row can be re-edited.
+                    "entry": form,
+                }
+            ]
         )
         form_open.set(False)
         spawn_in_context(_run_allocation_job, (job_id, form, p, project, notifications))

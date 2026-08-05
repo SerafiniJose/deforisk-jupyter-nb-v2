@@ -595,9 +595,14 @@ def allocation_rows(project, jobs=None) -> List[dict]:
             {
                 "kind": "job",
                 "key": job.get("id"),
+                "job_id": job.get("id"),
                 "name": job.get("name"),
                 "status": job.get("status"),
                 "error": job.get("error"),
+                # The AllocationForm the job was launched with, so a failed row
+                # can reopen the dialog prefilled. None for jobs launched
+                # before edit-on-failure existed.
+                "entry": job.get("entry"),
             }
         )
     for key, record in (getattr(project, "allocations", None) or {}).items():

@@ -781,3 +781,28 @@ def test_asset_export_target_is_geojson_not_gpkg(tmp_path, monkeypatch):
     assert seen["selectors"] == []  # geometry only: a cutline needs no attributes
     assert len(gdf) == 1
     assert not list(out.glob("*.geojson"))  # the temp export is cleaned up
+
+
+def test_job_rows_carry_their_submission_entry_and_id():
+    """allocation_rows passes the launch entry through so edit can prefill."""
+    entry = _form(name="allocation_1")
+    jobs = [
+        {
+            "id": "j1",
+            "name": "allocation_1",
+            "status": "failed",
+            "error": "boom",
+            "entry": entry,
+        }
+    ]
+    rows = allocation_rows(None, jobs)
+    assert rows[0]["job_id"] == "j1"
+    assert rows[0]["entry"] is entry
+
+
+def test_job_rows_without_an_entry_report_none():
+    """A job launched before this change still renders; it just cannot be edited."""
+    jobs = [{"id": "j1", "name": "allocation_1", "status": "failed", "error": "boom"}]
+    rows = allocation_rows(None, jobs)
+    assert rows[0]["job_id"] == "j1"
+    assert rows[0]["entry"] is None
