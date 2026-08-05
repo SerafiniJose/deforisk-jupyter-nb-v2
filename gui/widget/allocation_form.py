@@ -21,7 +21,9 @@ from gui.scripts.allocation_runner import (
     preview_defrate_source,
     validate_form,
 )
+from gui.scripts.artifact_names import suggest_name
 from gui.tile.evaluation_helpers import map_items
+from gui.widget.artifact_name_field import use_artifact_name
 from gui.widget.borders_picker import BordersPicker
 from gui.widget.creation_dialog import CreationDialog
 from gui.widget.details_fields import ro_field
@@ -88,7 +90,9 @@ def DefrateResolutionHint(project_value, pred_key, override):
 
 
 @solara.component
-def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None):
+def AllocationFormDialog(
+    open_, project, on_launch, on_close, sepal_client=None, running_names=frozenset()
+):
     """Collect the allocation inputs; hand a validated AllocationForm to on_launch.
 
     Args:
@@ -97,10 +101,22 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         on_launch: callback(AllocationForm) — start the run.
         on_close: callback() — the tile closes the dialog.
         sepal_client: passed through to the file pickers.
+        running_names: frozenset — names of in-flight allocation jobs. Taken
+            for the name suggestion only: run keys carry a run id, so a
+            duplicate name never replaces anything.
     """
     p = project.value
 
-    name, set_name = solara.use_state("")
+    # Suggested-until-edited, like every other creation form. Saved runs and
+    # in-flight jobs both hold a name; a run's storage key appends a run id, so
+    # this counter is cosmetic — it only keeps two launches from reading alike.
+    taken = {
+        record.name for record in (getattr(p, "allocations", None) or {}).values()
+    } | set(running_names)
+    name_value, on_name_input, reset_name = use_artifact_name(
+        suggest_name("allocation", taken)
+    )
+
     pred_key, set_pred_key = solara.use_state(None)
     defrate_mode, set_defrate_mode = solara.use_state(_DEFRATE_AUTO)
     defrate_override, set_defrate_override = solara.use_state("")
@@ -114,7 +130,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
 
     def build_form():
         return AllocationForm(
-            name=name,
+            name=(name_value or "").strip(),
             prediction_key=pred_key,
             user_defrate_path=(
                 str(defrate_override) if custom_table and defrate_override else None
@@ -136,7 +152,7 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
         on_launch(build_form())
 
     def reset():
-        set_name("")
+        reset_name()
         set_pred_key(None)
         set_defrate_mode(_DEFRATE_AUTO)
         set_defrate_override("")
@@ -163,8 +179,8 @@ def AllocationFormDialog(open_, project, on_launch, on_close, sepal_client=None)
     ):
         rv.TextField(
             label=t("toolbox.allocation.field_name"),
-            v_model=name,
-            on_v_model=set_name,
+            v_model=name_value,
+            on_v_model=on_name_input,
             dense=True,
             outlined=True,
         )

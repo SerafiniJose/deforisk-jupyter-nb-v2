@@ -753,3 +753,75 @@ def test_list_without_on_open_has_no_clickable_rows(monkeypatch):
     captured = _capture_product_table(monkeypatch)
     reacton.render(AllocationList(rows=[_record_row()], on_delete=lambda key: None))
     assert captured["rows"][0].get("on_click") is None
+
+
+# --- suggested run name -------------------------------------------------
+
+
+def _alloc_run(name, run_id="abc12345"):
+    """A minimal saved AllocationRun, mirroring tests/test_allocation_record.py."""
+    from spatialrisk.allocations import AllocationRun
+
+    return AllocationRun(
+        name=name,
+        run_id=run_id,
+        created_at="2026-08-05T10:00:00",
+        prediction_key="icar_run1",
+        prediction_snapshot={"model_key": "icar", "dataset_name": "forecast"},
+        borders_file="/data/borders.gpkg",
+        defor_juris_ha=20000.0,
+        years_forecast=4,
+        annual_ha=312.4,
+        total_ha=1249.6,
+        out_dir=f"/data/p/allocation/{name}_{run_id}",
+        csv_path=f"/data/p/allocation/{name}_{run_id}/defor_project.csv",
+    )
+
+
+def _render_form(project=None, running_names=frozenset()):
+    return reacton.render(
+        AllocationFormDialog(
+            open_=solara.reactive(True),
+            project=solara.reactive(project or Project(project_name="p")),
+            on_launch=lambda form: None,
+            on_close=lambda: None,
+            running_names=running_names,
+        )
+    )
+
+
+def _name_field(box):
+    """The dialog's Run name TextField."""
+    label = t("toolbox.allocation.field_name")
+    fields = [f for f in _find(box, vw.TextField) if f.label == label]
+    assert fields, "the Run name field did not render"
+    return fields[0]
+
+
+def test_form_suggests_the_first_free_run_name():
+    """A fresh project opens the form on allocation_1."""
+    box, _rc = _render_form()
+    assert _name_field(box).v_model == "allocation_1"
+
+
+def test_form_skips_a_saved_run_name():
+    """A saved run named allocation_1 pushes the suggestion to allocation_2."""
+    project = Project(project_name="p")
+    run = _alloc_run("allocation_1")
+    project.allocations = {run.storage_key(): run}
+    box, _rc = _render_form(project=project)
+    assert _name_field(box).v_model == "allocation_2"
+
+
+def test_form_skips_an_in_flight_run_name():
+    """A running job holds its name too — two quick launches never share one."""
+    box, _rc = _render_form(running_names=frozenset({"allocation_1"}))
+    assert _name_field(box).v_model == "allocation_2"
+
+
+def test_typing_overrides_the_suggested_run_name():
+    """Once the user edits the field, the suggestion stops tracking."""
+    box, _rc = _render_form()
+    # reacton observes the trait -> on_v_model fires -> the form re-renders.
+    _name_field(box).v_model = "reserve north"
+    assert _name_field(box).v_model == "reserve north"
