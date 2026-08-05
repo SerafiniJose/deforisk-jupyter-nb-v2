@@ -589,8 +589,19 @@ def _run_source(record) -> Optional[str]:
 
 def allocation_rows(project, jobs=None) -> List[dict]:
     """Rows for the allocation list: in-flight jobs first, then saved runs."""
+    saved = (getattr(project, "allocations", None) or {}) if project is not None else {}
+
     rows: List[dict] = []
     for job in jobs or []:
+        # A finished job is superseded by its own record row — otherwise the run
+        # renders twice, once as a stale "completed" job with no figures. The
+        # key is only checked once it is actually in the registry: the worker
+        # flips the status before the project reactive republishes, and a job
+        # dropped during that window would blink out of the list entirely.
+        if job.get("status") == "completed":
+            record_key = job.get("record_key")
+            if record_key and record_key in saved:
+                continue
         rows.append(
             {
                 "kind": "job",
@@ -605,7 +616,7 @@ def allocation_rows(project, jobs=None) -> List[dict]:
                 "entry": job.get("entry"),
             }
         )
-    for key, record in (getattr(project, "allocations", None) or {}).items():
+    for key, record in saved.items():
         rows.append(
             {
                 "kind": "record",

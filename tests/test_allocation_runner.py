@@ -246,6 +246,50 @@ def test_allocation_rows_merge_records_and_jobs(tmp_path, monkeypatch):
     assert rows[1]["key"] == "reserve_abc123"
 
 
+def test_completed_job_row_is_superseded_by_its_saved_record(tmp_path, monkeypatch):
+    """A finished job stops rendering once its record is registered.
+
+    Without the skip the run shows up twice: a stale "completed" job row with
+    no figures, and the real record row right under it.
+    """
+    project = _project(monkeypatch, tmp_path, "alloc_supersede")
+    project.allocations["reserve_abc123"] = _record("/o")
+    jobs = [
+        {
+            "id": "j1",
+            "name": "reserve",
+            "status": "completed",
+            "record_key": "reserve_abc123",
+        }
+    ]
+
+    rows = allocation_rows(project, jobs)
+
+    assert [r["kind"] for r in rows] == ["record"]
+
+
+def test_completed_job_row_survives_until_its_record_lands(tmp_path, monkeypatch):
+    """The window between 'completed' and the registry publish still shows a row.
+
+    The worker stamps the key and flips the status before the project reactive
+    republishes, so a completed job whose record is not in the registry yet
+    must keep its row rather than vanishing from the list.
+    """
+    project = _project(monkeypatch, tmp_path, "alloc_window")
+    jobs = [
+        {
+            "id": "j1",
+            "name": "reserve",
+            "status": "completed",
+            "record_key": "reserve_abc123",
+        }
+    ]
+
+    rows = allocation_rows(project, jobs)
+
+    assert [r["kind"] for r in rows] == ["job"]
+
+
 def test_delete_allocation_run_removes_record_and_folder(tmp_path, monkeypatch):
     """Deleting drops the registry entry and the run's output folder."""
     project = _project(monkeypatch, tmp_path, "alloc_del")

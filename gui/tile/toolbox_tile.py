@@ -113,6 +113,10 @@ def _run_allocation_job(job_id, form, project, project_reactive=None, notifier=N
             status="completed",
             annual_ha=record.annual_ha,
             total_ha=record.total_ha,
+            # Lets allocation_rows drop this job row once the record it points
+            # at is in the registry, so the run stops rendering twice. Mirrors
+            # train_tile's model_storage_key stamp.
+            record_key=record.storage_key(),
         )
         logger.info(
             "Allocation completed: '%s' — %.1f ha/yr", form.name, record.annual_ha
