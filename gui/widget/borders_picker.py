@@ -112,6 +112,12 @@ def BordersPicker(value, on_value, sepal_client=None):
                 method=method,
                 gee=False,
                 value=(value.admin_code if value else None),
+                # Restore seed for a prefilled selection. pysepal treats
+                # `value` as output-only and snapshots `initial` once at mount,
+                # so a code seeded into an already-mounted selector is ignored —
+                # the allocation form remounts this picker (keyed on the
+                # prefill) to make the seed land.
+                initial=(value.admin_code if value else None),
                 on_value=lambda code: on_value(
                     BordersSelection(method=method, admin_code=code)
                 ),

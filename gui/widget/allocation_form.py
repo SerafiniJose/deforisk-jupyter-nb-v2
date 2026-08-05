@@ -91,7 +91,13 @@ def DefrateResolutionHint(project_value, pred_key, override):
 
 @solara.component
 def AllocationFormDialog(
-    open_, project, on_launch, on_close, sepal_client=None, running_names=frozenset()
+    open_,
+    project,
+    on_launch,
+    on_close,
+    sepal_client=None,
+    running_names=frozenset(),
+    prefill=None,
 ):
     """Collect the allocation inputs; hand a validated AllocationForm to on_launch.
 
@@ -106,6 +112,10 @@ def AllocationFormDialog(
             status; a failed job still holds its name — see
             gui/tile/toolbox_tile.py). Taken for the name suggestion only: run
             keys carry a run id, so a duplicate name never replaces anything.
+        prefill: optional solara.Reactive holding the AllocationForm a failed
+            job was launched with (or None). While the dialog is open with a
+            non-empty prefill, every field is seeded from it — this is how the
+            list's edit action reopens a failed run.
     """
     p = project.value
 
@@ -127,6 +137,45 @@ def AllocationFormDialog(
     juris_ha, set_juris_ha = solara.use_state("")
     years, set_years = solara.use_state("4")
     density, set_density = solara.use_state(False)
+
+    # Bumped on every seed so the borders picker remounts: AdminLevelSelector
+    # only snapshots its `initial` restore seed at mount, so an admin code
+    # pushed into an already-mounted picker would be silently ignored.
+    borders_seed, set_borders_seed = solara.use_state(0)
+
+    def seed_from_prefill():
+        """Seed every field from the prefill entry each time the dialog opens.
+
+        Keyed on the open flag as well as the entry so re-editing the same
+        failed job after a cancel (same entry, fields reset on close) seeds
+        again. A fresh open with the prefill cleared is a no-op.
+        """
+        entry = prefill.value if prefill is not None else None
+        if not open_.value or entry is None:
+            return
+        # on_name_input, not a raw setter: it marks the field dirty, so the
+        # retry keeps its name instead of jumping to the next allocation_<n>.
+        on_name_input(entry.name or "")
+        set_pred_key(entry.prediction_key)
+        if entry.user_defrate_path:
+            set_defrate_mode(_DEFRATE_CUSTOM)
+            set_defrate_override(entry.user_defrate_path)
+        else:
+            set_defrate_mode(_DEFRATE_AUTO)
+            set_defrate_override("")
+        set_borders(entry.borders)
+        set_mask(entry.mask_file or "")
+        set_juris_ha(
+            "" if entry.defor_juris_ha is None else f"{entry.defor_juris_ha:g}"
+        )
+        set_years("" if entry.years_forecast is None else f"{entry.years_forecast:g}")
+        set_density(bool(entry.density_map))
+        set_borders_seed(borders_seed + 1)
+
+    solara.use_effect(
+        seed_from_prefill,
+        [open_.value, prefill.value if prefill is not None else None],
+    )
 
     custom_table = defrate_mode == _DEFRATE_CUSTOM
 
@@ -247,11 +296,12 @@ def AllocationFormDialog(
                 override=defrate_override if custom_table else "",
             )
 
-        BordersPicker(
-            value=borders,
-            on_value=set_borders,
-            sepal_client=sepal_client,
-        )
+        with solara.Div().key(f"borders-{borders_seed}"):
+            BordersPicker(
+                value=borders,
+                on_value=set_borders,
+                sepal_client=sepal_client,
+            )
 
         # The mask is one of the project's processed rasters (Hansen forest &
         # co.), not a free file: everything the risk map was built from is

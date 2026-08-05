@@ -8,6 +8,7 @@ and the allocation form can seed itself from that entry.
 
 import ipyvuetify as vw
 import reacton
+import solara
 
 from gui.i18n import t
 
@@ -115,3 +116,102 @@ def test_failed_row_dismiss_hands_back_the_job_id():
     box = _render_list([_job_row()], on_dismiss=dismissed.append)
     _icon_button(box, "mdi-close").fire_event("click", {})
     assert dismissed == ["j1"]
+
+
+# --- the form seeds itself from a prefill entry -------------------------------
+
+import types  # noqa: E402
+
+from gui.widget.allocation_form import AllocationFormDialog  # noqa: E402
+from gui.widget.borders_picker import BordersPicker  # noqa: E402
+
+
+def _text_field(box, label):
+    return next((f for f in _find(box, vw.TextField) if f.label == label), None)
+
+
+def _select(box, label):
+    return next((s for s in _find(box, vw.Select) if s.label == label), None)
+
+
+def _prefill_project():
+    """A project exposing one prediction, enough for the risk-map select."""
+    pred = types.SimpleNamespace(
+        model_key="icar", dataset_name="calibration", window=None, path="/tmp/p.tif"
+    )
+    return types.SimpleNamespace(
+        predictions={"icar_run": pred},
+        processed_variables={},
+        allocations={},
+    )
+
+
+def _render_form(entry):
+    box, _rc = reacton.render(
+        AllocationFormDialog(
+            open_=solara.reactive(True),
+            project=solara.reactive(_prefill_project()),
+            on_launch=lambda form: None,
+            on_close=lambda: None,
+            prefill=solara.reactive(entry),
+        )
+    )
+    return box
+
+
+def test_form_seeds_every_scalar_field_from_the_prefill():
+    """Name, risk map, hectares, years and the density flag all come back."""
+    box = _render_form(_entry(defor_juris_ha=1234.0, years_forecast=7.0))
+    assert (
+        _text_field(box, t("toolbox.allocation.field_name")).v_model == "allocation_1"
+    )
+    assert _select(box, t("toolbox.allocation.field_riskmap")).v_model == "icar_run"
+    assert _text_field(box, t("toolbox.allocation.field_juris_ha")).v_model == "1234"
+    assert _text_field(box, t("toolbox.allocation.field_years")).v_model == "7"
+
+
+def test_form_seeds_a_custom_rate_table_as_custom_mode():
+    """A run submitted with its own table reopens in custom mode, path shown."""
+    box = _render_form(_entry(user_defrate_path="/data/rates.csv"))
+    assert _select(box, t("toolbox.allocation.field_defrate")).v_model == "custom"
+
+
+def test_form_without_a_prefill_keeps_its_defaults():
+    """No prefill: the form opens as a fresh New-allocation dialog."""
+    box = _render_form(None)
+    assert (
+        _text_field(box, t("toolbox.allocation.field_name")).v_model == "allocation_1"
+    )
+    assert _select(box, t("toolbox.allocation.field_riskmap")).v_model is None
+    assert _text_field(box, t("toolbox.allocation.field_years")).v_model == "4"
+
+
+def test_borders_picker_passes_an_admin_restore_seed(monkeypatch):
+    """AdminLevelSelector takes its restore seed from `initial`, not `value`.
+
+    pysepal documents `value` as output-only and snapshots `initial` once at
+    mount, so this prop is the only way a prefilled admin code can come back.
+    A stub stands in for the real selector: the genuine one drives an async
+    pygaul/WFS cascade that a browserless render cannot resolve.
+    """
+    import gui.widget.borders_picker as borders_picker_module
+
+    seen = {}
+
+    @solara.component
+    def FakeSelector(method, gee=True, value=None, on_value=None, initial=None):
+        seen["method"] = method
+        seen["value"] = value
+        seen["initial"] = initial
+        solara.Text("stub")
+
+    monkeypatch.setattr(borders_picker_module, "AdminLevelSelector", FakeSelector)
+
+    reacton.render(
+        BordersPicker(
+            value=BordersSelection(method="ADMIN1", admin_code="1234"),
+            on_value=lambda sel: None,
+        )
+    )
+    assert seen["method"] == "ADMIN1"
+    assert seen["initial"] == "1234"
