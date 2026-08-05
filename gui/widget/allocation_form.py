@@ -40,6 +40,12 @@ _HINT = MUTED + "font-size:0.75rem;"
 _DEFRATE_AUTO = "auto"
 _DEFRATE_CUSTOM = "custom"
 
+# Density-raster extents; "none" is the select's concrete stand-in for
+# "no raster" (rv.Select wants a real v_model value, build_form maps it back).
+_DENSITY_NONE = "none"
+_DENSITY_PROJECT = "project"
+_DENSITY_AOI = "aoi"
+
 
 def _as_float(text):
     """Parse a numeric field, or None when blank or not a number."""
@@ -136,7 +142,7 @@ def AllocationFormDialog(
     mask, set_mask = solara.use_state("")
     juris_ha, set_juris_ha = solara.use_state("")
     years, set_years = solara.use_state("4")
-    density, set_density = solara.use_state(False)
+    density_extent, set_density_extent = solara.use_state(_DENSITY_NONE)
 
     # Bumped on every seed so the borders picker remounts: AdminLevelSelector
     # only snapshots its `initial` restore seed at mount, so an admin code
@@ -171,7 +177,12 @@ def AllocationFormDialog(
         set_years(
             "" if entry.years_forecast is None else f"{entry.years_forecast:.12g}"
         )
-        set_density(bool(entry.density_map))
+        # Entries from before the extent existed carry a density_map bool.
+        legacy_density = getattr(entry, "density_map", False)
+        set_density_extent(
+            getattr(entry, "density_extent", None)
+            or (_DENSITY_AOI if legacy_density else _DENSITY_NONE)
+        )
         set_borders_seed(borders_seed + 1)
 
     solara.use_effect(
@@ -192,7 +203,9 @@ def AllocationFormDialog(
             mask_file=str(mask) if mask else None,
             defor_juris_ha=_as_float(juris_ha),
             years_forecast=_as_float(years),
-            density_map=density,
+            density_extent=(
+                None if density_extent == _DENSITY_NONE else density_extent
+            ),
         )
 
     def validate():
@@ -213,7 +226,7 @@ def AllocationFormDialog(
         set_mask("")
         set_juris_ha("")
         set_years("4")
-        set_density(False)
+        set_density_extent(_DENSITY_NONE)
         on_close()
 
     items = map_items(p) if p is not None else []
@@ -358,14 +371,29 @@ def AllocationFormDialog(
                 style_="flex:1;",
             )
 
-        rv.Checkbox(
+        rv.Select(
             label=t("toolbox.allocation.field_density"),
-            v_model=density,
-            on_v_model=set_density,
+            items=[
+                {
+                    "text": t("toolbox.allocation.density_option_none"),
+                    "value": _DENSITY_NONE,
+                },
+                {
+                    "text": t("toolbox.allocation.density_option_project"),
+                    "value": _DENSITY_PROJECT,
+                },
+                {
+                    "text": t("toolbox.allocation.density_option_aoi"),
+                    "value": _DENSITY_AOI,
+                },
+            ],
+            item_text="text",
+            item_value="value",
+            v_model=density_extent,
+            on_v_model=lambda v: set_density_extent(v or _DENSITY_NONE),
             dense=True,
+            outlined=True,
         )
-        if density:
-            solara.Warning(t("toolbox.allocation.density_warning"), dense=True)
 
 
 # --- read-only run details (ModelDetailsDialog / SampleDetailsDialog pattern) --

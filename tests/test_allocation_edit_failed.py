@@ -49,7 +49,7 @@ def _entry(**kw):
         mask_file=None,
         defor_juris_ha=20000.0,
         years_forecast=4.0,
-        density_map=False,
+        density_extent=None,
     )
     base.update(kw)
     return AllocationForm(**base)
@@ -138,10 +138,6 @@ def _select(box, label):
     return next((s for s in _find(box, vw.Select) if s.label == label), None)
 
 
-def _checkbox(box, label):
-    return next((c for c in _find(box, vw.Checkbox) if c.label == label), None)
-
-
 def _file_input(box, label):
     return next((f for f in _find(box, FileInput) if f.label == label), None)
 
@@ -196,7 +192,7 @@ def test_form_seeds_every_scalar_field_from_the_prefill():
             defor_juris_ha=1234.0,
             years_forecast=7.0,
             mask_file="/tmp/mask.tif",
-            density_map=True,
+            density_extent="aoi",
         )
     )
     assert _text_field(box, t("toolbox.allocation.field_name")).v_model == "retry_me"
@@ -210,7 +206,7 @@ def test_form_seeds_every_scalar_field_from_the_prefill():
         _file_input(box, t("toolbox.allocation.field_borders_file")).v_model
         == "/data/borders.gpkg"
     )
-    assert _checkbox(box, t("toolbox.allocation.field_density")).v_model is True
+    assert _select(box, t("toolbox.allocation.field_density")).v_model == "aoi"
 
 
 def test_form_seeds_a_large_hectare_value_without_truncation():
@@ -234,6 +230,17 @@ def test_form_seeds_a_custom_rate_table_as_custom_mode():
         _file_input(box, t("toolbox.allocation.field_defrate_override")).v_model
         == "/data/rates.csv"
     )
+
+
+def test_form_maps_a_legacy_density_bool_to_whole_aoi():
+    """A pre-rename entry carrying density_map=True seeds the AOI extent."""
+    entry = _entry()
+    # Simulate an old in-flight entry: the attribute no longer exists on the
+    # dataclass, so it is bolted on the instance the way a stale object would
+    # still carry it.
+    entry.density_map = True
+    box = _render_form(entry)
+    assert _select(box, t("toolbox.allocation.field_density")).v_model == "aoi"
 
 
 def test_form_without_a_prefill_keeps_its_defaults():
