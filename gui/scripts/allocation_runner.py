@@ -245,7 +245,8 @@ class AllocationForm:
     mask_file: Optional[str]
     defor_juris_ha: float
     years_forecast: float
-    density_map: bool = False
+    #: None (no raster) | "project" (cropped extent) | "aoi" (whole risk map).
+    density_extent: Optional[str] = None
 
 
 def _allocate(**kwargs):
@@ -534,7 +535,7 @@ def run_allocation(
         project_borders=str(borders_path),
         out_dir=out_dir,
         forest_mask_file=form.mask_file,
-        defor_density_map=form.density_map,
+        defor_density_map=form.density_extent,
     )
 
     record = AllocationRun(
@@ -559,6 +560,7 @@ def run_allocation(
         total_ha=result.total_ha,
         out_dir=str(result.out_dir),
         csv_path=str(result.csv_path),
+        density_extent=form.density_extent,
         density_map_path=(
             str(result.density_map_path) if result.density_map_path else None
         ),

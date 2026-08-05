@@ -119,3 +119,19 @@ def test_borders_source_defaults_for_runs_saved_before_it_existed():
     payload.pop("borders_source")
 
     assert AllocationRun(**payload).borders_source == {}
+
+
+def test_record_without_density_extent_loads_with_none():
+    """Runs saved before the extent option existed still load (no migration)."""
+    record = AllocationRun(
+        name="old",
+        run_id="abc123",
+        borders_file="/b.gpkg",
+        defor_juris_ha=1.0,
+        years_forecast=4,
+        annual_ha=2.0,
+        total_ha=8.0,
+        out_dir="/o",
+        csv_path="/c.csv",
+    )
+    assert record.density_extent is None

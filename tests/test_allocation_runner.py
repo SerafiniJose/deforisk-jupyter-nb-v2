@@ -27,7 +27,7 @@ def _form(**kw):
         mask_file=None,
         defor_juris_ha=20000.0,
         years_forecast=4,
-        density_map=False,
+        density_extent=None,
     )
     base.update(kw)
     return AllocationForm(**base)
@@ -850,3 +850,51 @@ def test_job_rows_without_an_entry_report_none():
     rows = allocation_rows(None, jobs)
     assert rows[0]["job_id"] == "j1"
     assert rows[0]["entry"] is None
+
+
+def test_run_allocation_passes_the_density_extent_to_the_core(tmp_path, monkeypatch):
+    """The form's extent reaches the core call and lands on the record."""
+    import gui.scripts.allocation_runner as runner
+    from spatialrisk.allocation import AllocationResult
+    from spatialrisk.predictions.prediction import Prediction
+
+    project = _project(monkeypatch, tmp_path, "alloc_density")
+    project.predictions["icar_run"] = Prediction(
+        path=tmp_path / "prob.tif",
+        model_key="icar",
+        dataset_name="forecast",
+    )
+    monkeypatch.setattr(
+        runner,
+        "resolve_defrate_table",
+        lambda *a, **k: runner.DefrateSource(
+            path=tmp_path / "r.csv", provenance="computed"
+        ),
+    )
+    seen = {}
+
+    def fake_allocate(**kwargs):
+        seen.update(kwargs)
+        out = Path(kwargs["out_dir"])
+        out.mkdir(parents=True, exist_ok=True)
+        return AllocationResult(
+            annual_ha=1.0,
+            total_ha=4.0,
+            out_dir=out,
+            csv_path=out / "defor_project.csv",
+            defrate_path=out / "defrate.csv",
+            cropped_riskmap_path=out / "project_riskmap.tif",
+            density_map_path=out / "deforestation_density_map.tif",
+        )
+
+    monkeypatch.setattr(runner, "_allocate", fake_allocate)
+    monkeypatch.setattr(
+        runner,
+        "resolve_borders_file",
+        lambda selection, out_dir: Path(out_dir) / "b.gpkg",
+    )
+
+    record = run_allocation(project, _form(density_extent="project"), job_id="j1")
+
+    assert seen["defor_density_map"] == "project"
+    assert record.density_extent == "project"

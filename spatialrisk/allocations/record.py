@@ -39,6 +39,9 @@ class AllocationRun(BaseModel):
     #: the borders picker existed still load.
     borders_source: Dict[str, Any] = Field(default_factory=dict)
     mask_file: Optional[str] = None
+    #: Density-raster extent the run was launched with: None | "project" |
+    #: "aoi". Defaulted, so runs saved before the option existed still load.
+    density_extent: Optional[str] = None
     defor_juris_ha: float
     years_forecast: float
 
