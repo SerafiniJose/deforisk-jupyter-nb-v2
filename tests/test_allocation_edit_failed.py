@@ -276,3 +276,74 @@ def test_borders_picker_passes_an_admin_restore_seed(monkeypatch):
     )
     assert seen["method"] == "ADMIN1"
     assert seen["initial"] == "1234"
+
+
+# --- tile wiring --------------------------------------------------------------
+
+
+def _failed_job(job_id="j1", name="allocation_1"):
+    return {
+        "id": job_id,
+        "name": name,
+        "status": "failed",
+        "error": "boom",
+        "entry": _entry(name=name),
+    }
+
+
+def _render_tile(jobs):
+    """Render ToolboxTile with `jobs` in the module-level reactive.
+
+    Returns (box, restore) — call restore() to put the reactive back, or the
+    jobs leak into every later test in the session.
+    """
+    from gui.tile import toolbox_tile
+    from spatialrisk.project import Project
+
+    previous = toolbox_tile.allocation_jobs.value
+    toolbox_tile.allocation_jobs.set(jobs)
+    box, _rc = reacton.render(
+        toolbox_tile.ToolboxTile(project=solara.reactive(Project(project_name="p")))
+    )
+    return box, lambda: toolbox_tile.allocation_jobs.set(previous)
+
+
+def test_dismiss_removes_the_job_row():
+    """The ✕ drops the job from the tile's job list."""
+    from gui.tile import toolbox_tile
+
+    box, restore = _render_tile([_failed_job()])
+    try:
+        _icon_button(box, "mdi-close").fire_event("click", {})
+        assert toolbox_tile.allocation_jobs.value == []
+    finally:
+        restore()
+
+
+def test_dismiss_leaves_saved_runs_alone():
+    """Dismiss is job-list only: it never touches project.allocations."""
+    from gui.tile import toolbox_tile
+    from spatialrisk.project import Project
+
+    project = Project(project_name="p")
+    previous = toolbox_tile.allocation_jobs.value
+    toolbox_tile.allocation_jobs.set([_failed_job()])
+    try:
+        box, _rc = reacton.render(
+            toolbox_tile.ToolboxTile(project=solara.reactive(project))
+        )
+        _icon_button(box, "mdi-close").fire_event("click", {})
+        assert project.allocations == {}
+    finally:
+        toolbox_tile.allocation_jobs.set(previous)
+
+
+def test_edit_opens_the_form_seeded_with_the_failed_run():
+    """The pencil reopens the dialog carrying the failed job's own name."""
+    box, restore = _render_tile([_failed_job(name="reserve_north")])
+    try:
+        _icon_button(box, "mdi-pencil-outline").fire_event("click", {})
+        field = _text_field(box, t("toolbox.allocation.field_name"))
+        assert field.v_model == "reserve_north"
+    finally:
+        restore()

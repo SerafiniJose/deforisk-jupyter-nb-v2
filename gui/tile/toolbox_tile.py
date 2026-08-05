@@ -137,6 +137,11 @@ def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
     p = project.value
 
     form_open = solara.use_reactive(False)
+    # Failed-job editing: the pencil reopens the form seeded with the job's
+    # submission; submitting launches a fresh run and drops the old failed row
+    # so the rerun replaces it instead of piling up next to it.
+    prefill = solara.use_reactive(None)
+    editing_job_id = solara.use_ref(None)
     pending_delete, set_pending_delete = solara.use_state(None)
     selected_tool, set_selected_tool = solara.use_state(_TOOLS[0]["key"])
     selected_run_key, set_selected_run_key = solara.use_state(None)
@@ -159,6 +164,27 @@ def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
         form_open.set(False)
         spawn_in_context(_run_allocation_job, (job_id, form, p, project, notifications))
         logger.info("Allocation started: '%s' (job=%s)", form.name, job_id)
+        # The rerun replaces the failed row it was launched from. Runs after
+        # the new job is in the list, so the filter sees both.
+        if editing_job_id.current is not None:
+            on_dismiss(editing_job_id.current)
+            editing_job_id.current = None
+            prefill.set(None)
+
+    def on_dismiss(job_id):
+        # Job rows only — never touches the allocation registry.
+        allocation_jobs.set([j for j in allocation_jobs.value if j["id"] != job_id])
+
+    def on_edit(row):
+        editing_job_id.current = row["job_id"]
+        prefill.set(row["entry"])
+        form_open.set(True)
+
+    def open_new_form():
+        # A New immediately after an Edit must not inherit the seed.
+        editing_job_id.current = None
+        prefill.set(None)
+        form_open.set(True)
 
     def confirm_delete():
         key = pending_delete
@@ -243,12 +269,14 @@ def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
                     on_open=set_selected_run_key,
                     on_toggle_density=toggle_density if map_ is not None else None,
                     density_on_map=density_on_map.value,
+                    on_edit=on_edit,
+                    on_dismiss=on_dismiss,
                 )
                 solara.Button(
                     t("toolbox.allocation.new"),
                     icon_name="mdi-plus",
                     block=True,
-                    on_click=lambda: form_open.set(True),
+                    on_click=open_new_form,
                 )
 
         ConfirmDialog(
@@ -269,6 +297,7 @@ def ToolboxTile(project, map_=None, sepal_client=None, legend_port=None):
             running_names=frozenset(
                 job["name"] for job in allocation_jobs.value if job.get("name")
             ),
+            prefill=prefill,
         )
         AllocationDetailsDialog(
             project=project,
