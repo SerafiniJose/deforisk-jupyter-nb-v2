@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from spatialrisk.gdal_env import scratch_dir
+
 logger = logging.getLogger("spatial_risk")
 
 
@@ -18,8 +20,9 @@ def tippecanoe_available() -> bool:
     return shutil.which("tippecanoe") is not None
 
 
-def gpkg_to_pmtiles(gpkg_path, out_path, *, layer="points",
-                    min_zoom=0, max_zoom=14) -> Path:
+def gpkg_to_pmtiles(
+    gpkg_path, out_path, *, layer="points", min_zoom=0, max_zoom=14
+) -> Path:
     """Convert ``gpkg_path`` to a ``.pmtiles`` archive at ``out_path``.
 
     ``layer`` is the tippecanoe layer name (the MapLibre ``source-layer``).
@@ -40,13 +43,25 @@ def gpkg_to_pmtiles(gpkg_path, out_path, *, layer="points",
         gdf = gdf.to_crs(epsg=4326)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as td:
+    # Pinned: tempfile's candidate list ends with the CWD, which on SEPAL is the
+    # read-only module mount, so an unavailable system temp dir would fail here.
+    with tempfile.TemporaryDirectory(dir=scratch_dir()) as td:
         geojson = Path(td) / "points.geojson"
         gdf.to_file(geojson, driver="GeoJSON")
         cmd = [
-            "tippecanoe", "-o", str(out_path), "-l", layer,
-            "-Z", str(min_zoom), "-z", str(max_zoom),
-            "-r1", "--drop-densest-as-needed", "--force", str(geojson),
+            "tippecanoe",
+            "-o",
+            str(out_path),
+            "-l",
+            layer,
+            "-Z",
+            str(min_zoom),
+            "-z",
+            str(max_zoom),
+            "-r1",
+            "--drop-densest-as-needed",
+            "--force",
+            str(geojson),
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     logger.info("PMTiles written: %s", out_path)

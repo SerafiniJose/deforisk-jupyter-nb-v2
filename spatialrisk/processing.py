@@ -5,6 +5,7 @@ import rasterio
 import rioxarray
 import xarray as xr
 
+from spatialrisk.gdal_env import configure_gdal_tmpdir
 from spatialrisk.variables.models import RasterType
 
 if TYPE_CHECKING:
@@ -199,6 +200,11 @@ def distance_to_edge_gdal_no_mask(
     """Computes the shortest distance to given pixel values in a raster,
     while preserving the original nodata mask in the output."""
 
+    # ComputeProximity() needs a writable scratch dir for its Float32 working
+    # band (the destination is UInt32). Cheap and idempotent, so re-assert it
+    # here in case this helper is used without the app's import-time setup.
+    configure_gdal_tmpdir()
+
     # Read input file
     src_ds = gdal.Open(input_file)
     srcband = src_ds.GetRasterBand(1)
@@ -359,16 +365,16 @@ def generate_deforestation_raster(
         output_raster = np.zeros_like(raster1, dtype=np.uint8)
 
         # Set the values based on deforestation periods
-        output_raster[(raster1 == 1) & (raster2 == 0)] = (
-            1  # Deforestation in period 1-2
-        )
-        output_raster[(raster2 == 1) & (raster3 == 0)] = (
-            2  # Deforestation in period 2-3
-        )
+        output_raster[
+            (raster1 == 1) & (raster2 == 0)
+        ] = 1  # Deforestation in period 1-2
+        output_raster[
+            (raster2 == 1) & (raster3 == 0)
+        ] = 2  # Deforestation in period 2-3
         # Set the remaining forest value only where no deforestation has been marked
-        output_raster[(output_raster == 0) & (raster3 == 1)] = (
-            3  # Remaining forest in period 3
-        )
+        output_raster[
+            (output_raster == 0) & (raster3 == 1)
+        ] = 3  # Remaining forest in period 3
 
     # Define the metadata for the output raster
     meta = src1.meta

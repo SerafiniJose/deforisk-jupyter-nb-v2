@@ -56,6 +56,13 @@ else
   echo "Note: no .env file found in $SCRIPT_DIR, skipping env load."
 fi
 
+# GDAL writes its temp files to the CWD when CPL_TMPDIR/TMPDIR/TEMP are unset,
+# and on SEPAL the CWD is the read-only shared module mount -- so point it at a
+# writable per-user scratch dir. Set after .env so an operator value wins; the
+# uid suffix keeps us off another user's directory on a shared /tmp.
+export CPL_TMPDIR="${CPL_TMPDIR:-${TMPDIR:-/tmp}/spatial_risk_gdal_$(id -u)}"
+mkdir -p "$CPL_TMPDIR"
+
 # solara run "$SOLARA_FILE" --port $PORT --no-open
 # solara run "$SOLARA_FILE" --port $PORT --no-open --log-level debug
 solara run "$SOLARA_FILE" --port $PORT --no-open

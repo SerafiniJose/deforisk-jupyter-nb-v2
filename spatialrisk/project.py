@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from box import Box
 from pydantic import BaseModel, ConfigDict, Field
 
+from spatialrisk.gdal_env import configure_gdal_tmpdir
 from spatialrisk.log_utils import log_progress
 
 # Imported for their runtime presence in this module's namespace, not for direct
@@ -37,6 +38,11 @@ def _resolve_data_dir() -> Path:
 
 DATA_DIR: Path = _resolve_data_dir()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Must run before any GDAL algorithm call: GDAL otherwise writes its scratch
+# files to the CWD, which is read-only on SEPAL. Importing any ``spatialrisk.*``
+# submodule runs ``spatialrisk/__init__.py``, which imports this module, so this
+# single call covers voila, solara, notebooks and tests alike.
+configure_gdal_tmpdir()
 # Backward-compatible alias: save()/load()/initialize_folders() read this name.
 downloads_folder = DATA_DIR
 
