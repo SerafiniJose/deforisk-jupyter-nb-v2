@@ -58,4 +58,4 @@ dependencies:
       # localhost page-origin prefix match) — pending upstream PR
       - "jupyter-loopback @ git+https://github.com/SerafiniJose/jupyter-loopback.git@fix/voila-localhost-proxy-probe"
       # PMTiles vector-tile server for sample maps
-      - "pyvectortiles @ git+https://github.com/dfguerrerom/ipy-pmtiles@5c48102761afc2b46e6c432f199a465c730e23f3"
+      - vectortileserver
