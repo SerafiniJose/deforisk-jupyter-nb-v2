@@ -32,3 +32,6 @@ test/
 uv.lock
 .python-version
 gui/logging_config.toml
+
+# graphify knowledge-graph output
+graphify-out/
