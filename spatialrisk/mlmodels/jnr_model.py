@@ -224,8 +224,8 @@ class JNRBenchmarkModel(BaseRiskModel):
             Maximum distance (m) for the bin arange.  Overrides
             ``self.max_dist`` and persists on the model.
         folder : str or Path, optional
-            Root output folder.  Defaults to the project ``rmj_bm`` folder,
-            then the current working directory.
+            Root output folder.  Defaults to the project ``rmj_bm`` folder;
+            raises when the model has no project either.
 
         Returns:
         -------
@@ -271,11 +271,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         deforestation_file = defor_var_obj.path
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
 
-        out_root = (
-            Path(folder)
-            if folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_root = self._resolve_output_folder(folder)
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 

@@ -209,7 +209,8 @@ class ICARModel(BaseRiskModel):
             automatically if absent.
         folder : str or Path, optional
             Folder for saving the model pickle and rho raster. Defaults to
-            the project icar_model folder.
+            the project icar_model folder; raises when the model has no
+            project either.
 
         Returns
         -------
@@ -220,15 +221,9 @@ class ICARModel(BaseRiskModel):
 
         # Auto-save full training CSV if samples_path not already set
         if self.samples_path is None:
-            _folder = (
-                Path(folder)
-                if folder is not None
-                else (self._default_folder() or Path.cwd())
-            )
-            Path(_folder).mkdir(parents=True, exist_ok=True)
-            _csv = (
-                Path(_folder) / f"samples_{self.model_type}_{self.name or 'model'}.csv"
-            )
+            _folder = self._resolve_output_folder(folder)
+            _folder.mkdir(parents=True, exist_ok=True)
+            _csv = _folder / f"samples_{self.model_type}_{self.name or 'model'}.csv"
         else:
             _csv = None
 
@@ -240,8 +235,10 @@ class ICARModel(BaseRiskModel):
                 "Use dataset.extract_at_points() to generate samples."
             )
 
-        # Target raster path — available directly from self.dataset
-        raster_path = str(self.dataset.target.path)
+        # Target raster path — available directly from self.dataset. Absolute:
+        # it is handed straight to forestatrisk (cellneigh, interpolate_rho),
+        # which reopens it by name, so its meaning must not depend on the CWD.
+        raster_path = str(Path(self.dataset.target.path).resolve())
 
         # forestatrisk expects the column to be named "cell" and values must be
         # spatial cell indices matching cellneigh(raster, csize, rank=1).
@@ -300,11 +297,7 @@ class ICARModel(BaseRiskModel):
         )
 
         # Resolve output folder
-        out_dir = (
-            Path(folder)
-            if folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_dir = self._resolve_output_folder(folder)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Save pickle
@@ -321,9 +314,14 @@ class ICARModel(BaseRiskModel):
         self.model_path = pickle_path
         print(f"  iCAR model saved to: {pickle_path}")
 
-        # Interpolate rho to full raster grid
-        print("  Interpolating rho to raster grid...")
-        rho_path = out_dir / f"rho_{base}_{ts}.tif"
+        # Interpolate rho to full raster grid.
+        # The path is made absolute before it crosses into forestatrisk because
+        # interpolate_rho writes a second, unrequested file next to the one we
+        # ask for: rho_orig.tif, placed at
+        # os.path.join(os.path.dirname(output_file), "rho_orig.tif"). A bare
+        # filename makes os.path.dirname() return "", so that sibling is created
+        # in the process CWD instead — the read-only shared mount on SEPAL.
+        rho_path = (out_dir / f"rho_{base}_{ts}.tif").resolve()
         far.interpolate_rho(
             rho=self._ml_model["rho"],
             input_raster=raster_path,
@@ -414,7 +412,11 @@ class ICARModel(BaseRiskModel):
         )
 
         with rasterio.open(output_file, "w", **profile) as dst:
-            blockinfo = far.misc.makeblock(str(active_dataset.target.path))
+            # Absolute for the same reason as in fit(): forestatrisk reopens the
+            # path itself, so it must not be read relative to the process CWD.
+            blockinfo = far.misc.makeblock(
+                str(Path(active_dataset.target.path).resolve())
+            )
             nblock, nblock_x = blockinfo[0], blockinfo[1]
             x_off, y_off, nx, ny = (
                 blockinfo[3],

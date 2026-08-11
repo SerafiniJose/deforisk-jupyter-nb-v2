@@ -194,6 +194,38 @@ class BaseRiskModel(BaseModel):
             return getattr(folders, folder_key)
         return None
 
+    def _resolve_output_folder(
+        self,
+        folder: Optional[Union[str, Path]] = None,
+        param: str = "folder",
+    ) -> Path:
+        """Resolve where this model writes: explicit folder, else project folder.
+
+        This is the rule :meth:`save` has always applied, factored out so every
+        site that writes a model artifact — training CSVs, pickles, rho rasters,
+        rmj outputs — obeys it. With no folder and no project attached it raises
+        rather than guessing.
+
+        The guess it replaces was ``Path.cwd()``. Nothing in the GUI reached it
+        (the tiles always set ``model.project`` and pass a folder), but a script
+        or notebook did, and then artifacts landed in whatever directory the
+        process happened to start in. On SEPAL that directory is the read-only
+        shared module mount, so the guess does not merely misplace the file — it
+        fails with ``Read-only file system``.
+
+        ``param`` names the keyword in the error message, because not every
+        caller spells it ``folder`` (``MWModel.apply`` takes ``output_folder``).
+        """
+        if folder is not None:
+            return Path(folder)
+        default = self._default_folder()
+        if default is None:
+            raise RuntimeError(
+                "Cannot determine output folder: no project is attached. "
+                f"Set model.project first or pass {param}= explicitly."
+            )
+        return Path(default)
+
     # ------------------------------------------------------------------
     # Fit / Apply (implemented in subclasses)
     # ------------------------------------------------------------------
@@ -261,7 +293,8 @@ class BaseRiskModel(BaseModel):
         Parameters
         ----------
         folder : str or Path, optional
-            Target folder. Falls back to the project model folder, then cwd.
+            Target folder. Falls back to the project model folder; raises when
+            neither is available.
 
         Returns:
         --------
@@ -271,18 +304,7 @@ class BaseRiskModel(BaseModel):
         if self._ml_model is None:
             raise RuntimeError("Model has not been trained. Call fit() first.")
 
-        # Resolve output folder
-        if folder is not None:
-            out_dir = Path(folder)
-        else:
-            default = self._default_folder()
-            if default is None:
-                raise RuntimeError(
-                    "Cannot determine output folder: no project is attached. "
-                    "Set model.project first or pass folder= explicitly."
-                )
-            out_dir = default
-
+        out_dir = self._resolve_output_folder(folder)
         out_dir.mkdir(parents=True, exist_ok=True)
         filename = self._pickle_filename()
         out_path = out_dir / filename

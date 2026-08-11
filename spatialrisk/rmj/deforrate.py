@@ -116,7 +116,7 @@ def dist_edge_threshold(
     dist_file: PathLike,
     dist_bins,
     defor_threshold: float = 99.5,
-    tab_file_dist: Optional[PathLike] = "perc_dist.csv",
+    tab_file_dist: Optional[PathLike] = None,
     fig_file_dist: Optional[PathLike] = None,
     figsize=(6.4, 4.8),
     dpi: int = 100,
@@ -141,9 +141,12 @@ def dist_edge_threshold(
     defor_threshold : float
         Cumulative percentage of deforestation defining the threshold (default 99.5).
     tab_file_dist : path or None
-        CSV output with the cumulative distribution. Skipped if ``None``.
+        CSV output with the cumulative distribution. Defaults to ``None``, i.e.
+        no CSV is written. A bare filename default would resolve against the
+        process CWD, which is read-only when the app runs on SEPAL, so callers
+        that want the table must pass an explicit path.
     fig_file_dist : path or None
-        PNG plot output. Skipped if ``None``.
+        PNG plot output. Skipped if ``None`` (the default).
 
     Returns:
     -------
@@ -349,7 +352,7 @@ def defrate_per_cat(
     forest_file: PathLike,
     riskmap_file: PathLike,
     time_interval: float,
-    tab_file_defrate: Optional[PathLike] = "defrate_per_cat.csv",
+    tab_file_defrate: Optional[PathLike] = None,
     blk_rows: int = 128,
     verbose: bool = False,
 ) -> pd.DataFrame:
@@ -369,6 +372,11 @@ def defrate_per_cat(
         Categorical risk/vulnerability raster (UInt16 categories 1..65535).
     time_interval : float
         Period length in years.
+    tab_file_defrate : path or None
+        CSV output. Defaults to ``None``, i.e. no CSV is written and the table
+        is only returned. A bare filename default would resolve against the
+        process CWD, which is read-only when the app runs on SEPAL, so callers
+        that want the file must pass an explicit path.
 
     Returns:
     -------
@@ -442,7 +450,7 @@ def defrate_per_class(
     forest_file: PathLike,
     vulnerability_file: PathLike,
     time_interval: float,
-    tab_file_defrate: Optional[PathLike] = "defrate_per_class.csv",
+    tab_file_defrate: Optional[PathLike] = None,
     deforate_model: Optional[PathLike] = None,
     n_cat_max: int = 30999,
     blk_rows: int = 128,
@@ -474,7 +482,10 @@ def defrate_per_class(
     time_interval : float
         Period length in years.
     tab_file_defrate : path or None
-        CSV output. Skipped if ``None``.
+        CSV output. Defaults to ``None``, i.e. no CSV is written and the table
+        is only returned. A bare filename default would resolve against the
+        process CWD, which is read-only when the app runs on SEPAL, so callers
+        that want the file must pass an explicit path.
     deforate_model : path or None
         CSV with rates from the model period (calibration / historical). When
         given, observed rates are used only for the quantity-adjustment

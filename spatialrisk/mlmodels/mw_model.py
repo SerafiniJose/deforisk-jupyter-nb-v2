@@ -232,8 +232,8 @@ class MWModel(BaseRiskModel):
         time_interval : int
             Number of years covered by the period (required).
         folder : str or Path, optional
-            Root output folder.  Defaults to the project ``rmj_mw`` folder,
-            then the current working directory.
+            Root output folder.  Defaults to the project ``rmj_mw`` folder;
+            raises when the model has no project either.
 
         Returns:
         -------
@@ -282,11 +282,7 @@ class MWModel(BaseRiskModel):
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
-        out_root = (
-            Path(folder)
-            if folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_root = self._resolve_output_folder(folder)
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 
@@ -377,7 +373,8 @@ class MWModel(BaseRiskModel):
         time_interval : int
             Number of years in the period (required).
         output_folder : str or Path, optional
-            Root output folder.  Defaults to project ``rmj_mw`` folder.
+            Root output folder.  Defaults to the project ``rmj_mw`` folder;
+            raises when the model has no project either.
         output_file : optional
             Unused; kept for API consistency with supervised models.
         mask : optional
@@ -419,11 +416,7 @@ class MWModel(BaseRiskModel):
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
-        out_root = (
-            Path(output_folder)
-            if output_folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_root = self._resolve_output_folder(output_folder, param="output_folder")
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 

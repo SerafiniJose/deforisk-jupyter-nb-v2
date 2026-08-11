@@ -388,9 +388,9 @@ def validate_two_layer(
     tab_file_defor,
     time_interval,
     csize_coarse_grid=300,
-    indices_file_pred="indices.csv",
-    tab_file_pred="pred_obs.csv",
-    fig_file_pred="pred_obs.png",
+    indices_file_pred=None,
+    tab_file_pred=None,
+    fig_file_pred=None,
     model_name="model",
     period="calibration",
     figsize=(6.4, 6.4),
@@ -404,6 +404,14 @@ def validate_two_layer(
     ``compute_validation`` and the artifacts in ``write_pred_obs_csv`` /
     ``write_indices_csv`` / ``save_pred_obs_png``. Prefer those directly when
     you also need the chart input.
+
+    Each of ``indices_file_pred`` / ``tab_file_pred`` / ``fig_file_pred``
+    defaults to ``None``, meaning that artifact is not written; the indices dict
+    is returned either way. The former bare-filename defaults ("indices.csv",
+    "pred_obs.csv", "pred_obs.png") resolved against the process CWD, which is
+    the read-only shared module mount when the app runs on SEPAL, so a caller
+    that omitted one crashed with ``Read-only file system``. Callers that want
+    the artifacts pass explicit paths.
     """
     result = compute_validation(
         defor_file=defor_file,
@@ -415,9 +423,12 @@ def validate_two_layer(
         model_name=model_name,
         period=period,
     )
-    write_pred_obs_csv(result.plot_data, tab_file_pred)
-    save_pred_obs_png(result.plot_data, fig_file_pred, figsize=figsize, dpi=dpi)
-    write_indices_csv(result.indices, indices_file_pred)
+    if tab_file_pred is not None:
+        write_pred_obs_csv(result.plot_data, tab_file_pred)
+    if fig_file_pred is not None:
+        save_pred_obs_png(result.plot_data, fig_file_pred, figsize=figsize, dpi=dpi)
+    if indices_file_pred is not None:
+        write_indices_csv(result.indices, indices_file_pred)
     return result.indices
 
 

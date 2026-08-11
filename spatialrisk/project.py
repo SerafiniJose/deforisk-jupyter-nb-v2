@@ -20,8 +20,6 @@ from spatialrisk.log_utils import log_progress
 from spatialrisk.variables import LocalRasterVar, LocalVectorVar  # noqa: F401
 from spatialrisk.variables.models import DataType
 
-root_folder: Path = Path.cwd().parent
-
 
 def _resolve_data_dir() -> Path:
     """Resolve the canonical project data directory.
@@ -45,6 +43,15 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 configure_gdal_tmpdir()
 # Backward-compatible alias: save()/load()/initialize_folders() read this name.
 downloads_folder = DATA_DIR
+# Deprecated: kept only because ``initialize_folders()`` publishes it as
+# ``project.folders["root_folder"]``, which notebooks may still reach for. It used
+# to be ``Path.cwd().parent`` -- on SEPAL the CWD is the read-only shared module
+# mount, so anything that took this key as a place to write landed there. Nothing
+# in this repo reads it and it is never persisted (``save()`` serialises an
+# explicit whitelist of fields and ``folders`` is a property, not a model field),
+# so retargeting it at the module's real, writable output root changes no saved
+# manifest and breaks no load.
+root_folder: Path = DATA_DIR
 
 logger = logging.getLogger("spatial_risk")
 
