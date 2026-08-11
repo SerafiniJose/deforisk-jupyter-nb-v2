@@ -27,6 +27,7 @@ import rasterio
 from osgeo import gdal
 from rasterio.transform import from_origin
 
+from spatialrisk import gdal_env
 from spatialrisk.gdal_env import configure_gdal_tmpdir, scratch_dir
 from spatialrisk.processing import distance_to_edge_gdal_no_mask
 
@@ -157,3 +158,52 @@ def test_configure_gdal_tmpdir_sets_env_and_gdal_config(unconfigured_gdal_tmpdir
     assert configured is not None
     assert os.environ["CPL_TMPDIR"] == str(configured)
     assert gdal.GetConfigOption("CPL_TMPDIR") == str(configured)
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root ignores permission bits, so an unwritable candidate proves nothing",
+)
+def test_scratch_dir_falls_back_to_the_module_output_root(
+    tmp_path, monkeypatch, unconfigured_gdal_tmpdir
+):
+    """An unusable system temp dir must not leave GDAL pointing at the CWD.
+
+    SEPAL launches the app as ``voila ui.ipynb``, so the CPL_TMPDIR export in
+    run_ui.sh does not apply there and this module is the only thing standing
+    between GDAL and the read-only module mount. If every system temp candidate
+    were unusable we would previously log a warning and give up, which puts the
+    original bug straight back -- so fall through to the module's own output
+    root, which SEPAL guarantees is writable.
+    """
+    dead_tmp = tmp_path / "unwritable_tmp"
+    dead_tmp.mkdir()
+    dead_tmp.chmod(0o555)
+    monkeypatch.setattr(gdal_env.tempfile, "gettempdir", lambda: str(dead_tmp))
+    monkeypatch.setenv("SPATIAL_RISK_DATA_DIR", str(tmp_path / "module_results"))
+    try:
+        assert scratch_dir() == tmp_path / "module_results" / ".gdal_tmp"
+        # and configuration still succeeds, rather than silently returning None
+        assert configure_gdal_tmpdir() == tmp_path / "module_results" / ".gdal_tmp"
+    finally:
+        dead_tmp.chmod(0o755)
+
+
+def test_scratch_dir_never_lands_in_the_cwd(
+    tmp_path, monkeypatch, unconfigured_gdal_tmpdir
+):
+    """Never follow ``tempfile``'s candidate list into the CWD, which it ends with.
+
+    On SEPAL that is the read-only mount; in dev it would litter the checkout.
+    """
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(gdal_env.tempfile, "gettempdir", lambda: str(cwd))
+    monkeypatch.setenv("SPATIAL_RISK_DATA_DIR", str(tmp_path / "module_results"))
+
+    resolved = scratch_dir()
+
+    assert cwd.resolve() not in resolved.resolve().parents
+    assert resolved == tmp_path / "module_results" / ".gdal_tmp"
+    assert list(cwd.iterdir()) == []
