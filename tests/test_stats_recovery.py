@@ -1,10 +1,10 @@
 """Recovery of stats from disk for models trained before Spec A (§3)."""
 
 import pickle
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from spatialrisk.mlmodels import (
     GLMModel,
@@ -13,6 +13,7 @@ from spatialrisk.mlmodels import (
     MWModel,
     RFModel,
 )
+from spatialrisk.mlmodels.stats import JNRStats
 from spatialrisk.mlmodels.stats_recovery import recover_stats
 
 FORMULA = "I(loss) + trial ~ scale(a) + C(cat, levels=[0, 1, 2])"
@@ -32,6 +33,28 @@ def _samples_csv(path, n=300):
     )
     df.to_csv(path, index=False)
     return df
+
+
+def _write_tab_dist(folder, *, distance, cum, perc):
+    """Write a dist_edge_threshold-shaped tab_dist.csv into *folder*."""
+    pd.DataFrame(
+        {
+            "distance": distance,
+            "npix": [1] * len(distance),
+            "area": np.diff(np.asarray(cum, dtype=float), prepend=0.0),
+            "cum": cum,
+            "perc": perc,
+        }
+    ).to_csv(folder / "tab_dist.csv", index=False)
+
+
+def _sandboxed_project(monkeypatch, tmp_path, name="recovery"):
+    """A real Project rooted in tmp_path (no folder tree created)."""
+    import spatialrisk.project as project_module
+    from spatialrisk import Project
+
+    monkeypatch.setattr(project_module, "downloads_folder", tmp_path)
+    return Project(project_name=name)
 
 
 def _fit_pickle(tmp_path, cls_name):
@@ -151,27 +174,52 @@ def test_recover_mw_from_tab_dist(tmp_path):
     assert s.tab_dist_path == period / "tab_dist.csv"
 
 
-def test_recover_jnr_reads_its_own_training_period(tmp_path):
+def test_recover_mw_total_deforestation_covers_unbinned_pixels(tmp_path):
+    """tot_defor_ha is the full deforested area, not only the binned part.
+
+    ``cum`` accumulates the pixels that fell inside dist_bins, while fit()
+    stores dist_edge_threshold's ``tot_def`` — every deforested pixel. The two
+    coincide only when perc reaches 100, so the table's own
+    ``perc = 100 * cum / tot_def`` is divided back out.
+    """
+    period = tmp_path / "p1"
+    period.mkdir()
+    _write_tab_dist(period, distance=[30, 270], cum=[0.9, 1.8], perc=[45.0, 90.0])
+    m = MWModel(
+        name="old",
+        dist_thresh=270.0,
+        ldefrate_files={"5": period / "ldefrate_mw_5.tif"},
+    )
+    s = recover_stats(m)
+    assert s.tot_defor_ha == pytest.approx(2.0)  # 1.8 ha is only 90% of it
+    assert s.perc_thresh == 90.0
+
+    # A table with no deforestation at all must not divide by zero.
+    empty = tmp_path / "p2"
+    empty.mkdir()
+    _write_tab_dist(empty, distance=[30], cum=[0.0], perc=[0.0])
+    m2 = MWModel(
+        name="old", dist_thresh=30.0, ldefrate_files={"5": empty / "ldefrate.tif"}
+    )
+    assert recover_stats(m2).tot_defor_ha is None
+
+
+def test_recover_jnr_reads_its_own_training_period(monkeypatch, tmp_path):
     """JNR recovery picks the model's period folder, not a sibling model's."""
-    root = tmp_path / "rmj_bm"
+    project = _sandboxed_project(monkeypatch, tmp_path, name="proj")
+    root = tmp_path / "proj" / "rmj_bm"
     for period, cum in (("calibration", 10.0), ("validation", 99.0)):
         period_dir = root / period
         period_dir.mkdir(parents=True)
-        pd.DataFrame(
-            {
-                "distance": [30, 270],
-                "npix": [10, 5],
-                "area": [cum / 2, cum / 2],
-                "cum": [cum / 2, cum],
-                "perc": [50.0, 100.0],
-            }
-        ).to_csv(period_dir / "tab_dist.csv", index=False)
+        _write_tab_dist(
+            period_dir, distance=[30, 270], cum=[cum / 2, cum], perc=[50.0, 100.0]
+        )
     m = JNRBenchmarkModel(
         name="bm",
         dataset_name="calibration",
         dist_thresh=270.0,
         dist_bins=[0.0, 100.0, 270.0],
-        project=SimpleNamespace(folders=SimpleNamespace(rmj_bm=root)),
+        project=project,
     )
     s = recover_stats(m)
     assert s is not None and s.n_classes == 2
@@ -180,6 +228,92 @@ def test_recover_jnr_reads_its_own_training_period(tmp_path):
     # The figure was never written here; recovery leaves the field empty rather
     # than recording a path that cannot exist.
     assert s.perc_dist_png is None
+
+    # The stats class follows the family, not the data: JNRBenchmarkModel.stats
+    # is typed Optional[JNRStats], so unpopulated bins must not yield MWStats.
+    unbinned = m.model_copy(update={"dist_bins": []})
+    recovered = recover_stats(unbinned)
+    assert isinstance(recovered, JNRStats) and recovered.n_classes == 0
+
+
+def test_recover_with_a_real_project_creates_no_folders(monkeypatch, tmp_path):
+    """Opening stats for an MW/JNR model must not build a project folder tree.
+
+    ``project.folders`` is a property that calls ``initialize_folders()``, which
+    mkdirs the project folder and all ten of its sub-folders. Reaching the
+    output folder through the models' ``_default_folder()`` therefore created
+    nine directories per call — resurrecting a deleted tree, and raising
+    outright on a read-only mount. Fakes cannot catch this: their ``folders``
+    is a plain attribute, so this test uses a real Project.
+    """
+    project = _sandboxed_project(monkeypatch, tmp_path)
+    for subfolder in ("rmj_bm", "rmj_mw"):
+        period_dir = tmp_path / "recovery" / subfolder / "calibration"
+        period_dir.mkdir(parents=True)
+        _write_tab_dist(
+            period_dir, distance=[30, 270], cum=[1.0, 2.0], perc=[50.0, 100.0]
+        )
+    before = sorted(tmp_path.rglob("*"))
+
+    jnr = JNRBenchmarkModel(
+        name="bm",
+        dataset_name="calibration",
+        dist_thresh=270.0,
+        dist_bins=[0.0, 100.0, 270.0],
+        project=project,
+    )
+    # No ldefrate_files, so MW resolves through the project folder too.
+    mw = MWModel(
+        name="mw", dataset_name="calibration", dist_thresh=270.0, project=project
+    )
+    assert recover_stats(jnr).tot_defor_ha == 2.0
+    assert recover_stats(mw).tot_defor_ha == 2.0
+    assert sorted(tmp_path.rglob("*")) == before
+
+
+def test_recover_returns_none_when_the_formula_drifted_from_the_fit(tmp_path):
+    """A design that no longer matches the stored coefficients yields None."""
+    pkl, csv = _fit_pickle(tmp_path, "glm")
+    payload = pickle.loads(pkl.read_bytes())
+    payload["formula"] = "I(loss) + trial ~ scale(a)"  # 2 columns vs 4 coef_
+    pkl.write_bytes(pickle.dumps(payload))
+    m = GLMModel(name="old", formula=FORMULA, model_path=pkl, samples_path=csv)
+    # stats._named_values refuses to zip mismatched labels, so recovery reports
+    # nothing rather than mislabelling every coefficient.
+    assert recover_stats(m) is None
+
+
+def test_recover_icar_returns_none_when_the_design_guard_trips(tmp_path):
+    """A wrong beta count or a design not ending in 'cell' recovers nothing."""
+    csv = tmp_path / "samples.csv"
+    _samples_csv(csv)
+
+    def _icar_pickle(filename, formula, betas):
+        path = tmp_path / filename
+        path.write_bytes(
+            pickle.dumps(
+                {
+                    "ml_model": {
+                        "betas": betas,
+                        "rho": np.array([0.1, 0.2]),
+                        "Vrho": 1.0,
+                        "deviance": 1.0,
+                        "formula": formula,
+                    },
+                    "formula": FORMULA,
+                    "samples_path": str(csv),
+                }
+            )
+        )
+        return path
+
+    too_few = _icar_pickle("short.pickle", FORMULA + " + cell", np.array([-3.0, 0.1]))
+    # No '+ cell': the last design column is a real covariate, and consuming it
+    # as the spatial term would shift every label by one.
+    no_cell = _icar_pickle("nocell.pickle", FORMULA, np.array([-3.0, 0.1, 0.2, 0.4]))
+    for pkl in (too_few, no_cell):
+        m = ICARModel(name="old", formula=FORMULA, model_path=pkl, samples_path=csv)
+        assert recover_stats(m) is None
 
 
 def test_recover_is_read_only(tmp_path):

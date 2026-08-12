@@ -1,9 +1,12 @@
 """Read-only recovery of model statistics from on-disk artifacts (Spec A §3).
 
 For models trained before the ``stats`` field existed. NEVER writes back into
-the model or project — opening a dialog must not trigger a save. Returns None
-on any failure: recovery is best-effort by contract, and the caller shows an
-empty state rather than an error.
+the model or project, and creates nothing on disk — opening a dialog must not
+trigger a save, nor rebuild a folder tree the user deleted. That extends to how
+the MW/JNR output folder is resolved: ``project.folders`` is a property that
+mkdirs the whole project tree, so it is deliberately avoided (see
+``_model_folder``). Returns None on any failure: recovery is best-effort by
+contract, and the caller shows an empty state rather than an error.
 
 GLM/RF pickles store no coefficient names, so the patsy design info is rebuilt
 from samples_path + formula — the same reconstruction apply() performs
@@ -132,6 +135,26 @@ def _recover_icar(model):
     )
 
 
+# Family -> output sub-folder inside the project directory, mirroring
+# Project.initialize_folders(). The models' own _default_folder() cannot be
+# used here: it reads project.folders, a property that calls
+# initialize_folders(), which mkdirs the project folder and all ten of its
+# sub-folders. That would make opening a stats dialog resurrect a deleted
+# folder tree, and on a read-only mount the mkdir raises — losing a table that
+# is sitting right there. Project._project_dir() is the pure accessor.
+_RMJ_SUBFOLDER = {"mw": "rmj_mw", "jnr": "rmj_bm"}
+
+
+def _model_folder(model) -> Optional[Path]:
+    """Output folder of an MW/JNR model, resolved without creating anything."""
+    subfolder = _RMJ_SUBFOLDER.get(getattr(model, "model_type", None))
+    # _project_dir() is 'downloads_folder / project_name' and nothing else.
+    project_dir = getattr(getattr(model, "project", None), "_project_dir", None)
+    if subfolder is None or project_dir is None:
+        return None
+    return Path(project_dir()) / subfolder
+
+
 def _find_tab_dist(model) -> Optional[Path]:
     """Locate <folder>/<period>/tab_dist.csv for an MW/JNR model."""
     # MW: the period dir is where the ldefrate rasters live.
@@ -139,25 +162,17 @@ def _find_tab_dist(model) -> Optional[Path]:
         cand = Path(p).parent / "tab_dist.csv"
         if cand.exists():
             return cand
-    # JNR (and MW fallback): search the model's own output folder.
-    folder = None
-    if getattr(model, "project", None) is not None:
-        folder = model._default_folder()
-    if not folder or not Path(folder).exists():
-        return None
-    folder = Path(folder)
-    # fit() writes into <folder>/<period>/, where period is the training
-    # dataset's name (falling back to the model's own name).
+    # JNR (and MW fallback): fit() writes into <model folder>/<period>/, where
+    # period is the training dataset's name (falling back to the model's own).
+    # Only that exact folder is accepted — every model of a family shares the
+    # root, one sub-folder per period, so a search would risk attaching another
+    # period's numbers to this model.
+    folder = _model_folder(model)
     period = getattr(model, "dataset_name", None) or getattr(model, "name", None)
-    if period:
-        cand = folder / str(period) / "tab_dist.csv"
-        if cand.exists():
-            return cand
-    # Last resort: one unambiguous table. Every model of a family shares that
-    # folder, one sub-folder per period, so choosing among several would
-    # attach another model's numbers to this one.
-    hits = sorted(folder.glob("*/tab_dist.csv"))
-    return hits[0] if len(hits) == 1 else None
+    if folder is None or not period:
+        return None
+    cand = folder / str(period) / "tab_dist.csv"
+    return cand if cand.exists() else None
 
 
 def _recover_rmj(model):
@@ -172,12 +187,21 @@ def _recover_rmj(model):
     t = pd.read_csv(tab)
     if t.empty:
         return None
-    tot_def = float(t["cum"].iloc[-1])
+    # fit() stores dist_edge_threshold's ``tot_def``, the area of ALL deforested
+    # pixels, whereas ``cum`` accumulates only the pixels that fell inside
+    # dist_bins. Taking cum.iloc[-1] would under-report the headline figure by
+    # (100 - perc.iloc[-1])%. The table carries perc = 100 * cum / tot_def, so
+    # the original value divides back out exactly.
+    cum_last = float(t["cum"].iloc[-1])
+    perc_last = float(t["perc"].iloc[-1])
+    tot_def = 100.0 * cum_last / perc_last if perc_last > 0 else float("nan")
     dist_thresh = getattr(model, "dist_thresh", None)
     perc = None
     if dist_thresh is not None:
         at = t[t["distance"] == dist_thresh]
-        perc = float(at["perc"].iloc[0]) if not at.empty else None
+        # Rounded exactly as dist_edge_threshold rounds it, so the same model
+        # reads the same way whether its stats were recovered or freshly fit.
+        perc = float(np.around(at["perc"].iloc[0], 2)) if not at.empty else None
     pngs = sorted(tab.parent.glob("perc_dist_*.png"))
     png = pngs[-1] if pngs else None
     result = {
@@ -185,7 +209,12 @@ def _recover_rmj(model):
         "dist_thresh": dist_thresh if dist_thresh is not None else float("nan"),
         "perc_thresh": perc if perc is not None else float("nan"),
     }
-    dist_bins = getattr(model, "dist_bins", None)
+    # The stats class follows the model family, never the data: a JNR model
+    # with unpopulated dist_bins must still produce JNRStats, because that is
+    # what JNRBenchmarkModel.stats is typed to hold.
+    n_classes = None
+    if getattr(model, "model_type", None) == "jnr":
+        n_classes = max(len(getattr(model, "dist_bins", None) or []) - 1, 0)
     stats = build_rmj_stats(
         result,
         tab_dist_path=tab,
@@ -193,7 +222,7 @@ def _recover_rmj(model):
         # Recording a path that cannot exist would be worse than recording
         # nothing, so a missing figure leaves the field empty.
         perc_dist_png=png or tab,
-        n_classes=max(len(dist_bins) - 1, 0) if dist_bins else None,
+        n_classes=n_classes,
     )
     stats.perc_dist_png = png
     return stats
