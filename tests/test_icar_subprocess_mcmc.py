@@ -30,6 +30,7 @@ def _tiny_mcmc_inputs():
 
 
 def test_run_icar_mcmc_executes_in_child_process():
+    """Sampler runs off-process and hands back the posteriors fit() stores."""
     from spatialrisk.mlmodels.icar_model import run_icar_mcmc
 
     df, n_neighbors, neighbors = _tiny_mcmc_inputs()
@@ -51,6 +52,6 @@ def test_run_icar_mcmc_executes_in_child_process():
 
     # Posterior summaries have the shapes fit() stores in _ml_model.
     assert result["betas"].shape == (2,)  # Intercept + x (cell column dropped)
-    assert result["rho"].shape == (4,)    # one random effect per spatial cell
+    assert result["rho"].shape == (4,)  # one random effect per spatial cell
     assert np.isfinite(result["deviance"])
     assert np.isfinite(result["Vrho"])
