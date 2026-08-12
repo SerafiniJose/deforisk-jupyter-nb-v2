@@ -44,20 +44,14 @@ _CARD_STYLE = (
     "padding:8px 12px;min-width:110px;"
 )
 
-# Index of the Statistics tab inside ModelDetailsDialog's rv.TabsItems. The
-# charts below need it: ipecharts measures its container once, at DOM attach,
-# and a view attached while its tab is hidden or still transitioning measures
-# width 0 and never recovers (see gui/widget/echarts.py). Passing the tab's
-# active state as ``visible`` is what makes the adapter schedule its
-# post-transition resize — the same wiring _ChartsTab uses in
-# evaluation_results.
-_STATS_TAB_INDEX = 1
-
 # Half the cell is available on each side of the centre line; 46% leaves the
-# bar a little air at full scale. `scale` is the estimate magnitude that fills
-# the bar — 0.5 on the log-odds scale these models fit.
+# bar a little air at full scale.
 _BAR_MAX_PCT = 46
-_BAR_FULL_SCALE = 0.5
+# Only used when a table has no usable estimate to scale against (every row
+# None or 0.0). The real scale is per-table — see _bar_scale.
+_BAR_FALLBACK_SCALE = 0.5
+# Sub-1% bars would floor to "0%" and read as absent rather than small.
+_BAR_MIN_PCT = 1.0
 
 
 @solara.component
@@ -86,14 +80,19 @@ def _StatCards(model, stats):
 
 
 @solara.component
-def ModelStatsPanel(model, active_tab=None):
+def ModelStatsPanel(model, visible=True):
     """Caveat + stat cards + family panel with pending/empty states.
 
     Args:
         model: the registered model to describe.
-        active_tab: the details dialog's selected tab index, forwarded to the
-            family charts as ``visible`` (None = mounted bare, e.g. in a test,
-            which counts as shown — matching ``_ChartsTab``).
+        visible: whether this panel's tab is the one on screen, forwarded to
+            the family charts. ipecharts measures its container once, at DOM
+            attach, and a view attached while its tab is hidden or still
+            transitioning measures width 0 and never recovers (see
+            gui/widget/echarts.py) — this flag is what makes the adapter
+            schedule its post-transition resize. The caller owns the tab
+            index, because the caller owns the tab order; the default suits a
+            bare mount (e.g. a test), which counts as shown.
     """
     # Hooks run unconditionally — the task itself decides whether to work.
     # use_task lives in solara.lab; .pending/.finished/.value per the
@@ -122,11 +121,7 @@ def ModelStatsPanel(model, active_tab=None):
             solara.Info(t("tiles.train.stats.caveat_training_fit"), dense=True)
         _StatCards(model=model, stats=stats)
         if stats is not None:
-            _FamilyPanel(
-                model=model,
-                stats=stats,
-                visible=active_tab is None or active_tab == _STATS_TAB_INDEX,
-            )
+            _FamilyPanel(model=model, stats=stats, visible=visible)
         elif recovered.pending:
             with solara.Row(gap="8px"):
                 rv.ProgressCircular(indeterminate=True, size=18, width=2)
@@ -165,7 +160,25 @@ def _FamilyPanel(model, stats, visible=True):
         _RmjPanel(stats=stats, visible=visible)
 
 
-def _effect_bar(row):
+def _bar_scale(rows):
+    """Estimate magnitude that fills the effect bar, per table.
+
+    A fixed scale saturates: at the old 0.5 every |estimate| >= 0.5 drew at the
+    same full width, so a real beta of 0.63 and one of 3.0 were pixel-identical
+    — the column asserting they are equal effects when they are not. Scaling to
+    the table's own largest magnitude keeps every bar distinct.
+
+    The bar is a WITHIN-table comparator, not a cross-model one: the numeric
+    estimate sits in the adjacent column for absolute reading, and two of these
+    tables never appear side by side (one model per details dialog).
+    """
+    return (
+        max((abs(r["estimate_raw"]) for r in rows if r["estimate_raw"]), default=0.0)
+        or _BAR_FALLBACK_SCALE
+    )
+
+
+def _effect_bar(row, scale):
     """Centred effect bar for a coefficient row (the ``render`` CellSpec).
 
     Returns the cell callable ProductTable invokes inside the cell wrapper —
@@ -174,6 +187,8 @@ def _effect_bar(row):
     left in the success colour (protective). A credible interval that crosses
     zero is drawn grey: the sign is not resolved, so it must not be read as a
     direction.
+
+    ``scale`` is the magnitude that fills the bar — see ``_bar_scale``.
 
     Arithmetic uses the row's ``*_raw`` floats — the sibling display strings are
     comma-grouped and would have to be parsed back.
@@ -185,7 +200,12 @@ def _effect_bar(row):
         if est is None:
             solara.Text(DASH)
             return
-        width = min(abs(est) / _BAR_FULL_SCALE, 1.0) * _BAR_MAX_PCT
+        width = min(abs(est) / scale, 1.0) * _BAR_MAX_PCT
+        # The width is rendered with :.0f, so anything under 0.5% would floor
+        # to "0%" and be indistinguishable from a missing estimate. A nonzero
+        # coefficient always gets a visible sliver.
+        if est != 0:
+            width = max(width, _BAR_MIN_PCT)
         crosses = lo is not None and hi is not None and lo < 0 < hi
         colour = (
             "grey"
@@ -222,6 +242,8 @@ def _coefficient_table(columns, rows):
 @solara.component
 def _GlmPanel(stats):
     """Coefficients with display-time odds ratios, intercepts, solver line."""
+    vm_rows = coefficient_rows(stats)
+    scale = _bar_scale(vm_rows)
     rows = [
         {
             "key": r["name"],
@@ -229,10 +251,10 @@ def _GlmPanel(stats):
                 {"type": "text", "value": r["name"]},
                 {"type": "text", "value": r["estimate"]},
                 {"type": "text", "value": r["odds_ratio"], "muted": True},
-                {"type": "render", "fn": _effect_bar(r)},
+                {"type": "render", "fn": _effect_bar(r, scale)},
             ],
         }
-        for r in coefficient_rows(stats)
+        for r in vm_rows
     ]
     with solara.Column(gap="4px"):
         _coefficient_table(
@@ -281,8 +303,11 @@ def _IcarPanel(stats):
 
     Vrho is deliberately absent — it is a variance parameter, not a log-odds
     coefficient, so it neither belongs in this table nor takes the odds-ratio
-    transform. It rides in ``stats.vrho`` and is already a stat card.
+    transform. It rides in ``stats.vrho`` and is already a stat card, as is the
+    cell-level rho summary beside it.
     """
+    vm_rows = coefficient_rows(stats)
+    scale = _bar_scale(vm_rows)
     rows = [
         {
             "key": r["name"],
@@ -292,10 +317,10 @@ def _IcarPanel(stats):
                 {"type": "text", "value": r["std"], "muted": True},
                 {"type": "text", "value": r["ci_low"], "muted": True},
                 {"type": "text", "value": r["ci_high"], "muted": True},
-                {"type": "render", "fn": _effect_bar(r)},
+                {"type": "render", "fn": _effect_bar(r, scale)},
             ],
         }
-        for r in coefficient_rows(stats)
+        for r in vm_rows
     ]
     with solara.Column(gap="4px"):
         _coefficient_table(

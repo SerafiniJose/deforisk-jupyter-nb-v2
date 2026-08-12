@@ -184,6 +184,55 @@ def test_coefficient_rows_odds_ratio_overflow_degrades_to_dash():
     assert rows[0]["estimate"] == "750"
 
 
+def test_stat_cards_summarize_the_cell_level_rho_vector():
+    """An iCAR model's rho summary reaches the cards as a range and an SD.
+
+    The whole reason to run iCAR over GLM is the spatial random effect, and
+    these are the numbers that say whether it did anything. They were collected
+    and persisted from the first task on and displayed nowhere.
+    """
+    from spatialrisk.mlmodels import ICARModel
+
+    model = ICARModel(
+        name="i",
+        stats=ICARStats(
+            coefficients=[Coefficient(name="scale(rivers)", estimate=0.63)],
+            vrho=Coefficient(name="Vrho", estimate=0.0021),
+            rho_min=-0.0060,
+            rho_max=0.0057,
+            rho_mean=-0.0001,
+            rho_std=0.0051,
+        ),
+    )
+    cards = {c["key"]: c["value"] for c in stat_cards(model)}
+    assert cards["card_rho_min"] == "-0.006"
+    assert cards["card_rho_max"] == "0.0057"
+    assert cards["card_rho_sd"] == "0.0051"
+    assert cards["card_vrho"] == "0.0021"
+    # rho_mean is ~0 by construction (the intercept absorbs the level), so it
+    # is deliberately not a card of its own.
+    assert "card_rho_mean" not in cards
+
+
+def test_stat_cards_omit_rho_cards_when_the_vector_was_not_summarized():
+    """A model without rho values renders neither rho card.
+
+    Legacy iCAR models and every non-iCAR family go down this path; a card
+    reading "—" would claim a spatial effect was measured and found empty.
+    """
+    from spatialrisk.mlmodels import ICARModel
+
+    rho_keys = {"card_rho_min", "card_rho_max", "card_rho_sd"}
+    keys = {c["key"] for c in stat_cards(ICARModel(name="i", stats=ICARStats()))}
+    assert not (keys & rho_keys), keys
+    # a single-cell rho gives min/max but no SD (ddof=1 needs two values)
+    single = ICARStats(rho_min=0.5, rho_max=0.5, rho_mean=0.5)
+    keys = {c["key"] for c in stat_cards(ICARModel(name="i", stats=single))}
+    assert keys & rho_keys == {"card_rho_min", "card_rho_max"}, keys
+    # and the GLM family never grows them
+    assert not ({c["key"] for c in stat_cards(_glm())} & rho_keys)
+
+
 def test_coefficient_rows_populated_ci_and_std_raw_and_formatted():
     """The iCAR case: populated std/CI render as strings AND raw floats.
 

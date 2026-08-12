@@ -530,13 +530,15 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                                                         ),
                                                     )
                         with rv.TabItem():
-                            # active_tab reaches the panel so its charts know
-                            # when they are on screen: ipecharts measures its
-                            # container only at DOM attach, and one attached in
-                            # a hidden/transitioning tab stays width 0 forever
-                            # (see gui/widget/echarts.py, and _ChartsTab in
-                            # evaluation_results for the same wiring).
-                            ModelStatsPanel(model=model, active_tab=active_tab)
+                            # This file owns the tab order, so it also owns the
+                            # index — the panel is told whether it is on screen,
+                            # never asked to recognise itself. Its charts need
+                            # that: ipecharts measures its container only at DOM
+                            # attach, and one attached in a hidden/transitioning
+                            # tab stays width 0 forever (see gui/widget/echarts.py,
+                            # and _ChartsTab in evaluation_results for the same
+                            # wiring). Statistics is the second rv.Tab above.
+                            ModelStatsPanel(model=model, visible=active_tab == 1)
             with rv.CardActions(style_="justify-content: flex-end;"):
                 solara.Button(
                     t("common.close"),

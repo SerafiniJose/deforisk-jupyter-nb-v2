@@ -101,8 +101,38 @@ def stat_cards(model, stats=None) -> List[dict]:
         vrho = getattr(stats, "vrho", None)
         if vrho is not None:
             add_num("card_vrho", vrho.estimate)
+        _add_rho_cards(add_num, stats)
     add("card_trained_at", getattr(model, "trained_at", None))
     return cards
+
+
+def _add_rho_cards(add_num, stats):
+    """Summary of the iCAR cell-level spatial random effect (spec §4.3).
+
+    The spatial random effect is the entire reason to run iCAR over GLM, so its
+    spread is the one number that says whether the spatial term did anything.
+
+    Three cards, not four: ``rho_mean`` is ~0 by construction — an iCAR prior
+    is identified only up to a constant, which the intercept absorbs — so a
+    mean card would read as information while carrying none.
+
+    Min and max stay two cards rather than one "lo — hi" range string. Every
+    other card in this strip is a single value formatted by ``add_num``; a
+    composite would need its own separator glyph, and the only glyph that both
+    reads as a range and survives lint is the em dash this module already
+    spends on "missing" (DASH). Bracketed interval notation was the other
+    option and is worse: it would sit two rows above a table whose columns are
+    literally CI 2.5%/97.5% and be read as a credible interval, which it is
+    not.
+
+    The labels say "cell-level" because that is the provenance: A5 summarises
+    ``posteriors["rho"]``, one value per native-``csize`` spatial cell, NOT the
+    interpolated rho GeoTIFF. Calling these raster statistics would be a false
+    claim — that raster is a bilinear resampling at ``csize_interpolate``.
+    """
+    add_num("card_rho_min", getattr(stats, "rho_min", None))
+    add_num("card_rho_max", getattr(stats, "rho_max", None))
+    add_num("card_rho_sd", getattr(stats, "rho_std", None))
 
 
 def coefficient_rows(stats) -> List[dict]:

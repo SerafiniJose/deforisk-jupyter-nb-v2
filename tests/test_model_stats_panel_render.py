@@ -9,6 +9,7 @@ here walks the rendered widget tree and asserts on the strings that actually
 reached it.
 """
 
+import re
 import threading
 import time
 
@@ -301,6 +302,98 @@ def test_icar_panel_renders_ci_table():
     bars = [s for s in _styles(box) if "border-radius:1px;" in s]
     assert any("background:grey;" in s for s in bars), bars
     assert any("background:var(--v-error-base);" in s for s in bars), bars
+
+
+def test_icar_panel_renders_the_cell_level_rho_summary():
+    """The rho cards reach the strip, labelled as cell-level, never as raster.
+
+    A5 summarises ``posteriors["rho"]`` — one value per native-csize spatial
+    cell — not the interpolated rho GeoTIFF, so the label must not imply the
+    raster.
+    """
+    model = ICARModel(
+        name="m",
+        stats=ICARStats(
+            coefficients=[Coefficient(name="scale(rivers)", estimate=0.63)],
+            vrho=Coefficient(name="Vrho", estimate=0.0021),
+            rho_min=-0.0060,
+            rho_max=0.0057,
+            rho_mean=-0.0001,
+            rho_std=0.0051,
+        ),
+    )
+    texts = _texts(_render(ModelStatsPanel(model=model)))
+    for key, value in (
+        ("card_rho_min", "-0.006"),
+        ("card_rho_max", "0.0057"),
+        ("card_rho_sd", "0.0051"),
+    ):
+        assert t(f"tiles.train.stats.{key}") in texts, key
+        assert value in texts, key
+        # the label describes the cell vector, not the interpolated GeoTIFF
+        assert "raster" not in t(f"tiles.train.stats.{key}").lower(), key
+
+
+def test_icar_panel_omits_rho_cards_for_a_model_without_them():
+    """No rho values -> no rho cards (legacy models, and every other family)."""
+    model = ICARModel(
+        name="m",
+        stats=ICARStats(coefficients=[Coefficient(name="scale(rivers)", estimate=0.6)]),
+    )
+    texts = _texts(_render(ModelStatsPanel(model=model)))
+    for key in ("card_rho_min", "card_rho_max", "card_rho_sd"):
+        assert t(f"tiles.train.stats.{key}") not in texts, key
+
+
+def _bar_widths(box):
+    """Width percentages of the effect bars, in render order."""
+    bars = [s for s in _styles(box) if "border-radius:1px;" in s]
+    return [int(re.search(r"width:(\d+)%", s).group(1)) for s in bars]
+
+
+def test_effect_bars_distinguish_coefficient_magnitudes():
+    """Two coefficients of different size draw different bars.
+
+    Regression: the bar used a FIXED full scale of 0.5, so every |estimate|
+    >= 0.5 clamped to the same 46% width — beta=0.63 and beta=3.0 (both real
+    magnitudes from this branch's own MCMC runs) were pixel-identical, which is
+    an active claim that unequal effects are equal. The scale is now the
+    table's own largest magnitude, so this asserts a strict inequality that the
+    old code could not satisfy: under the fixed scale both widths were 46.
+    """
+    model = ICARModel(
+        name="m",
+        stats=ICARStats(
+            coefficients=[
+                Coefficient(name="big", estimate=3.0),
+                Coefficient(name="small", estimate=0.63),
+            ]
+        ),
+    )
+    widths = _bar_widths(_render(ModelStatsPanel(model=model)))
+    assert len(widths) == 2, widths
+    assert widths[0] == 46, widths  # the table's largest fills the bar
+    assert widths[1] < widths[0], widths  # and the smaller one does NOT
+    assert widths[1] == round(0.63 / 3.0 * 46), widths
+
+
+def test_effect_bar_keeps_a_tiny_coefficient_visible():
+    """A nonzero estimate never floors to a 0%-wide (i.e. invisible) bar.
+
+    ``width:{w:.0f}%`` renders anything under 0.5% as "0%", making a small
+    coefficient indistinguishable from a missing one.
+    """
+    model = ICARModel(
+        name="m",
+        stats=ICARStats(
+            coefficients=[
+                Coefficient(name="huge", estimate=1000.0),
+                Coefficient(name="tiny", estimate=0.001),
+            ]
+        ),
+    )
+    widths = _bar_widths(_render(ModelStatsPanel(model=model)))
+    assert widths == [46, 1], widths
 
 
 def test_jnr_panel_renders_without_tab_dist_on_disk(tmp_path):

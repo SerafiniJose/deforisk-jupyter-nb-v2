@@ -157,6 +157,30 @@ def test_every_model_label_and_description_key_resolves():
             assert i18n.t(hint) != hint, (key, p.get("key"))
 
 
+def test_every_stat_card_key_resolves_in_every_locale():
+    """Every ``card_*`` key ``stat_cards`` can emit has a label in all locales.
+
+    The Statistics tab resolves card labels by convention —
+    ``t(f"tiles.train.stats.{card['key']}")`` — so ``_code_keys`` below, which
+    only sees literal ``t("...")`` calls, is blind to them. A typo or a card
+    added without a catalog entry renders the raw dotted path in the UI with
+    nothing failing, so the emitter's source is scraped instead.
+    """
+    from gui.scripts import model_stats_view
+
+    src = (i18n.MESSAGES_DIR.parent / "scripts" / "model_stats_view.py").read_text()
+    assert model_stats_view.stat_cards  # the file scraped is the one imported
+    keys = sorted(set(re.findall(r'\badd(?:_num)?\(\s*["\'](card_\w+)["\']', src)))
+    # guard: a refactor that renames the helpers must not silently scrape zero
+    assert len(keys) >= 9, keys
+    for lang in i18n.app_available_locales():
+        merged, _ = _merged_for_lang(lang)
+        for key in keys:
+            dotted = f"tiles.train.stats.{key}"
+            assert dotted in merged, (lang, dotted)
+            assert str(merged[dotted]).strip(), (lang, dotted)
+
+
 def test_every_predefined_variable_description_key_resolves():
     """Every PREDEFINED_CATALOGUE entry declares a description that resolves."""
     from gui import i18n

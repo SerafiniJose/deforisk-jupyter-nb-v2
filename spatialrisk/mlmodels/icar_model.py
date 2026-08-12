@@ -175,7 +175,15 @@ def build_icar_stats(
     summary = posteriors.get("posterior_summary")
     if summary:
         coefficients = [Coefficient(**b) for b in _summary_kwargs(summary["betas"])]
-        vrho = Coefficient(name="Vrho", **_summary_kwargs_one(summary["vrho"]))
+        # .get, not ["vrho"]: a summary missing that key would raise KeyError,
+        # which fit() catches by dropping the WHOLE stats record — throwing away
+        # the coefficients that were present for the sake of one absent scalar.
+        vrho_summary = summary.get("vrho")
+        vrho = (
+            Coefficient(name="Vrho", **_summary_kwargs_one(vrho_summary))
+            if vrho_summary
+            else None
+        )
     else:
         names = list(design_column_names)
         if not names or names[-1] != "cell":
@@ -390,7 +398,11 @@ class ICARModel(BaseRiskModel):
             self.stats = build_icar_stats(
                 posteriors,
                 x.design_info.column_names,
-                n_rows=n_obs,
+                # ModelStatsBase.n_rows is the post-NA-drop DESIGN row count, and
+                # GLM/RF both take it from x.shape[0]. df is already dropna()'d
+                # above so this equals n_obs today; reading the design keeps the
+                # three families reporting the same quantity by construction.
+                n_rows=int(x.shape[0]),
                 n_events=int(np.asarray(y)[:, 0].sum()),
                 sample_design=sample_design_label(self.sample),
             )
