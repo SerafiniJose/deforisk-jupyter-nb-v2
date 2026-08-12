@@ -181,3 +181,40 @@ def test_build_rmj_stats_jnr_variant_counts_classes(tmp_path):
         n_classes=29,
     )
     assert isinstance(s, JNRStats) and s.n_classes == 29
+
+
+def test_build_rmj_stats_tolerates_a_partial_result(tmp_path):
+    """A dist_edge_threshold result missing keys yields None fields, not error.
+
+    Fix round 1 regression: stub_rmj in test_jnr_untagged_defor_var.py
+    returns only dist_thresh, which used to raise
+    ``KeyError: 'perc_thresh'`` and abort JNRBenchmarkModel.fit().
+    """
+    s = build_rmj_stats(
+        {"dist_thresh": 120.0},
+        tab_dist_path=tmp_path / "tab_dist.csv",
+        perc_dist_png=tmp_path / "perc_dist_p.png",
+    )
+    assert s.dist_thresh == 120.0
+    assert s.perc_thresh is None
+    assert s.tot_defor_ha is None
+
+
+def test_build_rmj_stats_missing_and_non_finite_are_equivalent(tmp_path):
+    """A missing key and an unrecoverable value both read back as None.
+
+    This is the behaviour Task A7's disk-recovery path relies on: it calls
+    build_rmj_stats with float("nan") for fields it cannot reconstruct.
+    """
+    missing = build_rmj_stats(
+        {"dist_thresh": 120.0},
+        tab_dist_path=tmp_path / "a.csv",
+        perc_dist_png=tmp_path / "a.png",
+    )
+    nan_valued = build_rmj_stats(
+        {"dist_thresh": 120.0, "perc_thresh": float("nan"), "tot_def": float("nan")},
+        tab_dist_path=tmp_path / "a.csv",
+        perc_dist_png=tmp_path / "a.png",
+    )
+    assert missing.perc_thresh is None and missing.tot_defor_ha is None
+    assert nan_valued.perc_thresh is None and nan_valued.tot_defor_ha is None

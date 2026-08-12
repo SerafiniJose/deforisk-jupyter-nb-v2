@@ -303,14 +303,19 @@ class JNRBenchmarkModel(BaseRiskModel):
         )
         self.dist_bins = [float(b) for b in bins]
         print(f"  dist_bins: {len(self.dist_bins)} edges")
+
         from spatialrisk.mlmodels.stats import build_rmj_stats
 
-        self.stats = build_rmj_stats(
-            result,
-            tab_dist_path=period_dir / "tab_dist.csv",
-            perc_dist_png=period_dir / f"perc_dist_{period}.png",
-            n_classes=max(len(self.dist_bins) - 1, 0),
-        )
+        try:
+            self.stats = build_rmj_stats(
+                result,
+                tab_dist_path=period_dir / "tab_dist.csv",
+                perc_dist_png=period_dir / f"perc_dist_{period}.png",
+                n_classes=max(len(self.dist_bins) - 1, 0),
+            )
+        except Exception as exc:  # stats must never fail a training run
+            print(f"  ⚠ model statistics skipped: {exc}")
+            self.stats = None
 
         # Populate serialisable metadata (mirrors _prepare_samples() pattern)
         self.target_name = (

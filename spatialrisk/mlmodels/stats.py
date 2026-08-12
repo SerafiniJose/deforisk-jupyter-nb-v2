@@ -233,14 +233,23 @@ def build_rmj_stats(result, *, tab_dist_path, perc_dist_png, n_classes=None):
     and records the tab_dist.csv / perc_dist png the models already write.
     n_classes given -> JNRStats, else MWStats.
 
-    Note: dict values may be non-finite (nan, inf); the schema's _FiniteFloats
-    validator coerces these to None, enabling recovery from partial disk state
-    in a later task (spec A §2.4).
+    ``result`` is read tolerantly: a missing key yields a None-valued field
+    instead of raising, exactly like a present-but-non-finite (nan/inf) value
+    is coerced to None by the schema's _FiniteFloats validator below. The two
+    cases are deliberately unified — a later recovery task (A7) rebuilds this
+    dict from partial on-disk state and calls this function with
+    ``float("nan")`` for values it cannot recover, so "missing" and
+    "unrecoverable" must behave identically rather than one of them raising.
     """
+
+    def _optional_float(key):
+        value = result.get(key)
+        return None if value is None else float(value)
+
     kwargs = dict(
-        dist_thresh=float(result["dist_thresh"]),
-        perc_thresh=float(result["perc_thresh"]),
-        tot_defor_ha=float(result["tot_def"]),
+        dist_thresh=_optional_float("dist_thresh"),
+        perc_thresh=_optional_float("perc_thresh"),
+        tot_defor_ha=_optional_float("tot_def"),
         tab_dist_path=Path(tab_dist_path),
         perc_dist_png=Path(perc_dist_png),
     )
