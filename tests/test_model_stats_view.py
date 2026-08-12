@@ -17,6 +17,7 @@ from spatialrisk.mlmodels import GLMModel, MWModel
 from spatialrisk.mlmodels.stats import (
     Coefficient,
     GLMStats,
+    ICARStats,
     Importance,
     MWStats,
     RFStats,
@@ -76,6 +77,8 @@ def test_coefficient_rows_compute_odds_ratio_at_display_time():
     assert r["name"] == "scale(towns_dist)"
     assert float(r["odds_ratio"]) == pytest.approx(math.exp(-0.4746), rel=1e-3)
     assert r["std"] == "—"  # GLM has no posterior SD
+    # a small coefficient keeps its significant figures, comma-format or not
+    assert r["estimate"] == "-0.4746"
 
 
 def test_glm_convergence_line():
@@ -129,3 +132,60 @@ def test_dist_curve_option_marks_the_threshold():
     mark = opt["series"][0]["markLine"]["data"][0]
     assert mark["xAxis"] == 2010.0
     assert dist_curve_option([], 1.0, 1.0) is None
+
+
+def test_stat_cards_format_large_magnitudes_without_scientific_notation():
+    """Large hectare/deviance magnitudes render comma-grouped, never scientific.
+
+    ``f"{316892.88:.4g}"`` alone gives ``"3.169e+05"`` — unreadable.
+    """
+    mw_cards = stat_cards(
+        MWModel(name="w", stats=MWStats(tot_defor_ha=316892.88)),
+    )
+    tot = next(c for c in mw_cards if c["key"] == "card_tot_defor")
+    assert tot["value"] == "316,893"
+
+    dev = next(
+        c for c in stat_cards(_glm(deviance=267845.311)) if c["key"] == "card_deviance"
+    )
+    assert dev["value"] == "267,845"
+
+
+def test_coefficient_rows_odds_ratio_overflow_degrades_to_dash():
+    """An extreme-but-finite estimate never crashes the coefficients table.
+
+    Quasi/perfect separation is exactly where this happens on rare-event
+    data; math.exp overflow degrades to the dash instead of raising.
+    """
+    stats = GLMStats(
+        coefficients=[Coefficient(name="near_perfect_split", estimate=750.0)]
+    )
+    rows = coefficient_rows(stats)
+    assert rows[0]["odds_ratio"] == "—"
+    assert rows[0]["estimate_raw"] == 750.0
+    assert rows[0]["estimate"] == "750"
+
+
+def test_coefficient_rows_populated_ci_and_std_raw_and_formatted():
+    """The iCAR case: populated std/CI render as strings AND raw floats.
+
+    A11's effect bar does arithmetic directly on the ``_raw`` fields.
+    """
+    stats = ICARStats(
+        coefficients=[
+            Coefficient(
+                name="scale(towns_dist)",
+                estimate=-0.4746,
+                std=0.0512,
+                ci_low=-0.5749,
+                ci_high=-0.3743,
+            )
+        ]
+    )
+    r = coefficient_rows(stats)[0]
+    assert r["std"] == "0.0512"
+    assert r["ci_low"] == "-0.5749"
+    assert r["ci_high"] == "-0.3743"
+    assert r["estimate_raw"] == pytest.approx(-0.4746)
+    assert r["ci_low_raw"] == pytest.approx(-0.5749)
+    assert r["ci_high_raw"] == pytest.approx(-0.3743)

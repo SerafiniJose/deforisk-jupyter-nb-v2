@@ -11,13 +11,37 @@ from typing import List, Optional
 DASH = "—"
 
 
+def _fmt_float(v, digits):
+    """Comma-grouped fixed-point rendering of ``v``, never scientific notation.
+
+    Python's ``g`` format switches to scientific once a value's exponent
+    reaches ``digits`` (e.g. ``f"{316892.88:.4g}"`` -> ``"3.169e+05"``), which
+    is unreadable for the hectare/deviance magnitudes this module actually
+    renders. Instead, ``digits`` is spent as significant figures on the
+    fractional part: a value whose integer part already has >= ``digits``
+    digits gets 0 decimals (rounded to the nearest integer, comma-grouped);
+    a smaller value gets enough decimals to keep ``digits`` significant
+    figures (so a coefficient like -0.4746 keeps all four). Trailing zeros
+    introduced by the fixed decimal count are stripped so "100.000" reads as
+    "100", matching the old ``g`` format's habit of dropping them.
+    """
+    if v == 0:
+        return "0"
+    magnitude = math.floor(math.log10(abs(v))) + 1
+    decimals = max(digits - magnitude, 0)
+    s = f"{v:,.{decimals}f}"
+    if decimals > 0 and "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
 def _fmt(v, digits=4):
     if v is None:
         return DASH
     if isinstance(v, float):
         if not math.isfinite(v):
             return DASH
-        return f"{v:,.{digits}g}" if abs(v) >= 1000 else f"{v:.{digits}g}"
+        return _fmt_float(v, digits)
     return f"{v:,}" if isinstance(v, int) else str(v)
 
 
@@ -79,12 +103,23 @@ def coefficient_rows(stats) -> List[dict]:
     rows = []
     for c in getattr(stats, "coefficients", None) or []:
         est = c.estimate
+        if est is None:
+            odds_ratio = DASH
+        else:
+            try:
+                odds_ratio = _fmt(math.exp(est))
+            except OverflowError:
+                # A finite-but-extreme estimate (quasi/perfect separation is
+                # exactly where this happens on rare-event data) still passes
+                # the schema's non-finite check, so it must degrade to a dash
+                # here rather than crash the whole coefficients table.
+                odds_ratio = DASH
         rows.append(
             {
                 "name": c.name,
                 "estimate": _fmt(est),
                 "estimate_raw": est,
-                "odds_ratio": _fmt(math.exp(est)) if est is not None else DASH,
+                "odds_ratio": odds_ratio,
                 "std": _fmt(c.std),
                 "ci_low": _fmt(c.ci_low),
                 "ci_high": _fmt(c.ci_high),
