@@ -300,7 +300,26 @@
         "card_trained_at": "Entraîné le",
         "recovering": "Lecture des statistiques dans le fichier du modèle enregistré…",
         "empty_state": "Aucune statistique enregistrée pour ce modèle. Il a été entraîné avant que les statistiques ne soient consignées et rien de récupérable n'a été trouvé sur le disque.",
-        "icar_retrain_hint": "Les intervalles de crédibilité nécessitent les tirages de la loi a posteriori, qui n'ont pas été conservés — réentraînez le modèle pour les calculer."
+        "icar_retrain_hint": "Les intervalles de crédibilité nécessitent les tirages de la loi a posteriori, qui n'ont pas été conservés — réentraînez le modèle pour les calculer.",
+        "coef_header": "Coefficients",
+        "coef_empty": "Aucun coefficient n'a été enregistré pour ce modèle.",
+        "col_predictor": "Prédicteur",
+        "col_estimate": "Estimation",
+        "col_odds_ratio": "Rapport de cotes",
+        "col_effect": "Effet",
+        "col_std": "ET",
+        "col_ci_low": "IC 2.5%",
+        "col_ci_high": "IC 97.5%",
+        "intercept_design": "Ordonnée à l'origine (terme de la matrice de conception) : {value}",
+        "intercept_fitted": "Ordonnée à l'origine (ajustée) : {value}",
+        "converged_line": "Itérations du solveur : {line} (en dessous de la limite, cela suggère une convergence — heuristique, pas une garantie)",
+        "importance_header": "Importance des variables",
+        "exploratory_chip": "exploratoire",
+        "importance_bias_note": "L'importance par impureté est biaisée en faveur des prédicteurs continus et à forte cardinalité et n'autorise aucune lecture causale.",
+        "oob_line": "Exactitude OOB (échantillon d'entraînement) : {value}",
+        "icar_ci_note": "Moyenne a posteriori avec intervalle de crédibilité à 95 %. Les intervalles qui franchissent zéro sont atténués.",
+        "dist_curve_header": "Déforestation cumulée selon la distance à la lisière de la forêt",
+        "tab_dist_missing": "Le tableau des distances (tab_dist.csv) n'est plus sur le disque — réentraînez le modèle pour le régénérer."
       }
     }
   }

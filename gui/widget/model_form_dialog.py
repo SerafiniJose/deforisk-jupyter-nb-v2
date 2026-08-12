@@ -530,7 +530,13 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                                                         ),
                                                     )
                         with rv.TabItem():
-                            ModelStatsPanel(model=model)
+                            # active_tab reaches the panel so its charts know
+                            # when they are on screen: ipecharts measures its
+                            # container only at DOM attach, and one attached in
+                            # a hidden/transitioning tab stays width 0 forever
+                            # (see gui/widget/echarts.py, and _ChartsTab in
+                            # evaluation_results for the same wiring).
+                            ModelStatsPanel(model=model, active_tab=active_tab)
             with rv.CardActions(style_="justify-content: flex-end;"):
                 solara.Button(
                     t("common.close"),

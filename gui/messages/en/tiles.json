@@ -300,7 +300,26 @@
         "card_trained_at": "Trained at",
         "recovering": "Reading statistics from the saved model file…",
         "empty_state": "No statistics stored for this model. It was trained before statistics were recorded and nothing recoverable was found on disk.",
-        "icar_retrain_hint": "Credible intervals require the posterior draws, which were not kept — retrain to compute them."
+        "icar_retrain_hint": "Credible intervals require the posterior draws, which were not kept — retrain to compute them.",
+        "coef_header": "Coefficients",
+        "coef_empty": "No coefficients were recorded for this model.",
+        "col_predictor": "Predictor",
+        "col_estimate": "Estimate",
+        "col_odds_ratio": "Odds ratio",
+        "col_effect": "Effect",
+        "col_std": "SD",
+        "col_ci_low": "CI 2.5%",
+        "col_ci_high": "CI 97.5%",
+        "intercept_design": "Intercept (design term): {value}",
+        "intercept_fitted": "Intercept (fitted): {value}",
+        "converged_line": "Solver iterations: {line} (below the cap suggests convergence — heuristic, not a guarantee)",
+        "importance_header": "Variable importance",
+        "exploratory_chip": "exploratory",
+        "importance_bias_note": "Impurity importance is biased toward continuous and high-cardinality predictors and carries no causal reading.",
+        "oob_line": "OOB accuracy (training sample): {value}",
+        "icar_ci_note": "Posterior mean with 95% credible interval. Intervals crossing zero are muted.",
+        "dist_curve_header": "Cumulative deforestation by distance to forest edge",
+        "tab_dist_missing": "The distance table (tab_dist.csv) is no longer on disk — retrain to regenerate it."
       }
     }
   }

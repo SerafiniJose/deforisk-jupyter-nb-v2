@@ -300,7 +300,26 @@
         "card_trained_at": "Treinado em",
         "recovering": "Lendo as estatísticas do arquivo do modelo salvo…",
         "empty_state": "Nenhuma estatística armazenada para este modelo. Ele foi treinado antes de as estatísticas serem registradas e nada recuperável foi encontrado no disco.",
-        "icar_retrain_hint": "Os intervalos de credibilidade exigem as amostras da posteriori, que não foram mantidas — treine novamente para calculá-los."
+        "icar_retrain_hint": "Os intervalos de credibilidade exigem as amostras da posteriori, que não foram mantidas — treine novamente para calculá-los.",
+        "coef_header": "Coeficientes",
+        "coef_empty": "Nenhum coeficiente foi registrado para este modelo.",
+        "col_predictor": "Preditor",
+        "col_estimate": "Estimativa",
+        "col_odds_ratio": "Razão de chances",
+        "col_effect": "Efeito",
+        "col_std": "DP",
+        "col_ci_low": "IC 2.5%",
+        "col_ci_high": "IC 97.5%",
+        "intercept_design": "Intercepto (termo do delineamento): {value}",
+        "intercept_fitted": "Intercepto (ajustado): {value}",
+        "converged_line": "Iterações do solucionador: {line} (abaixo do limite sugere convergência — é uma heurística, não uma garantia)",
+        "importance_header": "Importância das variáveis",
+        "exploratory_chip": "exploratório",
+        "importance_bias_note": "A importância por impureza é enviesada em favor de preditores contínuos e de alta cardinalidade e não permite leitura causal.",
+        "oob_line": "Acurácia OOB (amostra de treinamento): {value}",
+        "icar_ci_note": "Média da posteriori com intervalo de credibilidade de 95%. Os intervalos que cruzam o zero aparecem esmaecidos.",
+        "dist_curve_header": "Desmatamento acumulado por distância até a borda da floresta",
+        "tab_dist_missing": "A tabela de distâncias (tab_dist.csv) não está mais no disco — treine novamente para gerá-la de novo."
       }
     }
   }

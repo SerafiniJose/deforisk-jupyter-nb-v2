@@ -300,7 +300,26 @@
         "card_trained_at": "Entrenado el",
         "recovering": "Leyendo las estadísticas del archivo del modelo guardado…",
         "empty_state": "No hay estadísticas almacenadas para este modelo. Se entrenó antes de que se registraran estadísticas y no se encontró nada recuperable en el disco.",
-        "icar_retrain_hint": "Los intervalos de credibilidad requieren las muestras de la posterior, que no se conservaron — vuelva a entrenar para calcularlos."
+        "icar_retrain_hint": "Los intervalos de credibilidad requieren las muestras de la posterior, que no se conservaron — vuelva a entrenar para calcularlos.",
+        "coef_header": "Coeficientes",
+        "coef_empty": "No se registraron coeficientes para este modelo.",
+        "col_predictor": "Predictor",
+        "col_estimate": "Estimación",
+        "col_odds_ratio": "Razón de probabilidades",
+        "col_effect": "Efecto",
+        "col_std": "DE",
+        "col_ci_low": "IC 2.5%",
+        "col_ci_high": "IC 97.5%",
+        "intercept_design": "Intercepto (término de diseño): {value}",
+        "intercept_fitted": "Intercepto (ajustado): {value}",
+        "converged_line": "Iteraciones del solucionador: {line} (por debajo del límite sugiere convergencia — es una heurística, no una garantía)",
+        "importance_header": "Importancia de las variables",
+        "exploratory_chip": "exploratorio",
+        "importance_bias_note": "La importancia por impureza está sesgada hacia los predictores continuos y de alta cardinalidad, y no admite una lectura causal.",
+        "oob_line": "Precisión OOB (muestra de entrenamiento): {value}",
+        "icar_ci_note": "Media de la posterior con intervalo de credibilidad del 95%. Los intervalos que cruzan el cero se muestran atenuados.",
+        "dist_curve_header": "Deforestación acumulada según la distancia al borde del bosque",
+        "tab_dist_missing": "La tabla de distancias (tab_dist.csv) ya no está en el disco — vuelva a entrenar para regenerarla."
       }
     }
   }

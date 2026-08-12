@@ -23,8 +23,21 @@ t("common.cancel")
 import spatialrisk.mlmodels.stats_recovery as stats_recovery  # noqa: E402
 from gui.widget.model_form_dialog import ModelDetailsDialog  # noqa: E402
 from gui.widget.model_stats_panel import ModelStatsPanel  # noqa: E402
-from spatialrisk.mlmodels import GLMModel, ICARModel, MWModel  # noqa: E402
-from spatialrisk.mlmodels.stats import Coefficient, GLMStats  # noqa: E402
+from spatialrisk.mlmodels import (  # noqa: E402
+    GLMModel,
+    ICARModel,
+    JNRBenchmarkModel,
+    MWModel,
+    RFModel,
+)
+from spatialrisk.mlmodels.stats import (  # noqa: E402
+    Coefficient,
+    GLMStats,
+    ICARStats,
+    Importance,
+    JNRStats,
+    RFStats,
+)
 from spatialrisk.project import Project  # noqa: E402
 
 
@@ -66,6 +79,24 @@ def _wait_for_text(widget, needle, timeout=5.0):
         if needle in texts or time.monotonic() > deadline:
             return texts
         time.sleep(0.02)
+
+
+def _styles(widget, out=None):
+    """Every ``style_`` trait in the tree.
+
+    The effect bar is the one piece of the family panels with no text of its
+    own: its whole meaning is carried by the inline style (which side of the
+    centre line it grows from, and its colour). Reading the styles is the only
+    way to assert that a credible interval crossing zero really is muted.
+    """
+    out = [] if out is None else out
+    style = getattr(widget, "style_", None)
+    if isinstance(style, str) and style:
+        out.append(style)
+    for child in getattr(widget, "children", []) or []:
+        if not isinstance(child, str):
+            _styles(child, out)
+    return out
 
 
 def _labels(widget, out=None):
@@ -168,6 +199,128 @@ def test_panel_hints_at_retraining_for_icar_without_stats(monkeypatch):
     texts = _wait_for_text(box, t("tiles.train.stats.icar_retrain_hint"))
     assert t("tiles.train.stats.empty_state") in texts
     assert t("tiles.train.stats.icar_retrain_hint") in texts
+
+
+def test_glm_panel_renders_coefficients_intercepts_and_convergence():
+    """GLM body: the coefficient table, both intercepts, the solver line.
+
+    The odds ratio is asserted as a value, not as a column header: it is
+    computed at display time (exp(estimate)) rather than stored, so a table
+    that rendered the header and dropped the transform would still pass a
+    header-only check.
+    """
+    model = GLMModel(
+        name="m",
+        stats=GLMStats(
+            coefficients=[Coefficient(name="scale(rivers)", estimate=0.5)],
+            intercept_design=-1.25,
+            intercept_fitted=0.75,
+            n_iter=22,
+            max_iter=1000,
+        ),
+    )
+    texts = _texts(_render(ModelStatsPanel(model=model)))
+    assert t("tiles.train.stats.col_predictor") in texts
+    assert t("tiles.train.stats.col_odds_ratio") in texts
+    assert "scale(rivers)" in texts
+    assert "0.5" in texts  # estimate
+    assert "1.649" in texts  # exp(0.5)
+    assert t("tiles.train.stats.intercept_design", value="-1.25") in texts
+    assert t("tiles.train.stats.intercept_fitted", value="0.75") in texts
+    assert t("tiles.train.stats.converged_line", line="22 / 1000") in texts
+    # The credible-interval columns belong to the iCAR table alone.
+    assert t("tiles.train.stats.col_ci_low") not in texts
+
+
+def test_rf_panel_renders_importances():
+    """RF body: the importance chart really receives the named importances.
+
+    The bars live inside an ipecharts widget, so the chart's own content is
+    unreachable from the text tree — the widget's option is read directly
+    instead, which is what proves the importances (not just the header) made
+    it through.
+    """
+    import ipecharts
+
+    model = RFModel(
+        name="m",
+        stats=RFStats(
+            importances=[Importance(name="towns_dist", value=0.28)],
+            oob_accuracy=0.81,
+        ),
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        texts = _texts(box)
+        assert t("tiles.train.stats.importance_header") in texts
+        assert t("tiles.train.stats.exploratory_chip") in texts
+        assert t("tiles.train.stats.oob_line", value="0.81") in texts
+        assert t("tiles.train.stats.importance_bias_note") in texts
+        charts = rc.find(ipecharts.EChartsRawWidget).widgets
+        assert len(charts) == 1
+        assert charts[0].option["yAxis"]["data"] == ["towns_dist"]
+    finally:
+        rc.close()
+
+
+def test_icar_panel_renders_ci_table():
+    """Posterior table with SD/CI columns, and the muted crossing-zero rule."""
+    model = ICARModel(
+        name="m",
+        stats=ICARStats(
+            coefficients=[
+                Coefficient(
+                    name="scale(rivers)",
+                    estimate=0.43,
+                    std=0.05,
+                    ci_low=0.33,
+                    ci_high=0.53,
+                ),
+                Coefficient(
+                    name="scale(edge)",
+                    estimate=-0.05,
+                    std=0.05,
+                    ci_low=-0.15,
+                    ci_high=0.06,  # crosses zero -> muted bar
+                ),
+            ]
+        ),
+    )
+    box = _render(ModelStatsPanel(model=model))
+    texts = _texts(box)
+    assert t("tiles.train.stats.col_std") in texts
+    assert t("tiles.train.stats.col_ci_low") in texts
+    assert t("tiles.train.stats.col_ci_high") in texts
+    assert "scale(rivers)" in texts
+    assert "0.33" in texts  # ci_low
+    assert "0.53" in texts  # ci_high
+    assert t("tiles.train.stats.icar_ci_note") in texts
+    # Vrho is a variance parameter, not a log-odds coefficient: no odds-ratio
+    # column on a posterior table.
+    assert t("tiles.train.stats.col_odds_ratio") not in texts
+    bars = [s for s in _styles(box) if "border-radius:1px;" in s]
+    assert any("background:grey;" in s for s in bars), bars
+    assert any("background:var(--v-error-base);" in s for s in bars), bars
+
+
+def test_jnr_panel_renders_without_tab_dist_on_disk(tmp_path):
+    """A missing tab_dist.csv degrades to the fallback text, never an error."""
+    model = JNRBenchmarkModel(
+        name="j",
+        stats=JNRStats(
+            dist_thresh=2010.0,
+            perc_thresh=99.5,
+            tot_defor_ha=316892.9,
+            tab_dist_path=tmp_path / "gone.csv",
+            n_classes=29,
+        ),
+    )
+    texts = _texts(_render(ModelStatsPanel(model=model)))
+    assert t("tiles.train.stats.dist_curve_header") in texts
+    assert t("tiles.train.stats.tab_dist_missing") in texts
+    # the threshold cards still render alongside the fallback
+    assert t("tiles.train.stats.card_n_classes") in texts
+    assert "29" in texts
 
 
 def test_details_dialog_keeps_configuration_content_under_tabs():
