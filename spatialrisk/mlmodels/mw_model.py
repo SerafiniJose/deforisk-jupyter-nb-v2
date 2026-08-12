@@ -121,9 +121,19 @@ class MWModel(BaseRiskModel):
     defor_var: str = ""
 
     def output_files(self) -> List[Path]:
-        """MW persists one deforestation-rate raster per window size."""
+        """MW persists one deforestation-rate raster per window size.
+
+        Also includes distance-threshold artifacts fit() writes
+        (tab_dist.csv + png).
+        """
         files = super().output_files()
         files.extend(Path(p) for p in self.ldefrate_files.values() if p)
+        if self.stats is not None:
+            files.extend(
+                Path(p)
+                for p in (self.stats.tab_dist_path, self.stats.perc_dist_png)
+                if p
+            )
         return files
 
     # ------------------------------------------------------------------

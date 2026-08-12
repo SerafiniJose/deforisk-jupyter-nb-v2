@@ -105,3 +105,39 @@ def test_mw_and_jnr_stats_round_trip_with_nested_path():
 def test_stats_none_round_trips_as_none():
     """Stats defaults to None and round-trips as None."""
     assert _round_trip(GLMModel(name="m"), GLMModel).stats is None
+
+
+def test_mw_output_files_include_tab_dist_artifacts(tmp_path):
+    """MW output_files() includes tab_dist and perc_dist_png artifacts."""
+    m = MWModel(
+        name="m",
+        ldefrate_files={"5": tmp_path / "l5.tif"},
+        stats=MWStats(
+            tab_dist_path=tmp_path / "tab_dist.csv",
+            perc_dist_png=tmp_path / "perc_dist_p.png",
+        ),
+    )
+    files = m.output_files()
+    assert tmp_path / "tab_dist.csv" in files
+    assert tmp_path / "perc_dist_p.png" in files
+    assert tmp_path / "l5.tif" in files
+
+
+def test_jnr_output_files_include_tab_dist_artifacts(tmp_path):
+    """JNR output_files() includes tab_dist and perc_dist_png artifacts."""
+    j = JNRBenchmarkModel(
+        name="j",
+        stats=JNRStats(
+            tab_dist_path=tmp_path / "tab_dist.csv",
+            perc_dist_png=tmp_path / "perc_dist_p.png",
+        ),
+    )
+    files = j.output_files()
+    assert tmp_path / "tab_dist.csv" in files
+    assert tmp_path / "perc_dist_p.png" in files
+
+
+def test_output_files_tolerate_missing_stats():
+    """output_files() gracefully handles None stats."""
+    assert MWModel(name="m").output_files() is not None
+    assert JNRBenchmarkModel(name="j").output_files() is not None

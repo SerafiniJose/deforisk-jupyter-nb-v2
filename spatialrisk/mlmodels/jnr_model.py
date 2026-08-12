@@ -116,6 +116,22 @@ class JNRBenchmarkModel(BaseRiskModel):
     # Defrate CSV paths produced by apply(), keyed by period name
     defrate_files: Dict[str, Path] = Field(default_factory=dict)
 
+    def output_files(self) -> List[Path]:
+        """JNR's fit()-time artifacts (tab_dist.csv + png).
+
+        Apply()-time defrate tables belong to predictions and are deliberately
+        NOT listed — deleting the model must not remove files a prediction
+        references.
+        """
+        files = super().output_files()
+        if self.stats is not None:
+            files.extend(
+                Path(p)
+                for p in (self.stats.tab_dist_path, self.stats.perc_dist_png)
+                if p
+            )
+        return files
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
