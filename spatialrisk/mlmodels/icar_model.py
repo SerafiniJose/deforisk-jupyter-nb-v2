@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import ICARStats
 
 
 def compute_cell_indices(
@@ -183,6 +184,7 @@ class ICARModel(BaseRiskModel):
     prior_vrho: float = -1.0
     beta_start: float = -99.0
     random_seed: Optional[int] = None
+    stats: Optional[ICARStats] = None
     rho_path: Optional[Path] = None
     csize_interpolate: float = 0.1
 

@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import Field
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import JNRStats
 
 
 class JNRBenchmarkModel(BaseRiskModel):
@@ -100,6 +101,7 @@ class JNRBenchmarkModel(BaseRiskModel):
     # State persisted after fit()
     dist_thresh: Optional[float] = None
     dist_bins: List[float] = Field(default_factory=list)
+    stats: Optional[JNRStats] = None
 
     # Configurable feature-variable name mappings
     forest_edge_var: str = "forest_edge"

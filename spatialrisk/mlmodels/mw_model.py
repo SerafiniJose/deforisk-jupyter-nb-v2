@@ -42,6 +42,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import Field
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import MWStats
 
 
 class MWModel(BaseRiskModel):
@@ -107,6 +108,7 @@ class MWModel(BaseRiskModel):
 
     # State persisted after fit() — no pickle, paths to raster files
     dist_thresh: Optional[float] = None
+    stats: Optional[MWStats] = None
     ldefrate_files: Dict[str, Path] = Field(default_factory=dict)
 
     # Configurable feature-variable name mappings

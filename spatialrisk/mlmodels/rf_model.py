@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import RFStats
 
 
 class RFModel(BaseRiskModel):
@@ -29,6 +30,7 @@ class RFModel(BaseRiskModel):
     max_depth: int = 15
     min_samples_leaf: int = 2
     random_seed: Optional[int] = None
+    stats: Optional[RFStats] = None
 
     def fit(
         self,

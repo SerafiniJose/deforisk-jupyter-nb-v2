@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import GLMStats
 
 
 class GLMModel(BaseRiskModel):
@@ -26,6 +27,7 @@ class GLMModel(BaseRiskModel):
     solver: str = "lbfgs"
     max_iter: int = 1000
     random_seed: Optional[int] = None
+    stats: Optional[GLMStats] = None
 
     def fit(
         self,
