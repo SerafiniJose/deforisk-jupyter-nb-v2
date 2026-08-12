@@ -12,7 +12,7 @@ from spatialrisk.mlmodels.base import BaseRiskModel
 class RFModel(BaseRiskModel):
     """Random Forest risk model with Patsy formula support.
 
-    Attributes
+    Attributes:
     ----------
     n_trees : int
         Number of decision trees (default: 100).
@@ -46,7 +46,7 @@ class RFModel(BaseRiskModel):
             Folder for saving the model pickle. Defaults to the project model
             folder; raises when the model has no project either.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -162,8 +162,10 @@ class RFModel(BaseRiskModel):
         profile.update(dtype="uint16", count=1, nodata=0)
 
         _mask_values = (
-            mask_value if isinstance(mask_value, (list, tuple)) else [mask_value]
-        ) if mask is not None else None
+            (mask_value if isinstance(mask_value, (list, tuple)) else [mask_value])
+            if mask is not None
+            else None
+        )
 
         with rasterio.open(output_file, "w", **profile) as dst:
             blockinfo = far.misc.makeblock(str(active_dataset.target.path))

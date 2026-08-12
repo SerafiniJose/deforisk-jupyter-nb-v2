@@ -154,7 +154,7 @@ class ICARModel(BaseRiskModel):
     ``dataset.extract_at_points()``, which encodes the raster cell index and
     enables construction of the spatial neighbourhood graph.
 
-    Attributes
+    Attributes:
     ----------
     csize : float
         Cell size (km) for building the spatial neighbourhood (default: 10).
@@ -212,7 +212,7 @@ class ICARModel(BaseRiskModel):
             the project icar_model folder; raises when the model has no
             project either.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -468,12 +468,16 @@ class ICARModel(BaseRiskModel):
                     rho_win = rasterio.windows.from_bounds(
                         *block_bounds, rho_src.transform
                     )
-                    rho_block = rho_src.read(
-                        1,
-                        window=rho_win,
-                        out_shape=(n_rows, n_cols),
-                        resampling=rasterio.enums.Resampling.bilinear,
-                    ).astype(float).ravel()
+                    rho_block = (
+                        rho_src.read(
+                            1,
+                            window=rho_win,
+                            out_shape=(n_rows, n_cols),
+                            resampling=rasterio.enums.Resampling.bilinear,
+                        )
+                        .astype(float)
+                        .ravel()
+                    )
 
                 block_df_full = pd.DataFrame(block_dict)
                 valid_mask = (
