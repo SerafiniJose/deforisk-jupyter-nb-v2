@@ -1,7 +1,10 @@
 """Solara-free view-model for the model Statistics tab (Spec A §4).
 
-Row/card shaping only — no widgets, no i18n resolution (the widget resolves
-``key`` by calling ``t()`` on ``"tiles.train.stats." + key``). Values arrive
+Row/card shaping only — no widgets, no i18n resolution: each row carries a
+``key`` that the widget turns into a catalog lookup under the stats namespace.
+The widget builds that lookup with an f-string rather than by concatenating a
+literal prefix, because tests/test_i18n.py scans for literal translator calls
+with a regex and would read the bare prefix as a key of its own. Values arrive
 display-ready so the widget never formats numbers.
 """
 
@@ -45,13 +48,21 @@ def _fmt(v, digits=4):
     return f"{v:,}" if isinstance(v, int) else str(v)
 
 
-def stat_cards(model) -> List[dict]:
+def stat_cards(model, stats=None) -> List[dict]:
     """Header cards.
 
     None-valued cards are omitted (spec §4.2); a stored non-finite deviance
     renders as a flagged em-dash, never 'nan'.
+
+    ``stats`` overrides ``model.stats``. Recovered statistics (spec §3) are
+    deliberately never written back onto the model — opening a dialog must not
+    mutate the project — so without this override the whole recovery path would
+    render a populated family panel under a card strip showing only the model's
+    own attributes. ``model`` is still needed for deviance/trained_at, which
+    live on the model rather than in the stats record.
     """
-    stats = getattr(model, "stats", None)
+    if stats is None:
+        stats = getattr(model, "stats", None)
     cards = []
 
     def add(key, value, warn=False):

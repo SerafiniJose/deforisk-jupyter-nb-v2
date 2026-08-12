@@ -70,6 +70,24 @@ def test_stat_cards_omit_family_irrelevant_cards():
     assert "card_n_classes" not in keys
 
 
+def test_stat_cards_accept_recovered_stats_the_model_does_not_carry():
+    """An explicit ``stats`` argument overrides ``model.stats``.
+
+    Recovered stats (spec §3) are never written back onto the model, so the
+    cards can only reflect them if they can be passed in alongside the model
+    that still owns deviance/trained_at.
+    """
+    bare = GLMModel(name="m", deviance=100.0, trained_at="2026-08-04T13:40:05")
+    assert [c["key"] for c in stat_cards(bare)] == ["card_deviance", "card_trained_at"]
+
+    recovered = GLMStats(n_rows=42, n_events=7)
+    cards = {c["key"]: c["value"] for c in stat_cards(bare, recovered)}
+    assert cards["card_rows"] == "42" and cards["card_events"] == "7"
+    # the model's own fields still come from the model
+    assert cards["card_trained_at"] == "2026-08-04T13:40:05"
+    assert bare.stats is None  # the view-model writes nothing back
+
+
 def test_coefficient_rows_compute_odds_ratio_at_display_time():
     """odds_ratio = exp(estimate), computed at display time, not stored."""
     rows = coefficient_rows(_glm().stats)

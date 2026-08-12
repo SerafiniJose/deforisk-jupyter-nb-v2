@@ -16,6 +16,7 @@ prefix itself were a key.
 
 import reacton.ipyvuetify as rv
 import solara
+import solara.lab
 
 from gui.i18n import t
 from gui.scripts.model_stats_view import stat_cards
@@ -28,9 +29,13 @@ _CARD_STYLE = (
 
 
 @solara.component
-def _StatCards(model):
-    """Header cards — one per non-None statistic (the view-model omits the rest)."""
-    cards = stat_cards(model)
+def _StatCards(model, stats):
+    """Header cards — one per non-None statistic (the view-model omits the rest).
+
+    ``stats`` is passed explicitly rather than read off the model: on the
+    recovery path it comes from the background task and is never written back.
+    """
+    cards = stat_cards(model, stats)
     with solara.Row(gap="8px", style="flex-wrap:wrap;"):
         for card in cards:
             with solara.Column(style=_CARD_STYLE, gap="0px"):
@@ -76,10 +81,10 @@ def ModelStatsPanel(model):
     with solara.Column(gap="12px"):
         with solara.Row(gap="8px", style="align-items:flex-start;"):
             solara.Info(t("tiles.train.stats.caveat_training_fit"), dense=True)
-        _StatCards(model=model)
+        _StatCards(model=model, stats=stats)
         if stats is not None:
             _FamilyPanel(model=model, stats=stats)
-        elif getattr(model, "stats", None) is None and recovered.pending:
+        elif recovered.pending:
             with solara.Row(gap="8px"):
                 rv.ProgressCircular(indeterminate=True, size=18, width=2)
                 solara.Text(t("tiles.train.stats.recovering"), style=MUTED)
