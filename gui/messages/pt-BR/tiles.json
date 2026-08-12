@@ -284,7 +284,24 @@
       "confirm_overwrite_label": "Sobrescrever",
       "model_name_exists_warning": "⚠ Já existe um modelo chamado '{key}' — o treinamento vai sobrescrevê-lo.",
       "model_name_saved_as": "Salvo como '{key}'.",
-      "model_name_required": "Obrigatório."
+      "model_name_required": "Obrigatório.",
+      "stats": {
+        "tab_config": "Configuração",
+        "tab_statistics": "Estatísticas",
+        "caveat_training_fit": "Ajuste de treinamento — medido nas mesmas amostras com as quais o modelo foi ajustado. Para a acurácia do mapa, execute uma avaliação.",
+        "card_rows": "Linhas",
+        "card_events": "Eventos",
+        "card_deviance": "Deviance",
+        "card_dist_thresh": "Limiar de distância (m)",
+        "card_perc_thresh": "Desmatamento dentro do limiar (%)",
+        "card_tot_defor": "Total desmatado (ha)",
+        "card_n_classes": "Classes de vulnerabilidade",
+        "card_vrho": "Vrho",
+        "card_trained_at": "Treinado em",
+        "recovering": "Lendo as estatísticas do arquivo do modelo salvo…",
+        "empty_state": "Nenhuma estatística armazenada para este modelo. Ele foi treinado antes de as estatísticas serem registradas e nada recuperável foi encontrado no disco.",
+        "icar_retrain_hint": "Os intervalos de credibilidade exigem as amostras da posteriori, que não foram mantidas — treine novamente para calculá-los."
+      }
     }
   }
 }

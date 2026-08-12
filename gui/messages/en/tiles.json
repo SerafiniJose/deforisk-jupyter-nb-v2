@@ -284,7 +284,24 @@
       "confirm_overwrite_label": "Overwrite",
       "model_name_exists_warning": "⚠ A model named '{key}' already exists — training overwrites it.",
       "model_name_saved_as": "Saved as '{key}'.",
-      "model_name_required": "Required."
+      "model_name_required": "Required.",
+      "stats": {
+        "tab_config": "Configuration",
+        "tab_statistics": "Statistics",
+        "caveat_training_fit": "Training fit — measured on the same samples the model was fitted to. For map accuracy, run an evaluation.",
+        "card_rows": "Rows",
+        "card_events": "Events",
+        "card_deviance": "Deviance",
+        "card_dist_thresh": "Distance threshold (m)",
+        "card_perc_thresh": "Deforestation within (%)",
+        "card_tot_defor": "Total deforested (ha)",
+        "card_n_classes": "Vulnerability classes",
+        "card_vrho": "Vrho",
+        "card_trained_at": "Trained at",
+        "recovering": "Reading statistics from the saved model file…",
+        "empty_state": "No statistics stored for this model. It was trained before statistics were recorded and nothing recoverable was found on disk.",
+        "icar_retrain_hint": "Credible intervals require the posterior draws, which were not kept — retrain to compute them."
+      }
     }
   }
 }
