@@ -304,6 +304,13 @@ class MWModel(BaseRiskModel):
         )
         self.dist_thresh = float(result["dist_thresh"])
         print(f"  dist_thresh={self.dist_thresh:.1f} m")
+        from spatialrisk.mlmodels.stats import build_rmj_stats
+
+        self.stats = build_rmj_stats(
+            result,
+            tab_dist_path=period_dir / "tab_dist.csv",
+            perc_dist_png=period_dir / f"perc_dist_{period}.png",
+        )
 
         # Step 2: Local deforestation rate per window size
         ldefrate_files: Dict[str, Path] = {}

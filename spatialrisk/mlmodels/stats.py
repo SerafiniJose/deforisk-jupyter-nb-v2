@@ -224,3 +224,26 @@ def summarize_icar_mcmc(mcmc, column_names) -> dict:
         "betas": [{"name": n, **_summ(arr[:, i])} for i, n in enumerate(beta_names)],
         "vrho": _summ(arr[:, -2]),
     }
+
+
+def build_rmj_stats(result, *, tab_dist_path, perc_dist_png, n_classes=None):
+    """MW/JNR stats from dist_edge_threshold's return dict (Spec A §2.4).
+
+    Keeps tot_def and perc_thresh, which the fit methods currently discard,
+    and records the tab_dist.csv / perc_dist png the models already write.
+    n_classes given -> JNRStats, else MWStats.
+
+    Note: dict values may be non-finite (nan, inf); the schema's _FiniteFloats
+    validator coerces these to None, enabling recovery from partial disk state
+    in a later task (spec A §2.4).
+    """
+    kwargs = dict(
+        dist_thresh=float(result["dist_thresh"]),
+        perc_thresh=float(result["perc_thresh"]),
+        tot_defor_ha=float(result["tot_def"]),
+        tab_dist_path=Path(tab_dist_path),
+        perc_dist_png=Path(perc_dist_png),
+    )
+    if n_classes is not None:
+        return JNRStats(n_classes=int(n_classes), **kwargs)
+    return MWStats(**kwargs)

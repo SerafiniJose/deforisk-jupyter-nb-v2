@@ -7,6 +7,7 @@ from spatialrisk.mlmodels.stats import (
     Coefficient,
     JNRStats,
     MWStats,
+    build_rmj_stats,
     collect_glm_stats,
     collect_rf_stats,
     sample_design_label,
@@ -152,3 +153,31 @@ def test_summarize_icar_mcmc_guards_the_cell_column():
         summarize_icar_mcmc(trace, ["Intercept", "scale(a)", "not_cell"])
     with pytest.raises(ValueError, match="expected"):
         summarize_icar_mcmc(np.zeros((10, 5)), ["Intercept", "a", "cell"])
+
+
+def test_build_rmj_stats_keeps_the_discarded_fields(tmp_path):
+    """build_rmj_stats keeps tot_def and perc_thresh from dist_edge_threshold."""
+    result = {"tot_def": 316892.88, "dist_thresh": 2010.0, "perc_thresh": 99.5}
+    s = build_rmj_stats(
+        result,
+        tab_dist_path=tmp_path / "tab_dist.csv",
+        perc_dist_png=tmp_path / "perc_dist_p.png",
+    )
+    assert isinstance(s, MWStats) and not isinstance(s, JNRStats)
+    assert s.dist_thresh == 2010.0 and s.perc_thresh == 99.5
+    assert s.tot_defor_ha == 316892.88
+    assert s.tab_dist_path == tmp_path / "tab_dist.csv"
+    # n_rows/n_events stay None: no training table, and an events count
+    # without a forest denominator would be meaningless (spec §2.4).
+    assert s.n_rows is None and s.n_events is None
+
+
+def test_build_rmj_stats_jnr_variant_counts_classes(tmp_path):
+    """build_rmj_stats with n_classes returns JNRStats with class count."""
+    s = build_rmj_stats(
+        {"tot_def": 1.0, "dist_thresh": 270.0, "perc_thresh": 99.5},
+        tab_dist_path=tmp_path / "t.csv",
+        perc_dist_png=tmp_path / "p.png",
+        n_classes=29,
+    )
+    assert isinstance(s, JNRStats) and s.n_classes == 29
