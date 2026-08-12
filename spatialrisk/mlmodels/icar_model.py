@@ -96,6 +96,16 @@ def _mcmc_worker(payload: dict) -> dict:
         seed=payload["seed"],
         verbose=payload["verbose"],
     )
+    # The full MCMC trace lives and dies here: summarise it in-process and send
+    # only the plain dicts/floats back (spec §2.2 non-goal — no trace crosses).
+    summary = None
+    try:
+        from spatialrisk.mlmodels.stats import summarize_icar_mcmc
+
+        summary = summarize_icar_mcmc(mod.mcmc, mod._x_design_info.column_names)
+    except Exception as exc:  # summary must never fail the training run
+        print(f"  ⚠ posterior summary skipped: {exc}")
+
     # Only picklable posterior summaries cross the process boundary (the full
     # model object holds patsy design objects that cannot be pickled).
     return {
@@ -103,6 +113,7 @@ def _mcmc_worker(payload: dict) -> dict:
         "rho": np.array(mod.rho),
         "Vrho": float(mod.Vrho) if hasattr(mod, "Vrho") else None,
         "deviance": float(mod.deviance),
+        "posterior_summary": summary,
         "worker_pid": os.getpid(),
     }
 
@@ -146,6 +157,88 @@ def run_icar_mcmc(
         result = pool.submit(_mcmc_worker, payload).result()
     print(f"  MCMC ran in subprocess (pid {result['worker_pid']})")
     return result
+
+
+def build_icar_stats(
+    posteriors, design_column_names, *, n_rows, n_events, sample_design
+) -> ICARStats:
+    """ICARStats from the worker's posteriors dict (Spec A §2.2).
+
+    Preferred source is posteriors["posterior_summary"] (mean/SD/CI computed
+    from the trace inside the worker). When it is absent — the worker's
+    summary failed, or an old pickle path — fall back to point estimates
+    zipped against design_column_names[:-1], under the same 'cell' guard the
+    summary path enforces: mislabelling raises, it never guesses.
+    """
+    from spatialrisk.mlmodels.stats import Coefficient
+
+    summary = posteriors.get("posterior_summary")
+    if summary:
+        coefficients = [Coefficient(**b) for b in _summary_kwargs(summary["betas"])]
+        vrho = Coefficient(name="Vrho", **_summary_kwargs_one(summary["vrho"]))
+    else:
+        names = list(design_column_names)
+        if not names or names[-1] != "cell":
+            raise ValueError(
+                "expected the design's last column to be 'cell'; got "
+                f"{names[-1] if names else None!r}"
+            )
+        betas = np.asarray(posteriors["betas"], dtype=float)
+        beta_names = names[:-1]
+        if len(beta_names) != len(betas):
+            raise ValueError(
+                f"{len(beta_names)} beta names vs {len(betas)} point estimates"
+            )
+        coefficients = [
+            Coefficient(name=n, estimate=float(b)) for n, b in zip(beta_names, betas)
+        ]
+        v = posteriors.get("Vrho")
+        vrho = Coefficient(name="Vrho", estimate=float(v)) if v is not None else None
+
+    rho = np.asarray(posteriors.get("rho", []), dtype=float)
+    rho = rho[np.isfinite(rho)]
+    rho_kw = (
+        {
+            "rho_min": float(rho.min()),
+            "rho_max": float(rho.max()),
+            "rho_mean": float(rho.mean()),
+            "rho_std": float(rho.std(ddof=1)) if rho.size > 1 else None,
+        }
+        if rho.size
+        else {}
+    )
+    return ICARStats(
+        n_rows=n_rows,
+        n_events=n_events,
+        sample_design=sample_design,
+        coefficients=coefficients,
+        vrho=vrho,
+        **rho_kw,
+    )
+
+
+def _summary_kwargs(betas):
+    """Map summary beta dicts to Coefficient kwargs (mean -> estimate)."""
+    return [
+        {
+            "name": b["name"],
+            "estimate": b["mean"],
+            "std": b["std"],
+            "ci_low": b["ci_low"],
+            "ci_high": b["ci_high"],
+        }
+        for b in betas
+    ]
+
+
+def _summary_kwargs_one(d):
+    """One summary dict -> Coefficient kwargs, minus the name."""
+    return {
+        "estimate": d["mean"],
+        "std": d["std"],
+        "ci_low": d["ci_low"],
+        "ci_high": d["ci_high"],
+    }
 
 
 class ICARModel(BaseRiskModel):
@@ -290,6 +383,20 @@ class ICARModel(BaseRiskModel):
         }
         self.n_samples = n_obs
         self.deviance = self._ml_model["deviance"]
+
+        from spatialrisk.mlmodels.stats import sample_design_label
+
+        try:
+            self.stats = build_icar_stats(
+                posteriors,
+                x.design_info.column_names,
+                n_rows=n_obs,
+                n_events=int(np.asarray(y)[:, 0].sum()),
+                sample_design=sample_design_label(self.sample),
+            )
+        except Exception as exc:  # stats must never fail a training run
+            print(f"  ⚠ model statistics skipped: {exc}")
+            self.stats = None
 
         self._stamp_now()
         self.trained = True
