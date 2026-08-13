@@ -318,6 +318,7 @@
         "converged_line": "Iteraciones del solucionador: {line} (por debajo del límite sugiere convergencia — es una heurística, no una garantía)",
         "importance_header": "Importancia de las variables",
         "exploratory_chip": "exploratorio",
+        "importance_split_toggle": "Mostrar los niveles categóricos por separado",
         "importance_bias_note": "La importancia por impureza está sesgada hacia los predictores continuos y de alta cardinalidad, y no admite una lectura causal.",
         "oob_line": "Precisión OOB (muestra de entrenamiento): {value}",
         "icar_ci_note": "Media de la posterior con intervalo de credibilidad del 95%. Los intervalos que cruzan el cero se muestran atenuados.",

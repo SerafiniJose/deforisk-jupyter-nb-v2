@@ -348,9 +348,18 @@ def _RfPanel(stats, visible=True):
     is biased toward continuous and high-cardinality predictors and supports no
     causal reading (hence the note and the 'exploratory' chip), and sklearn's
     oob_score_ is plain accuracy on the training sample, never validation.
+
+    Stored importances are one row per design column, so a categorical's
+    levels arrive as separate rows. The default view sums them into one bar
+    per variable (the only total comparable to a continuous predictor); the
+    split switch re-shapes the same stats into one bar per level to show
+    which category carries the importance.
     """
     dark = use_theme_dark()  # hook: unconditional, before any branch
-    entries = importance_entries(stats)
+    split, set_split = solara.use_state(False)
+    aggregated = importance_entries(stats)
+    per_level = importance_entries(stats, aggregate=False)
+    entries = per_level if split else aggregated
     option = importance_bars_option(entries, dark=dark)
     with solara.Column(gap="8px"):
         with solara.Row(gap="8px", style="align-items:center;"):
@@ -359,6 +368,12 @@ def _RfPanel(stats, visible=True):
                 children=[t("tiles.train.stats.exploratory_chip")],
                 x_small=True,
                 outlined=True,
+            )
+        if per_level != aggregated:
+            solara.Switch(
+                label=t("tiles.train.stats.importance_split_toggle"),
+                value=split,
+                on_value=set_split,
             )
         if option is not None:
             EChartsChart(

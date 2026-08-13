@@ -9,9 +9,15 @@ display-ready so the widget never formats numbers.
 """
 
 import math
+import re
 from typing import List, Optional
 
 DASH = "—"
+
+# patsy's categorical column label, e.g. 'C(subj, levels=[1, 2, 3])[T.9]':
+# group 1 is the variable, group 2 the treatment-coded level (absent on a
+# bare term name).
+_CATEGORICAL_WRAPPER = re.compile(r"^C\(([^,)]+)[^)]*\)(?:\[T\.([^]]+)\])?$")
 
 
 def _fmt_float(v, digits):
@@ -184,9 +190,28 @@ def glm_convergence_line(stats) -> Optional[str]:
     return f"{n} / {m}"
 
 
-def importance_entries(stats, top: int = 15):
-    """[(name, value)] descending, capped at ``top`` for the bar chart."""
-    entries = [(i.name, i.value) for i in getattr(stats, "importances", None) or []]
+def importance_entries(stats, top: int = 15, aggregate: bool = True):
+    """[(name, value)] descending, capped at ``top`` for the bar chart.
+
+    Stored stats keep the raw patsy column names — one row per
+    treatment-coded dummy column for a categorical. With ``aggregate``
+    (the default) those rows are summed into one per variable, named
+    plainly (`C(subj, levels=[...])[T.k]` -> `subj`) — a categorical's
+    importance is only comparable to a continuous variable's as that sum.
+    With ``aggregate=False`` each level keeps its own row (`subj = k`),
+    the drill-down that shows WHICH category carries the importance.
+    """
+    summed: dict = {}
+    for i in getattr(stats, "importances", None) or []:
+        m = _CATEGORICAL_WRAPPER.match(i.name)
+        if m is None:
+            name = i.name
+        elif aggregate or m.group(2) is None:
+            name = m.group(1)
+        else:
+            name = f"{m.group(1)} = {m.group(2)}"
+        summed[name] = summed.get(name, 0.0) + i.value
+    entries = sorted(summed.items(), key=lambda e: e[1], reverse=True)
     return entries[:top]
 
 

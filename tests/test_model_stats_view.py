@@ -115,6 +115,61 @@ def test_importance_entries_capped_and_ordered():
     assert entries[0] == ("v0", 1.0)
 
 
+def test_importance_entries_prettify_categorical_wrapper():
+    """`C(subj, levels=[...])` displays as plain `subj`; others untouched."""
+    s = RFStats(
+        importances=[
+            Importance(name="scale(altitude)", value=0.4),
+            Importance(name="C(subj, levels=[1, 2, 3])", value=0.3),
+            Importance(name="C(protected_area, levels=[0, 1])", value=0.1),
+        ]
+    )
+    assert importance_entries(s) == [
+        ("scale(altitude)", 0.4),
+        ("subj", 0.3),
+        ("protected_area", 0.1),
+    ]
+
+
+def test_importance_entries_aggregates_legacy_per_level_rows():
+    """Stats saved before term aggregation carry one row per dummy column.
+
+    Those `[T.k]` rows must collapse into one summed row at display time,
+    re-sorted descending, so already-trained models don't need a retrain.
+    """
+    s = RFStats(
+        importances=[
+            Importance(name="scale(altitude)", value=0.26),
+            Importance(name="C(subj, levels=[1, 2, 3])[T.2]", value=0.15),
+            Importance(name="C(subj, levels=[1, 2, 3])[T.3]", value=0.14),
+        ]
+    )
+    assert importance_entries(s) == [
+        ("subj", pytest.approx(0.29)),
+        ("scale(altitude)", 0.26),
+    ]
+
+
+def test_importance_entries_disaggregated_keeps_levels():
+    """aggregate=False keeps one row per level, named 'variable = level'.
+
+    This is the drill-down view: it shows WHICH category carries the
+    importance instead of the variable's summed total.
+    """
+    s = RFStats(
+        importances=[
+            Importance(name="scale(altitude)", value=0.4),
+            Importance(name="C(subj, levels=[1, 2, 3])[T.3]", value=0.2),
+            Importance(name="C(subj, levels=[1, 2, 3])[T.2]", value=0.1),
+        ]
+    )
+    assert importance_entries(s, aggregate=False) == [
+        ("scale(altitude)", 0.4),
+        ("subj = 3", 0.2),
+        ("subj = 2", 0.1),
+    ]
+
+
 def test_load_tab_dist_none_when_missing(tmp_path):
     """A missing tab_dist.csv yields None; a present one yields its rows."""
     assert load_tab_dist(MWStats(tab_dist_path=tmp_path / "gone.csv")) is None

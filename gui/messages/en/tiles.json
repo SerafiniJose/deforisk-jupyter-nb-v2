@@ -318,6 +318,7 @@
         "converged_line": "Solver iterations: {line} (below the cap suggests convergence — heuristic, not a guarantee)",
         "importance_header": "Variable importance",
         "exploratory_chip": "exploratory",
+        "importance_split_toggle": "Show categorical levels separately",
         "importance_bias_note": "Impurity importance is biased toward continuous and high-cardinality predictors and carries no causal reading.",
         "oob_line": "OOB accuracy (training sample): {value}",
         "icar_ci_note": "Posterior mean with 95% credible interval. Intervals crossing zero are muted.",

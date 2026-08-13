@@ -318,6 +318,7 @@
         "converged_line": "Itérations du solveur : {line} (en dessous de la limite, cela suggère une convergence — heuristique, pas une garantie)",
         "importance_header": "Importance des variables",
         "exploratory_chip": "exploratoire",
+        "importance_split_toggle": "Afficher les niveaux catégoriels séparément",
         "importance_bias_note": "L'importance par impureté est biaisée en faveur des prédicteurs continus et à forte cardinalité et n'autorise aucune lecture causale.",
         "oob_line": "Exactitude OOB (échantillon d'entraînement) : {value}",
         "icar_ci_note": "Moyenne a posteriori avec intervalle de crédibilité à 95 %. Les intervalles qui franchissent zéro sont atténués.",

@@ -264,6 +264,62 @@ def test_rf_panel_renders_importances():
         rc.close()
 
 
+def test_rf_panel_toggles_between_aggregated_and_per_level_importances():
+    """The split switch swaps the chart between per-variable and per-level.
+
+    Default is aggregated (one summed bar per variable, comparable across
+    variables); flipping the switch re-shapes the same stored stats into
+    one bar per category level, so the user can see WHICH level carries
+    the importance.
+    """
+    import ipecharts
+    import ipyvuetify as vw
+
+    model = RFModel(
+        name="m",
+        stats=RFStats(
+            importances=[
+                Importance(name="scale(altitude)", value=0.4),
+                Importance(name="C(subj, levels=[1, 2, 3])[T.3]", value=0.2),
+                Importance(name="C(subj, levels=[1, 2, 3])[T.2]", value=0.1),
+            ]
+        ),
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        texts = _texts(box)
+        assert t("tiles.train.stats.importance_split_toggle") in _labels(box) + texts
+        charts = rc.find(ipecharts.EChartsRawWidget).widgets
+        # aggregated by default; the category axis is reversed input order
+        assert charts[0].option["yAxis"]["data"] == ["subj", "scale(altitude)"]
+
+        switch = rc.find(vw.Switch).widgets[0]
+        switch.v_model = True
+        charts = rc.find(ipecharts.EChartsRawWidget).widgets
+        assert charts[0].option["yAxis"]["data"] == [
+            "subj = 2",
+            "subj = 3",
+            "scale(altitude)",
+        ]
+    finally:
+        rc.close()
+
+
+def test_rf_panel_hides_the_split_switch_without_categorical_terms():
+    """All-continuous importances render no switch — nothing to split."""
+    import ipyvuetify as vw
+
+    model = RFModel(
+        name="m",
+        stats=RFStats(importances=[Importance(name="towns_dist", value=0.28)]),
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        assert len(rc.find(vw.Switch).widgets) == 0
+    finally:
+        rc.close()
+
+
 def test_icar_panel_renders_ci_table():
     """Posterior table with SD/CI columns, and the muted crossing-zero rule."""
     model = ICARModel(
