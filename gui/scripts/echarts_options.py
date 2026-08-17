@@ -39,8 +39,15 @@ _GRID = {True: "#33322f", False: "#e3e2dd"}
 
 # ColorBrewer "Blues", the 9 stops behind plotly's colourscale of that name.
 _BLUES_STOPS = (
-    "#f7fbff", "#deebf7", "#c6dbef", "#9ecae1", "#6baed6",
-    "#4292c6", "#2171b5", "#08519c", "#08306b",
+    "#f7fbff",
+    "#deebf7",
+    "#c6dbef",
+    "#9ecae1",
+    "#6baed6",
+    "#4292c6",
+    "#2171b5",
+    "#08519c",
+    "#08306b",
 )
 # The sub-range of the ramp the app samples: skips the near-white low end
 # (invisible on the light theme) and the near-black high end.
@@ -53,7 +60,7 @@ SINGLE_SERIES_COLOR = "#2a78d6"
 
 def _rgb(hex_color):
     """'#rrggbb' -> (r, g, b)."""
-    return tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return tuple(int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
 
 
 def _hex(rgb):
@@ -139,6 +146,5 @@ def resolve_renderer(renderer):
     a typo into a performance mystery rather than an error — so reject it here.
     """
     if renderer not in RENDERERS:
-        raise ValueError(
-            f"renderer must be one of {RENDERERS}, got {renderer!r}")
+        raise ValueError(f"renderer must be one of {RENDERERS}, got {renderer!r}")
     return renderer

@@ -39,8 +39,9 @@ def map_label(row):
 
 def record_csizes(rows):
     """Sorted unique coarse-grid cell sizes present in the rows."""
-    return sorted({r["csize_coarse_grid"] for r in rows
-                   if r.get("csize_coarse_grid") is not None})
+    return sorted(
+        {r["csize_coarse_grid"] for r in rows if r.get("csize_coarse_grid") is not None}
+    )
 
 
 def record_metrics(rows, selected):
@@ -77,7 +78,8 @@ def figure_entries(rows, csize, fig_dir=None):
             path = Path(r["fig_path"])
         elif fig_dir is not None and r.get("model") and r.get("period"):
             path = Path(fig_dir) / pred_obs_artifact_name(
-                r["model"], r["period"], csize, "png")
+                r["model"], r["period"], csize, "png"
+            )
         else:
             continue
         entries.append((map_label(r), path))
@@ -127,16 +129,19 @@ def metric_bar_option(rows, metric, dark=False):
 
     series = []
     for ci, csize in enumerate(csizes):
-        series.append({
-            "type": "bar",
-            "name": csize_series_name(csize),
-            "data": [(by_key.get((lab, csize)) or {}).get(metric)
-                     for lab in labels],
-            "itemStyle": {"color": colors[ci]},
-            # Plotly's bargroupgap=0.08: the gap between bars inside one group.
-            # ECharts reads barGap from the first bar series of the group.
-            "barGap": "8%",
-        })
+        series.append(
+            {
+                "type": "bar",
+                "name": csize_series_name(csize),
+                "data": [
+                    (by_key.get((lab, csize)) or {}).get(metric) for lab in labels
+                ],
+                "itemStyle": {"color": colors[ci]},
+                # Plotly's bargroupgap=0.08: the gap between bars inside one group.
+                # ECharts reads barGap from the first bar series of the group.
+                "barGap": "8%",
+            }
+        )
 
     return {
         "title": {
@@ -150,8 +155,13 @@ def metric_bar_option(rows, metric, dark=False):
         # top clears the title (at y=0) plus, when it is shown, the legend row
         # placed just under it (top=24). Without a legend the plot starts where
         # the legend would have begun instead of leaving a blank band.
-        "grid": {"left": 8, "right": 12, "top": 52 if show_legend else 24,
-                 "bottom": 4, "containLabel": True},
+        "grid": {
+            "left": 8,
+            "right": 12,
+            "top": 52 if show_legend else 24,
+            "bottom": 4,
+            "containLabel": True,
+        },
         "tooltip": {
             # {b} = category (the map label), {c} = value, {a} = series name
             # (which is "csize N px") — the three fields the Plotly

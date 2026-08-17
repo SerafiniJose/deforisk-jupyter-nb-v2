@@ -7,8 +7,9 @@ selected run's table — the proven ConfirmDialog pattern (nested row->Dialog
 toggles are unreliable).
 """
 
-import pandas as pd
 import logging
+
+import pandas as pd
 import reacton.ipyvuetify as rv
 import solara
 from pysepal.solara import use_theme_dark
@@ -328,7 +329,7 @@ def _PredObsCard(
             return pred_obs_scatter_option(
                 plot_data, dark=dark, labels=labels, title=title
             )
-        except Exception:  # noqa: BLE001 - one bad card must not kill the tab
+        except Exception:  # one bad card must not kill the tab
             # Runs inside use_memo, so this logs once per artifact identity,
             # not once per render — no reactive log-console traffic.
             logger.exception("Could not build evaluation scatter")
