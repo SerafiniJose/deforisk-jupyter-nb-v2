@@ -6,20 +6,21 @@ free of solara, ipyvuetify *and* ipecharts so the chart builders in
 ``gui/scripts/`` can import it — the widget half lives in
 ``gui/widget/echarts.py`` and is the only place that knows the ipecharts API.
 
-``csize_colors`` replaces ``plotly.colors.sample_colorscale("Blues", ...)``.
-The Plotly call resampled a library-owned colourscale on every run, so the bars
-could silently change colour on a plotly upgrade. Here the ColorBrewer *Blues*
-stops are frozen as module constants and interpolated in pure Python, which
-reproduces the ramp the app drew before this migration.
+**Series colour comes from the app accent.** ``accent_ramp`` derives every
+chart's series colours from one input: the Vuetify ``primary`` colour (green on
+the light theme, gold on the dark one) that already paints every
+``color="primary"`` control. It replaced a frozen ColorBrewer *Blues* ramp,
+which made the charts the only surface in the app painted in a colour the theme
+does not own — they matched neither the rest of the UI nor each other after a
+palette change. Deriving the ramp makes that drift impossible: move
+``themes.light.primary`` and the bars, lines and point clouds move with it.
 
-Checked against plotly 6.6.0 for 2..32 series: identical for every count up to
-16 — far past the handful of coarse-grid cell sizes a real run compares — and
-for most beyond. n = 17, 21 and 29 differ in one channel by one 8-bit step,
-because there the interpolation lands exactly halfway between two stops and
-plotly's own answer is decided by floating-point noise (it rounds such ties up
-in one place and down in another). That instability is the reason these values
-are frozen here; the difference is invisible.
+This module stays solara-free, so it never *reads* the live theme — the accent
+arrives as an argument, and ``DEFAULT_ACCENT`` is only the fallback for a caller
+that passes none. The solara-aware reader is ``gui.widget.echarts.theme_accent``.
 """
+
+import colorsys
 
 # ECharts' two renderers. Policy: SVG for the small metric bar charts (crisp
 # text, tiny DOM, scales with the browser zoom); canvas for the predicted-vs-
@@ -37,64 +38,129 @@ TRANSPARENT = "transparent"
 _INK = {True: "#c3c2b7", False: "#52514e"}
 _GRID = {True: "#33322f", False: "#e3e2dd"}
 
-# ColorBrewer "Blues", the 9 stops behind plotly's colourscale of that name.
-_BLUES_STOPS = (
-    "#f7fbff",
-    "#deebf7",
-    "#c6dbef",
-    "#9ecae1",
-    "#6baed6",
-    "#4292c6",
-    "#2171b5",
-    "#08519c",
-    "#08306b",
-)
-# The sub-range of the ramp the app samples: skips the near-white low end
-# (invisible on the light theme) and the near-black high end.
-_RAMP_START = 0.35
-_RAMP_END = 0.90
+# Fallback accent for a caller that supplies none — pysepal's light-theme
+# ``primary``. A duplicated literal on purpose: importing pysepal here would
+# drag solara in through it and break this module's layering. It is a floor, not
+# the source of truth; the live value always comes from the theme.
+DEFAULT_ACCENT = "#5BB624"
 
-# One cell size means shading would encode nothing, so a single flat blue.
-SINGLE_SERIES_COLOR = "#2a78d6"
+# Lightness ends of the derived ramp (HSL). Both stop well short of the
+# extremes: a near-white bar disappears against the light theme's surface and a
+# near-black one against the dark theme's, and one ramp has to read on both.
+_RAMP_LIGHTEST = 0.68
+_RAMP_DARKEST = 0.30
+
+# ``(min, max)`` lightness a single mark may take on each surface — dark theme
+# first. The dark surface sets a floor (nothing may sink into it), the light one
+# a ceiling. See ``accent_color``.
+_SURFACE_LIGHTNESS = {True: (0.52, 0.86), False: (0.16, 0.62)}
 
 
-def _rgb(hex_color):
-    """'#rrggbb' -> (r, g, b)."""
-    return tuple(int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+def _parse_hex(color):
+    """``'#rgb'`` / ``'#rrggbb'`` -> ``(r, g, b)`` in 0..1, or ``None``.
 
-
-def _hex(rgb):
-    """(r, g, b) -> '#rrggbb', rounding halves up.
-
-    Half-up (not Python's round-half-to-even) so the sampled ramp matches the
-    Plotly output it replaces channel-for-channel: an interpolated channel
-    lands on an exact .5 for some series counts, where banker's rounding would
-    drift one step darker.
+    Returns ``None`` rather than raising for anything else. The accent comes off
+    a live theme slot, which may hold a Vuetify colour name, an empty string or
+    nothing at all — none of which may take a render down; callers fall back to
+    ``DEFAULT_ACCENT`` instead (see ``resolve_accent``).
     """
-    return "#" + "".join(f"{int(c + 0.5):02x}" for c in rgb)
+    if not isinstance(color, str):
+        return None
+    h = color.strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return None
+    try:
+        return tuple(int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return None
 
 
-def _sample_blues(position):
-    """Piecewise-linear sample of the frozen Blues stops at 0.0 <= p <= 1.0."""
-    x = position * (len(_BLUES_STOPS) - 1)
-    lower = min(int(x), len(_BLUES_STOPS) - 2)
-    frac = x - lower
-    start, end = _rgb(_BLUES_STOPS[lower]), _rgb(_BLUES_STOPS[lower + 1])
-    return _hex(tuple(s + frac * (e - s) for s, e in zip(start, end)))
+def _to_hex(rgb):
+    """``(r, g, b)`` in 0..1 -> ``'#rrggbb'``, rounding halves up.
+
+    Half-up rather than Python's round-half-to-even so a channel landing on an
+    exact .5 does not drift one step darker for some series counts and not
+    others — the ramp has to be reproducible from its inputs alone.
+    """
+    return "#" + "".join(f"{int(c * 255 + 0.5):02x}" for c in rgb)
 
 
-def csize_colors(n):
-    """``n`` blues, light -> dark, so shading encodes the ordered cell sizes.
+def _resolve_accent(accent):
+    """``accent`` as ``(r, g, b)`` floats, falling back when it is unusable."""
+    return _parse_hex(accent) or _parse_hex(DEFAULT_ACCENT)
 
-    A pure function of the series count: same ``n`` always yields the same
-    hex strings. ``n == 1`` returns the single flat blue.
+
+def _surface_rgb(accent, dark):
+    """``accent`` as ``(r, g, b)`` floats, clamped to read on the surface.
+
+    Hue and saturation are never touched — only lightness, and only into
+    ``_SURFACE_LIGHTNESS[dark]``. See ``accent_color`` for why.
+    """
+    hue, lightness, sat = colorsys.rgb_to_hls(*_resolve_accent(accent))
+    low, high = _SURFACE_LIGHTNESS[bool(dark)]
+    return colorsys.hls_to_rgb(hue, min(max(lightness, low), high), sat)
+
+
+def accent_color(accent=DEFAULT_ACCENT, dark=False):
+    """``accent`` normalized to ``'#rrggbb'``, kept legible on the surface.
+
+    What a chart with one thing to draw paints it: the app's accent itself, so a
+    lone importance bar or distance curve is the same green/gold as the button
+    that produced it.
+
+    Lightness is clamped into ``_SURFACE_LIGHTNESS[dark]`` — hue and saturation
+    are never touched, so the result is always the same colour, only lifted or
+    dropped far enough to be seen. The dark theme's accent is a deep gold
+    (``#76591e``, lightness 0.29) and the surface behind it is near-black, so an
+    unclamped mark reads as a smudge; a translucent one disappears outright.
+    Material's own dark palettes lighten the accent for exactly this reason —
+    pysepal's ``primary_contrast`` slot is that same adjustment made by hand.
+    Deriving it instead keeps the charts on one input (``primary``), which is
+    what makes them follow a palette change.
+    """
+    return _to_hex(_surface_rgb(accent, dark))
+
+
+def accent_ramp(n, accent=DEFAULT_ACCENT, dark=False):
+    """``n`` shades of ``accent``, light -> dark.
+
+    One colour per ordered category (the evaluation charts' coarse-grid cell
+    sizes), so the shading itself encodes the order. Only lightness moves — hue
+    and saturation stay the accent's — which is what keeps every shade
+    recognisably the app's own colour instead of an unrelated ramp.
+
+    The ramp's own ends already sit inside readable bounds for both surfaces, so
+    ``dark`` only reaches the ``n == 1`` case, where there is no ramp to speak
+    of and the mark is a plain ``accent_color``.
+
+    A pure function of its inputs: the same ``(n, accent, dark)`` always yields
+    the same hex strings.
     """
     if n < 1:
         raise ValueError(f"need at least one series, got {n}")
     if n == 1:
-        return [SINGLE_SERIES_COLOR]
-    step = (_RAMP_END - _RAMP_START) / (n - 1)
-    return [_sample_blues(_RAMP_START + step * i) for i in range(n)]
+        return [accent_color(accent, dark=dark)]
+    hue, _lightness, sat = colorsys.rgb_to_hls(*_resolve_accent(accent))
+    step = (_RAMP_LIGHTEST - _RAMP_DARKEST) / (n - 1)
+    return [
+        _to_hex(colorsys.hls_to_rgb(hue, _RAMP_LIGHTEST - step * i, sat))
+        for i in range(n)
+    ]
+
+
+def accent_fill(accent, alpha, dark=False):
+    """``'rgba(r, g, b, alpha)'`` — the accent at partial opacity.
+
+    For marks that must not hide what is behind them: in the predicted-vs-
+    observed scatter, overlapping translucent points are how density reads.
+    Built on ``accent_color``, so the surface clamp applies here too — it
+    matters most here, because alpha pulls a mark toward the surface behind it
+    and a dark accent on the dark theme would wash out entirely.
+    """
+    r, g, b = (int(c * 255 + 0.5) for c in _surface_rgb(accent, dark))
+    return f"rgba({r}, {g}, {b}, {alpha})"
 
 
 def theme_colors(dark=False):

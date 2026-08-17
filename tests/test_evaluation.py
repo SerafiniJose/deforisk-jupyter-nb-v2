@@ -1476,18 +1476,34 @@ def test_metric_bar_option_reserves_the_legend_row_only_when_it_shows():
     assert one_csize["grid"]["top"] == with_legend["legend"]["top"] == 24
 
 
-def test_metric_bar_option_colors_bars_from_the_app_palette():
-    """The application-owned Blues ramp, not plotly.colors.sample_colorscale."""
-    from gui.scripts.echarts_options import csize_colors
+def test_metric_bar_option_colors_bars_from_the_app_accent():
+    """Shades of the app's "primary", never a palette of the chart's own."""
+    from gui.scripts.echarts_options import accent_color, accent_ramp
     from gui.scripts.evaluation_charts import metric_bar_option
 
-    option = metric_bar_option(_chart_rows(), "MedAE")
-    assert [s["itemStyle"]["color"] for s in option["series"]] == csize_colors(2)
+    accent = "#5BB624"
+    option = metric_bar_option(_chart_rows(), "MedAE", accent=accent)
+    assert [s["itemStyle"]["color"] for s in option["series"]] == accent_ramp(2, accent)
 
+    # One cell size means shading would encode nothing, so the bar is the
+    # accent itself — the same colour as every color="primary" control.
     single = metric_bar_option(
-        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE"
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100],
+        "MedAE",
+        accent=accent,
     )
-    assert single["series"][0]["itemStyle"]["color"] == "#2a78d6"
+    assert single["series"][0]["itemStyle"]["color"] == accent_color(accent)
+
+
+def test_metric_bar_option_bars_follow_a_changed_accent():
+    """Recolouring the app's primary recolours the charts — no frozen hexes."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    green = metric_bar_option(_chart_rows(), "MedAE", accent="#5BB624")
+    gold = metric_bar_option(_chart_rows(), "MedAE", accent="#76591e")
+    assert [s["itemStyle"]["color"] for s in green["series"]] != [
+        s["itemStyle"]["color"] for s in gold["series"]
+    ]
 
 
 def test_metric_bar_option_tooltip_shows_label_value_and_cell_size():

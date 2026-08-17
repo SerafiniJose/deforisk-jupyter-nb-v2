@@ -207,6 +207,42 @@ def test_dist_curve_option_marks_the_threshold():
     assert dist_curve_option([], 1.0, 1.0) is None
 
 
+def test_importance_bars_take_the_app_accent():
+    """One series, so it is the app's "primary" itself — not a colour of its own."""
+    from gui.scripts.echarts_options import accent_color
+
+    opt = importance_bars_option([("towns_dist", 0.28)], accent="#5BB624")
+    assert opt["series"][0]["itemStyle"]["color"] == accent_color("#5BB624")
+
+
+def test_dist_curve_paints_every_mark_in_the_accent():
+    """Line, fill and threshold marker.
+
+    Any of them left unset would fall back to ECharts' own first palette colour
+    — a blue belonging to no theme, which is what this replaced.
+    """
+    from gui.scripts.echarts_options import accent_color
+
+    rows = [{"distance": 30, "perc": 58.8}, {"distance": 2010, "perc": 99.5}]
+    accent = "#5BB624"
+    series = dist_curve_option(rows, 2010.0, 99.5, accent=accent)["series"][0]
+    expected = accent_color(accent)
+    assert series["lineStyle"]["color"] == expected
+    assert series["areaStyle"]["color"] == expected
+    assert series["markLine"]["lineStyle"]["color"] == expected
+
+
+def test_model_stats_charts_follow_a_changed_accent():
+    """Recolour the app's primary and the charts move with it."""
+    entries = [("towns_dist", 0.28)]
+    green = importance_bars_option(entries, accent="#5BB624")
+    gold = importance_bars_option(entries, accent="#76591e")
+    assert (
+        green["series"][0]["itemStyle"]["color"]
+        != gold["series"][0]["itemStyle"]["color"]
+    )
+
+
 def test_stat_cards_format_large_magnitudes_without_scientific_notation():
     """Large hectare/deviance magnitudes render comma-grouped, never scientific.
 

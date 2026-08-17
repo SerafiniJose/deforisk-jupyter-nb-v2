@@ -13,12 +13,13 @@ y-axis scale. The information design is unchanged — same metrics in the same
 order, same titles, one bar series per cell size, one category per map label.
 
 Palette and theme colours come from ``gui.scripts.echarts_options`` (the pure
-half of the ECharts adapter), never from plotly.
+half of the ECharts adapter), never from plotly. The bars are shades of the
+app's ``primary`` accent, handed in by the widget layer.
 """
 
 from pathlib import Path
 
-from gui.scripts.echarts_options import csize_colors, theme_colors
+from gui.scripts.echarts_options import DEFAULT_ACCENT, accent_ramp, theme_colors
 
 # Metric -> (axis title, direction hint). R2 is unitless; the errors are in ha.
 _METRIC_TITLES = {
@@ -91,13 +92,15 @@ def csize_series_name(csize):
     return f"csize {csize} px"
 
 
-def metric_bar_option(rows, metric, dark=False):
+def metric_bar_option(rows, metric, dark=False, accent=DEFAULT_ACCENT):
     """Grouped-bar ECharts option for ONE metric: x = map, bars = cell size.
 
     Args:
         rows: EvaluationRecord.indices (list of dicts).
         metric: a single metric key (``MedAE``, ``R2``, ``RMSE``, ``wRMSE``).
         dark: style for the app's dark theme.
+        accent: the app's ``primary`` colour; one shade of it per cell size,
+            light -> dark, so the shading encodes their order.
 
     Returns a plain, JSON-serializable ECharts option dict, or None when this
     metric has nothing chartable in these rows (no rows, no cell sizes, no map
@@ -120,7 +123,7 @@ def metric_bar_option(rows, metric, dark=False):
     if not any(r.get(metric) is not None for r in rows):
         return None
 
-    colors = csize_colors(len(csizes))
+    colors = accent_ramp(len(csizes), accent, dark=dark)
     ink, grid = theme_colors(dark)["ink"], theme_colors(dark)["grid"]
     by_key = {(map_label(r), r.get("csize_coarse_grid")): r for r in rows}
     # One cell size means the legend would restate the title, so it is hidden —

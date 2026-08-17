@@ -35,7 +35,7 @@ from gui.scripts.model_stats_view import (
 # rendering A9 removed. The intercept lines and the OOB number are the two
 # values that reach the widget raw, so they borrow the same formatter.
 from gui.scripts.model_stats_view import _fmt as fmt_stat
-from gui.widget.echarts import RENDERER_SVG, EChartsChart
+from gui.widget.echarts import RENDERER_SVG, EChartsChart, theme_accent
 from gui.widget.product_table import ProductTable
 from gui.widget.text_style import MUTED
 
@@ -360,7 +360,9 @@ def _RfPanel(stats, visible=True):
     aggregated = importance_entries(stats)
     per_level = importance_entries(stats, aggregate=False)
     entries = per_level if split else aggregated
-    option = importance_bars_option(entries, dark=dark)
+    # The bars take the app's live "primary" accent, so they match every
+    # color="primary" control and follow a theme or palette change.
+    option = importance_bars_option(entries, dark=dark, accent=theme_accent(dark))
     with solara.Column(gap="8px"):
         with solara.Row(gap="8px", style="align-items:center;"):
             solara.Text(t("tiles.train.stats.importance_header"))
@@ -407,7 +409,13 @@ def _RmjPanel(stats, visible=True):
     # disk reads there are exactly what freezes the UI.
     path = getattr(stats, "tab_dist_path", None)
     rows = solara.use_memo(lambda: load_tab_dist(stats), [str(path)])
-    option = dist_curve_option(rows, stats.dist_thresh, stats.perc_thresh, dark=dark)
+    option = dist_curve_option(
+        rows,
+        stats.dist_thresh,
+        stats.perc_thresh,
+        dark=dark,
+        accent=theme_accent(dark),
+    )
     with solara.Column(gap="8px"):
         solara.Text(t("tiles.train.stats.dist_curve_header"))
         if option is not None:
