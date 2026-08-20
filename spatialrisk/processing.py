@@ -5,6 +5,7 @@ import rasterio
 import rioxarray
 import xarray as xr
 
+from spatialrisk.gdal_env import configure_gdal_tmpdir
 from spatialrisk.variables.models import RasterType
 
 if TYPE_CHECKING:
@@ -199,6 +200,11 @@ def distance_to_edge_gdal_no_mask(
     """Computes the shortest distance to given pixel values in a raster,
     while preserving the original nodata mask in the output."""
 
+    # ComputeProximity() needs a writable scratch dir for its Float32 working
+    # band (the destination is UInt32). Cheap and idempotent, so re-assert it
+    # here in case this helper is used without the app's import-time setup.
+    configure_gdal_tmpdir()
+
     # Read input file
     src_ds = gdal.Open(input_file)
     srcband = src_ds.GetRasterBand(1)
@@ -246,7 +252,20 @@ def distance_to_edge_gdal_no_mask(
     del src_ds, dst_ds
 
 
-def process_forest_loss_xarray(input1_path, input2_path, output_path):
+def process_change_xarray(input1_path, input2_path, output_path, op="loss"):
+    """Pixel-wise change detection between two presence masks (1=present, 0=absent).
+
+    Output follows the far-target convention (1 = event of interest):
+    - op="loss": 1 where present(t1) -> absent(t2), 0 where present stayed
+      present, 255 otherwise (incl. nodata and absent-at-t1).
+    - op="gain": 1 where absent(t1) -> present(t2), 0 where absent stayed
+      absent, 255 otherwise.
+
+    Inputs must share the same grid (aligned processed layers).
+    """
+    if op not in ("loss", "gain"):
+        raise ValueError(f"op must be 'loss' or 'gain', got {op!r}")
+
     # Open the input rasters
     input1 = rioxarray.open_rasterio(
         input1_path,
@@ -280,18 +299,14 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
     nodata2 = input2.rio.nodata
     valid_mask = (input1 != nodata1) & (input2 != nodata2)
 
-    # Create output based on conditions using xarray operations
-    # Convention: 1 = deforestation (event of interest), 0 = forest remaining,
-    # 255 = nodata. `input1`/`input2` are forest masks (1 = forest) at t1/t2.
-    output = xr.where(
-        valid_mask & (input1 == 1) & (input2 == 0),
-        1,  # forest(t1) -> non-forest(t2): DEFORESTED -> 1
-        xr.where(
-            valid_mask & (input1 == 1) & (input2 == 1),
-            0,  # forest(t1) -> forest(t2): remaining forest -> 0
-            255,  # nodata for all other cases
-        ),
-    ).astype("uint8")
+    if op == "loss":
+        event = valid_mask & (input1 == 1) & (input2 == 0)
+        stable = valid_mask & (input1 == 1) & (input2 == 1)
+    else:  # gain
+        event = valid_mask & (input1 == 0) & (input2 == 1)
+        stable = valid_mask & (input1 == 0) & (input2 == 0)
+
+    output = xr.where(event, 1, xr.where(stable, 0, 255)).astype("uint8")
 
     # Set proper metadata
     output.rio.write_nodata(255, inplace=True)
@@ -306,6 +321,15 @@ def process_forest_loss_xarray(input1_path, input2_path, output_path):
         bigtiff="YES",
         tiled=True,
     )
+
+
+def process_forest_loss_xarray(input1_path, input2_path, output_path):
+    """Back-compat wrapper: forest loss = change detection with op="loss".
+
+    Kept for the legacy notebook path (make_forest_loss_var /
+    get_forest_loss_calculated). New code should call process_change_xarray.
+    """
+    process_change_xarray(input1_path, input2_path, output_path, op="loss")
 
 
 def generate_deforestation_raster(
@@ -341,16 +365,16 @@ def generate_deforestation_raster(
         output_raster = np.zeros_like(raster1, dtype=np.uint8)
 
         # Set the values based on deforestation periods
-        output_raster[(raster1 == 1) & (raster2 == 0)] = (
-            1  # Deforestation in period 1-2
-        )
-        output_raster[(raster2 == 1) & (raster3 == 0)] = (
-            2  # Deforestation in period 2-3
-        )
+        output_raster[
+            (raster1 == 1) & (raster2 == 0)
+        ] = 1  # Deforestation in period 1-2
+        output_raster[
+            (raster2 == 1) & (raster3 == 0)
+        ] = 2  # Deforestation in period 2-3
         # Set the remaining forest value only where no deforestation has been marked
-        output_raster[(output_raster == 0) & (raster3 == 1)] = (
-            3  # Remaining forest in period 3
-        )
+        output_raster[
+            (output_raster == 0) & (raster3 == 1)
+        ] = 3  # Remaining forest in period 3
 
     # Define the metadata for the output raster
     meta = src1.meta
@@ -372,6 +396,46 @@ def generate_deforestation_raster(
         raster_type="categorical",
         project=project,
         tags=["deforestation"],
+    )
+
+
+def make_forest_loss_var(
+    project: "Project",
+    start_layer: "LocalRasterVar",
+    end_layer: "LocalRasterVar",
+) -> "LocalRasterVar":
+    """Create one forest-loss target from two forest layers (start -> end year).
+
+    Idempotent: if the output raster already exists, it is reused rather than
+    regenerated. Returns an (unregistered) LocalRasterVar; the caller decides
+    whether to add_as_raw().
+    """
+    from pathlib import Path
+    from spatialrisk.variables import LocalRasterVar
+    from spatialrisk.variables.models import RasterType
+
+    start_year = start_layer.year
+    end_year = end_layer.year
+    var_name = f"forest_loss_{start_year}_{end_year}"
+    output_path = project.folders.data_raw_folder / f"{var_name}.tif"
+
+    if not output_path.exists():
+        print(f"Calculating forest loss between {start_year} and {end_year}...")
+        process_forest_loss_xarray(
+            str(start_layer.path),
+            str(end_layer.path),
+            str(output_path),
+        )
+
+    return LocalRasterVar(
+        name=var_name,
+        path=Path(output_path),
+        raster_type=RasterType.categorical,
+        project=project,
+        tags=["deforestation", "forest_loss", f"{start_year}_{end_year}"],
+        default_crs=end_layer.default_crs or start_layer.default_crs,
+        default_resolution=end_layer.default_resolution
+        or start_layer.default_resolution,
     )
 
 
@@ -439,35 +503,10 @@ def get_forest_loss_calculated(
     ]
 
     forest_loss_vars: List[LocalRasterVar] = []
-
     for start_layer, end_layer in pairings:
-        start_year = start_layer.year
-        end_year = end_layer.year
-        var_name = f"forest_loss_{start_year}_{end_year}"
-        output_path = project.folders.data_raw_folder / f"{var_name}.tif"
-
-        print(f"Calculating forest loss between {start_year} and {end_year}...")
-        process_forest_loss_xarray(
-            str(start_layer.path),
-            str(end_layer.path),
-            str(output_path),
-        )
-
-        new_var = LocalRasterVar(
-            name=var_name,
-            path=Path(output_path),
-            raster_type=RasterType.categorical,
-            project=project,
-            tags=["deforestation", "forest_loss", f"{start_year}_{end_year}"],
-            default_crs=end_layer.default_crs or start_layer.default_crs,
-            default_resolution=end_layer.default_resolution
-            or start_layer.default_resolution,
-        )
-
-        forest_loss_vars.append(new_var)
+        forest_loss_vars.append(make_forest_loss_var(project, start_layer, end_layer))
 
     print("✓ Forest loss calculation complete!")
-
     return forest_loss_vars
 
 

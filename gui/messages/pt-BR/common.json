@@ -1,0 +1,43 @@
+{
+  "common": {
+    "save": "Salvar",
+    "load": "Carregar",
+    "cancel": "Cancelar",
+    "create": "Criar",
+    "remove": "Remover",
+    "replace": "Substituir",
+    "delete": "Excluir",
+    "close": "Fechar",
+    "actions": "Ações",
+    "advanced": "Avançado",
+    "new": "Novo",
+    "yes": "Sim",
+    "no": "Não",
+    "_test_fmt": "olá {name}",
+    "_test_one": "{n} item",
+    "_test_other": "{n} itens"
+  },
+  "legend": {
+    "prediction": { "title": "Risco de desmatamento" },
+    "density": { "title": "Densidade de desmatamento (ha/pixel/ano)" },
+    "risk": { "low": "Menor risco", "high": "Maior risco" },
+    "range": { "low": "Baixo", "high": "Alto" },
+    "class": {
+      "absent": "Ausente",
+      "present": "Presente",
+      "stable": "Estável",
+      "loss": "Perda de floresta",
+      "gain": "Ganho de floresta",
+      "non_forest": "Não floresta",
+      "forest": "Floresta"
+    },
+    "note": {
+      "random_classes": "Categórico — cores atribuídas aleatoriamente"
+    },
+    "unit": {
+      "m_value": "{value} m",
+      "deg_value": "{value}°",
+      "plain_value": "{value}"
+    }
+  }
+}

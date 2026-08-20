@@ -17,7 +17,7 @@ no ``fcc123`` convention, no ``check_fcc``):
 
 The union makes the denominator robust to whether ``forest_file`` encodes forest
 at the *start* or the *end* of the period, since
-``forest_at_start = forest_remaining ∪ deforested``.
+``forest_at_start = forest_remaining UNION deforested``.
 
 Numerics (``rescale``, block iteration, the moving-window ``uniform_filter``) are
 inherited verbatim from ``riskmapjnr.misc`` / SciPy, so results are identical to
@@ -28,7 +28,7 @@ check in the single-layer migration plan).
 from __future__ import annotations
 
 import os
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -50,12 +50,73 @@ def _open_band(path: PathLike):
     return ds, ds.GetRasterBand(1)
 
 
+def validate_binary_defor(
+    defor_file: PathLike, *, layer_name: Optional[str] = None
+) -> None:
+    """Check that a forest-loss raster really is binary before it is consumed.
+
+    The functions in this module treat ``defor == 1`` as the event and *anything
+    else* — including nodata — as "not deforested". A categorical or continuous
+    layer therefore never raises: it trains silently on a wrong numerator. This
+    guard makes that case loud.
+
+    Exact min/max is enough to catch every realistic wrong-layer case (a
+    multi-period categorical stack, a tree-cover percentage, a rescaled
+    0-65535 layer) in a single nodata-aware C-level pass.
+
+    Parameters
+    ----------
+    defor_file : path
+        The binary deforestation raster to check.
+    layer_name : str, optional
+        Name to quote in error messages. Defaults to the file name.
+
+    Raises:
+    ------
+    FileNotFoundError
+        If the raster cannot be opened.
+    ValueError
+        If any value falls outside ``{0, 1}``, or the layer has no ``1`` pixels.
+    """
+    name = layer_name or os.path.basename(str(defor_file))
+    try:
+        defor_ds, defor_band = _open_band(defor_file)
+    except RuntimeError as exc:
+        # GDAL exceptions are enabled process-wide, so a missing or unreadable
+        # file surfaces as RuntimeError rather than the None _open_band checks.
+        raise FileNotFoundError(f"Cannot open raster: {defor_file}") from exc
+    try:
+        vmin, vmax = defor_band.ComputeRasterMinMax(False)
+    finally:
+        del defor_band, defor_ds
+
+    if vmin < 0 or vmax > 1:
+        raise ValueError(
+            f"The forest-loss layer '{name}' is not binary: its values range "
+            f"from {vmin:g} to {vmax:g}, but only 0 and 1 are allowed "
+            f"(1 = deforested, 0 = not).\n"
+            f"  Values other than 1 are silently counted as 'not deforested', "
+            f"so training on this layer would give a wrong result rather than "
+            f"an error.\n"
+            f"  Common causes: a multi-period categorical layer (e.g. 1/2/3 "
+            f"per period), a percentage or continuous layer, or a fill value "
+            f"such as 255 that is not declared as the raster's nodata value."
+        )
+
+    if vmax == 0:
+        raise ValueError(
+            f"The forest-loss layer '{name}' has no deforested pixels: no "
+            f"pixel holds the value 1, so there is nothing to train on.\n"
+            f"  Check that the right layer and period were selected."
+        )
+
+
 def dist_edge_threshold(
     defor_file: PathLike,
     dist_file: PathLike,
     dist_bins,
     defor_threshold: float = 99.5,
-    tab_file_dist: Optional[PathLike] = "perc_dist.csv",
+    tab_file_dist: Optional[PathLike] = None,
     fig_file_dist: Optional[PathLike] = None,
     figsize=(6.4, 4.8),
     dpi: int = 100,
@@ -80,11 +141,14 @@ def dist_edge_threshold(
     defor_threshold : float
         Cumulative percentage of deforestation defining the threshold (default 99.5).
     tab_file_dist : path or None
-        CSV output with the cumulative distribution. Skipped if ``None``.
+        CSV output with the cumulative distribution. Defaults to ``None``, i.e.
+        no CSV is written. A bare filename default would resolve against the
+        process CWD, which is read-only when the app runs on SEPAL, so callers
+        that want the table must pass an explicit path.
     fig_file_dist : path or None
-        PNG plot output. Skipped if ``None``.
+        PNG plot output. Skipped if ``None`` (the default).
 
-    Returns
+    Returns:
     -------
     dict
         ``{"tot_def", "dist_thresh", "perc_thresh"}`` (matches rmj).
@@ -112,11 +176,7 @@ def dist_edge_threshold(
         dist_def = dist_def[dist_def > 0]
         # Categorize distance and count per bin
         dist_cat = pd.cut(dist_def.flatten(), dist_bins, right=True)
-        counts = (
-            pd.DataFrame({"dist": dist_cat})
-            .groupby("dist", observed=False)
-            .size()
-        )
+        counts = pd.DataFrame({"dist": dist_cat}).groupby("dist", observed=False).size()
         res_df.loc[:, "npix"] += counts.values
 
     # Areas (ha) and cumulative percentage of total deforestation
@@ -149,11 +209,18 @@ def dist_edge_threshold(
         plt.subplot(111)
         plt.plot(res_df["distance"], res_df["perc"], "b-")
         plt.vlines(
-            dist_thresh, ymin=np.min(res_df["perc"]), ymax=perc_thresh,
-            colors="k", linestyles="dashed",
+            dist_thresh,
+            ymin=np.min(res_df["perc"]),
+            ymax=perc_thresh,
+            colors="k",
+            linestyles="dashed",
         )
         plt.hlines(
-            perc_thresh, xmin=0, xmax=dist_thresh, colors="k", linestyles="dashed",
+            perc_thresh,
+            xmin=0,
+            xmax=dist_thresh,
+            colors="k",
+            linestyles="dashed",
         )
         plt.xlabel("Distance to forest edge (m)")
         plt.ylabel("Percentage of total deforestation (%)")
@@ -161,7 +228,11 @@ def dist_edge_threshold(
         plt.close(fig)
 
     del defor_ds, dist_ds
-    return {"tot_def": tot_area_def, "dist_thresh": dist_thresh, "perc_thresh": perc_thresh}
+    return {
+        "tot_def": tot_area_def,
+        "dist_thresh": dist_thresh,
+        "perc_thresh": perc_thresh,
+    }
 
 
 def local_defor_rate(
@@ -211,7 +282,11 @@ def local_defor_rate(
     if os.path.isfile(str(ldefrate_file)):
         os.remove(str(ldefrate_file))
     out_ds = driver.Create(
-        str(ldefrate_file), xsize, ysize, 1, gdal.GDT_UInt16,
+        str(ldefrate_file),
+        xsize,
+        ysize,
+        1,
+        gdal.GDT_UInt16,
         ["COMPRESS=LZW", "PREDICTOR=2", "BIGTIFF=YES"],
     )
     out_ds.SetProjection(defor_ds.GetProjection())
@@ -245,7 +320,7 @@ def local_defor_rate(
         defor_data = defor_mask.astype(int)
         win_defor = scipy.ndimage.uniform_filter(
             defor_data, size=win_size, mode="constant", cval=0, output=float
-        ) * (win_size ** 2)
+        ) * (win_size**2)
         win_defor = np.rint(win_defor).astype(int)
 
         # Windowed count of forest-at-start pixels
@@ -253,7 +328,7 @@ def local_defor_rate(
         w = np.where(for_data > 0)
         win_for = scipy.ndimage.uniform_filter(
             for_data, size=win_size, mode="constant", cval=0, output=float
-        ) * (win_size ** 2)
+        ) * (win_size**2)
         win_for = np.rint(win_for).astype(int)
 
         # Annual deforestation rate, rescaled
@@ -277,7 +352,7 @@ def defrate_per_cat(
     forest_file: PathLike,
     riskmap_file: PathLike,
     time_interval: float,
-    tab_file_defrate: Optional[PathLike] = "defrate_per_cat.csv",
+    tab_file_defrate: Optional[PathLike] = None,
     blk_rows: int = 128,
     verbose: bool = False,
 ) -> pd.DataFrame:
@@ -297,8 +372,13 @@ def defrate_per_cat(
         Categorical risk/vulnerability raster (UInt16 categories 1..65535).
     time_interval : float
         Period length in years.
+    tab_file_defrate : path or None
+        CSV output. Defaults to ``None``, i.e. no CSV is written and the table
+        is only returned. A bare filename default would resolve against the
+        process CWD, which is read-only when the app runs on SEPAL, so callers
+        that want the file must pass an explicit path.
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         Per-category table (cat, nfor, ndefor, rate_obs, rate_mod, rate_abs, ...),
@@ -312,7 +392,9 @@ def defrate_per_cat(
     xres = gt[1]
     yres = -gt[5]
 
-    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[:7]
+    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[
+        :7
+    ]
 
     n_cat = 65535
     cat = [c + 1 for c in range(n_cat)]
@@ -368,7 +450,7 @@ def defrate_per_class(
     forest_file: PathLike,
     vulnerability_file: PathLike,
     time_interval: float,
-    tab_file_defrate: Optional[PathLike] = "defrate_per_class.csv",
+    tab_file_defrate: Optional[PathLike] = None,
     deforate_model: Optional[PathLike] = None,
     n_cat_max: int = 30999,
     blk_rows: int = 128,
@@ -400,17 +482,20 @@ def defrate_per_class(
     time_interval : float
         Period length in years.
     tab_file_defrate : path or None
-        CSV output. Skipped if ``None``.
+        CSV output. Defaults to ``None``, i.e. no CSV is written and the table
+        is only returned. A bare filename default would resolve against the
+        process CWD, which is read-only when the app runs on SEPAL, so callers
+        that want the file must pass an explicit path.
     deforate_model : path or None
         CSV with rates from the model period (calibration / historical). When
         given, observed rates are used only for the quantity-adjustment
         correction; ``rate_mod`` comes from the model. When ``None``,
         ``rate_mod = ndefor / nfor``.
     n_cat_max : int
-        Highest vulnerability-class code (default 30999 = 30 classes × ~1000
+        Highest vulnerability-class code (default 30999 = 30 classes x ~1000
         subjurisdiction ids).
 
-    Returns
+    Returns:
     -------
     pandas.DataFrame
         Per-class table (cat, nfor, ndefor, rate_obs, rate_mod, rate_abs, ...),
@@ -424,7 +509,9 @@ def defrate_per_class(
     xres = gt[1]
     yres = -gt[5]
 
-    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[:7]
+    nblock, nblock_x, _, x, y, nx, ny = makeblock(str(defor_file), blk_rows=blk_rows)[
+        :7
+    ]
 
     cat = [c + 1 for c in range(n_cat_max)]
     df = pd.DataFrame({"cat": cat, "nfor": 0, "ndefor": 0})

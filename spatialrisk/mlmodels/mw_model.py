@@ -27,9 +27,13 @@ Features are looked up by exact name in the Dataset.  Defaults are
 
     mw = MWModel(
         name="calibration",
-        forest_edge_var="forest_gfc_edge",
-        forest_var="forest_gfc",
+        forest_edge_var="forest_gfc_tc30_edge",
+        forest_var="forest_gfc_tc30",
     )
+
+Variables created through the GUI carry their parameters in the name — a
+Hansen layer at a 30% tree-cover threshold is ``forest_gfc_tc30`` — so use
+the name as it appears in ``dataset.features``.
 """
 
 from pathlib import Path
@@ -52,7 +56,7 @@ class MWModel(BaseRiskModel):
     be used by overriding ``forest_edge_var``, ``forest_var``,
     ``forest_value``, and ``defor_value``.
 
-    Attributes
+    Attributes:
     ----------
     win_size_list : list of int
         Moving window sizes in pixels (default: [5, 11, 21]).
@@ -84,6 +88,10 @@ class MWModel(BaseRiskModel):
     forest_var : str
         Dataset feature name for the binary reference raster, used by
         ``apply()`` (default: ``"forest"``).
+    defor_var : str
+        Dataset layer name for the binary forest-loss (deforestation) raster.
+        When set, this named layer (a feature or the target) is used as the
+        event raster; when empty, the dataset target is used (default: ``""``).
     """
 
     model_type: str = "mw"
@@ -104,6 +112,17 @@ class MWModel(BaseRiskModel):
     # Configurable feature-variable name mappings
     forest_edge_var: str = "forest_edge"
     forest_var: str = "forest"
+    # Forest-loss (deforestation) layer. When set, this named dataset layer is
+    # used as the binary event raster instead of the dataset target, letting the
+    # user pick which variable in their dataset is the forest-loss layer. Empty
+    # falls back to the dataset target (backward-compatible default).
+    defor_var: str = ""
+
+    def output_files(self) -> List[Path]:
+        """MW persists one deforestation-rate raster per window size."""
+        files = super().output_files()
+        files.extend(Path(p) for p in self.ldefrate_files.values() if p)
+        return files
 
     # ------------------------------------------------------------------
     # Helpers
@@ -127,11 +146,11 @@ class MWModel(BaseRiskModel):
         var_name : str
             Exact name to look for in ``dataset.features``.
 
-        Returns
+        Returns:
         -------
         Path
 
-        Raises
+        Raises:
         ------
         ValueError
             If the feature is not found, listing available names.
@@ -147,6 +166,37 @@ class MWModel(BaseRiskModel):
             f"  Set model.forest_edge_var / forest_var to match "
             f"your variable names."
         )
+
+    def _resolve_defor_file(self, dataset: Any) -> Path:
+        """Resolve the binary forest-loss (deforestation) raster path.
+
+        If ``defor_var`` is set, look it up by exact name among the dataset's
+        features or its target, so the user controls which layer is the
+        forest-loss input.  When empty, fall back to the dataset target
+        (backward-compatible default).
+        """
+        if self.defor_var:
+            for var in dataset.features:
+                if var.name == self.defor_var:
+                    return var.path
+            if dataset.target is not None and dataset.target.name == self.defor_var:
+                return dataset.target.path
+            available = [v.name for v in dataset.features]
+            if dataset.target is not None:
+                available.append(dataset.target.name)
+            raise ValueError(
+                f"MWModel forest-loss variable '{self.defor_var}' was not found "
+                f"in the dataset.\n"
+                f"  Available: {available}\n"
+                f"  Set model.defor_var to match a layer in your dataset."
+            )
+        if dataset.target is None:
+            raise ValueError(
+                "Dataset has no target set and defor_var is not configured. "
+                "Set the forest-loss variable (defor_var) or call "
+                "dataset.set_target() before fit()."
+            )
+        return dataset.target.path
 
     # ------------------------------------------------------------------
     # Fit
@@ -182,10 +232,10 @@ class MWModel(BaseRiskModel):
         time_interval : int
             Number of years covered by the period (required).
         folder : str or Path, optional
-            Root output folder.  Defaults to the project ``rmj_mw`` folder,
-            then the current working directory.
+            Root output folder.  Defaults to the project ``rmj_mw`` folder;
+            raises when the model has no project either.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -225,13 +275,14 @@ class MWModel(BaseRiskModel):
         # Extract file paths from dataset. The forest-at-start layer is now an
         # explicit input to local_defor_rate (the moving-window denominator),
         # so it is required at fit() time as well as apply() time.
-        deforestation_file = active.target.path
+        deforestation_file = self._resolve_defor_file(active)
+        # deforrate reads ``defor == 1`` as the event, so a categorical or
+        # continuous layer would train silently on a wrong numerator.
+        deforrate.validate_binary_defor(deforestation_file)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
-        out_root = (
-            Path(folder) if folder is not None else (self._default_folder() or Path.cwd())
-        )
+        out_root = self._resolve_output_folder(folder)
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 
@@ -256,7 +307,9 @@ class MWModel(BaseRiskModel):
         ldefrate_files: Dict[str, Path] = {}
         for win_size in self.win_size_list:
             ldefrate_file = period_dir / f"ldefrate_mw_{win_size}.tif"
-            print(f"  local_defor_rate — window {win_size}×{win_size} px...")
+            # The label uses the multiplication sign deliberately (RUF001).
+            win_label = f"{win_size}×{win_size}"  # noqa: RUF001
+            print(f"  local_defor_rate — window {win_label} px...")
             deforrate.local_defor_rate(
                 defor_file=deforestation_file,
                 forest_file=forest_file,
@@ -320,7 +373,8 @@ class MWModel(BaseRiskModel):
         time_interval : int
             Number of years in the period (required).
         output_folder : str or Path, optional
-            Root output folder.  Defaults to project ``rmj_mw`` folder.
+            Root output folder.  Defaults to the project ``rmj_mw`` folder;
+            raises when the model has no project either.
         output_file : optional
             Unused; kept for API consistency with supervised models.
         mask : optional
@@ -328,12 +382,12 @@ class MWModel(BaseRiskModel):
         mask_value : optional
             Unused; kept for API consistency.
 
-        Returns
+        Returns:
         -------
         dict
             ``{win_size_str: Path}`` for each probability raster produced.
         """
-        from spatialrisk.rmj import set_defor_cat_zero, deforrate
+        from spatialrisk.rmj import deforrate, set_defor_cat_zero
 
         if not self.ldefrate_files:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
@@ -355,16 +409,14 @@ class MWModel(BaseRiskModel):
 
         period = active.name or self.name
 
-        # Extract file paths from dataset
-        deforestation_file = active.target.path
+        # Extract file paths from dataset. This period's forest-loss layer is
+        # not the one fit() saw, so it gets the same binary check.
+        deforestation_file = self._resolve_defor_file(active)
+        deforrate.validate_binary_defor(deforestation_file)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         forest_file = self._get_feature(active, self.forest_var)
 
-        out_root = (
-            Path(output_folder)
-            if output_folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_root = self._resolve_output_folder(output_folder, param="output_folder")
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 
@@ -405,6 +457,7 @@ class MWModel(BaseRiskModel):
                 prob_file,
                 dataset=active,
                 window=int(win_size_str) if str(win_size_str).isdigit() else None,
+                defrate_path=defrate_tab,
             )
             print(f"  window {win_size_str} → {prob_file.name}")
 
@@ -434,15 +487,9 @@ class MWModel(BaseRiskModel):
                 "ldefrate_files is empty. Ensure fit() was called and "
                 "the model was registered."
             )
-        missing = [
-            str(p)
-            for p in self.ldefrate_files.values()
-            if not Path(p).exists()
-        ]
+        missing = [str(p) for p in self.ldefrate_files.values() if not Path(p).exists()]
         if missing:
             raise FileNotFoundError(
-                f"ldefrate raster(s) not found:\n" + "\n".join(missing)
+                "ldefrate raster(s) not found:\n" + "\n".join(missing)
             )
-        print(
-            f"  MW model OK — {len(self.ldefrate_files)} ldefrate files verified."
-        )
+        print(f"  MW model OK — {len(self.ldefrate_files)} ldefrate files verified.")

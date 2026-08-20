@@ -1,0 +1,22 @@
+{
+  "notifications": {
+    "task_training": "Entraînement du modèle '{name}'",
+    "task_inference": "Prédiction : {model} sur {dataset}",
+    "task_import": "Importation de la prédiction '{name}'",
+    "task_evaluation": "Évaluation des prédictions ({tag})",
+    "task_allocation": "Allocation de la déforestation pour « {name} »",
+    "task_sampling": "Génération de l'échantillon '{name}'",
+    "task_processing": "Harmonisation des variables",
+    "task_download_all": "Téléchargement des couches GEE",
+    "task_download_one": "Téléchargement de la couche '{name}'",
+    "task_download_layer": "Téléchargement de la couche {i}/{n} : '{name}'",
+    "task_download_tiles": "'{name}' — tuile {done}/{total}",
+    "task_change": "Génération de la couche de changement {op}",
+    "task_postprocess": "Application de {step} à '{name}'"
+  },
+  "dialog": {
+    "confirm_default_title": "Supprimer ?",
+    "confirm_default_message": "Cette action est irréversible.",
+    "confirm_default_label": "Supprimer"
+  }
+}

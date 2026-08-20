@@ -5,6 +5,8 @@ spatial autocorrelation through a latent spatial random effect (rho).
 Training uses MCMC via forestatrisk.model_binomial_iCAR.
 """
 
+import concurrent.futures
+import multiprocessing
 import pickle
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +25,7 @@ def compute_cell_indices(
 ) -> "np.ndarray":
     """Convert pixel-based cell_id values to spatial cell indices.
 
-    ``dataset.to_dataframe()`` stores ``cell_id = row * ncols + col`` (a flat
+    ``dataset.extract_at_points()`` stores ``cell_id = row * ncols + col`` (a flat
     pixel index).  forestatrisk's ``model_binomial_iCAR`` expects the ``cell``
     column to contain the index into the spatial-cell grid produced by
     ``cellneigh(raster, csize, rank=1)``, i.e. values in ``[0, ncell)``.
@@ -72,11 +74,84 @@ def compute_cell_indices(
     return bigI * ncol_cells + bigJ
 
 
+def _mcmc_worker(payload: dict) -> dict:
+    """Run forestatrisk's MCMC sampler. Executed in a spawned child process.
+
+    Must stay a module-level function so multiprocessing can pickle it.
+    """
+    import os
+
+    import forestatrisk as far
+
+    mod = far.model_binomial_iCAR(
+        suitability_formula=payload["formula"],
+        data=payload["data"],
+        n_neighbors=payload["n_neighbors"],
+        neighbors=payload["neighbors"],
+        burnin=payload["burnin"],
+        mcmc=payload["mcmc"],
+        thin=payload["thin"],
+        priorVrho=payload["prior_vrho"],
+        seed=payload["seed"],
+        verbose=payload["verbose"],
+    )
+    # Only picklable posterior summaries cross the process boundary (the full
+    # model object holds patsy design objects that cannot be pickled).
+    return {
+        "betas": np.array(mod.betas),
+        "rho": np.array(mod.rho),
+        "Vrho": float(mod.Vrho) if hasattr(mod, "Vrho") else None,
+        "deviance": float(mod.deviance),
+        "worker_pid": os.getpid(),
+    }
+
+
+def run_icar_mcmc(
+    formula: str,
+    data: "pd.DataFrame",
+    n_neighbors: "np.ndarray",
+    neighbors: "np.ndarray",
+    *,
+    burnin: int,
+    mcmc: int,
+    thin: int,
+    prior_vrho: float,
+    seed: int,
+    verbose: int = 1,
+) -> dict:
+    """Run the iCAR MCMC in a spawned child process and return its posteriors.
+
+    forestatrisk's ``hbm`` C extension holds the GIL for the entire sampler
+    run, so executing it in-process stalls every other Python thread — in the
+    GUI that freezes the whole Solara server until training finishes. A
+    separate process has its own GIL, keeping the app responsive. "spawn"
+    (not "fork") because forking a multithreaded server process with GDAL/EE
+    state loaded is unsafe.
+    """
+    payload = {
+        "formula": formula,
+        "data": data,
+        "n_neighbors": n_neighbors,
+        "neighbors": neighbors,
+        "burnin": burnin,
+        "mcmc": mcmc,
+        "thin": thin,
+        "prior_vrho": prior_vrho,
+        "seed": seed,
+        "verbose": verbose,
+    }
+    ctx = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(max_workers=1, mp_context=ctx) as pool:
+        result = pool.submit(_mcmc_worker, payload).result()
+    print(f"  MCMC ran in subprocess (pid {result['worker_pid']})")
+    return result
+
+
 class ICARModel(BaseRiskModel):
     """Bayesian iCAR spatial risk model.
 
     Requires the ``cell_id`` column present in DataFrames produced by
-    ``dataset.to_dataframe()``, which encodes the raster cell index and
+    ``dataset.extract_at_points()``, which encodes the raster cell index and
     enables construction of the spatial neighbourhood graph.
 
     Attributes
@@ -111,6 +186,13 @@ class ICARModel(BaseRiskModel):
     rho_path: Optional[Path] = None
     csize_interpolate: float = 0.1
 
+    def output_files(self) -> list:
+        """iCAR also owns its spatial random-effect (rho) raster."""
+        files = super().output_files()
+        if self.rho_path:
+            files.append(Path(self.rho_path))
+        return files
+
     def fit(
         self,
         formula: Optional[str] = None,
@@ -127,7 +209,8 @@ class ICARModel(BaseRiskModel):
             automatically if absent.
         folder : str or Path, optional
             Folder for saving the model pickle and rho raster. Defaults to
-            the project icar_model folder.
+            the project icar_model folder; raises when the model has no
+            project either.
 
         Returns
         -------
@@ -138,15 +221,9 @@ class ICARModel(BaseRiskModel):
 
         # Auto-save full training CSV if samples_path not already set
         if self.samples_path is None:
-            _folder = (
-                Path(folder)
-                if folder is not None
-                else (self._default_folder() or Path.cwd())
-            )
-            Path(_folder).mkdir(parents=True, exist_ok=True)
-            _csv = (
-                Path(_folder) / f"samples_{self.model_type}_{self.name or 'model'}.csv"
-            )
+            _folder = self._resolve_output_folder(folder)
+            _folder.mkdir(parents=True, exist_ok=True)
+            _csv = _folder / f"samples_{self.model_type}_{self.name or 'model'}.csv"
         else:
             _csv = None
 
@@ -155,11 +232,13 @@ class ICARModel(BaseRiskModel):
         if "cell_id" not in df.columns:
             raise ValueError(
                 "DataFrame must contain a 'cell_id' column. "
-                "Use dataset.to_dataframe() to generate samples."
+                "Use dataset.extract_at_points() to generate samples."
             )
 
-        # Target raster path — available directly from self.dataset
-        raster_path = str(self.dataset.target.path)
+        # Target raster path — available directly from self.dataset. Absolute:
+        # it is handed straight to forestatrisk (cellneigh, interpolate_rho),
+        # which reopens it by name, so its meaning must not depend on the CWD.
+        raster_path = str(Path(self.dataset.target.path).resolve())
 
         # forestatrisk expects the column to be named "cell" and values must be
         # spatial cell indices matching cellneigh(raster, csize, rank=1).
@@ -185,27 +264,26 @@ class ICARModel(BaseRiskModel):
         print("  Building spatial neighbourhood...")
         n_neighbors, adj = far.cellneigh(raster_path, self.csize, rank=1)
 
-        # MCMC
-        mod = far.model_binomial_iCAR(
-            suitability_formula=icar_formula,
-            data=df,
-            n_neighbors=n_neighbors,
-            neighbors=adj,
+        # MCMC — isolated in a subprocess so the GIL-holding sampler cannot
+        # stall the calling process (see run_icar_mcmc).
+        posteriors = run_icar_mcmc(
+            icar_formula,
+            df,
+            n_neighbors,
+            adj,
             burnin=self.burnin,
             mcmc=self.mcmc,
             thin=self.thin,
-            priorVrho=self.prior_vrho,
+            prior_vrho=self.prior_vrho,
             seed=self.random_seed if self.random_seed is not None else 1234,
             verbose=1,
         )
 
-        # Extract only picklable fields from the forestatrisk model object
-        # (the full model contains patsy design objects that cannot be pickled)
         self._ml_model = {
-            "betas": np.array(mod.betas),
-            "rho": np.array(mod.rho),
-            "Vrho": float(mod.Vrho) if hasattr(mod, "Vrho") else None,
-            "deviance": float(mod.deviance),
+            "betas": posteriors["betas"],
+            "rho": posteriors["rho"],
+            "Vrho": posteriors["Vrho"],
+            "deviance": posteriors["deviance"],
             "formula": icar_formula,
         }
         self.n_samples = n_obs
@@ -219,11 +297,7 @@ class ICARModel(BaseRiskModel):
         )
 
         # Resolve output folder
-        out_dir = (
-            Path(folder)
-            if folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_dir = self._resolve_output_folder(folder)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Save pickle
@@ -240,9 +314,14 @@ class ICARModel(BaseRiskModel):
         self.model_path = pickle_path
         print(f"  iCAR model saved to: {pickle_path}")
 
-        # Interpolate rho to full raster grid
-        print("  Interpolating rho to raster grid...")
-        rho_path = out_dir / f"rho_{base}_{ts}.tif"
+        # Interpolate rho to full raster grid.
+        # The path is made absolute before it crosses into forestatrisk because
+        # interpolate_rho writes a second, unrequested file next to the one we
+        # ask for: rho_orig.tif, placed at
+        # os.path.join(os.path.dirname(output_file), "rho_orig.tif"). A bare
+        # filename makes os.path.dirname() return "", so that sibling is created
+        # in the process CWD instead — the read-only shared mount on SEPAL.
+        rho_path = (out_dir / f"rho_{base}_{ts}.tif").resolve()
         far.interpolate_rho(
             rho=self._ml_model["rho"],
             input_raster=raster_path,
@@ -333,7 +412,11 @@ class ICARModel(BaseRiskModel):
         )
 
         with rasterio.open(output_file, "w", **profile) as dst:
-            blockinfo = far.misc.makeblock(str(active_dataset.target.path))
+            # Absolute for the same reason as in fit(): forestatrisk reopens the
+            # path itself, so it must not be read relative to the process CWD.
+            blockinfo = far.misc.makeblock(
+                str(Path(active_dataset.target.path).resolve())
+            )
             nblock, nblock_x = blockinfo[0], blockinfo[1]
             x_off, y_off, nx, ny = (
                 blockinfo[3],
@@ -418,4 +501,5 @@ class ICARModel(BaseRiskModel):
                 )
 
         print(f"✓ iCAR raster written: {output_file}")
+        self._register_prediction(output_file, dataset=active_dataset)
         return output_file

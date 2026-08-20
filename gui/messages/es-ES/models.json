@@ -1,0 +1,152 @@
+{
+  "models": {
+    "jnr": {
+      "label": "Referencia (JNR)",
+      "short": "JNR",
+      "summary_md": "- **Enfoque:** estratificación no paramétrica por distancia al borde del bosque y subjurisdicción — la línea base de [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/).\n- **Datos de entrenamiento:** solo las capas del conjunto de datos (sin muestra de puntos).\n- **Salida:** un mapa de riesgo por clases de vulnerabilidad, usado como referencia contra la que se comparan los demás modelos.",
+      "description": "El modelo de referencia JNR implementa el enfoque de REDD+ Jurisdiccional y Anidado para el mapeo del riesgo de deforestación. Estratifica el paisaje por franjas de distancia al borde del bosque y por subjurisdicciones, asignando tasas históricas de deforestación como puntajes de vulnerabilidad. Este método no paramétrico no requiere variables de características — se basa únicamente en la proximidad espacial al borde del bosque. Sirve como línea base contra la que se comparan modelos más complejos.",
+      "params": {
+        "blk_rows": {
+          "label": "Filas por bloque",
+          "hint": "Filas leídas por bloque de procesamiento — más filas usan más memoria y menos pasadas de E/S."
+        },
+        "defor_threshold": {
+          "label": "Umbral de deforestación (%)",
+          "hint": "% acumulado de deforestación que define la distancia al borde máxima conservada (por defecto 99,5)."
+        },
+        "defor_var": {
+          "label": "Variable de pérdida forestal",
+          "hint": "Capa del conjunto de datos con el ráster binario de pérdida forestal / deforestación (1 = pérdida). Normalmente el objetivo del conjunto de datos."
+        },
+        "forest_edge_var": {
+          "label": "Variable de borde del bosque",
+          "hint": "Capa del conjunto de datos con la distancia al borde del bosque."
+        },
+        "forest_var": {
+          "label": "Variable forestal",
+          "hint": "Capa del conjunto de datos con la máscara de bosque (1 = bosque)."
+        },
+        "subj_var": {
+          "label": "Variable de subjurisdicción",
+          "hint": "Capa del conjunto de datos con las zonas de subjurisdicción para estratificar las tasas."
+        }
+      }
+    },
+    "mw": {
+      "label": "Ventana móvil",
+      "short": "MW",
+      "summary_md": "- **Enfoque:** densidad local de deforestación en una ventana deslizante — heurística espacial, sin aprendizaje automático ([riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/)).\n- **Datos de entrenamiento:** solo las capas del conjunto de datos (sin muestra de puntos).\n- **Salida:** un ráster de riesgo por tamaño de ventana; ventanas pequeñas captan el detalle local, las grandes una tendencia más amplia.",
+      "description": "El modelo de ventana móvil calcula tasas locales de deforestación dentro de ventanas espaciales de tamaños dados para producir rásteres de riesgo. Para cada tamaño de ventana calcula la proporción de píxeles deforestados en el vecindario, creando una heurística espacial de densidad de eventos. No involucra aprendizaje automático — el modelo captura patrones espaciales locales de pérdida forestal. Se pueden evaluar varios tamaños de ventana (p. ej. 5, 11, 21 píxeles) simultáneamente.",
+      "params": {
+        "win_size_list": {
+          "label": "Tamaños de ventana (px, separados por coma)",
+          "hint": "Tamaños impares en píxeles a evaluar, p. ej. 5, 11, 21. Cada uno produce su propio mapa de riesgo."
+        },
+        "blk_rows": {
+          "label": "Filas por bloque",
+          "hint": "Filas leídas por bloque de procesamiento — más filas usan más memoria y menos pasadas de E/S."
+        },
+        "defor_threshold": {
+          "label": "Umbral de deforestación (%)",
+          "hint": "% acumulado de deforestación que define la distancia al borde máxima conservada (por defecto 99,5)."
+        },
+        "defor_var": {
+          "label": "Variable de pérdida forestal",
+          "hint": "Capa del conjunto de datos con el ráster binario de pérdida forestal / deforestación (1 = pérdida). Normalmente el objetivo del conjunto de datos."
+        },
+        "forest_edge_var": {
+          "label": "Variable de borde del bosque",
+          "hint": "Capa del conjunto de datos con la distancia al borde del bosque."
+        },
+        "forest_var": {
+          "label": "Variable forestal",
+          "hint": "Capa del conjunto de datos con la máscara de bosque (1 = bosque)."
+        }
+      }
+    },
+    "glm": {
+      "label": "GLM (Regresión logística)",
+      "short": "GLM",
+      "summary_md": "- **Enfoque:** regresión logística — un modelo lineal muy interpretable ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html)).\n- **Datos de entrenamiento:** una muestra de puntos + el objetivo y las características del conjunto de datos.\n- **Salida:** mapa de probabilidad de deforestación más coeficientes por característica que cuantifican el efecto de cada predictor.",
+      "description": "El modelo lineal generalizado usa regresión logística para estimar la probabilidad de deforestación en función de variables predictoras espaciales. Ajusta una combinación lineal de características (altitud, pendiente, distancia a caminos, etc.) mediante una función de enlace logit. El modelo es rápido de entrenar, muy interpretable y produce estimaciones de coeficientes que cuantifican la contribución de cada variable al riesgo de deforestación. Usa LogisticRegression de sklearn con soporte de fórmulas de Patsy.",
+      "params": {
+        "solver": {
+          "label": "Solucionador",
+          "hint": "Algoritmo de optimización que usa sklearn para ajustar los coeficientes. lbfgs sirve en la mayoría de los casos."
+        },
+        "max_iter": {
+          "label": "Iteraciones máximas",
+          "hint": "Límite de iteraciones del solucionador. Aumentalo si el ajuste avisa que no convergió."
+        },
+        "random_seed": {
+          "label": "Semilla aleatoria",
+          "hint": "Fija la reproducibilidad del ajuste."
+        }
+      }
+    },
+    "rf": {
+      "label": "Bosque aleatorio",
+      "short": "RF",
+      "summary_md": "- **Enfoque:** conjunto de árboles de decisión — capta efectos no lineales e interacciones de forma automática ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html)).\n- **Datos de entrenamiento:** una muestra de puntos + el objetivo y las características del conjunto de datos.\n- **Salida:** mapa de probabilidad de deforestación más puntajes de importancia de características.",
+      "description": "El modelo de bosque aleatorio es un método de conjunto que construye múltiples árboles de decisión sobre subconjuntos aleatorios de datos de entrenamiento y características. Cada árbol vota si un píxel está en riesgo de deforestación, y el conjunto promedia esos votos en una probabilidad. Captura relaciones no lineales e interacciones entre variables sin requerir ingeniería de características explícita. Los puntajes de importancia de características ayudan a identificar los predictores más influyentes.",
+      "params": {
+        "n_trees": {
+          "label": "Número de árboles",
+          "hint": "Árboles del conjunto — más da resultados más estables pero más lentos. 100–500 es habitual."
+        },
+        "max_depth": {
+          "label": "Profundidad máxima",
+          "hint": "Máxima profundidad de cada árbol. Menor protege contra el sobreajuste."
+        },
+        "min_samples_leaf": {
+          "label": "Mín. muestras por hoja",
+          "hint": "Mínimo de puntos de entrenamiento por hoja. Mayor suaviza las predicciones."
+        },
+        "random_seed": {
+          "label": "Semilla aleatoria",
+          "hint": "Fija la reproducibilidad del bootstrap de árboles y del sorteo de características."
+        }
+      }
+    },
+    "icar": {
+      "label": "iCAR (Espacial bayesiano)",
+      "short": "iCAR",
+      "summary_md": "- **Enfoque:** modelo logístico bayesiano con un efecto aleatorio espacial (rho) que absorbe la estructura de vecindad no observada — ajustado por MCMC con [forestatrisk](https://ecology.ghislainv.fr/forestatrisk/).\n- **Datos de entrenamiento:** una muestra de puntos + el objetivo y las características del conjunto de datos.\n- **Salida:** mapa de probabilidad de deforestación más un ráster interpolado del efecto aleatorio espacial (rho). Es el modelo más costoso en cómputo, a menudo el más preciso.",
+      "description": "El modelo autorregresivo condicional intrínseco (iCAR) es un modelo espacial bayesiano que da cuenta de la autocorrelación espacial mediante un efecto aleatorio latente (rho). Combina el poder explicativo de las variables predictoras con un componente de suavizado espacial que captura efectos de vecindad no observados. El entrenamiento usa muestreo de Monte Carlo por cadenas de Markov (MCMC) mediante la librería forestatrisk. Es el modelo más costoso en cómputo pero a menudo entrega las mejores predicciones espaciales.",
+      "params": {
+        "csize": {
+          "label": "Tamaño de celda (km)",
+          "hint": "Lado de las celdas cuadradas usadas para construir el grafo de vecindad espacial."
+        },
+        "mcmc": {
+          "label": "Iteraciones MCMC",
+          "hint": "Iteraciones de muestreo conservadas tras el calentamiento — más mejora la estimación pero es más lento."
+        },
+        "burnin": {
+          "label": "Iteraciones de calentamiento",
+          "hint": "Iteraciones iniciales descartadas para que la cadena alcance su distribución estacionaria."
+        },
+        "thin": {
+          "label": "Factor de adelgazamiento",
+          "hint": "Conservar cada k-ésima muestra para reducir la autocorrelación. 1 conserva todas."
+        },
+        "prior_vrho": {
+          "label": "Varianza a priori (rho)",
+          "hint": "Varianza a priori del efecto espacial. -1 usa una previa uniforme."
+        },
+        "beta_start": {
+          "label": "Beta inicial",
+          "hint": "Valor inicial de los coeficientes. -99 los inicializa automáticamente."
+        },
+        "random_seed": {
+          "label": "Semilla aleatoria",
+          "hint": "Fija la reproducibilidad de los sorteos de MCMC."
+        },
+        "csize_interpolate": {
+          "label": "Tamaño de celda de interpolación",
+          "hint": "Tamaño de celda (km) al que se interpola el rho ajustado para el ráster de salida."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "common": {
+    "save": "Save",
+    "load": "Load",
+    "cancel": "Cancel",
+    "create": "Create",
+    "remove": "Remove",
+    "replace": "Replace",
+    "delete": "Delete",
+    "close": "Close",
+    "actions": "Actions",
+    "advanced": "Advanced",
+    "new": "New",
+    "yes": "Yes",
+    "no": "No",
+    "_test_fmt": "hello {name}",
+    "_test_one": "{n} item",
+    "_test_other": "{n} items"
+  },
+  "legend": {
+    "prediction": { "title": "Deforestation risk" },
+    "density": { "title": "Deforestation density (ha/pixel/year)" },
+    "risk": { "low": "Lower risk", "high": "Higher risk" },
+    "range": { "low": "Low", "high": "High" },
+    "class": {
+      "absent": "Absent",
+      "present": "Present",
+      "stable": "Stable",
+      "loss": "Forest loss",
+      "gain": "Forest gain",
+      "non_forest": "Non-forest",
+      "forest": "Forest"
+    },
+    "note": { "random_classes": "Categorical — colours assigned at random" },
+    "unit": {
+      "m_value": "{value} m",
+      "deg_value": "{value}°",
+      "plain_value": "{value}"
+    }
+  }
+}

@@ -27,7 +27,21 @@ def compute_dist_bins(
     list of float
         30 bin edges (29 classes + boundaries), increasing from
         ``pixel_resolution`` to ``dist_thresh``.
+
+    Notes:
+    -----
+    Relative paths are resolved against the current working directory before
+    being forwarded (see the comment at the call site).
     """
     import riskmapjnr as rmj
 
-    return rmj.benchmark.compute_dist_bins(str(forest_edge_file), dist_thresh)
+    # Absolutise the path before it crosses the riskmapjnr boundary, for the
+    # same reason as in ``vulnerability_map``: riskmapjnr resolves relative
+    # paths against the *process* CWD, which on SEPAL is the read-only shared
+    # module mount. This particular call only reads (``gdal.Open`` for the
+    # geotransform, no output file of its own), so the failure mode here is a
+    # path silently pointing somewhere other than the caller meant rather than
+    # a stray write -- but the boundary rule is worth holding uniformly.
+    return rmj.benchmark.compute_dist_bins(
+        str(Path(forest_edge_file).resolve()), dist_thresh
+    )

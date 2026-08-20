@@ -1,25 +1,29 @@
+"""GEE-backed Variable that downloads assets to local raster/vector variables."""
+
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+from pydantic import Field, model_validator
+
 from spatialrisk.gee.ee_raster_export import download_ee_image
 from spatialrisk.variables.local_raster_var import LocalRasterVar
+from spatialrisk.variables.local_vector_var import LocalVectorVar
 from spatialrisk.variables.models import (
     DataType,
     PostProcessing,
-    RasterType,
     RasterizationMethod,
+    RasterType,
 )
-from pydantic import Field, model_validator
-
 from spatialrisk.variables.variable import Variable
-from spatialrisk.variables.local_vector_var import LocalVectorVar
 
 
 class GEEVar(Variable):
     """
     Google Earth Engine-backed variable.
-    - Accepts either an asset id (gee_image as str or path as asset id) or an ee.Image object.
-    - Optional local output path; if missing → defaults to CWD/<name>[_year].tif
+
+    - Accepts either an asset id (gee_image as str or path as asset id) or
+      an ee.Image object.
+    - Optional local output path; if missing → defaults to CWD/<name>[_year].tif.
     """
 
     path: Optional[Union[Path, str]] = None  # local target OR asset id
@@ -31,6 +35,11 @@ class GEEVar(Variable):
     raster_type: Optional[RasterType] = None  # for raster data
     rasterization_method: Optional[RasterizationMethod] = None  # for vector data
     post_processing: List[PostProcessing] = []  # for raster data
+    # Explicit export fill/nodata. When unset, derived from raster_type:
+    # continuous -> -32768, categorical/unset -> 255. A layer whose values can
+    # collide with the default sentinel must set this (e.g. a categorical
+    # export whose class ids can reach 255).
+    export_nodata: Optional[float] = None
 
     @model_validator(mode="after")
     def _chk_source(self):
@@ -41,22 +50,44 @@ class GEEVar(Variable):
         ):
             return self
         raise ValueError(
-            "GEEVar needs `gee_images` (ee.Image or asset id str list) or `path` set to an asset id."
+            "GEEVar needs `gee_images` (ee.Image or asset id str list) or "
+            "`path` set to an asset id."
         )
+
+    def _resolve_export_nodata(self, raster_type: Optional[RasterType] = None) -> float:
+        """Fill/nodata for the GeoTIFF export: a value the layer cannot contain.
+
+        ``export_nodata`` wins when set. Otherwise continuous layers get
+        -32768 (int16-safe; impossible for altitude in m, precipitation in mm,
+        slope in degrees, temperature in degC), and categorical/unset layers
+        keep the byte convention 255. 255 on a continuous layer punched holes
+        through real data — every genuine 255 m elevation pixel became fill.
+        """
+        if self.export_nodata is not None:
+            return self.export_nodata
+        _raster_type = raster_type or self.raster_type
+        if _raster_type == RasterType.continuous:
+            return -32768
+        return 255
 
     def _download(
         self,
         overwrite: bool = False,
+        raster_type: Optional[RasterType] = None,
     ) -> List[Path]:
         """
         Internal method to download GEE data to local file(s).
 
         Parameters
         ----------
+        raster_type : RasterType, optional
+            Conversion-time override from ``to_local_raster`` — must be
+            resolved here, before the export, so it also drives the
+            nodata sentinel (not only the LocalRasterVar metadata).
         overwrite : bool, optional
             Whether to overwrite existing files (default: False).
 
-        Returns
+        Returns:
         -------
         List[Path]
             List of paths to the downloaded files.
@@ -85,8 +116,9 @@ class GEEVar(Variable):
         if overwrite or not output_path.exists():
 
             if self.data_type == DataType.vector:
-                import geemap
-                geemap.ee_export_vector(
+                from spatialrisk.gee.vector_export import ee_export_vector
+
+                ee_export_vector(
                     self.gee_images[0],
                     output_path,
                     selectors=["gaul0_name", "iso3_code"],
@@ -96,6 +128,7 @@ class GEEVar(Variable):
                 )
 
             elif self.data_type == DataType.raster:
+                nodata = self._resolve_export_nodata(raster_type)
                 download_ee_image(
                     self.gee_images[0],
                     output_path,
@@ -103,8 +136,8 @@ class GEEVar(Variable):
                     crs=self.default_crs or "EPSG:4326",
                     region=self.aoi.geometry(),
                     overwrite=True,
-                    unmask_value=255,
-                    nodata_value=255,
+                    unmask_value=nodata,
+                    nodata_value=nodata,
                 )
         elif output_path.exists():
             print(f"{output_path} already exists. Skipping download.")
@@ -124,6 +157,7 @@ class GEEVar(Variable):
     ) -> Union["LocalVectorVar", List["LocalVectorVar"]]:
         """
         Download from GEE and convert to LocalVectorVar(s).
+
         Only works for vector data types.
 
         Parameters
@@ -131,20 +165,21 @@ class GEEVar(Variable):
         overwrite : bool, optional
             Whether to overwrite existing files (default: False).
 
-        Returns
+        Returns:
         -------
         LocalVectorVar or List[LocalVectorVar]
-            A LocalVectorVar instance if single image, or a list of LocalVectorVar instances
-            if multiple images were downloaded.
+            A LocalVectorVar instance if single image, or a list of
+            LocalVectorVar instances if multiple images were downloaded.
 
-        Raises
+        Raises:
         ------
         ValueError
             If data_type is not 'vector'.
         """
         if self.data_type != DataType.vector:
             raise ValueError(
-                f"to_local_vector() can only be used with vector data types, got '{self.data_type}'"
+                f"to_local_vector() can only be used with vector data types, "
+                f"got '{self.data_type}'"
             )
 
         # Download the vector data
@@ -183,7 +218,8 @@ class GEEVar(Variable):
         Download from GEE and convert to LocalRasterVar(s).
 
         - For raster data: downloads directly and returns LocalRasterVar(s).
-        - For vector data: downloads as LocalVectorVar(s), then rasterizes to LocalRasterVar(s).
+        - For vector data: downloads as LocalVectorVar(s), then rasterizes to
+          LocalRasterVar(s).
 
         Parameters
         ----------
@@ -194,8 +230,8 @@ class GEEVar(Variable):
             Required if data_type is 'vector' and not set in GEEVar.
             Used when rasterizing vector data.
         base : LocalRasterVar, optional
-            Required if data_type is 'vector'. The base raster to use as spatial reference
-            for rasterization.
+            Required if data_type is 'vector'. The base raster to use as
+            spatial reference for rasterization.
         post_processing : List[PostProcessing], optional
             Post-processing steps to apply (only for rasters).
             If not provided, uses self.post_processing.
@@ -204,13 +240,13 @@ class GEEVar(Variable):
         **rasterize_kwargs
             Additional keyword arguments passed to LocalVectorVar.rasterize().
 
-        Returns
+        Returns:
         -------
         LocalRasterVar or List[LocalRasterVar]
-            A LocalRasterVar instance if single image, or a list of LocalRasterVar instances
-            if multiple images were downloaded.
+            A LocalRasterVar instance if single image, or a list of
+            LocalRasterVar instances if multiple images were downloaded.
 
-        Raises
+        Raises:
         ------
         ValueError
             If required parameters are missing based on data_type.
@@ -219,14 +255,16 @@ class GEEVar(Variable):
             # For vector data: download as LocalVectorVar, then rasterize
             if base is None:
                 raise ValueError(
-                    "base (LocalRasterVar) must be provided when converting a vector GEEVar to raster"
+                    "base (LocalRasterVar) must be provided when converting "
+                    "a vector GEEVar to raster"
                 )
 
             # Use provided rasterization_method or fall back to self's value
             _rasterization_method = rasterization_method or self.rasterization_method
             if _rasterization_method is None:
                 raise ValueError(
-                    "rasterization_method must be provided either as parameter or set in GEEVar when converting vector to raster"
+                    "rasterization_method must be provided either as parameter "
+                    "or set in GEEVar when converting vector to raster"
                 )
 
             # Download as LocalVectorVar(s)
@@ -250,14 +288,15 @@ class GEEVar(Variable):
             return local_rasters[0] if len(local_rasters) == 1 else local_rasters
 
         else:  # DataType.raster
-            # For raster data: download directly
-            local_paths = self._download(overwrite=overwrite)
-
-            # Use provided raster_type or fall back to self's value
+            # Resolve raster_type BEFORE downloading: it drives the export's
+            # nodata sentinel, not just the LocalRasterVar metadata.
             _raster_type = raster_type or self.raster_type
+            local_paths = self._download(overwrite=overwrite, raster_type=_raster_type)
+
             if _raster_type is None:
                 raise ValueError(
-                    "raster_type must be provided either as parameter or set in GEEVar when converting a raster GEEVar to LocalRasterVar"
+                    "raster_type must be provided either as parameter or set "
+                    "in GEEVar when converting a raster GEEVar to LocalRasterVar"
                 )
 
             # Use provided post_processing or fall back to self's value

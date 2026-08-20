@@ -1,9 +1,19 @@
+"""Patsy-formula helpers: generation, variable extraction, design info."""
+
+import ast
 import re
+import warnings
+from typing import TYPE_CHECKING
+
+import pandas as pd
+from patsy import dmatrices
+
+if TYPE_CHECKING:
+    from spatialrisk.dataset import Dataset
 
 
 def extract_variables(formula: str, mode: str = "predictors") -> set:
-    """
-    Extract variable names from a Patsy-style formula, safely handling I(), scale(), C(), etc.
+    """Extract variable names from a Patsy formula (handles I/scale/C etc.).
 
     Parameters
     ----------
@@ -15,13 +25,13 @@ def extract_variables(formula: str, mode: str = "predictors") -> set:
         - 'I': extract variables only inside I() expressions on the LHS
         - 'all': extract all variables from both sides
 
-    Returns
-    -------
+    Returns:
+    --------
     set
         A set of raw variable names (unique, untransformed).
 
-    Example
-    -------
+    Example:
+    --------
     >>> formula = "I(1-fcc) + trial ~ scale(altitude) + scale(dist_edge) + C(pa)"
     >>> extract_variables(formula)
     {'altitude', 'dist_edge', 'pa'}
@@ -86,14 +96,47 @@ def extract_variables(formula: str, mode: str = "predictors") -> set:
     return raw_vars
 
 
-import warnings
+# Transform callables that may appear in formula factor code; they are
+# function names, not data variables.
+_FORMULA_TRANSFORMS = {
+    "I",
+    "C",
+    "scale",
+    "center",
+    "standardize",
+    "Q",
+    "np",
+    "log",
+    "poly",
+    "bs",
+    "cr",
+}
 
-import pandas as pd
-from patsy import dmatrices
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from spatialrisk.dataset import Dataset
+def _factor_names(code: str) -> set:
+    """Variable names referenced by one patsy factor's Python code."""
+    tree = ast.parse(code, mode="eval")
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    return names - _FORMULA_TRANSFORMS
+
+
+def formula_variables(formula: str) -> tuple:
+    """(lhs_vars, rhs_vars) for a patsy formula, via patsy + ast.
+
+    Unlike :func:`extract_variables`, keyword-argument names such as the
+    ``levels=`` in ``C(x, levels=[...])`` are ``ast.keyword`` nodes — not
+    ``ast.Name`` — so they are never mistaken for variables. Raises
+    ``patsy.PatsyError`` or ``SyntaxError`` on unparsable input.
+    """
+    from patsy import ModelDesc
+
+    desc = ModelDesc.from_formula(formula)
+    lhs, rhs = set(), set()
+    for termlist, out in ((desc.lhs_termlist, lhs), (desc.rhs_termlist, rhs)):
+        for term in termlist:
+            for factor in term.factors:
+                out |= _factor_names(factor.code)
+    return lhs, rhs
 
 
 def get_design_info(patsy_formula, samples_file):
@@ -124,8 +167,8 @@ def get_categorical_levels(var) -> "list | None":
     var : LocalRasterVar
         Categorical variable exposing a ``.path`` attribute.
 
-    Returns
-    -------
+    Returns:
+    --------
     list or None
         Sorted list of unique levels, or ``None`` if the raster cannot be read
         (so the caller can fall back to a bare ``C(var)`` term).
@@ -139,9 +182,11 @@ def get_categorical_levels(var) -> "list | None":
             nodata = src.nodata
             for _, window in src.block_windows(1):
                 block = src.read(1, window=window)
-                block = block[~np.isnan(block)] if np.issubdtype(
-                    block.dtype, np.floating
-                ) else block.ravel()
+                block = (
+                    block[~np.isnan(block)]
+                    if np.issubdtype(block.dtype, np.floating)
+                    else block.ravel()
+                )
                 uniques = np.unique(block)
                 if nodata is not None:
                     uniques = uniques[uniques != nodata]
@@ -151,7 +196,7 @@ def get_categorical_levels(var) -> "list | None":
             return int(v) if float(v).is_integer() else v
 
         return sorted(_coerce(v) for v in values)
-    except Exception as exc:  # noqa: BLE001 — fall back to data-discovered levels
+    except Exception as exc:  # fall back to data-discovered levels
         warnings.warn(
             f"Could not read categorical levels for '{getattr(var, 'name', var)}' "
             f"from {getattr(var, 'path', '?')}: {exc}. "
@@ -162,33 +207,35 @@ def get_categorical_levels(var) -> "list | None":
         return None
 
 
-def generate_patsy_formula(dataset: "Dataset") -> str:
-    """
-    Generate a regression formula string with scaled continuous variables
-    and categorical variables using Patsy-style syntax.
+def generate_patsy_formula(dataset: "Dataset", include_levels: bool = True) -> str:
+    """Generate a Patsy formula from a Dataset's target and features.
 
-    Automatically uses the Dataset's target and features, classifying variables
-    based on their raster_type attribute (continuous vs categorical).
+    Continuous variables are wrapped in ``scale(...)`` and categorical ones in
+    ``C(...)``, classified by each variable's ``raster_type`` attribute.
 
     Parameters
     ----------
     dataset : Dataset
         Dataset instance with configured target and features
+    include_levels : bool
+        When False, categorical terms are emitted as bare ``C(x)`` — no
+        raster is read. Used for the display/edit formula in the GUI;
+        :func:`inject_categorical_levels` re-arms the levels at fit time.
 
-    Returns
-    -------
+    Returns:
+    --------
     str
         Patsy formula string
 
-    Example
-    -------
+    Example:
+    --------
     >>> dataset.set_target('fcc', year=2020)
     >>> dataset.set_features(['altitude', 'pa', 'dist_edge'])
     >>> generate_patsy_formula(dataset)
     "I(fcc) + trial ~ scale(altitude) + scale(dist_edge) + C(pa, levels=[0, 1])"
 
-    Notes
-    -----
+    Notes:
+    ------
     Categorical terms declare their full level domain via ``levels=...``, read
     from each categorical raster with :func:`get_categorical_levels`. This
     prevents a ``PatsyError`` at prediction time when a pixel carries a value
@@ -203,7 +250,7 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     dependent_variable = dataset.target.name
 
     # Print dataset configuration
-    print(f"\n📊 Generating Patsy formula:")
+    print("\n📊 Generating Patsy formula:")
     print(f"  Target: {dependent_variable}")
     print(f"  Features: {', '.join([f.name for f in dataset.features])}")
 
@@ -230,7 +277,7 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     for var in categorical:
         # Declare the full categorical domain so prediction never hits an
         # "unexpected level". Fall back to a bare C() if the raster is unreadable.
-        levels = get_categorical_levels(var)
+        levels = get_categorical_levels(var) if include_levels else None
         if levels is not None:
             parts.append(f"C({var.name}, levels={levels})")
         else:
@@ -248,3 +295,44 @@ def generate_patsy_formula(dataset: "Dataset") -> str:
     print(f"\n✓ Formula: {formula}\n")
 
     return formula
+
+
+def inject_categorical_levels(formula: str, dataset: "Dataset") -> str:
+    """Arm bare ``C(x)`` terms with the raster's full level domain.
+
+    The displayed/edited formula keeps categorical terms short (``C(pa)``),
+    but prediction re-parses the *stored* formula string against the training
+    CSV, so the level domain must be explicit there — otherwise a pixel value
+    absent from the sample raises a patsy "unexpected level" error. Applied to
+    the RHS only; terms that already carry ``levels=`` (or anything beyond the
+    bare name) and unreadable rasters are left untouched.
+    """
+    parts = formula.split("~", 1)
+    if len(parts) != 2:
+        return formula
+    lhs, rhs = parts
+
+    categorical = {
+        var.name: var
+        for var in dataset.features or []
+        if getattr(var, "raster_type", None) == "categorical"
+    }
+    for name, var in categorical.items():
+        pattern = rf"\bC\(\s*{re.escape(name)}\s*\)"
+        if not re.search(pattern, rhs):
+            continue
+        levels = get_categorical_levels(var)
+        if levels is None:
+            continue
+        rhs = re.sub(pattern, f"C({name}, levels={levels})", rhs)
+
+    return f"{lhs}~{rhs}"
+
+
+def strip_categorical_levels(formula: str) -> str:
+    """Display form of a stored formula: ``C(x, levels=[...])`` -> ``C(x)``."""
+    return re.sub(
+        r"\bC\(\s*([A-Za-z_]\w*)\s*,\s*levels=\[[^\]]*\]\s*\)",
+        r"C(\1)",
+        formula,
+    )

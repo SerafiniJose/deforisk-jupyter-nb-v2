@@ -2,38 +2,60 @@ name: spatial-risk
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
+  # Match the tested dev env (python 3.11.10, gdal 3.12.3, numpy 2.2.0)
+  - python=3.11
   # Geospatial binaries — conda handles these correctly
-  - gdal
+  - gdal=3.12
   - rasterio
   - fiona
   - geopandas
+  - shapely
   - rioxarray
+  - xarray
+  - odc-geo
+  - xarray-spatial
+  - pycrs
+  - tippecanoe
   # Scientific
-  - numpy
+  - numpy=2.2
+  - pandas
+  - scipy
+  - scikit-learn
+  - patsy
+  - formulaic
+  - dask # metapackage: pulls distributed (dask.distributed is imported)
+  - matplotlib-base
   - pydantic
+  # Earth Engine (earthengine-api itself comes from the openforis build via
+  # pip below; conda pulls a stock copy as a geedim dep, pip replaces it)
+  - geedim=2.0
+  # GUI / serving
+  - solara
+  - ipyleaflet
+  - voila
+  - ipecharts=1.4
+  - pmtiles=3.7.0
   # Utilities
+  - python-box
+  - psutil
   - ipykernel
   - setuptools
   - wheel
   - pip
   - pip:
-    # Earth Engine (custom build)
-    - "earthengine-api @ git+https://github.com/openforis/earthengine-api.git@v1.1.5rc0#subdirectory=python"
-    - geedim>=2.0.0
-    - geemap==0.36.0
-    # ML models
-    - forestatrisk>=1.3.2
-    - riskmapjnr>=1.3.2
-    - formulaic>=1.2.1
-    # Geospatial processing
-    - odc-geo>=0.4.10
-    - xarray-spatial>=0.4.0
-    - pycrs>=1.0.2
-    # Utilities
-    - python-box>=7.3.2
-    # GUI
-    - "starlette<0.53"
-    - pysepal
-    # Install this project (spatialrisk + gui packages)
-    - -e .
+      # Earth Engine (SEPAL's custom build — replaces the conda-installed stock
+      # one; v1.1.5rc0 conflicts with pysepal's earthengine-api>1.6.0)
+      - "earthengine-api @ git+https://github.com/openforis/earthengine-api.git@v1.6.14#subdirectory=python"
+      # ML models — not on conda-forge
+      - forestatrisk>=1.3.2
+      - riskmapjnr>=1.3.2
+      # conda-forge only has 0.11.x; the app needs the 1.x API
+      - localtileserver>=1.0
+      # pysepal fork: spatial-risk integration branch (browser locale, AOI
+      # restore, PMTiles layers, GEE event-loop fixes on top of v3.8.0)
+      - "pysepal @ git+https://github.com/SerafiniJose/pysepal.git@spatial-risk"
+      # jupyter-loopback fork: voila tile-404 fixes (probe 405 vs 404 +
+      # localhost page-origin prefix match) — pending upstream PR
+      - "jupyter-loopback @ git+https://github.com/SerafiniJose/jupyter-loopback.git@fix/voila-localhost-proxy-probe"
+      # PMTiles vector-tile server for sample maps
+      - vectortileserver

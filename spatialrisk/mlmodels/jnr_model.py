@@ -1,7 +1,7 @@
 """JNR Benchmark unsupervised deforestation risk model.
 
 Implements the Jurisdictional and Nested REDD+ (JNR) benchmark approach:
-stratifies the landscape by distance-to-forest-edge bins × subjurisdictions
+stratifies the landscape by distance-to-forest-edge bins x subjurisdictions
 and assigns historical deforestation rates as vulnerability scores.
 
 All processing functions live in ``spatialrisk.rmj`` and work with two explicit
@@ -23,9 +23,13 @@ Features are looked up by exact name in the Dataset.  Defaults are
 
     jnr = JNRBenchmarkModel(
         name="calibration",
-        forest_edge_var="forest_gfc_edge",
-        forest_var="forest_gfc",
+        forest_edge_var="forest_gfc_tc30_edge",
+        forest_var="forest_gfc_tc30",
     )
+
+Variables created through the GUI carry their parameters in the name — a
+Hansen layer at a 30% tree-cover threshold is ``forest_gfc_tc30`` — so use
+the name as it appears in ``dataset.features``.
 """
 
 from pathlib import Path
@@ -43,7 +47,7 @@ class JNRBenchmarkModel(BaseRiskModel):
     All raster processing logic lives there; this class manages datasets,
     Pydantic metadata, and project registration.
 
-    Attributes
+    Attributes:
     ----------
     blk_rows : int
         Number of raster rows per processing block (default: 128).
@@ -72,6 +76,10 @@ class JNRBenchmarkModel(BaseRiskModel):
     subj_var : str
         Dataset feature name for the subjurisdiction raster, used by
         ``apply()`` (default: ``"subj"``).
+    defor_var : str
+        Dataset layer name for the binary forest-loss (deforestation) raster.
+        When set, this named layer (a feature or the target) is used as the
+        event raster; when empty, the dataset target is used (default: ``""``).
     defrate_files : dict
         Paths to the defrate CSV files written by ``apply()``, keyed by
         period name.  Pass ``defrate_files.get("calibration")`` as
@@ -97,6 +105,11 @@ class JNRBenchmarkModel(BaseRiskModel):
     forest_edge_var: str = "forest_edge"
     forest_var: str = "forest"
     subj_var: str = "subj"
+    # Forest-loss (deforestation) layer. When set, this named dataset layer is
+    # used as the binary event raster instead of the dataset target, letting the
+    # user pick which variable in their dataset is the forest-loss layer. Empty
+    # falls back to the dataset target (backward-compatible default).
+    defor_var: str = ""
 
     # Defrate CSV paths produced by apply(), keyed by period name
     defrate_files: Dict[str, Path] = Field(default_factory=dict)
@@ -123,11 +136,11 @@ class JNRBenchmarkModel(BaseRiskModel):
         var_name : str
             Exact name to look for in ``dataset.features``.
 
-        Returns
+        Returns:
         -------
         Path
 
-        Raises
+        Raises:
         ------
         ValueError
             If the feature is not found, listing available names.
@@ -143,6 +156,37 @@ class JNRBenchmarkModel(BaseRiskModel):
             f"  Set model.forest_edge_var / forest_var / subj_var to match "
             f"your variable names."
         )
+
+    def _resolve_defor_var(self, dataset: Any) -> Any:
+        """Resolve the binary forest-loss (deforestation) variable object.
+
+        If ``defor_var`` is set, look it up by exact name among the dataset's
+        features or its target, so the user controls which layer is the
+        forest-loss input.  When empty, fall back to the dataset target
+        (backward-compatible default).
+        """
+        if self.defor_var:
+            for var in dataset.features:
+                if var.name == self.defor_var:
+                    return var
+            if dataset.target is not None and dataset.target.name == self.defor_var:
+                return dataset.target
+            available = [v.name for v in dataset.features]
+            if dataset.target is not None:
+                available.append(dataset.target.name)
+            raise ValueError(
+                f"JNRBenchmarkModel forest-loss variable '{self.defor_var}' was "
+                f"not found in the dataset.\n"
+                f"  Available: {available}\n"
+                f"  Set model.defor_var to match a layer in your dataset."
+            )
+        if dataset.target is None:
+            raise ValueError(
+                "Dataset has no target set and defor_var is not configured. "
+                "Set the forest-loss variable (defor_var) or call "
+                "dataset.set_target() before fit()."
+            )
+        return dataset.target
 
     # ------------------------------------------------------------------
     # Fit
@@ -180,16 +224,16 @@ class JNRBenchmarkModel(BaseRiskModel):
             Maximum distance (m) for the bin arange.  Overrides
             ``self.max_dist`` and persists on the model.
         folder : str or Path, optional
-            Root output folder.  Defaults to the project ``rmj_bm`` folder,
-            then the current working directory.
+            Root output folder.  Defaults to the project ``rmj_bm`` folder;
+            raises when the model has no project either.
 
-        Returns
+        Returns:
         -------
         self
         """
         import numpy as np
 
-        from spatialrisk.rmj import deforrate, compute_dist_bins
+        from spatialrisk.rmj import compute_dist_bins, deforrate
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -198,19 +242,17 @@ class JNRBenchmarkModel(BaseRiskModel):
                 "No dataset available. Pass dataset= or set model.dataset "
                 "before calling fit()."
             )
-        if active.target is None:
-            raise ValueError(
-                "Dataset has no target set. Call dataset.set_target() before fit()."
-            )
-
-        # Validate target is a deforestation variable (by tag)
-        target_tags = getattr(active.target, "tags", []) or []
-        if "deforestation" not in target_tags:
-            raise ValueError(
-                f"JNRBenchmarkModel requires a target variable tagged 'deforestation', "
-                f"but '{active.target.name}' has tags {target_tags}. "
-                f"Ensure the variable was created/processed with the 'deforestation' tag."
-            )
+        # Resolve the forest-loss variable (defor_var override, else the target).
+        # Any binary 0/1 layer the user selects is accepted — as in MW and in
+        # apply() — since the 'deforestation' tag only records which
+        # processing.py factory built a layer, not whether it is valid input.
+        # What does matter is that the layer is binary: deforrate reads
+        # ``defor == 1`` as the event, so anything else trains silently on a
+        # wrong numerator.
+        defor_var_obj = self._resolve_defor_var(active)
+        deforrate.validate_binary_defor(
+            defor_var_obj.path, layer_name=defor_var_obj.name
+        )
 
         period = active.name or self.name
         if period is None:
@@ -226,14 +268,10 @@ class JNRBenchmarkModel(BaseRiskModel):
             self.max_dist = max_dist
 
         # Extract file paths from dataset
-        deforestation_file = active.target.path
+        deforestation_file = defor_var_obj.path
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
 
-        out_root = (
-            Path(folder)
-            if folder is not None
-            else (self._default_folder() or Path.cwd())
-        )
+        out_root = self._resolve_output_folder(folder)
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 
@@ -265,7 +303,9 @@ class JNRBenchmarkModel(BaseRiskModel):
         print(f"  dist_bins: {len(self.dist_bins)} edges")
 
         # Populate serialisable metadata (mirrors _prepare_samples() pattern)
-        self.target_name = active.target.name
+        self.target_name = (
+            active.target.name if active.target is not None else defor_var_obj.name
+        )
         self.feature_names = [v.name for v in active.features]
         self.dataset_name = active.name
         if active.year is not None:
@@ -312,12 +352,12 @@ class JNRBenchmarkModel(BaseRiskModel):
             ``model.defrate_files.get("calibration")`` for validation or
             ``model.defrate_files.get("historical")`` for forecast.
 
-        Returns
+        Returns:
         -------
         Path
             Path to the written vulnerability GeoTIFF.
         """
-        from spatialrisk.rmj import vulnerability_map, deforrate
+        from spatialrisk.rmj import deforrate, vulnerability_map
 
         if not self.dist_bins:
             raise RuntimeError("Model has not been fitted. Call fit() first.")
@@ -337,8 +377,13 @@ class JNRBenchmarkModel(BaseRiskModel):
                 "Provide the number of years in the period, e.g. time_interval=5."
             )
 
-        # Extract file paths from dataset
-        deforestation_file = active.target.path
+        # Extract file paths from dataset. This period's forest-loss layer is
+        # not the one fit() saw, so it gets the same binary check.
+        defor_var_obj = self._resolve_defor_var(active)
+        deforrate.validate_binary_defor(
+            defor_var_obj.path, layer_name=defor_var_obj.name
+        )
+        deforestation_file = defor_var_obj.path
         forest_file = self._get_feature(active, self.forest_var)
         forest_edge_file = self._get_feature(active, self.forest_edge_var)
         subj_file = self._get_feature(active, self.subj_var)
@@ -380,7 +425,7 @@ class JNRBenchmarkModel(BaseRiskModel):
         self.defrate_files[period] = defrate_tab
 
         print(f"✓ JNR apply complete — {output_file}")
-        self._register_prediction(output_file, dataset=active)
+        self._register_prediction(output_file, dataset=active, defrate_path=defrate_tab)
         return output_file
 
     # ------------------------------------------------------------------

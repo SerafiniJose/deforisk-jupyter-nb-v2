@@ -1,15 +1,24 @@
+"""Raster/vector geo helpers: CRS estimation, reprojection, rasterization."""
+
+import warnings
 from pathlib import Path
 from typing import Literal
-import geopandas as gpd
 
-import rioxarray
 import fiona
-from shapely.geometry import shape
 import geopandas as gpd
-import rasterio
-from odc.geo import xr
 import numpy as np
 import rasterio
+import rioxarray
+from odc.geo import xr
+from rasterio.errors import NotGeoreferencedWarning
+from shapely.geometry import shape
+
+# Chunk spec for every lazy raster read in the package. rioxarray turns
+# ``chunks="auto"`` (and ``True``) into a dimension-order tuple internally,
+# which its own ``.chunk()`` call then deprecates -- one FutureWarning per
+# process, landing on whatever variable happens to be processed first. Naming
+# the dimensions avoids that path.
+RASTER_CHUNKS = {"band": 1, "x": "auto", "y": "auto"}
 
 
 def calculate_utm_rioxarray(
@@ -27,12 +36,12 @@ def calculate_utm_rioxarray(
         How to return the CRS.  ``"str"`` returns an EPSG string (e.g.,
         ``EPSG:32633``); ``"int"`` returns the numeric EPSG code.
 
-    Returns
+    Returns:
     -------
     str | int | None
         The CRS representation or ``None`` if it could not be estimated.
 
-    Raises
+    Raises:
     ------
     FileNotFoundError
         If the file does not exist.
@@ -41,7 +50,7 @@ def calculate_utm_rioxarray(
     RuntimeError
         If rioxarray fails to open the raster.
 
-    Examples
+    Examples:
     --------
     >>> calculate_utm_rioxarray("sample.tif")
     'EPSG:32633'
@@ -108,12 +117,10 @@ def get_centroid(shapefile_path):
 
 
 def get_utm_proj_str_from_lat_lon(lon, lat):
-    """
-    Given a longitude, latitude in WGS84, return the EPSG code as a string
-    for the corresponding UTM or UPS projection.
+    """Return the UTM/UPS EPSG code string for a WGS84 longitude/latitude.
 
     - UTM: EPSG:326xx (Northern) or EPSG:327xx (Southern)
-    - UPS: EPSG:5041 (North, >84°N), EPSG:5042 (South, <–80°S)
+    - UPS: EPSG:5041 (North, >84°N), EPSG:5042 (South, <-80°S)
 
     Handles special cases for Norway and Svalbard.
     """
@@ -144,6 +151,7 @@ def get_utm_proj_str_from_lat_lon(lon, lat):
 
 
 def process_forest_loss(input1_path, input2_path, output_path):
+    """Combine two forest rasters into a loss raster (1 = loss between them)."""
     # Open the input rasters
     with rasterio.open(input1_path) as src1:
         input1 = src1.read(1)
@@ -196,6 +204,36 @@ def process_forest_loss(input1_path, input2_path, output_path):
         dst.write(output, 1)
 
 
+def raster_is_all_nodata(raster_path: str | Path, band: int = 1) -> bool:
+    """True when every pixel of ``band`` equals the file's declared nodata.
+
+    Cheap first pass: a decimated (max 1024x1024) read — any valid pixel there
+    settles it without loading the raster. Only when the decimated view is
+    entirely nodata does it fall back to a full windowed scan, so sparse valid
+    pixels can't slip through the decimation. Files with no declared nodata
+    are never "all nodata".
+    """
+    with rasterio.open(raster_path) as src:
+        nodata = src.nodata
+        if nodata is None:
+            return False
+
+        def _all_nodata(arr):
+            if np.isnan(nodata):
+                return bool(np.isnan(arr).all())
+            return bool((arr == nodata).all())
+
+        out_shape = (min(src.height, 1024), min(src.width, 1024))
+        if not _all_nodata(src.read(band, out_shape=out_shape)):
+            return False
+        if out_shape == (src.height, src.width):
+            return True
+        for _, window in src.block_windows(band):
+            if not _all_nodata(src.read(band, window=window)):
+                return False
+        return True
+
+
 def reproject_shapefile(
     input_path: str,
     output_path: str,
@@ -207,7 +245,8 @@ def reproject_shapefile(
     Args:
         input_path (str): Path to input shapefile
         target_crs (str): Target CRS (e.g., "EPSG:4326")
-        output_path (str, optional): Path to save reprojected shapefile. If None, returns GeoDataFrame.
+        output_path (str, optional): Path to save reprojected shapefile.
+            If None, returns GeoDataFrame.
 
     Returns:
         gpd.GeoDataFrame: Reprojected GeoDataFrame
@@ -219,6 +258,14 @@ def reproject_shapefile(
     return None
 
 
+# Destination tile size (pixels) for the warp. odc.geo defaults the *output*
+# chunk shape to the *input* array's chunk shape, so a coarse source (ERA5-Land
+# precipitation is one ~55x54-pixel chunk) would tile a 20166x19960 30 m output
+# into 135790 blocks — one GDAL warp setup each, ~100x slower than necessary
+# and a stream of NotGeoreferencedWarnings from the temporary block datasets.
+DST_CHUNK = 2048
+
+
 def xr_reproject(
     raster_path: str = None,
     geobox=None,
@@ -226,60 +273,70 @@ def xr_reproject(
     output_path: str = None,
     **rasterio_kwargs,
 ):
-    """
-    Rasterizes a vector shapefile into a raster array.
-
-    This function provides unified functionality for both binary and unique ID rasterization.
+    """Reproject a raster onto a target geobox and write it as a GeoTIFF.
 
     Parameters
     ----------
     raster_path : str
-        Path to the input shapefile containing vector data.
+        Path to the input raster.
     geobox : odc.geo.geobox.GeoBox
-        The spatial template defining the shape, coordinates, dimensions, and transform
-        of the output raster.
-    crs : str or CRS object, optional
-        If ``geobox``'s coordinate reference system (CRS) cannot be
-        determined, provide a CRS using this parameter.
-        (e.g. 'EPSG:3577').
-    output_path : string, optional
-        Provide an optional string file path to export the rasterized
-        data as a GeoTIFF file.
+        The spatial template defining the shape, coordinates, dimensions,
+        and transform of the output raster.
+    resampling_method : str, optional
+        Resampling algorithm accepted by ``odc.geo.xr.xr_reproject``
+        (e.g. 'nearest', 'bilinear').
+    output_path : str, optional
+        File path for the reprojected GeoTIFF.
     **rasterio_kwargs :
-        A set of keyword arguments to ``rasterio.features.rasterize``.
-        Can include: 'all_touched', 'merge_alg', 'dtype'.
+        Unused; kept for signature compatibility.
 
-    Returns
+    Returns:
     -------
-    da_rasterized : xarray.DataArray
-        The rasterized vector data.
+    None
+        The result is written to ``output_path``.
     """
-
     # Read the raster
     raster_array = rioxarray.open_rasterio(
         raster_path,
-        chunks={"band": 1, "x": "auto", "y": "auto"},
+        chunks=RASTER_CHUNKS,
         cache=False,
         lock=False,
     )
 
     # Convert numpy array to a full xarray.DataArray
     # and set array name if supplied
+    # Pin the destination tiling to the output grid (see DST_CHUNK) instead of
+    # letting it inherit the source's chunk shape.
+    dst_ny, dst_nx = geobox.shape
     da_reprojected = xr.xr_reproject(
         src=raster_array,
         how=geobox,
         resampling=resampling_method,
+        chunks=(min(DST_CHUNK, dst_ny), min(DST_CHUNK, dst_nx)),
     )
 
-    da_reprojected.rio.to_raster(
-        output_path,
-        driver="GTiff",
-        compress="DEFLATE",
-        predictor=2,
-        bigtiff="YES",
-        tiled=True,
-    )
+    # DEFLATE predictor is dtype-specific: 2 (horizontal differencing) is only
+    # defined for integer samples, 3 is the floating-point variant.
+    predictor = 3 if np.issubdtype(da_reprojected.dtype, np.floating) else 2
 
-    # Explicitly close references – not strictly required but tidy.
+    # odc.geo warps one in-memory numpy block at a time, passing the
+    # georeferencing beside the array as src_transform/dst_transform. GDAL still
+    # warns that the block dataset it wraps them in "has no geotransform" --
+    # noise about a temporary, never about the input (which the geobox above
+    # guarantees is georeferenced). Suppressed only around the warp, and only
+    # for that one category, so a genuinely non-georeferenced input still fails
+    # loudly in the read above.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", NotGeoreferencedWarning)
+        da_reprojected.rio.to_raster(
+            output_path,
+            driver="GTiff",
+            compress="DEFLATE",
+            predictor=predictor,
+            bigtiff="YES",
+            tiled=True,
+        )
+
+    # Explicitly close references - not strictly required but tidy.
     del raster_array
     del da_reprojected

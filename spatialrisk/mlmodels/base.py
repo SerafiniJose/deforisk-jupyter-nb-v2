@@ -1,7 +1,7 @@
 """Base class for risk probability models.
 
 Provides a generic Pydantic-based foundation for ML models that:
-- Own a Dataset and Sampling object; generate training samples internally
+- Own a Dataset and Sample object; extract the training table at fit time
 - Store dataset metadata, formula, parameters, and training date
 - Generate raster predictions from a Dataset object
 - Serialize to/from JSON for project persistence
@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
-
-from spatialrisk.sampling import Sampling
 
 
 class BaseRiskModel(BaseModel):
@@ -34,6 +32,8 @@ class BaseRiskModel(BaseModel):
         Name of the parent project. Used for path reconstruction after load.
     dataset_name : str, optional
         Name of the dataset used for training, e.g. "calibration_2020".
+    sample_name : str, optional
+        Name of the Sample used for training.
     target_name : str, optional
         Name of the target variable, e.g. "forest_loss_2015_2020".
     feature_names : list of str
@@ -44,8 +44,6 @@ class BaseRiskModel(BaseModel):
         Patsy formula string used for training.
     parameters : dict
         Model-specific hyperparameters (solver, n_trees, mcmc iterations, …).
-    sampling : Sampling, optional
-        Sampling configuration used to generate the training samples.
     model_path : Path, optional
         Path to the saved pickle file.
     samples_path : Path, optional
@@ -57,11 +55,13 @@ class BaseRiskModel(BaseModel):
     n_samples : int, optional
         Number of samples used during training.
     deviance : float, optional
-        Model deviance (2 × log-loss × n_samples) from training.
+        Model deviance (2 x log-loss x n_samples) from training.
     project : any
         Live Project reference. Excluded from serialization.
     dataset : any
         Live Dataset reference. Excluded from serialization.
+    sample : any
+        Live Sample reference. Excluded from serialization.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -73,6 +73,7 @@ class BaseRiskModel(BaseModel):
     # Dataset metadata (serializable)
     project_name: Optional[str] = None
     dataset_name: Optional[str] = None
+    sample_name: Optional[str] = None
     target_name: Optional[str] = None
     feature_names: List[str] = Field(default_factory=list)
     year: Optional[int] = None
@@ -80,7 +81,6 @@ class BaseRiskModel(BaseModel):
     # Formula and parameters
     formula: Optional[str] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
-    sampling: Optional[Sampling] = None
 
     # File paths
     model_path: Optional[Path] = None
@@ -95,12 +95,17 @@ class BaseRiskModel(BaseModel):
     # Live references — excluded from serialization
     project: Optional[Any] = Field(default=None, exclude=True, repr=False)
     dataset: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    sample: Optional[Any] = Field(default=None, exclude=True, repr=False)
 
     # In-memory ML objects — not serialized
     _ml_model: Any = PrivateAttr(default=None)
     _x_design_info: Any = PrivateAttr(default=None)
     # Small training sample used to reconstruct DesignInfo after loading
     _design_sample: Any = PrivateAttr(default=None)
+    # Transient: a user-chosen name for the NEXT apply()'s prediction(s). Set by
+    # the inference runner just before apply(); consumed by _register_prediction
+    # to key/name the output(s). None → fall back to the provenance-derived key.
+    _pending_pred_name: Optional[str] = PrivateAttr(default=None)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -111,46 +116,37 @@ class BaseRiskModel(BaseModel):
         formula: Optional[str] = None,
         output_csv: Optional[Union[str, Path]] = None,
     ):
-        """Generate samples DataFrame and resolve formula.
-
-        Called internally by fit(). Populates target_name, feature_names,
-        year, and formula fields from the attached dataset.
-
-        Parameters
-        ----------
-        formula : str, optional
-            Override formula. Falls back to self.formula, then auto-generates
-            using generate_patsy_formula(self.dataset).
-        output_csv : str or Path, optional
-            If provided, saves the full training DataFrame to this CSV path
-            and sets self.samples_path.
-
-        Returns
-        -------
-        df : pd.DataFrame
-            Sampled training data from dataset.to_dataframe().
-        resolved_formula : str
-            The formula to use for training.
-        """
-        from spatialrisk.far_helpers import generate_patsy_formula
+        """Extract the training table from (dataset, sample) and resolve formula."""
+        from spatialrisk.far_helpers import (
+            generate_patsy_formula,
+            inject_categorical_levels,
+        )
 
         if self.dataset is None:
             raise ValueError("dataset must be set before calling fit().")
-        if self.sampling is None:
-            raise ValueError("sampling must be set before calling fit().")
+        if self.sample is None:
+            raise ValueError("sample must be set before calling fit().")
 
-        df = self.dataset.to_dataframe(sampling=self.sampling, output_csv=output_csv)
+        df = self.dataset.extract_at_points(self.sample.load_points())
+
         if output_csv is not None:
-            self.samples_path = Path(output_csv)
+            from pathlib import Path
 
-        # Populate serializable metadata from dataset
+            output_csv = Path(output_csv)
+            output_csv.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_csv, index=False)
+            self.samples_path = output_csv
+
         self.target_name = self.dataset.target.name
+        self.dataset_name = getattr(self.dataset, "name", None) or self.dataset_name
         self.feature_names = [v.name for v in self.dataset.features]
         if self.dataset.year is not None:
             self.year = self.dataset.year
 
-        # Resolve formula: argument > self.formula > auto-generate
         resolved = formula or self.formula or generate_patsy_formula(self.dataset)
+        # The GUI shows/edits bare C(x) terms; prediction re-parses the stored
+        # string, so the categorical level domains must be re-armed here.
+        resolved = inject_categorical_levels(resolved, self.dataset)
         self.formula = resolved
         return df, resolved
 
@@ -198,6 +194,38 @@ class BaseRiskModel(BaseModel):
             return getattr(folders, folder_key)
         return None
 
+    def _resolve_output_folder(
+        self,
+        folder: Optional[Union[str, Path]] = None,
+        param: str = "folder",
+    ) -> Path:
+        """Resolve where this model writes: explicit folder, else project folder.
+
+        This is the rule :meth:`save` has always applied, factored out so every
+        site that writes a model artifact — training CSVs, pickles, rho rasters,
+        rmj outputs — obeys it. With no folder and no project attached it raises
+        rather than guessing.
+
+        The guess it replaces was ``Path.cwd()``. Nothing in the GUI reached it
+        (the tiles always set ``model.project`` and pass a folder), but a script
+        or notebook did, and then artifacts landed in whatever directory the
+        process happened to start in. On SEPAL that directory is the read-only
+        shared module mount, so the guess does not merely misplace the file — it
+        fails with ``Read-only file system``.
+
+        ``param`` names the keyword in the error message, because not every
+        caller spells it ``folder`` (``MWModel.apply`` takes ``output_folder``).
+        """
+        if folder is not None:
+            return Path(folder)
+        default = self._default_folder()
+        if default is None:
+            raise RuntimeError(
+                "Cannot determine output folder: no project is attached. "
+                f"Set model.project first or pass {param}= explicitly."
+            )
+        return Path(default)
+
     # ------------------------------------------------------------------
     # Fit / Apply (implemented in subclasses)
     # ------------------------------------------------------------------
@@ -217,8 +245,8 @@ class BaseRiskModel(BaseModel):
         folder : str or Path, optional
             Folder for saving the model pickle.
 
-        Returns
-        -------
+        Returns:
+        --------
         self
         """
         raise NotImplementedError("Subclasses must implement fit()")
@@ -248,8 +276,8 @@ class BaseRiskModel(BaseModel):
             Value(s) in the mask raster that identify pixels to suppress.
             Defaults to 0. Ignored when ``mask`` is None.
 
-        Returns
-        -------
+        Returns:
+        --------
         Path
             Path to the written GeoTIFF.
         """
@@ -265,28 +293,18 @@ class BaseRiskModel(BaseModel):
         Parameters
         ----------
         folder : str or Path, optional
-            Target folder. Falls back to the project model folder, then cwd.
+            Target folder. Falls back to the project model folder; raises when
+            neither is available.
 
-        Returns
-        -------
+        Returns:
+        --------
         Path
             Path to the written pickle file.
         """
         if self._ml_model is None:
             raise RuntimeError("Model has not been trained. Call fit() first.")
 
-        # Resolve output folder
-        if folder is not None:
-            out_dir = Path(folder)
-        else:
-            default = self._default_folder()
-            if default is None:
-                raise RuntimeError(
-                    "Cannot determine output folder: no project is attached. "
-                    "Set model.project first or pass folder= explicitly."
-                )
-            out_dir = default
-
+        out_dir = self._resolve_output_folder(folder)
         out_dir.mkdir(parents=True, exist_ok=True)
         filename = self._pickle_filename()
         out_path = out_dir / filename
@@ -352,13 +370,96 @@ class BaseRiskModel(BaseModel):
         if auto_save:
             project.save()
 
+    def _model_key(self) -> str:
+        """Return this model's key in ``project.models``.
+
+        Prefers an identity reverse-lookup (honors custom keys passed to
+        ``register``/``add_model``); falls back to the default key formula.
+        """
+        if self.project is not None:
+            for key, model in self.project.models.items():
+                if model is self:
+                    return key
+        return f"{self.model_type}_{self.name}" if self.name else self.model_type
+
+    def output_files(self) -> List[Path]:
+        """On-disk artifacts this model owns (for cleanup when it is deleted).
+
+        Base models persist a pickle (``model_path``) and an optional training
+        sample CSV (``samples_path``). Model types that write extra rasters
+        (iCAR's rho raster, MW's deforestation-rate maps) extend this list.
+        """
+        return [Path(p) for p in (self.model_path, self.samples_path) if p]
+
+    def _register_prediction(
+        self,
+        path: Union[str, Path],
+        dataset: Optional[Any] = None,
+        year: Optional[int] = None,
+        window: Optional[int] = None,
+        auto_save: bool = True,
+        defrate_path: Optional[Union[str, Path]] = None,
+    ) -> Optional[Any]:
+        """Build and register a Prediction for an output raster.
+
+        No-ops (returns None) when the model has no project reference, so direct
+        ``apply()`` calls outside a project context keep working unchanged.
+
+        Parameters
+        ----------
+        path : str or Path
+            The written output raster.
+        dataset : Dataset, optional
+            Dataset used for this prediction. Falls back to ``self.dataset``.
+        year : int, optional
+            Period of the prediction. Falls back to ``self.year``.
+        window : int, optional
+            Moving-window size discriminator (MW only).
+        auto_save : bool
+            Passed through to project registration.
+        defrate_path : str or Path, optional
+            Per-category deforestation-rate table written alongside this output
+            (MW/JNR). Consumed by the allocation tool.
+        """
+        if self.project is None:
+            return None
+
+        from spatialrisk.predictions.prediction import (
+            Prediction,
+            build_dataset_snapshot,
+        )
+
+        ds = dataset if dataset is not None else self.dataset
+        # A pending name (set by the inference runner) makes the prediction's key
+        # and label user-chosen instead of provenance-derived, so distinct runs no
+        # longer overwrite each other. Multi-output runs (MW windows) stay distinct
+        # via the window suffix; model_key/dataset_name fields are kept intact so
+        # evaluation labelling (which reads those fields) is unaffected.
+        pending_name = self._pending_pred_name
+        prediction = Prediction(
+            name=pending_name,
+            path=Path(path),
+            model_key=self._model_key(),
+            dataset_name=(getattr(ds, "name", None) or self.dataset_name or "unknown"),
+            year=year if year is not None else self.year,
+            window=window,
+            model_snapshot=self.model_dump(mode="json"),
+            dataset_snapshot=build_dataset_snapshot(ds),
+            defrate_path=Path(defrate_path) if defrate_path else None,
+        )
+        key = None
+        if pending_name:
+            key = pending_name + (f"_w{window}" if window is not None else "")
+        prediction.add_to_project(self.project, key=key, auto_save=auto_save)
+        return prediction
+
     # ------------------------------------------------------------------
     # Serialization override
     # ------------------------------------------------------------------
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
-        """Exclude live references (project, dataset) from serialization."""
+        """Exclude live references (project, dataset, sample) from serialization."""
         kwargs.setdefault("exclude", set())
         if isinstance(kwargs["exclude"], set):
-            kwargs["exclude"] = kwargs["exclude"] | {"project", "dataset"}
+            kwargs["exclude"] = kwargs["exclude"] | {"project", "dataset", "sample"}
         return super().model_dump(**kwargs)

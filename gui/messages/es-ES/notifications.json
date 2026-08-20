@@ -1,0 +1,22 @@
+{
+  "notifications": {
+    "task_training": "Entrenando el modelo '{name}'",
+    "task_inference": "Prediciendo: {model} sobre {dataset}",
+    "task_import": "Importando la predicción '{name}'",
+    "task_evaluation": "Evaluando predicciones ({tag})",
+    "task_allocation": "Asignando la deforestación de '{name}'",
+    "task_sampling": "Generando la muestra '{name}'",
+    "task_processing": "Armonizando variables",
+    "task_download_all": "Descargando capas de GEE",
+    "task_download_one": "Descargando la capa '{name}'",
+    "task_download_layer": "Descargando la capa {i}/{n}: '{name}'",
+    "task_download_tiles": "'{name}' — tesela {done}/{total}",
+    "task_change": "Generando la capa de cambio ({op})",
+    "task_postprocess": "Aplicando {step} a '{name}'"
+  },
+  "dialog": {
+    "confirm_default_title": "¿Eliminar?",
+    "confirm_default_message": "Esta acción no se puede deshacer.",
+    "confirm_default_label": "Eliminar"
+  }
+}

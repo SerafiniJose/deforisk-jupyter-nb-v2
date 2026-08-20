@@ -55,10 +55,15 @@ dependencies:
   - eerepr
   - folium
   - geocoder
+  - ipecharts>=1.4,<2
   - ipyevents
   - ipyfilechooser
   - ipyleaflet
   - ipytree
+  # plotly is a geemap runtime dependency ONLY. It is no longer the Evaluation
+  # tile's chart backend — those charts render through ipecharts (above), and
+  # tests/test_evaluation.py::test_evaluation_gui_path_imports_no_plotly keeps
+  # the Evaluation import graph plotly-free.
   - plotly
   - pyperclip
   - pyshp

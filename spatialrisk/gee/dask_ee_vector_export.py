@@ -3,9 +3,10 @@
 # --------------------------------------------------------------
 
 """
-Utility to export an Earth Engine geometry/FeatureCollection/Feature to a Shapefile using Dask for parallelism.
+Utility to export an Earth Engine geometry/FeatureCollection/Feature to a Shapefile.
 
-The helper keeps the following items as explicit function parameters:
+Dask is used for parallelism. The helper keeps the following items as
+explicit function parameters:
 
 * `client` - the :class:`dask.distributed.Client`
 * `ee_obj` - an ``ee.Geometry | ee.FeatureCollection | ee.Feature`` instance
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 import ee  # Earth Engine
 from dask.distributed import Client, Future
@@ -46,7 +47,8 @@ def export_vector_with_dask(
     Parameters
     ----------
     ee_fc : ee.FeatureCollection
-        The EE FeatureCollection you want to export.  Must be serialisable via ``serialize()``.
+        The EE FeatureCollection you want to export.  Must be serialisable
+        via ``serialize()``.
     filename : str
         Path where the exported Shapefile (or ZIP) should be written.
     overwrite : bool, optional
@@ -57,15 +59,16 @@ def export_vector_with_dask(
     project : str | None, optional
         Earth Engine project name.  If omitted the default EE project will be used.
     **kwargs : Any
-        Additional keyword arguments forwarded to :func:`geemap.ee_export_vector`.
+        Additional keyword arguments forwarded to
+        :func:`spatialrisk.gee.vector_export.ee_export_vector`.
         Common ones include ``project`` (EE project name), ``timeout``,
         ``keep_zip``, etc.
 
     Returns:
     -------
     dask.distributed.Future
-        Future that resolves to the result of `geemap.ee_export_vector`
-        (usually ``None``; you may use it purely for its side effects).
+        Future that resolves to the result of `ee_export_vector`
+        (the written path; you may use it purely for its side effects).
     """
     # ------------------------------------------------------------------
     # 1. Check if file exists and overwrite is False
@@ -99,18 +102,19 @@ def export_vector_with_dask(
         **kw: Any,
     ) -> Any:
         """
-        Minimal wrapper that reinitialises EE and calls `geemap.ee_export_vector`.
+        Minimal wrapper that reinitialises EE and calls `ee_export_vector`.
 
         Parameters are intentionally typed to aid static analysis.
         """
         import ee  # Import inside the worker
-        import geemap
+
+        from spatialrisk.gee.vector_export import ee_export_vector
 
         ee.Initialize(project=project)
 
         ee_obj_local = ee.deserializer.fromJSON(ee_object_json)
 
-        return geemap.ee_export_vector(
+        return ee_export_vector(
             ee_object=ee_obj_local,
             filename=fn,
             selectors=sel or [],

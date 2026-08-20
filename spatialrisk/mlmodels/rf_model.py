@@ -43,7 +43,8 @@ class RFModel(BaseRiskModel):
             Patsy formula. If omitted, falls back to self.formula or
             auto-generates via generate_patsy_formula(self.dataset).
         folder : str or Path, optional
-            Folder for saving the model pickle. Defaults to project model folder.
+            Folder for saving the model pickle. Defaults to the project model
+            folder; raises when the model has no project either.
 
         Returns
         -------
@@ -55,15 +56,9 @@ class RFModel(BaseRiskModel):
 
         # Auto-save full training CSV if samples_path not already set
         if self.samples_path is None:
-            _folder = (
-                Path(folder)
-                if folder is not None
-                else (self._default_folder() or Path.cwd())
-            )
-            Path(_folder).mkdir(parents=True, exist_ok=True)
-            _csv = (
-                Path(_folder) / f"samples_{self.model_type}_{self.name or 'model'}.csv"
-            )
+            _folder = self._resolve_output_folder(folder)
+            _folder.mkdir(parents=True, exist_ok=True)
+            _csv = _folder / f"samples_{self.model_type}_{self.name or 'model'}.csv"
         else:
             _csv = None
 
@@ -228,4 +223,5 @@ class RFModel(BaseRiskModel):
                 )
 
         print(f"✓ RF raster written: {output_file}")
+        self._register_prediction(output_file, dataset=active_dataset)
         return output_file

@@ -28,22 +28,40 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-while IFS= read -r line; do
-  [[ $line =~ ^#.*$ || -z $line ]] && continue
+# Run from the script's own directory so relative paths resolve
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-  if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
-    name="${BASH_REMATCH[1]}"
-    value="${BASH_REMATCH[2]}"
+# Make the module root importable (so `import gui...` works)
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-    # Remove quotes if present
-    value="${value#\'}"
-    value="${value%\'}"
-    value="${value#\"}"
-    value="${value%\"}"
+if [[ -f .env ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line =~ ^#.*$ || -z $line ]] && continue
 
-    export "$name=$value"
-  fi
-done < .env
+    if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
+      name="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+
+      # Remove quotes if present
+      value="${value#\'}"
+      value="${value%\'}"
+      value="${value#\"}"
+      value="${value%\"}"
+
+      export "$name=$value"
+    fi
+  done < .env
+else
+  echo "Note: no .env file found in $SCRIPT_DIR, skipping env load."
+fi
+
+# GDAL writes its temp files to the CWD when CPL_TMPDIR/TMPDIR/TEMP are unset,
+# and on SEPAL the CWD is the read-only shared module mount -- so point it at a
+# writable per-user scratch dir. Set after .env so an operator value wins; the
+# uid suffix keeps us off another user's directory on a shared /tmp.
+export CPL_TMPDIR="${CPL_TMPDIR:-${TMPDIR:-/tmp}/spatial_risk_gdal_$(id -u)}"
+mkdir -p "$CPL_TMPDIR"
 
 # solara run "$SOLARA_FILE" --port $PORT --no-open
 # solara run "$SOLARA_FILE" --port $PORT --no-open --log-level debug

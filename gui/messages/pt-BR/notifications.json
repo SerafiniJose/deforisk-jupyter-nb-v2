@@ -1,0 +1,22 @@
+{
+  "notifications": {
+    "task_training": "Treinando o modelo '{name}'",
+    "task_inference": "Predizendo: {model} em {dataset}",
+    "task_import": "Importando a predição '{name}'",
+    "task_evaluation": "Avaliando predições ({tag})",
+    "task_allocation": "Alocando o desmatamento de '{name}'",
+    "task_sampling": "Gerando a amostra '{name}'",
+    "task_processing": "Harmonizando variáveis",
+    "task_download_all": "Baixando camadas do GEE",
+    "task_download_one": "Baixando a camada '{name}'",
+    "task_download_layer": "Baixando a camada {i}/{n}: '{name}'",
+    "task_download_tiles": "'{name}' — bloco {done}/{total}",
+    "task_change": "Gerando a camada de mudança {op}",
+    "task_postprocess": "Aplicando {step} a '{name}'"
+  },
+  "dialog": {
+    "confirm_default_title": "Excluir?",
+    "confirm_default_message": "Esta ação não pode ser desfeita.",
+    "confirm_default_label": "Excluir"
+  }
+}

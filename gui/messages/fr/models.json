@@ -1,0 +1,152 @@
+{
+  "models": {
+    "jnr": {
+      "label": "Référence (JNR)",
+      "short": "JNR",
+      "summary_md": "- **Approche :** stratification non paramétrique par distance à la lisière forestière et sous-juridiction — la référence [JNR / riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/).\n- **Données d'entraînement :** couches du jeu de données uniquement (pas d'échantillon de points).\n- **Sortie :** une carte de risque en classes de vulnérabilité, utilisée comme référence à laquelle les autres modèles sont comparés.",
+      "description": "Le modèle de référence JNR met en œuvre l'approche REDD+ juridictionnelle et imbriquée pour la cartographie du risque de déforestation. Il stratifie le paysage par classes de distance à la lisière forestière et par sous-juridictions, en attribuant les taux de déforestation historiques comme scores de vulnérabilité. Cette méthode non paramétrique ne nécessite aucune variable explicative — elle repose uniquement sur la proximité spatiale de la lisière forestière. Elle sert de référence à laquelle les modèles plus complexes sont comparés.",
+      "params": {
+        "blk_rows": {
+          "label": "Lignes par bloc",
+          "hint": "Lignes lues par bloc de traitement — une valeur élevée consomme plus de mémoire mais réduit les passes d'E/S."
+        },
+        "defor_threshold": {
+          "label": "Seuil de déforestation (%)",
+          "hint": "% cumulé de déforestation définissant la distance maximale à la lisière conservée (99,5 par défaut)."
+        },
+        "defor_var": {
+          "label": "Variable de perte forestière",
+          "hint": "Couche du jeu de données contenant le raster binaire de perte forestière / déforestation (1 = perte). Généralement la cible du jeu de données."
+        },
+        "forest_edge_var": {
+          "label": "Variable de lisière forestière",
+          "hint": "Couche du jeu de données donnant la distance à la lisière forestière."
+        },
+        "forest_var": {
+          "label": "Variable de forêt",
+          "hint": "Couche du jeu de données contenant le masque de forêt (1 = forêt)."
+        },
+        "subj_var": {
+          "label": "Variable de sous-juridiction",
+          "hint": "Couche du jeu de données des zones de sous-juridiction utilisées pour stratifier les taux."
+        }
+      }
+    },
+    "mw": {
+      "label": "Fenêtre glissante",
+      "short": "MW",
+      "summary_md": "- **Approche :** densité locale de déforestation dans un voisinage glissant — heuristique spatiale, sans apprentissage automatique ([riskmapjnr](https://ecology.ghislainv.fr/riskmapjnr/)).\n- **Données d'entraînement :** couches du jeu de données uniquement (pas d'échantillon de points).\n- **Sortie :** un raster de risque par taille de fenêtre ; les petites fenêtres captent le détail local, les grandes une tendance plus large.",
+      "description": "Le modèle à fenêtre glissante calcule les taux locaux de déforestation dans des fenêtres spatiales de tailles données afin de produire des rasters de risque. Pour chaque taille de fenêtre, il calcule la proportion de pixels déforestés dans le voisinage, créant une heuristique spatiale de densité d'événements. Aucun apprentissage automatique n'intervient — le modèle capte les motifs spatiaux locaux de perte forestière. Plusieurs tailles de fenêtre (p. ex. 5, 11, 21 pixels) peuvent être évaluées simultanément.",
+      "params": {
+        "win_size_list": {
+          "label": "Tailles de fenêtre (px, séparées par des virgules)",
+          "hint": "Tailles impaires en pixels à évaluer, p. ex. 5, 11, 21. Chacune produit sa propre carte de risque."
+        },
+        "blk_rows": {
+          "label": "Lignes par bloc",
+          "hint": "Lignes lues par bloc de traitement — une valeur élevée consomme plus de mémoire mais réduit les passes d'E/S."
+        },
+        "defor_threshold": {
+          "label": "Seuil de déforestation (%)",
+          "hint": "% cumulé de déforestation définissant la distance maximale à la lisière conservée (99,5 par défaut)."
+        },
+        "defor_var": {
+          "label": "Variable de perte forestière",
+          "hint": "Couche du jeu de données contenant le raster binaire de perte forestière / déforestation (1 = perte). Généralement la cible du jeu de données."
+        },
+        "forest_edge_var": {
+          "label": "Variable de lisière forestière",
+          "hint": "Couche du jeu de données donnant la distance à la lisière forestière."
+        },
+        "forest_var": {
+          "label": "Variable de forêt",
+          "hint": "Couche du jeu de données contenant le masque de forêt (1 = forêt)."
+        }
+      }
+    },
+    "glm": {
+      "label": "GLM (Régression logistique)",
+      "short": "GLM",
+      "summary_md": "- **Approche :** régression logistique — un modèle linéaire très interprétable ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html)).\n- **Données d'entraînement :** un échantillon de points + la cible et les variables explicatives du jeu de données.\n- **Sortie :** carte de probabilité de déforestation et coefficients par variable quantifiant l'effet de chaque prédicteur.",
+      "description": "Le modèle linéaire généralisé utilise la régression logistique pour estimer la probabilité de déforestation en fonction de variables explicatives spatiales. Il ajuste une combinaison linéaire de variables (altitude, pente, distance aux routes, etc.) via une fonction de lien logit. Le modèle s'entraîne rapidement, est très interprétable et produit des estimations de coefficients qui quantifient la contribution de chaque variable au risque de déforestation. Il utilise LogisticRegression de sklearn avec prise en charge des formules Patsy.",
+      "params": {
+        "solver": {
+          "label": "Solveur",
+          "hint": "Algorithme d'optimisation utilisé par sklearn pour ajuster les coefficients. lbfgs convient dans la plupart des cas."
+        },
+        "max_iter": {
+          "label": "Itérations maximales",
+          "hint": "Limite d'itérations du solveur. Augmentez-la si l'ajustement signale une non-convergence."
+        },
+        "random_seed": {
+          "label": "Graine aléatoire",
+          "hint": "Fixe la reproductibilité de l'ajustement."
+        }
+      }
+    },
+    "rf": {
+      "label": "Forêt aléatoire",
+      "short": "RF",
+      "summary_md": "- **Approche :** ensemble d'arbres de décision — capte automatiquement les effets non linéaires et les interactions ([scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html)).\n- **Données d'entraînement :** un échantillon de points + la cible et les variables explicatives du jeu de données.\n- **Sortie :** carte de probabilité de déforestation et scores d'importance des variables.",
+      "description": "La forêt aléatoire est une méthode d'ensemble qui construit plusieurs arbres de décision sur des sous-ensembles aléatoires des données d'entraînement et des variables. Chaque arbre vote pour déterminer si un pixel est à risque de déforestation, et l'ensemble transforme ces votes en probabilité moyenne. Elle capte les relations non linéaires et les interactions entre variables sans ingénierie explicite des variables. Les scores d'importance des variables aident à identifier les prédicteurs les plus influents.",
+      "params": {
+        "n_trees": {
+          "label": "Nombre d'arbres",
+          "hint": "Arbres de l'ensemble — davantage donne un résultat plus stable mais plus lent. 100 à 500 est courant."
+        },
+        "max_depth": {
+          "label": "Profondeur maximale",
+          "hint": "Profondeur maximale d'un arbre. Une valeur faible limite le surapprentissage."
+        },
+        "min_samples_leaf": {
+          "label": "Points minimum par feuille",
+          "hint": "Nombre minimal de points d'entraînement dans une feuille. Une valeur élevée lisse les prédictions."
+        },
+        "random_seed": {
+          "label": "Graine aléatoire",
+          "hint": "Fixe la reproductibilité du bootstrap des arbres et du tirage des variables."
+        }
+      }
+    },
+    "icar": {
+      "label": "iCAR (modèle spatial bayésien)",
+      "short": "iCAR",
+      "summary_md": "- **Approche :** modèle logistique bayésien avec un effet aléatoire spatial (rho) qui absorbe la structure de voisinage non observée — ajusté par MCMC via [forestatrisk](https://ecology.ghislainv.fr/forestatrisk/).\n- **Données d'entraînement :** un échantillon de points + la cible et les variables explicatives du jeu de données.\n- **Sortie :** carte de probabilité de déforestation et raster interpolé de l'effet aléatoire spatial (rho). Le modèle le plus coûteux en calcul, souvent le plus précis.",
+      "description": "Le modèle auto-régressif conditionnel intrinsèque (iCAR) est un modèle spatial bayésien qui tient compte de l'autocorrélation spatiale via un effet aléatoire latent (rho). Il combine le pouvoir explicatif des variables explicatives avec une composante de lissage spatial qui capte les effets de voisinage non observés. L'entraînement utilise un échantillonnage de Monte-Carlo par chaînes de Markov (MCMC) via la bibliothèque forestatrisk. C'est le modèle le plus coûteux en calcul, mais il donne souvent les meilleures prédictions spatiales.",
+      "params": {
+        "csize": {
+          "label": "Taille de cellule (km)",
+          "hint": "Côté des cellules carrées utilisées pour construire le graphe de voisinage spatial."
+        },
+        "mcmc": {
+          "label": "Itérations MCMC",
+          "hint": "Itérations d'échantillonnage conservées après le rodage — davantage améliore l'estimation mais ralentit le calcul."
+        },
+        "burnin": {
+          "label": "Itérations de rodage",
+          "hint": "Itérations initiales écartées pour que la chaîne atteigne sa distribution stationnaire."
+        },
+        "thin": {
+          "label": "Facteur d'éclaircissement",
+          "hint": "Conserver un échantillon sur k pour réduire l'autocorrélation. 1 les conserve tous."
+        },
+        "prior_vrho": {
+          "label": "Variance a priori (rho)",
+          "hint": "Variance a priori de l'effet spatial. -1 utilise une loi a priori uniforme."
+        },
+        "beta_start": {
+          "label": "Valeur initiale bêta",
+          "hint": "Valeur de départ des coefficients. -99 les initialise automatiquement."
+        },
+        "random_seed": {
+          "label": "Graine aléatoire",
+          "hint": "Fixe la reproductibilité des tirages MCMC."
+        },
+        "csize_interpolate": {
+          "label": "Taille de cellule d'interpolation",
+          "hint": "Taille de cellule (km) à laquelle le rho ajusté est interpolé pour le raster de sortie."
+        }
+      }
+    }
+  }
+}

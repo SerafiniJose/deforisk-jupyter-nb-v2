@@ -1,3 +1,8 @@
+"""Reactive application state for the Spatial Risk GUI."""
+
+from datetime import datetime
+from typing import Optional
+
 import solara
 
 
@@ -5,33 +10,143 @@ class AppState:
     """Reactive application state for Spatial Risk."""
 
     def __init__(self):
-        # Navigation
-        self.current_step = solara.reactive(0)  # 0=AOI, 1=Variables, 2=Dataset
-
+        """Build the reactives that back the app's project/UI state."""
         # Project (spatialrisk.project.Project | None)
         # Use identity equality: Project is a mutable pydantic model — field-value
         # comparison (pydantic __eq__) would suppress re-renders after in-place
         # mutations. Any new reference must fire, so we compare by identity only.
         self.project = solara.reactive(None, equals=lambda a, b: a is b)
 
-        # AOI (pysepal AoiResult | None)
+        # Unsaved-changes tracking (best-effort: "changed since last save/load").
+        self.project_dirty = solara.reactive(False)
+        self.last_saved = solara.reactive(None)  # datetime | None
+
+        # AOI (pysepal AoiResult | None). ASSET selections carry their picker
+        # inputs on ``AoiResult.asset``; see gui/scripts/aoi_io.py.
         self.aoi_result = solara.reactive(None)
+
+        # Bumped each time a project is loaded from disk. The map view subscribes
+        # to this so it can zoom to the AOI on load (a plain project-reference
+        # watch would also fire on every in-place mutation).
+        self.project_loaded_signal = solara.reactive(0)
+
+        # Legends published by the layers currently on the map, newest last.
+        # Entries are language-neutral (see gui/scripts/legend_data.py); Page()
+        # translates the selected one at render time so legends follow a locale
+        # switch. Keyed by map-layer key.
+        self.layer_legends = solara.reactive(())
+        self.selected_legend = solara.reactive("")
+
+        # Explicit handle tiles receive as an argument (they must not import
+        # this singleton — see the tile contract). Built once so its identity
+        # is stable: a port rebuilt per render would churn reacton props.
+        self.legend_port = self._build_legend_port()
 
         # Variable processing
         self.processing = solara.reactive(False)
-        self.process_error = solara.reactive(None)
 
         # Global UI state
         self.loading = solara.reactive(False)
-        self.error_message = solara.reactive(None)
-        self.status_message = solara.reactive(None)
+
+        # Mark the project dirty whenever its reference changes (tiles call
+        # project.set(p.model_copy()) on every mutation). Suppressed during load
+        # so reloading from disk does not mark the project dirty.
+        self._suppress_dirty = False
+        self.project.subscribe(self._on_project_changed)
+
+    def _on_project_changed(self, new_value) -> None:
+        if self._suppress_dirty:
+            return
+        self.project_dirty.set(new_value is not None)
+
+    def mark_saved(self, when: datetime) -> None:
+        """Record a successful save: clear dirty, stamp last-saved time."""
+        self.project_dirty.set(False)
+        self.last_saved.set(when)
+
+    def load_project_state(self, project, when: Optional[datetime]) -> None:
+        """Install a loaded project without marking it dirty."""
+        self._suppress_dirty = True
+        try:
+            self.project.set(project)
+        finally:
+            self._suppress_dirty = False
+        self.project_dirty.set(False)
+        self.last_saved.set(when)
+        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+
+    def new_project_state(self, project) -> None:
+        """Install a freshly created project (dirty, never saved).
+
+        Resets the workflow context so the user starts clean at the AOI step.
+        """
+        self.project.set(project)  # subscription marks dirty=True
+        self.last_saved.set(None)
+        self.aoi_result.set(None)
+        # Bump the same signal a load does so the shell's on-switch effects run
+        # (clear the previous project's map overlays + tracking, rebuild the
+        # empty Train/Inference job lists). The signal means "a project was
+        # installed" — loaded from disk OR newly created.
+        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+
+    def close_project_state(self) -> None:
+        """Return to the no-project state — the open project was deleted.
+
+        The only path back to ``project=None`` after start-up. ``project=None`` is
+        already a supported render state (it is what the app boots into), and the
+        signal bump re-runs the shell's on-switch effects, so the map overlays,
+        job lists and log console are torn down by the existing code.
+
+        Message state is not reset here: load/save/delete outcomes are pysepal
+        toasts, which expire on their own.
+        """
+        self.project.set(None)  # subscription sets dirty=False
+        self.last_saved.set(None)
+        self.aoi_result.set(None)
+        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+
+    def register_legends(self, *legends) -> None:
+        """Publish (or replace) legends and select the newest one."""
+        from gui.scripts.legend_registry import upsert
+
+        if not legends:
+            return
+        self.layer_legends.set(upsert(self.layer_legends.value, *legends))
+        self.selected_legend.set(legends[-1].layer_id)
+
+    def unregister_legends(self, *layer_ids: str) -> None:
+        """Withdraw legends for layers that left the map."""
+        from gui.scripts.legend_registry import next_selection, remove
+
+        if not layer_ids:
+            return
+        remaining = remove(self.layer_legends.value, *layer_ids)
+        self.layer_legends.set(remaining)
+        self.selected_legend.set(next_selection(remaining, self.selected_legend.value))
+
+    def clear_legends(self) -> None:
+        """Drop every legend (project switch / close)."""
+        self.layer_legends.set(())
+        self.selected_legend.set("")
+
+    def _build_legend_port(self):
+        """Bundle the legend operations a tile is allowed to reach."""
+        from gui.scripts.legend_registry import LegendPort
+
+        return LegendPort(
+            register=self.register_legends,
+            unregister=self.unregister_legends,
+            generation=lambda: self.project_loaded_signal.value,
+        )
 
     @property
     def aoi_complete(self) -> bool:
+        """Whether an AOI has been captured."""
         return self.aoi_result.value is not None
 
     @property
     def variables_complete(self) -> bool:
+        """Whether the project has raw variables and a base raster."""
         p = self.project.value
         if p is None:
             return False

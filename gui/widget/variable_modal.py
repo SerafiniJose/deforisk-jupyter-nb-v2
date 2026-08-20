@@ -5,22 +5,66 @@ from typing import Callable, Optional
 
 import reacton.ipyvuetify as rv
 import solara
+from pysepal.solara.components.inputs import FileInputComponent
 
-from gui.scripts.predefined_variables import PREDEFINED_CATALOGUE
+from gui.i18n import t
+from gui.scripts.predefined_variables import (
+    PREDEFINED_CATALOGUE,
+    build_predefined_name,
+    coerce_param_values,
+    default_param_values,
+    param_specs,
+)
+from gui.widget.artifact_name_field import ArtifactNameField
+from gui.widget.text_style import MUTED
 from spatialrisk.variables.models import (
     DataType,
-    PostProcessing,
-    RasterType,
     RasterizationMethod,
+    RasterType,
 )
 
 VAR_TYPES = ["LocalRasterVar", "GEEVar", "LocalVectorVar"]
 SOURCES = ["predefined", "custom"]
 
-# Build dropdown items: [{"text": label, "value": key}, ...]
-_PREDEFINED_ITEMS = [
-    {"text": v["label"], "value": k} for k, v in PREDEFINED_CATALOGUE.items()
-]
+# Stored discriminator value -> i18n key for its user-facing display label.
+# The internal values above are persisted and branched on throughout the app,
+# so we only translate them for display and never change the stored strings.
+_SOURCE_LABEL_KEYS = {
+    "predefined": "vars.modal.source_predefined",
+    "custom": "vars.modal.source_user",
+}
+_TYPE_LABEL_KEYS = {
+    "LocalRasterVar": "vars.modal.type_local_raster",
+    "GEEVar": "vars.modal.type_gee",
+    "LocalVectorVar": "vars.modal.type_local_vector",
+}
+
+_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
+_VECTOR_EXTENSIONS = [".geojson", ".gpkg", ".shp", ".json"]
+
+
+def _predefined_items():
+    """Build dropdown items at render time so labels respect the active locale."""
+    return [
+        {"text": t(meta["label_key"]), "value": key}
+        for key, meta in PREDEFINED_CATALOGUE.items()
+    ]
+
+
+def _source_items():
+    """Source dropdown items — friendly labels over the stored values."""
+    return [{"text": t(_SOURCE_LABEL_KEYS[s]), "value": s} for s in SOURCES]
+
+
+def _type_items():
+    """Variable-type dropdown items — friendly labels over the class names."""
+    return [{"text": t(_TYPE_LABEL_KEYS[v]), "value": v} for v in VAR_TYPES]
+
+
+def _type_display(var_type: str) -> str:
+    """Friendly label for a variable-type discriminator (falls back to raw)."""
+    key = _TYPE_LABEL_KEYS.get(var_type)
+    return t(key) if key else var_type
 
 
 @solara.component
@@ -30,6 +74,8 @@ def VariableModal(
     on_save: Optional[Callable[[str, dict], None]] = None,
     editing_key: Optional[str] = None,
     initial_entry: Optional[dict] = None,
+    sepal_client=None,
+    existing_keys=frozenset(),
 ):
     """Modal dialog for adding or editing a variable."""
     # --- state ---
@@ -38,6 +84,9 @@ def VariableModal(
     var_type, set_var_type = solara.use_state(VAR_TYPES[0])
     name, set_name = solara.use_state("")
     year, set_year = solara.use_state("")
+    # Raw (string) values for the selected predefined layer's declared params,
+    # keyed by param key. Coerced to ints on submit.
+    params_raw, set_params_raw = solara.use_state({})
     file_path, set_file_path = solara.use_state("")
     asset_id, set_asset_id = solara.use_state("")
     scale, set_scale = solara.use_state("")
@@ -45,8 +94,6 @@ def VariableModal(
     rasterization_method, set_rasterization_method = solara.use_state(
         RasterizationMethod.binary.value
     )
-    post_processing, set_post_processing = solara.use_state([])
-    is_base, set_is_base = solara.use_state(False)
     error, set_error = solara.use_state(None)
 
     is_edit = editing_key is not None
@@ -54,9 +101,33 @@ def VariableModal(
     # Derived: catalogue entry for the selected predefined variable
     cat = PREDEFINED_CATALOGUE.get(predefined_key) if predefined_key else None
 
+    # Storage key the entry will land under (mirrors variables_tile.entry_key).
+    # A predefined layer's params are baked into its name (forest_gfc_tc30), so
+    # the preview only shows the suffix once the values are valid.
+    if source == "predefined":
+        _values, _bad_param = coerce_param_values(predefined_key, params_raw)
+        _key_name = (
+            build_predefined_name(predefined_key, _values)
+            if predefined_key and _bad_param is None
+            else predefined_key
+        )
+    else:
+        _key_name = name.strip()
+    storage_key = (
+        f"{_key_name}_{year}"
+        if (_key_name and year and str(year).strip())
+        else _key_name
+    )
+    key_exists = (
+        bool(storage_key)
+        and storage_key in existing_keys
+        and storage_key != editing_key
+    )
+
     def reset():
         set_source(SOURCES[0])
         set_predefined_key("")
+        set_params_raw({})
         set_var_type(VAR_TYPES[0])
         set_name("")
         set_year("")
@@ -65,8 +136,6 @@ def VariableModal(
         set_scale("")
         set_raster_type(RasterType.continuous.value)
         set_rasterization_method(RasterizationMethod.binary.value)
-        set_post_processing([])
-        set_is_base(False)
         set_error(None)
 
     def prefill_from_initial():
@@ -74,6 +143,11 @@ def VariableModal(
             return
         set_source(initial_entry.get("source", "custom"))
         set_predefined_key(initial_entry.get("predefined_key", ""))
+        initial_key = initial_entry.get("predefined_key", "")
+        initial_params = initial_entry.get("params") or default_param_values(
+            initial_key
+        )
+        set_params_raw({k: str(v) for k, v in initial_params.items()})
         set_var_type(initial_entry.get("type", VAR_TYPES[0]))
         set_name(initial_entry.get("name", ""))
         set_year(str(initial_entry.get("year") or ""))
@@ -84,8 +158,6 @@ def VariableModal(
         set_rasterization_method(
             initial_entry.get("rasterization_method", RasterizationMethod.binary.value)
         )
-        set_post_processing(initial_entry.get("post_processing", []))
-        set_is_base(initial_entry.get("is_base", False))
         set_error(None)
 
     solara.use_effect(prefill_from_initial, [open_.value])
@@ -94,24 +166,54 @@ def VariableModal(
         reset()
         open_.set(False)
 
+    def on_select_predefined(key):
+        """Select a predefined layer and seed its params with catalogue defaults.
+
+        The previous layer's values must not leak across.
+        """
+        set_predefined_key(key or "")
+        set_params_raw({k: str(v) for k, v in default_param_values(key or "").items()})
+
     def _submit_predefined():
         if not predefined_key:
-            set_error("Select a variable from the list.")
+            set_error(t("vars.modal.error_no_predefined_selected"))
             return
         cat_entry = PREDEFINED_CATALOGUE[predefined_key]
         yr = int(year) if year and str(year).strip() else None
         if cat_entry["temporal"] and yr is None:
-            set_error("Year is required for this variable.")
+            set_error(t("vars.modal.error_year_required"))
+            return
+        values, bad_param = coerce_param_values(predefined_key, params_raw)
+        if bad_param is not None:
+            if bad_param.get("type", "int") == "choice":
+                set_error(
+                    t(
+                        "vars.modal.error_param_choice",
+                        label=t(bad_param["label_key"]),
+                        options=", ".join(bad_param["options"]),
+                    )
+                )
+            else:
+                set_error(
+                    t(
+                        "vars.modal.error_param_range",
+                        label=t(bad_param["label_key"]),
+                        min=bad_param["min"],
+                        max=bad_param["max"],
+                    )
+                )
             return
         entry = {
             "source": "predefined",
             "type": "GEEVar",
-            "name": predefined_key,
+            # Params are baked into the name so two settings of the same layer
+            # are distinct variables; predefined_key stays the catalogue key.
+            "name": build_predefined_name(predefined_key, values),
             "year": yr,
-            "is_base": is_base,
             "data_type": DataType.raster,
             "raster_type": RasterType(cat_entry["raster_type"]),
             "predefined_key": predefined_key,
+            "params": values,
         }
         reset()
         open_.set(False)
@@ -122,17 +224,14 @@ def VariableModal(
 
     def _submit_custom():
         if not name.strip():
-            set_error("Variable name is required.")
+            set_error(t("vars.modal.error_name_required"))
             return
         yr = int(year) if year and str(year).strip() else None
-        pp = [PostProcessing(p) for p in post_processing]
         entry = {
             "source": "custom",
             "type": var_type,
             "name": name.strip(),
             "year": yr,
-            "is_base": is_base and var_type != "LocalVectorVar",
-            "post_processing": pp,
         }
         if var_type == "LocalRasterVar":
             entry["path"] = (
@@ -171,12 +270,26 @@ def VariableModal(
         else:
             _submit_custom()
 
-    title = "Edit Variable" if is_edit else "Add Variable"
-    submit_label = "Save" if is_edit else "Add"
+    title = t("vars.modal.title_edit") if is_edit else t("vars.modal.title_add")
+    submit_label = (
+        t("vars.modal.submit_save") if is_edit else t("vars.modal.submit_add")
+    )
 
-    with rv.Dialog(
-        v_model=open_.value, on_v_model=open_.set, max_width="560px", eager=True
-    ):
+    # Same dismissal contract as the shared CreationDialog frame: `persistent`
+    # keeps a click aimed at an open v-select menu from taking the form with
+    # it, and the ESC handler restores the keyboard dismissal it disables (via
+    # on_cancel, so the form resets — the old outside-click close did not).
+    dialog = rv.Dialog(
+        v_model=open_.value,
+        on_v_model=open_.set,
+        max_width="560px",
+        eager=True,
+        persistent=True,
+        no_click_animation=True,
+    )
+    # rv.use_event is a hook — call it unconditionally.
+    rv.use_event(dialog, "keydown.esc", lambda *_: on_cancel())
+    with dialog:
         with rv.Card():
             with rv.CardTitle():
                 solara.Text(title)
@@ -184,41 +297,65 @@ def VariableModal(
             with rv.CardText():
                 # ---- Source toggle (first field) ----
                 rv.Select(
-                    label="Source",
-                    items=SOURCES,
+                    label=t("vars.modal.source_label"),
+                    items=_source_items(),
                     v_model=source,
                     on_v_model=set_source,
                     dense=True,
                     outlined=True,
+                    hint=t("vars.modal.source_hint"),
+                    persistent_hint=True,
                 )
 
                 if source == "predefined":
                     _render_predefined_fields(
-                        predefined_key, set_predefined_key,
-                        year, set_year,
-                        is_base, set_is_base,
+                        predefined_key,
+                        on_select_predefined,
+                        year,
+                        set_year,
                         cat,
+                        storage_key,
+                        key_exists,
+                        params_raw,
+                        set_params_raw,
                     )
                 else:
                     _render_custom_fields(
-                        var_type, set_var_type,
-                        name, set_name,
-                        year, set_year,
-                        file_path, set_file_path,
-                        asset_id, set_asset_id,
-                        scale, set_scale,
-                        raster_type, set_raster_type,
-                        rasterization_method, set_rasterization_method,
-                        post_processing, set_post_processing,
-                        is_base, set_is_base,
+                        var_type,
+                        set_var_type,
+                        name,
+                        set_name,
+                        year,
+                        set_year,
+                        file_path,
+                        set_file_path,
+                        asset_id,
+                        set_asset_id,
+                        scale,
+                        set_scale,
+                        raster_type,
+                        set_raster_type,
+                        rasterization_method,
+                        set_rasterization_method,
+                        sepal_client=sepal_client,
+                        storage_key=storage_key,
+                        key_exists=key_exists,
                     )
 
                 if error:
                     rv.Alert(type_="error", dense=True, children=[error])
 
             with rv.CardActions(style_="justify-content: flex-end; gap: 8px;"):
-                solara.Button("Cancel", on_click=on_cancel, text=True, small=True)
-                solara.Button(submit_label, on_click=on_submit, color="primary", small=True)
+                solara.Button(
+                    t("common.cancel"), on_click=on_cancel, text=True, small=True
+                )
+                solara.Button(
+                    submit_label,
+                    on_click=on_submit,
+                    color="primary",
+                    small=True,
+                    icon_name="mdi-plus",
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -227,27 +364,40 @@ def VariableModal(
 
 
 def _render_predefined_fields(
-    predefined_key, set_predefined_key,
-    year, set_year,
-    is_base, set_is_base,
+    predefined_key,
+    on_select_predefined,
+    year,
+    set_year,
     cat,
+    storage_key,
+    key_exists,
+    params_raw,
+    set_params_raw,
 ):
     """Fields shown when source == 'predefined'."""
     rv.Select(
-        label="Variable",
-        items=_PREDEFINED_ITEMS,
+        label=t("vars.modal.predefined_variable_label"),
+        items=_predefined_items(),
         v_model=predefined_key,
-        on_v_model=set_predefined_key,
+        on_v_model=on_select_predefined,
         dense=True,
         outlined=True,
     )
 
     if cat:
+        # Data-source blurb: where the layer comes from and how it is generated
+        # (catalogue link included). Rendered inline so it updates per selection.
+        if cat.get("description_key"):
+            with solara.Div(
+                style=MUTED + "font-size:0.85rem;padding:0 4px 4px 4px;",
+            ):
+                solara.Markdown(t(cat["description_key"]))
+
         # Year — selectable list for temporal variables
         if cat["temporal"]:
             available_years = cat.get("years", [])
             rv.Select(
-                label="Year",
+                label=t("vars.modal.predefined_year_label"),
                 items=available_years,
                 v_model=int(year) if year and str(year).strip() else None,
                 on_v_model=lambda v: set_year(str(v) if v else ""),
@@ -255,122 +405,179 @@ def _render_predefined_fields(
                 outlined=True,
             )
 
+        # Layer-specific knobs declared by the catalogue (e.g. forest_gfc's
+        # tree-cover threshold). Rendered generically, like MODEL_REGISTRY
+        # params in the model dialog — no per-layer branching here.
+        for spec in param_specs(predefined_key):
+            pkey = spec["key"]
+            if spec.get("type", "int") == "choice":
+                rv.Select(
+                    label=t(spec["label_key"]),
+                    items=[
+                        {"text": t(spec["option_label_key_prefix"] + o), "value": o}
+                        for o in spec["options"]
+                    ],
+                    # Same no-fallback contract as the TextField below: show
+                    # exactly what will be submitted.
+                    v_model=params_raw.get(pkey, ""),
+                    on_v_model=lambda v, k=pkey: set_params_raw(
+                        lambda prev: {**prev, k: v or ""}
+                    ),
+                    dense=True,
+                    outlined=True,
+                    hint=t(spec["hint_key"]),
+                    persistent_hint=True,
+                )
+                continue
+            rv.TextField(
+                label=t(spec["label_key"]),
+                # No catalogue-default fallback: the field must show exactly
+                # what will be submitted. coerce_param_values reads params_raw
+                # directly, so displaying a default the state does not hold
+                # would show a valid number while submit rejected it as blank.
+                # Seeding with the defaults is the job of on_select_predefined.
+                v_model=str(params_raw.get(pkey, "")),
+                # Functional update: two params edited in quick succession must
+                # each build on the latest state, not on this render's snapshot.
+                on_v_model=lambda v, k=pkey: set_params_raw(
+                    lambda prev: {**prev, k: v}
+                ),
+                dense=True,
+                outlined=True,
+                type="number",
+                hint=t(spec["hint_key"]),
+                persistent_hint=True,
+            )
+
         # Read-only info fields
         rv.TextField(
-            label="Variable type",
-            v_model=cat.get("var_type", "GEEVar"),
+            label=t("vars.modal.predefined_var_type_label"),
+            v_model=_type_display(cat.get("var_type", "GEEVar")),
             dense=True,
             outlined=True,
             disabled=True,
         )
         rv.TextField(
-            label="Raster type",
+            label=t("vars.modal.predefined_raster_type_label"),
             v_model=cat["raster_type"],
             dense=True,
             outlined=True,
             disabled=True,
         )
 
-        # Base raster switch
-        rv.Switch(
-            label="Set as base raster (used for reprojection alignment)",
-            v_model=is_base,
-            on_v_model=set_is_base,
+    if storage_key:
+        solara.Text(
+            t(
+                "widgets.artifact_name.exists_warning"
+                if key_exists
+                else "widgets.artifact_name.saved_as",
+                key=storage_key,
+            ),
+            style=MUTED + "font-size:0.8rem;padding:0 4px 4px;",
         )
 
 
 def _render_custom_fields(
-    var_type, set_var_type,
-    name, set_name,
-    year, set_year,
-    file_path, set_file_path,
-    asset_id, set_asset_id,
-    scale, set_scale,
-    raster_type, set_raster_type,
-    rasterization_method, set_rasterization_method,
-    post_processing, set_post_processing,
-    is_base, set_is_base,
+    var_type,
+    set_var_type,
+    name,
+    set_name,
+    year,
+    set_year,
+    file_path,
+    set_file_path,
+    asset_id,
+    set_asset_id,
+    scale,
+    set_scale,
+    raster_type,
+    set_raster_type,
+    rasterization_method,
+    set_rasterization_method,
+    sepal_client,
+    storage_key,
+    key_exists,
 ):
-    """Fields shown when source == 'custom' (original behaviour)."""
-    rv.TextField(
-        label="Name",
-        v_model=name,
-        on_v_model=set_name,
-        dense=True,
-        outlined=True,
+    """Fields shown when source == 'custom'."""
+    ArtifactNameField(
+        value=name,
+        on_input=set_name,
+        storage_key=storage_key,
+        exists=key_exists,
+        label=t("vars.modal.custom_name_label"),
     )
     rv.Select(
-        label="Variable type",
-        items=VAR_TYPES,
+        label=t("vars.modal.custom_type_label"),
+        items=_type_items(),
         v_model=var_type,
         on_v_model=set_var_type,
         dense=True,
         outlined=True,
+        hint=t("vars.modal.custom_type_hint"),
+        persistent_hint=True,
     )
     rv.TextField(
-        label="Year (optional)",
+        label=t("vars.modal.custom_year_label"),
         v_model=year,
         on_v_model=set_year,
         dense=True,
         outlined=True,
         type="number",
+        hint=t("vars.modal.custom_year_hint"),
+        persistent_hint=True,
     )
     if var_type in ("LocalRasterVar", "LocalVectorVar"):
-        rv.TextField(
-            label="File path",
-            v_model=file_path,
-            on_v_model=set_file_path,
-            dense=True,
-            outlined=True,
-            placeholder="/path/to/file.tif",
+        FileInputComponent(
+            label=t("vars.modal.custom_file_label"),
+            value=file_path,
+            on_value=set_file_path,
+            sepal_client=sepal_client,
+            root="",
+            extensions=(
+                _RASTER_EXTENSIONS
+                if var_type == "LocalRasterVar"
+                else _VECTOR_EXTENSIONS
+            ),
+            clearable=True,
         )
     if var_type == "GEEVar":
         rv.TextField(
-            label="GEE asset ID",
+            label=t("vars.modal.custom_asset_id_label"),
             v_model=asset_id,
             on_v_model=set_asset_id,
             dense=True,
             outlined=True,
-            placeholder="projects/your-project/assets/name",
+            placeholder=t("vars.modal.custom_asset_id_placeholder"),
         )
         rv.TextField(
-            label="Scale (m, optional)",
+            label=t("vars.modal.custom_scale_label"),
             v_model=scale,
             on_v_model=set_scale,
             dense=True,
             outlined=True,
             type="number",
+            hint=t("vars.modal.custom_scale_hint"),
+            persistent_hint=True,
         )
     if var_type in ("LocalRasterVar", "GEEVar"):
         rv.Select(
-            label="Raster type",
+            label=t("vars.modal.custom_raster_type_label"),
             items=[r.value for r in RasterType],
             v_model=raster_type,
             on_v_model=set_raster_type,
             dense=True,
             outlined=True,
-        )
-        rv.Select(
-            label="Post-processing (optional)",
-            items=[p.value for p in PostProcessing],
-            v_model=post_processing,
-            on_v_model=set_post_processing,
-            multiple=True,
-            dense=True,
-            outlined=True,
+            hint=t("vars.modal.custom_raster_type_hint"),
+            persistent_hint=True,
         )
     if var_type == "LocalVectorVar":
         rv.Select(
-            label="Rasterization method",
+            label=t("vars.modal.custom_rasterization_method_label"),
             items=[r.value for r in RasterizationMethod],
             v_model=rasterization_method,
             on_v_model=set_rasterization_method,
             dense=True,
             outlined=True,
-        )
-    if var_type != "LocalVectorVar":
-        rv.Switch(
-            label="Set as base raster (used for reprojection alignment)",
-            v_model=is_base,
-            on_v_model=set_is_base,
+            hint=t("vars.modal.custom_rasterization_method_hint"),
+            persistent_hint=True,
         )

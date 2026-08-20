@@ -15,8 +15,9 @@ The helper keeps the following items as explicit function parameters:
 
 Everything else is forwarded to :func:'download_ee_image'.
 
-The implementation follows the pattern of the original 'dask_safe_export_raster_no_geemap'
-wrapper but adds type annotations and a clean public API.
+The implementation follows the pattern of the original
+'dask_safe_export_raster_no_geemap' wrapper but adds type annotations and a
+clean public API.
 """
 
 # ------------------------------------------------------------------
@@ -30,8 +31,9 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import ee  # Earth Engine
-import geedim as gd  # used only inside the worker – imported here for typing
-import geemap  # (only required for its'ee_export_vector' fallback)
+
+# geedim: used only inside the worker - imported here for typing
+import geedim as gd  # noqa: F401
 from dask.distributed import Client, Future
 
 
@@ -114,7 +116,7 @@ def export_raster_with_dask(
         region_json = region_geom.serialize()
 
     # ------------------------------------------------------------------
-    # 4. Worker function – runs on a Dask worker
+    # 4. Worker function - runs on a Dask worker
     # ------------------------------------------------------------------
     def _raster_export(
         img_json: str,
@@ -130,10 +132,11 @@ def export_raster_with_dask(
     ) -> Any:
         """
         Minimal wrapper that reinitialises EE and calls''download_ee_image''.
+
         All arguments are typed for clarity.
         """
         import ee  # Import inside the worker
-        import geedim as gd
+        import geedim as gd  # noqa: F401,F811
 
         ee.Initialize(project=proj)
 
@@ -210,15 +213,18 @@ def download_ee_image(
     filename : str
         Name of the destination file.
     region : ee.Geometry | ee.FeatureCollection | None, optional
-        Region defined by geojson polygon in WGS84. Defaults to the entire image granule.
+        Region defined by geojson polygon in WGS84. Defaults to the entire
+        image granule.
     crs : str | None, optional
-        Reproject image(s) to this EPSG or WKT CRS.  Where image bands have different CRSs,
-        all are re‑projected to this CRS. Defaults to the CRS of the minimum scale band.
+        Reproject image(s) to this EPSG or WKT CRS.  Where image bands have
+        different CRSs, all are re-projected to this CRS. Defaults to the
+        CRS of the minimum scale band.
     crs_transform : list[float] | None, optional
         List of 6 numbers specifying an affine transform in the specified CRS.
     scale : float | None, optional
-        Resample image(s) to this pixel scale (meters).  Where image bands have different scales,
-        all are resampled to this scale. Defaults to the minimum scale of image bands.
+        Resample image(s) to this pixel scale (meters).  Where image bands
+        have different scales, all are resampled to this scale. Defaults to
+        the minimum scale of image bands.
     resampling : str, optional
         Resampling method 'near', 'bilinear', 'bicubic', or 'average'.
     dtype : str | None, optional
@@ -229,15 +235,18 @@ def download_ee_image(
     num_threads : int | None, optional
         Number of tiles to download concurrently.
     max_tile_size : int | None, optional
-        Maximum tile size (MB).  If None, defaults to the Earth Engine download size limit (32 MB).
+        Maximum tile size (MB).  If None, defaults to the Earth Engine
+        download size limit (32 MB).
     max_tile_dim : int | None, optional
-        Maximum tile width/height (pixels).  Defaults to Earth Engine download limit (10 000).
+        Maximum tile width/height (pixels).  Defaults to Earth Engine
+        download limit (10 000).
     shape : tuple[int, int] | None, optional
         Desired output dimensions (height, width) in pixels.
     scale_offset : bool, optional
         Whether to apply any EE band scales and offsets to the image.
     unmask_value : int | None, optional
-        Value used for masked pixels.  Set to a non zero value if you want zeros to be treated as data.
+        Value used for masked pixels.  Set to a non zero value if you want
+        zeros to be treated as data.
     nodata_value : int | None, optional
         Value used for no data raster value.
 
@@ -252,7 +261,7 @@ def download_ee_image(
         return
 
     try:
-        import geedim as gd
+        import geedim as gd  # noqa: F401,F811
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "Please install geedim using'pip install geedim' or "
@@ -285,7 +294,7 @@ def download_ee_image(
 
 
 # ------------------------------------------------------------------
-#  Example usage (commented out – uncomment to run in a real environment)
+#  Example usage (commented out - uncomment to run in a real environment)
 # ------------------------------------------------------------------
 # if __name__ == "__main__":
 #     from dask.distributed import Client
