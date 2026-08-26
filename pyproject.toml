@@ -19,6 +19,7 @@ dependencies = [
     "ipecharts==1.4.*",
     "ipykernel",
     "ipyleaflet",
+    "ipyvuetify<3", # ipyvuetify 3 introduces breaking changes; keep the pre-3 API
     "localtileserver>=1.0", # conda-forge only has 0.11.x; the app needs the 1.x API
     "matplotlib", # matplotlib-base on conda-forge
     "numpy==2.2.*",

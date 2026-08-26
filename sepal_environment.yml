@@ -31,6 +31,8 @@ dependencies:
   - geedim=2.0
   # GUI / serving
   - solara
+  # ipyvuetify 3 introduces breaking changes; keep the pre-3 API
+  - ipyvuetify<3
   - ipyleaflet
   - voila
   - ipecharts=1.4
