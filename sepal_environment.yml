@@ -45,6 +45,9 @@ dependencies:
   - wheel
   - pip
   - pip:
+      # Also pinned pip-side: SEPAL builds the app kernel as a pip venv, where
+      # the conda pin above has no effect (ipyvuetify 3 breaks pysepal)
+      - "ipyvuetify<3"
       # Earth Engine (SEPAL's custom build — replaces the conda-installed stock
       # one; v1.1.5rc0 conflicts with pysepal's earthengine-api>1.6.0)
       - "earthengine-api @ git+https://github.com/openforis/earthengine-api.git@v1.6.14#subdirectory=python"
