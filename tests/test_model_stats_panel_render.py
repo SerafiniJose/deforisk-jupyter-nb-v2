@@ -501,3 +501,37 @@ def test_details_dialog_configuration_fields_survive_the_restructure():
         "tiles.train.model_name_label",
     ):
         assert t(key) in labels, key
+
+
+def _find_widget(widget, cls, out=None):
+    """Every widget of ``cls`` in the rendered tree."""
+    out = [] if out is None else out
+    if isinstance(widget, cls):
+        out.append(widget)
+    for child in getattr(widget, "children", []) or []:
+        if not isinstance(child, str):
+            _find_widget(child, cls, out)
+    return out
+
+
+def test_details_dialog_tab_content_clears_the_tab_strip():
+    """The tab-items container carries top padding.
+
+    ``v-tabs-items`` starts flush against the tab strip, while an outlined
+    field's floating label and fieldset legend sit ~6px *above* the box it
+    labels. Without padding the first read-only field's label ("Model") is
+    drawn over the tab slider — measured in a browser at label top 335 vs.
+    container top 341.
+    """
+    import ipyvuetify as v
+
+    project = solara.reactive(Project(project_name="p"))
+    project.value.models["m"] = _glm_model()
+    containers = _find_widget(
+        _render(
+            ModelDetailsDialog(project=project, model_key="m", on_close=lambda: None)
+        ),
+        v.TabsItems,
+    )
+    assert containers, "no v-tabs-items in the details dialog"
+    assert re.search(r"\bpt-[1-9]\b", containers[0].class_), containers[0].class_

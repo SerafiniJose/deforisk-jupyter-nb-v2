@@ -458,7 +458,11 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
                     ):
                         rv.Tab(children=[t("tiles.train.stats.tab_config")])
                         rv.Tab(children=[t("tiles.train.stats.tab_statistics")])
-                    with rv.TabsItems(v_model=active_tab):
+                    # pt-3: an outlined field's floating label and its
+                    # fieldset legend sit ~6px *above* the box, and v-tabs-items
+                    # starts flush against the tab strip — without this the
+                    # first field's label ("Model") lands on the tab slider.
+                    with rv.TabsItems(v_model=active_tab, class_="pt-3"):
                         with rv.TabItem():
                             with solara.Column(style="gap:4px;"):
                                 ro_field(
