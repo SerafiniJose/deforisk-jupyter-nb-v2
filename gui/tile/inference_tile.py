@@ -90,11 +90,13 @@ def _run_inference(
     notifier=None,
     task_title=None,
     mask_layer=None,
+    windows=None,
 ):
     """Run model inference in a background thread.
 
     ``mask_layer`` is the project raster an ML run masks with, as assigned
-    in the Predict dialog; None or blank means no mask.
+    in the Predict dialog; None or blank means no mask. ``windows`` is the
+    MW family's subset of trained window sizes; None means every window.
     """
     try:
         with tracked_job(notifier, task_title or f"Predicting: {model_key}"), writing(
@@ -108,6 +110,7 @@ def _run_inference(
                 dataset_key,
                 name=name,
                 mask_layer=mask_layer,
+                windows=windows,
             )
 
             # Model.apply() registers and saves the prediction on ``project``,
@@ -239,7 +242,9 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
         )
         logger.info("Import started: '%s' (job=%s)", name, job_id)
 
-    def _launch_inference(model_key, dataset_key, name, mask_layer=None, entry=None):
+    def _launch_inference(
+        model_key, dataset_key, name, mask_layer=None, windows=None, entry=None
+    ):
         """Create the output job row and spawn the worker. Inputs pre-validated."""
         job_id = str(uuid.uuid4())[:8]
         job = {
@@ -266,6 +271,7 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
                 notifications,
                 t("notifications.task_inference", model=model_key, dataset=dataset_key),
                 mask_layer,
+                windows,
             ),
         )
         logger.info(
@@ -297,12 +303,14 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
             _launch_import(entry["name"], entry["path"], entry["palette"], entry=entry)
         else:
             # mask_layer is absent for the JNR/MW families, which resolve
-            # their own layers rather than masking with a project raster.
+            # their own layers rather than masking with a project raster;
+            # windows is MW-only and absent everywhere else.
             _launch_inference(
                 entry["model_key"],
                 entry["dataset_key"],
                 entry["name"],
                 entry.get("mask_layer"),
+                entry.get("windows"),
                 entry=entry,
             )
         if editing_job_id.current is not None:

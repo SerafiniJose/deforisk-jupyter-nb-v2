@@ -48,7 +48,14 @@ def _project(tmp_path, layer_names):
     }
     dataset = types.SimpleNamespace(name="calibration", features=[])
     return types.SimpleNamespace(
-        models={"glm_glm_v1": object(), "mw_calibration_mw": object()},
+        models={
+            "glm_glm_v1": object(),
+            # A realistic MW entry: the Predict dialog reads its trained
+            # windows to build the window-sizes field.
+            "mw_calibration_mw": types.SimpleNamespace(
+                ldefrate_files={"5": "a.tif", "11": "b.tif"}, win_size_list=[5, 11]
+            ),
+        },
         datasets={"calibration": dataset},
         processed_variables=variables,
         predictions={},

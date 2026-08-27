@@ -22,7 +22,9 @@ from gui.scripts.artifact_names import (
 )
 from gui.scripts.inference_runner import (
     is_ml_family,
+    is_mw_family,
     mask_layer_candidates,
+    mw_window_options,
     suggested_mask_layer,
 )
 from gui.scripts.prediction_import import resolve_import_key, sanitize_import_name
@@ -117,6 +119,29 @@ def PredictionFormDialog(
     # never in between, so a deliberate pick survives re-renders.
     solara.use_effect(seed_mask_layer, [tuple(mask_candidates)])
 
+    # --- window sizes (MW family only)
+    # MW inference fans out one map per trained window; the user narrows the
+    # run here (e.g. re-run only the window that won evaluation). Seeded with
+    # every trained window so the default equals the historic all-windows run.
+    selected_windows, set_selected_windows = solara.use_state([])
+    mw_family = source == "model" and is_mw_family(selected_model)
+    window_options = mw_window_options(p, selected_model) if mw_family else []
+    pending_windows = solara.use_ref(None)
+
+    def seed_windows():
+        """Select every trained window, unless a prefill narrowed the run."""
+        if pending_windows.current is not None and mw_family:
+            keep = [w for w in pending_windows.current if w in window_options]
+            set_selected_windows(keep or list(window_options))
+            pending_windows.current = None
+            return
+        set_selected_windows(list(window_options))
+
+    # selected_model is a dependency on purpose: two MW models can expose the
+    # SAME option tuple, and switching between them must still reseed to
+    # all-selected — a subset chosen for model A must not leak into model B.
+    solara.use_effect(seed_windows, [selected_model, tuple(window_options)])
+
     # --- import mode state
     file_path, set_file_path = solara.use_state("")
     palette, set_palette = solara.use_state("far")
@@ -152,6 +177,8 @@ def PredictionFormDialog(
             if "mask_layer" in entry:
                 # None was the explicit "no mask" submission — show the sentinel.
                 pending_mask.current = entry["mask_layer"] or NO_MASK
+            if "windows" in entry:
+                pending_windows.current = list(entry["windows"])
         on_name_input(entry.get("name", ""))
 
     solara.use_effect(
@@ -160,7 +187,17 @@ def PredictionFormDialog(
     )
 
     clean = sanitize_key(name_value)
-    exists = prediction_name_exists(p, clean)
+    # An MW run registers one prediction per selected window, suffixed
+    # ``_w<size>`` (see BaseRiskModel._register_prediction), so both the name
+    # preview and the "already taken" check work on the fanned-out keys.
+    if source == "model" and mw_family and clean:
+        mw_keys = [f"{clean}_w{w}" for w in sorted(selected_windows)]
+        exists = any(prediction_name_exists(p, k) for k in mw_keys)
+        preview_key = ", ".join(mw_keys) or clean
+    else:
+        mw_keys = []
+        exists = prediction_name_exists(p, clean)
+        preview_key = clean
     # Import never replaces: preview the key the import would actually get.
     src_suffix = Path(str(file_path)).suffix if file_path else ""
     resolved_import_key = (
@@ -171,6 +208,8 @@ def PredictionFormDialog(
 
     def reset():
         pending_mask.current = None
+        pending_windows.current = None
+        set_selected_windows([])
         set_source("model")
         set_selected_model("")
         set_selected_dataset("")
@@ -199,6 +238,11 @@ def PredictionFormDialog(
             return t("tiles.inference.error_invalid_dataset")
         if ml_family and not mask_layer:
             return t("tiles.inference.error_mask_required")
+        # Gated on window_options: an MW model exposing none (untrained legacy
+        # entry, empty win_size_list) renders no field and keeps today's
+        # behaviour — apply() runs all windows or raises, exactly as before.
+        if mw_family and window_options and not selected_windows:
+            return t("tiles.inference.error_windows_required")
         if not clean:
             return t("tiles.inference.error_name_required")
         return None
@@ -206,6 +250,12 @@ def PredictionFormDialog(
     def will_replace():
         if source == "import":
             return None  # duplicate imports suffix instead of replacing
+        if mw_family and mw_keys:
+            # Report every colliding key, not just the first: one run can
+            # overwrite several _w<size> maps and the confirmation must name
+            # all of them.
+            taken = [k for k in mw_keys if prediction_name_exists(p, k)]
+            return ", ".join(taken) if taken else None
         return clean if prediction_name_exists(p, clean) else None
 
     def launch():
@@ -231,6 +281,10 @@ def PredictionFormDialog(
                 # two). Benchmark families resolve their own layers and never
                 # carry the key.
                 entry["mask_layer"] = None if mask_layer == NO_MASK else mask_layer
+            if mw_family and window_options:
+                # No key at all when the model exposes no options — the runner
+                # then passes windows=None and apply() runs its usual set.
+                entry["windows"] = sorted(selected_windows)
             on_submit(entry)
 
     with CreationDialog(
@@ -278,6 +332,27 @@ def PredictionFormDialog(
                 hint=t("tiles.inference.dataset_select_hint"),
                 persistent_hint=True,
             )
+            if mw_family:
+                rv.Select(
+                    label=t("tiles.inference.windows_label"),
+                    items=[
+                        {"text": f"{w}×{w}", "value": w}  # noqa: RUF001
+                        for w in window_options
+                    ],
+                    item_text="text",
+                    item_value="value",
+                    v_model=selected_windows,
+                    on_v_model=set_selected_windows,
+                    multiple=True,
+                    chips=True,
+                    small_chips=True,
+                    deletable_chips=True,
+                    dense=True,
+                    outlined=True,
+                    class_="multi-chips",
+                    hint=t("tiles.inference.windows_hint"),
+                    persistent_hint=True,
+                )
             if show_mask:
                 rv.Select(
                     label=t("tiles.inference.mask_layer_label"),
@@ -319,7 +394,7 @@ def PredictionFormDialog(
         ArtifactNameField(
             value=name_value,
             on_input=on_name_input,
-            storage_key=clean if source == "model" else resolved_import_key,
+            storage_key=preview_key if source == "model" else resolved_import_key,
             exists=exists if source == "model" else False,
             label=t("tiles.inference.pred_name_label"),
         )
