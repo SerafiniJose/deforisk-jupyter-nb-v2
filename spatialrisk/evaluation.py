@@ -63,6 +63,20 @@ def run_label_for(pred):
     return f"{label_for(pred)} · {run}"
 
 
+def artifact_label_for(pred):
+    """Run-qualified, filename-safe label for evaluation rows AND artifacts.
+
+    The charts layer derives plot/CSV paths from a row's ``model`` value, so
+    the display label and the artifact stem must be the same string. It also
+    keys the shared defrate cache — qualifying it by run keeps two models of
+    one family (e.g. two MW models at window 5) from sharing cache entries
+    and overwriting each other's plots.
+    """
+    run = getattr(pred, "name", None) or pred.model_key
+    safe_run = re.sub(r"[^A-Za-z0-9_-]+", "_", str(run)).strip("_")
+    return f"{label_for(pred)}_{safe_run}"
+
+
 def make_square(raster_file, square_size):
     """Coarse-grid partition (replicates forestatrisk.make_square, no far dep)."""
     ds = gdal.Open(str(raster_file))
@@ -658,7 +672,7 @@ def _evaluate_one_against_truth(
     """
     from spatialrisk.evaluations import EvaluationPlotArtifact
 
-    label, period = label_for(pred), pred.dataset_name
+    label, period = artifact_label_for(pred), pred.dataset_name
     riskmap_file = pred.path
     truth_dir = run_output_dir(project, truth_tag)
     truth_dir.mkdir(parents=True, exist_ok=True)

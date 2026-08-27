@@ -29,6 +29,7 @@ from spatialrisk.evaluation import (  # noqa: E402
     PRED_OBS_Y_LABEL,
     PredObsPlotData,
     ValidationResult,
+    artifact_label_for,
     compute_validation,
     interval_from_target,
     label_for,
@@ -52,8 +53,8 @@ def test_interval_from_target_handles_missing_years():
     assert interval_from_target("no_years_here") is None
 
 
-def _pred(model_key, window=None):
-    return types.SimpleNamespace(model_key=model_key, window=window)
+def _pred(model_key, window=None, name=None):
+    return types.SimpleNamespace(model_key=model_key, window=window, name=name)
 
 
 def test_label_for_maps_family_and_window():
@@ -63,6 +64,16 @@ def test_label_for_maps_family_and_window():
     assert label_for(_pred("icar_icar_v1")) == "ICAR"
     assert label_for(_pred("jnr_calibration_jnr")) == "JNR"
     assert label_for(_pred("mw_calibration_mw", window=11)) == "MW_w11"
+
+
+def test_artifact_label_for_is_filename_safe_and_unique():
+    """The artifact stem qualifies the family label with a sanitized run."""
+    a = _pred("mw_calib_a", window=5)
+    b = _pred("mw_calib_b", window=5)
+    assert artifact_label_for(a) == "MW_w5_mw_calib_a"
+    assert artifact_label_for(a) != artifact_label_for(b)
+    named = _pred("mw_calib_a", window=5, name="val 2020!")
+    assert artifact_label_for(named) == "MW_w5_val_2020"  # sanitized run name
 
 
 def _write_raster(path, array, pixel=30.0):
@@ -923,12 +934,12 @@ def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
     # row annotations
     assert rows[0]["truth"] == "forest_loss_2015_2020"
     assert rows[0]["period"] == "validation"
-    assert rows[0]["model"] == "GLM"
+    assert rows[0]["model"] == "GLM_glm_glm_v1"
     assert rows[0]["prediction"] == "glm_glm_v1__validation"
     # output namespaced under evaluation/<truth_tag>/
     assert (tmp_path / "evaluation" / "forest_loss_2015_2020").is_dir()
     assert rows[0]["fig_path"].endswith(
-        "evaluation/forest_loss_2015_2020/pred_obs_GLM_validation_300.png"
+        "evaluation/forest_loss_2015_2020/pred_obs_GLM_glm_glm_v1_validation_300.png"
     )
     # metrics keyed by "<tag>__<period>_<csize>"
     assert pred.metrics == {
@@ -973,7 +984,7 @@ def test_evaluate_against_truth_selects_keys_and_namespaces(tmp_path, monkeypatc
         lambda proj, pred, **kw: [
             {
                 "prediction": pred.storage_key(),
-                "model": ev.label_for(pred),
+                "model": ev.artifact_label_for(pred),
                 "period": pred.dataset_name,
                 "truth": kw["truth_tag"],
                 "csize_coarse_grid": 300,
@@ -1138,7 +1149,7 @@ def test_two_runs_same_truth_retain_distinct_artifacts(tmp_path, monkeypatch):
         assert len(record.artifacts) == 1, "one artifact per map per cell size"
         art = record.artifacts[0]
         assert art.prediction_key == "glm_glm_v1__validation"
-        assert art.model == "GLM" and art.period == "validation"
+        assert art.model == "GLM_glm_glm_v1" and art.period == "validation"
         assert art.csize_px == 300
         # each record's own files survived the other run untouched
         assert _Path(art.points_csv).read_text() == f"cell,ndefor_obs_ha\n0,{value}\n"
@@ -1162,10 +1173,10 @@ def test_run_scoped_artifacts_live_under_run_directory(tmp_path, monkeypatch):
     run_dir = tmp_path / "evaluation" / _TRUTH_TAG / "run00001"
     assert run_dir.is_dir()
     for name in (
-        "defrate_cat_GLM_validation.csv",
-        "pred_obs_GLM_validation_300.csv",
-        "indices_GLM_validation_300.csv",
-        "pred_obs_GLM_validation_300.png",
+        "defrate_cat_GLM_glm_glm_v1_validation.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.csv",
+        "indices_GLM_glm_glm_v1_validation_300.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.png",
         "indices_all.csv",
     ):
         assert (run_dir / name).exists(), name
@@ -1181,18 +1192,19 @@ def test_run_scoped_evaluation_also_publishes_legacy_shared_paths(
 
     shared = tmp_path / "evaluation" / _TRUTH_TAG
     for name in (
-        "defrate_cat_GLM_validation.csv",
-        "pred_obs_GLM_validation_300.csv",
-        "indices_GLM_validation_300.csv",
-        "pred_obs_GLM_validation_300.png",
+        "defrate_cat_GLM_glm_glm_v1_validation.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.csv",
+        "indices_GLM_glm_glm_v1_validation_300.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.png",
         "indices_all.csv",
     ):
         assert (shared / name).exists(), name
     # the shared copy tracks the LATEST run
-    assert (shared / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-22.0"
+    latest_png = shared / "pred_obs_GLM_glm_glm_v1_validation_300.png"
+    assert latest_png.read_bytes() == b"PNG-22.0"
     # while the older run's own copy is untouched
     assert (
-        shared.parent / _TRUTH_TAG / "run00001" / "pred_obs_GLM_validation_300.png"
+        shared.parent / _TRUTH_TAG / "run00001" / latest_png.name
     ).read_bytes() == b"PNG-11.0"
 
 
@@ -1204,7 +1216,8 @@ def test_evaluate_against_truth_without_run_id_keeps_legacy_layout(
     df = _run_against_truth(project, tmp_path, None, 11.0, monkeypatch)
 
     shared = tmp_path / "evaluation" / _TRUTH_TAG
-    assert (shared / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-11.0"
+    png = shared / "pred_obs_GLM_glm_glm_v1_validation_300.png"
+    assert png.read_bytes() == b"PNG-11.0"
     assert (shared / "indices_all.csv").exists()
     # no run sub-directory was created, and no artifacts are claimed
     assert [p for p in shared.iterdir() if p.is_dir()] == []
@@ -1243,7 +1256,7 @@ def test_one_artifact_per_prediction_per_cell_size(tmp_path, monkeypatch):
     )
     arts = df.attrs["artifacts"]
     assert sorted(a.csize_px for a in arts) == [100, 300]
-    assert {a.model for a in arts} == {"GLM"}
+    assert {a.model for a in arts} == {"GLM_glm_glm_v1"}
     assert len({a.points_csv for a in arts}) == 2
 
 
