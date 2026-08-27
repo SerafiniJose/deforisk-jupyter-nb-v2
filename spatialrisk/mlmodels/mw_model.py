@@ -377,6 +377,7 @@ class MWModel(BaseRiskModel):
         output_file: Optional[Union[str, Path]] = None,
         mask: Optional[Union[str, Path]] = None,
         mask_value: Union[int, float, list] = 0,
+        windows: Optional[List[int]] = None,
     ) -> Dict[str, Path]:
         """Generate probability maps for a given period.
 
@@ -405,6 +406,9 @@ class MWModel(BaseRiskModel):
             Unused; kept for API consistency with supervised models.
         mask_value : optional
             Unused; kept for API consistency.
+        windows : list of int, optional
+            Trained window sizes to run; default None = all. Unknown or
+            empty selections raise ValueError.
 
         Returns:
         -------
@@ -417,6 +421,25 @@ class MWModel(BaseRiskModel):
             raise RuntimeError("Model has not been fitted. Call fit() first.")
         if self.dist_thresh is None:
             raise RuntimeError("dist_thresh not set. Call fit() first.")
+
+        # Resolve which trained windows this run covers. None = all (the
+        # historic behavior); an explicit subset lets the user re-run only
+        # the window that won evaluation.
+        selected_files = self.ldefrate_files
+        if windows is not None:
+            requested = [str(w) for w in windows]
+            if not requested:
+                raise ValueError(
+                    "windows= must name at least one trained window "
+                    f"(trained: {sorted(self.ldefrate_files)})."
+                )
+            missing = [w for w in requested if w not in self.ldefrate_files]
+            if missing:
+                raise ValueError(
+                    f"Window size(s) {missing} not trained on this model "
+                    f"(trained: {sorted(self.ldefrate_files)})."
+                )
+            selected_files = {w: self.ldefrate_files[w] for w in requested}
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -444,10 +467,10 @@ class MWModel(BaseRiskModel):
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n🗺  MW apply — period='{period}', windows={self.win_size_list}")
+        print(f"\n🗺  MW apply — period='{period}', windows={sorted(selected_files)}")
 
         output_files: Dict[str, Path] = {}
-        for win_size_str, ldefrate_file in self.ldefrate_files.items():
+        for win_size_str, ldefrate_file in selected_files.items():
             ldefrate_file = Path(ldefrate_file)
             if not ldefrate_file.exists():
                 raise FileNotFoundError(
