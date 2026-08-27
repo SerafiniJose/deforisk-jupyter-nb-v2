@@ -74,6 +74,8 @@ def test_artifact_label_for_is_filename_safe_and_unique():
     assert artifact_label_for(a) != artifact_label_for(b)
     named = _pred("mw_calib_a", window=5, name="val 2020!")
     assert artifact_label_for(named) == "MW_w5_val_2020"  # sanitized run name
+    fully_sanitized = _pred("mw_calib_a", window=5, name="!!!")
+    assert artifact_label_for(fully_sanitized) == "MW_w5_mw_calib_a"
 
 
 def _write_raster(path, array, pixel=30.0):

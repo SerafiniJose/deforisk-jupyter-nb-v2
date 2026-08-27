@@ -56,8 +56,8 @@ def run_label_for(pred):
     ``label_for`` alone collides once two models of one family predict the
     same dataset (two MW models both render 'MW_w5'), so pickers append the
     run that produced the map: the user-chosen prediction name when the run
-    was named, else the model key. Filenames keep using ``label_for`` — this
-    is display-only.
+    was named, else the model key. Filenames use ``artifact_label_for`` —
+    this label is display-only.
     """
     run = getattr(pred, "name", None) or pred.model_key
     return f"{label_for(pred)} · {run}"
@@ -74,6 +74,10 @@ def artifact_label_for(pred):
     """
     run = getattr(pred, "name", None) or pred.model_key
     safe_run = re.sub(r"[^A-Za-z0-9_-]+", "_", str(run)).strip("_")
+    if not safe_run:
+        # A fully non-ASCII run name sanitizes to nothing; fall back to the
+        # model key so two such runs cannot share a stem like "GLM_".
+        safe_run = re.sub(r"[^A-Za-z0-9_-]+", "_", str(pred.model_key)).strip("_")
     return f"{label_for(pred)}_{safe_run}"
 
 

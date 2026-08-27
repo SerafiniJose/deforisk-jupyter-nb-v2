@@ -32,7 +32,7 @@ _METRIC_ORDER = ["MedAE", "R2", "RMSE", "wRMSE"]
 
 
 def map_label(row):
-    """Display label for a row's map: 'MODEL — period' (matches map_items)."""
+    """Display label for a row's map: '<model stem> — <period>'."""
     model = row.get("model") or row.get("prediction") or "?"
     period = row.get("period")
     return f"{model} — {period}" if period else str(model)
