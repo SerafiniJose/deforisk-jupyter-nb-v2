@@ -28,6 +28,31 @@ def is_ml_family(model_key):
     return str(model_key or "").split("_")[0] in _ML_FOLDER
 
 
+def is_mw_family(model_key):
+    """Whether *model_key* names the moving-window family."""
+    return str(model_key or "").split("_")[0] == "mw"
+
+
+def mw_window_options(project, model_key):
+    """Sorted trained window sizes of an MW model, for the Predict dialog.
+
+    A fitted model exposes its actual trained windows (``ldefrate_files``
+    keys); an unfitted one falls back to its configured ``win_size_list``.
+    Non-MW keys and unknown models return [] so callers can render nothing.
+    """
+    if not is_mw_family(model_key):
+        return []
+    model = (getattr(project, "models", None) or {}).get(model_key)
+    if model is None:
+        return []
+    trained = [
+        int(k) for k in getattr(model, "ldefrate_files", {}) or {} if str(k).isdigit()
+    ]
+    if trained:
+        return sorted(trained)
+    return sorted(int(w) for w in getattr(model, "win_size_list", None) or [])
+
+
 def _raster_variables(project):
     """The project's processed raster variables, keyed by storage key."""
     variables = getattr(project, "processed_variables", None) or {}
@@ -89,7 +114,9 @@ def _resolve_mask(project, mask_layer):
     return variable.path
 
 
-def run_inference(project, model_key, dataset_name, name=None, mask_layer=None):
+def run_inference(
+    project, model_key, dataset_name, name=None, mask_layer=None, windows=None
+):
     """Run inference for one registered model on one dataset.
 
     Parameters
@@ -107,6 +134,9 @@ def run_inference(project, model_key, dataset_name, name=None, mask_layer=None):
         — it need not be a feature of *dataset_name*. Omitted or blank means
         no mask: the prediction covers the full raster stack. Ignored by the
         JNR/MW families, which resolve their own layers.
+    windows : list[int], optional
+        MW family only: subset of trained window sizes to run; None = all.
+        Ignored by other families.
 
     Raises ValueError if preconditions are missing (no dataset target, a mask
     layer not in the project's processed rasters, unresolvable time interval
@@ -153,7 +183,9 @@ def run_inference(project, model_key, dataset_name, name=None, mask_layer=None):
         out_folder = Path(project.folders.rmj_mw)
         if name:
             out_folder = out_folder / name
-        model.apply(dataset, time_interval=ti, output_folder=out_folder)
+        model.apply(
+            dataset, time_interval=ti, output_folder=out_folder, windows=windows
+        )
         return
 
     raise ValueError(
