@@ -12,7 +12,11 @@ import re
 import shutil
 from pathlib import Path
 
-from spatialrisk.evaluation import interval_from_target, label_for, run_output_dir
+from spatialrisk.evaluation import (
+    interval_from_target,
+    run_label_for,
+    run_output_dir,
+)
 
 # Accuracy indices produced by validate_two_layer; value = column key in the
 # stored ``indices`` table, text = display label. All four are always computed.
@@ -90,11 +94,11 @@ def variable_items(project):
 
 
 def map_items(project):
-    """[{text: '<MODEL> — <period>', value: key}] for each registered prediction."""
+    """[{text: '<MODEL · run> — <dataset>', value: key}], one per prediction."""
     if project is None or not getattr(project, "predictions", None):
         return []
     items = [
-        {"text": f"{label_for(pred)} — {pred.dataset_name}", "value": key}
+        {"text": f"{run_label_for(pred)} — {pred.dataset_name}", "value": key}
         for key, pred in project.predictions.items()
     ]
     return sorted(items, key=lambda d: d["text"])

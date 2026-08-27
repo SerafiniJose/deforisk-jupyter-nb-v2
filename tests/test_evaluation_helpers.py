@@ -55,10 +55,13 @@ def test_variable_items_labels_year_when_present():
 
 
 def test_map_items_labels_model_and_period():
-    """Prediction items read '<MODEL> — <period>'."""
+    """Prediction items read '<MODEL · run> — <period>'."""
     items = h.map_items(_project())
     texts = {i["text"] for i in items}
-    assert texts == {"GLM — calibration", "MW_w11 — validation"}
+    assert texts == {
+        "GLM · glm_glm_v1 — calibration",
+        "MW_w11 · mw_calibration_mw — validation",
+    }
 
 
 def test_default_forest_key_finds_forest_gfc():

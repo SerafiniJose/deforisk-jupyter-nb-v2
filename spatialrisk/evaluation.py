@@ -50,6 +50,19 @@ def label_for(pred):
     return f"{fam}_w{pred.window}" if pred.window is not None else fam
 
 
+def run_label_for(pred):
+    """Display label that stays unique across models and named runs.
+
+    ``label_for`` alone collides once two models of one family predict the
+    same dataset (two MW models both render 'MW_w5'), so pickers append the
+    run that produced the map: the user-chosen prediction name when the run
+    was named, else the model key. Filenames keep using ``label_for`` — this
+    is display-only.
+    """
+    run = getattr(pred, "name", None) or pred.model_key
+    return f"{label_for(pred)} · {run}"
+
+
 def make_square(raster_file, square_size):
     """Coarse-grid partition (replicates forestatrisk.make_square, no far dep)."""
     ds = gdal.Open(str(raster_file))

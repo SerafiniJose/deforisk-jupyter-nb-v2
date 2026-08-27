@@ -549,6 +549,7 @@ def run_allocation(
             "dataset_name": pred.dataset_name,
             "year": getattr(pred, "year", None),
             "window": getattr(pred, "window", None),
+            "name": getattr(pred, "name", None),
         },
         defrate_source=source.as_dict(),
         borders_file=str(borders_path),
@@ -575,18 +576,20 @@ def run_allocation(
 
 
 def _run_source(record) -> Optional[str]:
-    """'<MODEL> — <dataset>' of the prediction a run came from, None if external."""
+    """'<MODEL · run> — <dataset>' the run came from, None if external."""
     snapshot = getattr(record, "prediction_snapshot", None) or {}
     if not snapshot.get("model_key"):
         return None
     from types import SimpleNamespace
 
-    from spatialrisk.evaluation import label_for
+    from spatialrisk.evaluation import run_label_for
 
     pred = SimpleNamespace(
-        model_key=snapshot["model_key"], window=snapshot.get("window")
+        model_key=snapshot["model_key"],
+        window=snapshot.get("window"),
+        name=snapshot.get("name"),
     )
-    return f"{label_for(pred)} — {snapshot.get('dataset_name', '')}"
+    return f"{run_label_for(pred)} — {snapshot.get('dataset_name', '')}"
 
 
 def allocation_rows(project, jobs=None) -> List[dict]:
