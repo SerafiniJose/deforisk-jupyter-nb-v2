@@ -232,20 +232,3 @@ def test_notification_area_is_gone():
     # find_spec returns None for a missing submodule of an existing package —
     # no dependency on the test runner's working directory.
     assert importlib.util.find_spec("gui.widget.notification_area") is None
-
-
-def test_localtileserver_prefix_autodetect_is_disabled():
-    """Importing the app pins the localtileserver client host.
-
-    With a host set, localtileserver skips jupyter-loopback prefix
-    autodetection, so raster tile URLs stay port-registered loopback URLs the
-    comm bridge tunnels in every frontend. The prefix path exercises the
-    upstream widget.js probe/prefix-match bugs (banesullivan/jupyter-loopback
-    PR #2) — keeping it off is what lets the app run on the unforked
-    jupyter-loopback release.
-    """
-    import os
-
-    import gui.solara_app  # noqa: F401 - import-time side effect under test
-
-    assert os.environ.get("LOCALTILESERVER_CLIENT_HOST") == "127.0.0.1"

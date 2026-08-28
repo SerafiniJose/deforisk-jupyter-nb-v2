@@ -50,9 +50,8 @@ dependencies = [
     # pysepal fork, spatial-risk integration branch (browser locale, AOI restore,
     # PMTiles layers, GEE event-loop fixes on top of v3.8.0).
     "pysepal @ git+https://github.com/SerafiniJose/pysepal.git@spatial-risk",
-    # Stock release: the app pins LOCALTILESERVER_CLIENT_HOST so the buggy
-    # prefix/probe widget.js paths (fixed only in upstream PR #2) never run.
-    "jupyter-loopback[comm]==0.3.3",
+    # jupyter-loopback fork: voila tile-404 fixes, pending upstream PR.
+    "jupyter-loopback @ git+https://github.com/SerafiniJose/jupyter-loopback.git@fix/voila-localhost-proxy-probe",
 ]
 
 [tool.setuptools.packages.find]
