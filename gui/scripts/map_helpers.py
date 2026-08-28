@@ -105,7 +105,9 @@ def clear_project_overlays(map_) -> None:
     map_.remove_all(base=False)
 
 
-def sync_draw_control_visibility(map_, aoi_active: bool, was_hidden: bool) -> bool:
+def sync_draw_control_visibility(
+    map_, aoi_active: bool, was_hidden: bool, project_switched: bool = False
+) -> bool:
     """Keep the AOI draw control on the map only while the AOI tab is active.
 
     ``rv.TabsItems`` hides inactive tabs client-side without unmounting them,
@@ -122,25 +124,34 @@ def sync_draw_control_visibility(map_, aoi_active: bool, was_hidden: bool) -> bo
         aoi_active: whether the AOI tab is the active workflow step.
         was_hidden: the value returned by the previous call — True when this
             helper removed the control on leaving the AOI tab.
+        project_switched: whether a project load/close happened since the
+            previous call. Only then may an absent control drop the flag.
 
     Returns:
         The new ``was_hidden`` state for the caller to carry to the next call.
-        Recomputed from the map on every leave, so a control unmounted while
-        away (e.g. a project load restoring a non-DRAW AOI) drops the flag.
+        While away, the flag is PRESERVED when the control is absent: the
+        effect re-runs for reasons other than leaving the AOI tab (moving
+        between two non-AOI tabs, a loading flip), and recomputing the flag
+        from the map on those runs forgot the earlier hide — the toolbar then
+        never came back ("appears once" bug). A project switch is the one
+        event that invalidates the memory: its restore decides the control's
+        fate itself (a DRAW restore re-seeds it, a non-DRAW one keeps it off),
+        so on ``project_switched`` an absent control resets the flag and a
+        pending re-add is skipped rather than second-guessing the restore.
     """
     dc = getattr(map_, "dc", None)
     if map_ is None or dc is None:
         return was_hidden
 
     if aoi_active:
-        if was_hidden and dc not in map_.controls:
+        if was_hidden and not project_switched and dc not in map_.controls:
             map_.add_control(dc)
         return False
 
-    present = dc in map_.controls
-    if present:
+    if dc in map_.controls:
         map_.remove_control(dc)
-    return present
+        return True
+    return False if project_switched else was_hidden
 
 
 def zoom_map_to_aoi(map_, aoi) -> bool:

@@ -333,11 +333,53 @@ def test_leaving_without_a_mounted_dc_reports_not_hidden():
     assert sync_draw_control_visibility(m, aoi_active=False, was_hidden=False) is False
 
 
-def test_stale_hidden_flag_self_corrects_when_dc_vanished():
-    """A project load can unmount the dc while away; the flag must not linger."""
+def test_project_switch_while_away_drops_the_hidden_flag():
+    """A project load can unmount the dc while away; the flag must not linger.
+
+    Only a project switch may drop it: the load's restore decides the dc's
+    fate itself, so a remembered hide from the previous project is stale.
+    """
     m = FakeDcMap(dc_on_map=False)
 
-    assert sync_draw_control_visibility(m, aoi_active=False, was_hidden=True) is False
+    assert (
+        sync_draw_control_visibility(
+            m, aoi_active=False, was_hidden=True, project_switched=True
+        )
+        is False
+    )
+
+
+def test_rerun_while_away_preserves_the_hidden_flag():
+    """Effect re-runs while away (non-AOI tab moves, loading flips) keep the flag.
+
+    Regression: recomputing the flag from the map on every away-run clobbered
+    it (dc already absent -> False), so the return-side re-add never fired and
+    the toolbar appeared exactly once per project load.
+    """
+    m = FakeDcMap(dc_on_map=True)
+
+    hidden = sync_draw_control_visibility(m, aoi_active=False, was_hidden=False)
+    assert hidden is True  # left the AOI tab: dc removed, remembered
+
+    # moving between two non-AOI tabs / a loading flip: dc absent, no switch
+    hidden = sync_draw_control_visibility(m, aoi_active=False, was_hidden=hidden)
+    assert hidden is True  # memory preserved
+
+    hidden = sync_draw_control_visibility(m, aoi_active=True, was_hidden=hidden)
+    assert hidden is False
+    assert m.dc in m.controls  # toolbar comes back
+    assert m.dc.cleared == 0 and m.dc.data
+
+
+def test_project_switch_on_return_skips_the_readd():
+    """Returning in the same run a switch landed lets the restore decide."""
+    m = FakeDcMap(dc_on_map=False)
+
+    hidden = sync_draw_control_visibility(
+        m, aoi_active=True, was_hidden=True, project_switched=True
+    )
+    assert hidden is False
+    assert m.controls == []  # the new project's restore owns the dc now
 
 
 def test_returning_without_hidden_flag_adds_nothing():

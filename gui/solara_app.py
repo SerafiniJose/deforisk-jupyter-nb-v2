@@ -608,12 +608,21 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
     # the load-time effect run — and flips loading False right afterwards,
     # so that flip is what re-hides a task-time re-add on a non-AOI tab.
     dc_hidden = solara.use_ref(False)
+    # Last project_loaded_signal this effect saw: the helper may only drop a
+    # remembered hide on a project switch — any other re-run while away
+    # (moving between two non-AOI tabs, a loading flip) must preserve it, or
+    # the toolbar never comes back on returning to the AOI tab.
+    last_load_signal = solara.use_ref(app_state.project_loaded_signal.value)
 
     def _sync_draw_control():
+        signal = app_state.project_loaded_signal.value
+        project_switched = signal != last_load_signal.current
+        last_load_signal.current = signal
         dc_hidden.current = sync_draw_control_visibility(
             map_,
             aoi_active=active_tab == 0,
             was_hidden=dc_hidden.current,
+            project_switched=project_switched,
         )
 
     solara.use_effect(
