@@ -10,6 +10,7 @@ display-ready so the widget never formats numbers.
 
 import math
 import re
+from datetime import datetime
 from typing import List, Optional
 
 DASH = "—"
@@ -60,6 +61,24 @@ def _fmt(v, digits=4):
             return DASH
         return _fmt_float(v, digits)
     return f"{v:,}" if isinstance(v, int) else str(v)
+
+
+def _fmt_timestamp(v):
+    """``"2026-07-31T17:09:19.272928"`` -> ``"2026-07-31 17:09"``.
+
+    Seconds and microseconds carry no meaning on a "trained at" card and made
+    it the widest card in the strip. The pattern stays ISO-ordered rather than
+    locale-formatted: the one value is rendered as-is by all four locales, and
+    a day/month swap between them would be unreadable (is 07-08 August 7th or
+    July 8th?). A value that is not an ISO timestamp passes through untouched,
+    so nothing is ever lost to the formatter.
+    """
+    if v is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(v)).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return str(v)
 
 
 def stat_cards(model, stats=None) -> List[dict]:
@@ -129,7 +148,7 @@ def stat_cards(model, stats=None) -> List[dict]:
         if vrho is not None and vrho.estimate is not None:
             add("card_vrho", _with_interval(_fmt(vrho.estimate), vrho))
         _add_rho_cards(add_num, stats)
-    add("card_trained_at", getattr(model, "trained_at", None))
+    add("card_trained_at", _fmt_timestamp(getattr(model, "trained_at", None)))
     return cards
 
 

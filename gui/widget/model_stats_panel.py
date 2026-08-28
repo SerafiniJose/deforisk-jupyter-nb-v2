@@ -68,16 +68,27 @@ def _StatCards(model, stats):
     with solara.Row(gap="8px", style="flex-wrap:wrap;"):
         for card in cards:
             with solara.Column(style=_CARD_STYLE, gap="0px"):
+                # Weight and full-strength colour sit on the label, not the
+                # value: the labels are the fixed scaffolding a reader scans to
+                # find a statistic, while the values differ in length and glyph
+                # shape enough to stand out on their own at the larger size.
+                # The label takes no explicit colour so it inherits the card's
+                # own — black on the light theme, white on the dark one — and
+                # MUTED dims the value by opacity rather than naming a grey, so
+                # both sides stay right in both themes (see text_style).
                 solara.Text(
                     t(f"tiles.train.stats.{card['key']}"),
-                    style=MUTED + "font-size:0.68rem;text-transform:uppercase;"
-                    "letter-spacing:0.06em;",
+                    style="font-size:0.68rem;font-weight:700;"
+                    "text-transform:uppercase;letter-spacing:0.06em;",
                 )
                 solara.Text(
                     str(card["value"]),
                     style=(
-                        "font-size:1.0rem;font-weight:600;"
-                        + ("color:var(--v-error-base);" if card.get("warn") else "")
+                        # A flagged value keeps the error colour at full
+                        # strength: dimming a warning is the one place this
+                        # grey would cost meaning.
+                        "font-size:1.0rem;font-weight:400;"
+                        + ("color:var(--v-error-base);" if card.get("warn") else MUTED)
                     ),
                 )
 

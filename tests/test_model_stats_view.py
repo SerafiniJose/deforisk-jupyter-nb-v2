@@ -86,8 +86,22 @@ def test_stat_cards_accept_recovered_stats_the_model_does_not_carry():
     cards = {c["key"]: c["value"] for c in stat_cards(bare, recovered)}
     assert cards["card_samples"] == "42" and cards["card_events"] == "7"
     # the model's own fields still come from the model
-    assert cards["card_trained_at"] == "2026-08-04T13:40:05"
+    assert cards["card_trained_at"] == "2026-08-04 13:40"
     assert bare.stats is None  # the view-model writes nothing back
+
+
+def test_trained_at_card_drops_seconds_and_microseconds():
+    """The fit-time ISO stamp renders as a short date + time, not raw ISO."""
+    m = GLMModel(name="m", trained_at="2026-07-31T17:09:19.272928")
+    cards = {c["key"]: c["value"] for c in stat_cards(m)}
+    assert cards["card_trained_at"] == "2026-07-31 17:09"
+
+
+def test_trained_at_card_passes_through_a_non_iso_stamp():
+    """A stamp the formatter cannot parse is shown as stored, never dropped."""
+    m = GLMModel(name="m", trained_at="last tuesday")
+    cards = {c["key"]: c["value"] for c in stat_cards(m)}
+    assert cards["card_trained_at"] == "last tuesday"
 
 
 def test_coefficient_rows_compute_odds_ratio_at_display_time():

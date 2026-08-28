@@ -153,7 +153,7 @@ def test_panel_renders_with_stats():
     assert t("tiles.train.stats.card_samples") in texts
     assert "10" in texts
     assert t("tiles.train.stats.card_trained_at") in texts
-    assert "2026-08-04T13:40:05" in texts
+    assert "2026-08-04 13:40" in texts
 
 
 def test_panel_renders_empty_state_without_stats_or_paths():
