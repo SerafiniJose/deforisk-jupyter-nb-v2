@@ -170,8 +170,9 @@ def build_icar_stats(
     zipped against design_column_names[:-1], under the same 'cell' guard the
     summary path enforces: mislabelling raises, it never guesses.
     """
-    from spatialrisk.mlmodels.stats import Coefficient
+    from spatialrisk.mlmodels.stats import Coefficient, binomial_null_deviance
 
+    deviance_summary = None
     summary = posteriors.get("posterior_summary")
     if summary:
         coefficients = [Coefficient(**b) for b in _summary_kwargs(summary["betas"])]
@@ -182,6 +183,12 @@ def build_icar_stats(
         vrho = (
             Coefficient(name="Vrho", **_summary_kwargs_one(vrho_summary))
             if vrho_summary
+            else None
+        )
+        dev_summary = summary.get("deviance")
+        deviance_summary = (
+            Coefficient(name="Deviance", **_summary_kwargs_one(dev_summary))
+            if dev_summary
             else None
         )
     else:
@@ -221,31 +228,32 @@ def build_icar_stats(
         sample_design=sample_design,
         coefficients=coefficients,
         vrho=vrho,
+        deviance_summary=deviance_summary,
+        # Counts-only, so the point-estimate fallback (= recovery of an old
+        # model) provides the "% explained" reference just as well.
+        null_deviance=binomial_null_deviance(n_events, n_rows),
         **rho_kw,
     )
 
 
 def _summary_kwargs(betas):
     """Map summary beta dicts to Coefficient kwargs (mean -> estimate)."""
-    return [
-        {
-            "name": b["name"],
-            "estimate": b["mean"],
-            "std": b["std"],
-            "ci_low": b["ci_low"],
-            "ci_high": b["ci_high"],
-        }
-        for b in betas
-    ]
+    return [{"name": b["name"], **_summary_kwargs_one(b)} for b in betas]
 
 
 def _summary_kwargs_one(d):
-    """One summary dict -> Coefficient kwargs, minus the name."""
+    """One summary dict -> Coefficient kwargs, minus the name.
+
+    rhat/ess via .get: a summary produced before the diagnostics existed
+    (an old worker pickle) simply leaves them None.
+    """
     return {
         "estimate": d["mean"],
         "std": d["std"],
         "ci_low": d["ci_low"],
         "ci_high": d["ci_high"],
+        "rhat": d.get("rhat"),
+        "ess": d.get("ess"),
     }
 
 

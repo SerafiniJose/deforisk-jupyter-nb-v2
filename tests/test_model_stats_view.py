@@ -7,13 +7,15 @@ import pytest
 
 from gui.scripts.model_stats_charts import dist_curve_option, importance_bars_option
 from gui.scripts.model_stats_view import (
+    categorical_references,
     coefficient_rows,
     glm_convergence_line,
+    icar_convergence_summary,
     importance_entries,
     load_tab_dist,
     stat_cards,
 )
-from spatialrisk.mlmodels import GLMModel, MWModel
+from spatialrisk.mlmodels import GLMModel, ICARModel, MWModel
 from spatialrisk.mlmodels.stats import (
     Coefficient,
     GLMStats,
@@ -47,7 +49,7 @@ def test_stat_cards_omit_none_and_flag_non_finite_deviance():
     """None-valued cards are omitted; a non-finite deviance is flagged."""
     cards = stat_cards(_glm(deviance=float("nan")))
     keys = [c["key"] for c in cards]
-    assert "card_rows" in keys and "card_events" in keys
+    assert "card_samples" in keys and "card_events" in keys
     dev = next(c for c in cards if c["key"] == "card_deviance")
     assert dev["value"] == "—" and dev.get("warn") is True
     # MW: no rows/events/deviance cards at all — only threshold figures
@@ -58,7 +60,7 @@ def test_stat_cards_omit_none_and_flag_non_finite_deviance():
         )
     )
     mw_keys = [c["key"] for c in mw_cards]
-    assert "card_rows" not in mw_keys and "card_dist_thresh" in mw_keys
+    assert "card_samples" not in mw_keys and "card_dist_thresh" in mw_keys
 
 
 def test_stat_cards_omit_family_irrelevant_cards():
@@ -82,7 +84,7 @@ def test_stat_cards_accept_recovered_stats_the_model_does_not_carry():
 
     recovered = GLMStats(n_rows=42, n_events=7)
     cards = {c["key"]: c["value"] for c in stat_cards(bare, recovered)}
-    assert cards["card_rows"] == "42" and cards["card_events"] == "7"
+    assert cards["card_samples"] == "42" and cards["card_events"] == "7"
     # the model's own fields still come from the model
     assert cards["card_trained_at"] == "2026-08-04T13:40:05"
     assert bare.stats is None  # the view-model writes nothing back
@@ -99,10 +101,325 @@ def test_coefficient_rows_compute_odds_ratio_at_display_time():
     assert r["estimate"] == "-0.4746"
 
 
+def _categorical_glm_stats():
+    """A design with one continuous term and one three-level categorical.
+
+    Level 3 carries the largest |estimate| but is stored last and is NOT the
+    largest signed value, so a test that picks it has picked it on magnitude.
+    """
+    return GLMStats(
+        coefficients=[
+            Coefficient(name="scale(altitude)", estimate=0.31, ci_low=0.2, ci_high=0.4),
+            Coefficient(
+                name="C(subj, levels=[1, 2, 3])[T.2]",
+                estimate=0.62,
+                ci_low=0.4,
+                ci_high=0.8,
+            ),
+            Coefficient(
+                name="C(subj, levels=[1, 2, 3])[T.3]",
+                estimate=-1.45,
+                ci_low=-1.8,
+                ci_high=-1.1,
+            ),
+        ]
+    )
+
+
+def test_coefficient_rows_collapse_a_categorical_to_its_strongest_contrast():
+    """One row per variable, the categorical represented by its biggest |beta|.
+
+    The surviving row names the level, because "subj" alone would claim to
+    describe the whole variable when it is one contrast out of several.
+    """
+    rows = coefficient_rows(_categorical_glm_stats())
+    assert [r["name"] for r in rows] == ["scale(altitude)", "subj (= 3)"]
+    assert rows[1]["estimate_raw"] == -1.45
+
+
+def test_the_collapsed_row_keeps_its_own_level_statistics():
+    """It is a real row, not a synthesized one: SD and interval come with it.
+
+    This is the whole reason the aggregation picks instead of summing — the
+    numbers on screen still belong to something the model estimated.
+    """
+    rows = coefficient_rows(_categorical_glm_stats())
+    assert (rows[1]["ci_low_raw"], rows[1]["ci_high_raw"]) == (-1.8, -1.1)
+    assert float(rows[1]["odds_ratio"]) == pytest.approx(math.exp(-1.45), rel=1e-3)
+
+
+def test_coefficient_rows_disaggregated_keep_every_level():
+    """aggregate=False is the drill-down: one row per level, 'variable = level'."""
+    rows = coefficient_rows(_categorical_glm_stats(), aggregate=False)
+    assert [r["name"] for r in rows] == [
+        "scale(altitude)",
+        "subj = 2",
+        "subj = 3",
+    ]
+
+
+def test_coefficient_rows_keep_first_appearance_order_in_both_views():
+    """The two views are one table at two depths, not two different tables."""
+    stats = _categorical_glm_stats()
+    agg = [r["variable"] for r in coefficient_rows(stats)]
+    per_level = [r["variable"] for r in coefficient_rows(stats, aggregate=False)]
+    assert agg == ["scale(altitude)", "subj"]
+    assert per_level[0] == "scale(altitude)"
+
+
+def test_a_single_column_variable_is_never_relabelled():
+    """Nothing was collapsed, so there is no contrast to announce."""
+    rows = coefficient_rows(
+        GLMStats(
+            coefficients=[
+                Coefficient(name="scale(altitude)", estimate=0.31),
+                Coefficient(name="C(subj, levels=[1, 2])[T.2]", estimate=0.62),
+            ]
+        )
+    )
+    assert [r["name"] for r in rows] == ["scale(altitude)", "subj = 2"]
+
+
+def test_a_variable_with_no_estimate_survives_aggregation():
+    """A None estimate loses to any real number but must not vanish."""
+    rows = coefficient_rows(
+        GLMStats(
+            coefficients=[
+                Coefficient(name="C(subj, levels=[1, 2, 3])[T.2]", estimate=None),
+                Coefficient(name="C(subj, levels=[1, 2, 3])[T.3]", estimate=None),
+            ]
+        )
+    )
+    assert len(rows) == 1
+    assert rows[0]["estimate"] == "—"
+
+
+def test_coefficient_aggregation_never_sums_the_levels():
+    """The regression this design exists to prevent.
+
+    0.62 + -1.45 = -0.83 is not a quantity the model estimates, and exp() of it
+    is not an odds ratio — no row may carry either number.
+    """
+    for aggregate in (True, False):
+        estimates = [
+            r["estimate_raw"]
+            for r in coefficient_rows(_categorical_glm_stats(), aggregate=aggregate)
+        ]
+        assert all(e in (0.31, 0.62, -1.45) for e in estimates), estimates
+
+
+def test_icar_coefficients_aggregate_the_same_way():
+    """The GLM and iCAR tables share one view-model, so they share the rule."""
+    stats = ICARStats(
+        coefficients=[
+            Coefficient(name="C(subj, levels=[1, 2, 3])[T.2]", estimate=0.5, std=0.1),
+            Coefficient(name="C(subj, levels=[1, 2, 3])[T.3]", estimate=-2.0, std=0.3),
+        ]
+    )
+    rows = coefficient_rows(stats)
+    assert [r["name"] for r in rows] == ["subj (= 3)"]
+    assert rows[0]["std"] == "0.3"
+
+
+def test_strongest_contrast_prefers_a_sign_resolved_level():
+    """A big estimate whose interval crosses zero loses to a smaller clear one.
+
+    On rare-event data a sparse level is exactly where a huge, unstable
+    estimate appears — picking on |estimate| alone would headline the noisiest
+    contrast (and draw it as a grey, sign-unresolved bar). The collapsed slot
+    goes to the largest estimate the model actually resolved.
+    """
+    stats = GLMStats(
+        coefficients=[
+            Coefficient(
+                name="C(subj, levels=[1, 2, 3])[T.2]",
+                estimate=0.5,
+                ci_low=0.2,
+                ci_high=0.8,
+            ),
+            Coefficient(
+                name="C(subj, levels=[1, 2, 3])[T.3]",
+                estimate=-3.0,
+                ci_low=-6.5,
+                ci_high=0.5,
+            ),
+        ]
+    )
+    rows = coefficient_rows(stats)
+    assert [r["name"] for r in rows] == ["subj (= 2)"]
+    assert rows[0]["estimate_raw"] == 0.5
+
+
+def test_strongest_contrast_falls_back_to_magnitude_when_nothing_is_resolved():
+    """No interval excludes zero (or none is stored): biggest |estimate| wins.
+
+    This is the boundary of the resolution preference — a model without
+    intervals (iCAR test fixtures, GLM without stored CIs) must keep the old
+    behaviour rather than drop or misorder the variable.
+    """
+    stats = GLMStats(
+        coefficients=[
+            Coefficient(
+                name="C(subj, levels=[1, 2, 3])[T.2]",
+                estimate=0.5,
+                ci_low=-0.1,
+                ci_high=1.1,
+            ),
+            Coefficient(
+                name="C(subj, levels=[1, 2, 3])[T.3]",
+                estimate=-3.0,
+                ci_low=-6.5,
+                ci_high=0.5,
+            ),
+        ]
+    )
+    rows = coefficient_rows(stats)
+    assert [r["name"] for r in rows] == ["subj (= 3)"]
+
+
+def test_categorical_references_name_the_baseline_level():
+    """Reference = first entry of the stored levels list (treatment coding).
+
+    Every estimate and odds ratio in the table is a contrast against this
+    level, and nothing else on screen says which level that is.
+    """
+    assert categorical_references(_categorical_glm_stats()) == [("subj", "1")]
+
+
+def test_categorical_references_keep_order_and_skip_continuous_terms():
+    """One entry per categorical, first-appearance order, continuous ignored."""
+    stats = GLMStats(
+        coefficients=[
+            Coefficient(name="C(pa, levels=[0, 1])[T.1]", estimate=0.2),
+            Coefficient(name="scale(altitude)", estimate=0.31),
+            Coefficient(name="C(subj, levels=[1, 2, 3])[T.2]", estimate=0.62),
+            Coefficient(name="C(subj, levels=[1, 2, 3])[T.3]", estimate=-1.45),
+        ]
+    )
+    assert categorical_references(stats) == [("pa", "0"), ("subj", "1")]
+
+
+def test_categorical_references_strip_quotes_from_string_levels():
+    """String levels are stored quoted (`levels=['crop', ...]`); names are not."""
+    stats = GLMStats(
+        coefficients=[
+            Coefficient(name="C(landuse, levels=['crop', 'forest'])[T.forest]"),
+        ]
+    )
+    assert categorical_references(stats) == [("landuse", "crop")]
+
+
+def test_categorical_references_need_a_stored_levels_list():
+    """A bare ``C(x)`` term carries no domain, so no reference can be claimed."""
+    stats = GLMStats(
+        coefficients=[
+            Coefficient(name="C(subj)[T.2]", estimate=0.62),
+            Coefficient(name="scale(altitude)", estimate=0.31),
+        ]
+    )
+    assert categorical_references(stats) == []
+
+
 def test_glm_convergence_line():
     """Formats as 'n_iter / max_iter', or None when either is unknown."""
     assert glm_convergence_line(_glm().stats) == "22 / 1000"
     assert glm_convergence_line(GLMStats()) is None
+
+
+def test_icar_convergence_scopes_the_verdict_to_the_coefficients():
+    """Betas and Vrho are judged separately — Vrho never condemns the table.
+
+    Vrho mixes slowly in virtually every affordable iCAR run (deforisk's
+    chains were no different, just unshown), so a worst-case over ALL
+    parameters would warn on every fit and train users to ignore it. The
+    coefficient group carries the warning; Vrho gets its own neutral flag.
+    """
+    stats = ICARStats(
+        coefficients=[
+            Coefficient(name="a", rhat=1.005, ess=1200.0),
+            Coefficient(name="b", rhat=1.03, ess=900.0),
+        ],
+        vrho=Coefficient(name="Vrho", rhat=1.48, ess=3.92),
+    )
+    assert icar_convergence_summary(stats) == {
+        "coef": {"rhat": "1.03", "ess": "900", "warn": False},
+        "vrho": {"rhat": "1.48", "ess": "3.92", "slow": True},
+    }
+
+
+def test_icar_convergence_warns_on_a_bad_coefficient():
+    """R-hat above 1.1 or a two-digit ESS on a BETA flips the real warning."""
+    bad_rhat = ICARStats(coefficients=[Coefficient(name="a", rhat=1.25, ess=500.0)])
+    assert icar_convergence_summary(bad_rhat)["coef"]["warn"] is True
+    bad_ess = ICARStats(coefficients=[Coefficient(name="a", rhat=1.0, ess=50.0)])
+    assert icar_convergence_summary(bad_ess)["coef"]["warn"] is True
+    # no Vrho diagnostics -> no Vrho entry, not a fabricated one
+    assert icar_convergence_summary(bad_ess)["vrho"] is None
+
+
+def test_icar_convergence_reports_a_healthy_vrho_without_the_slow_flag():
+    """A Vrho that actually mixed keeps its numbers and stays un-flagged."""
+    stats = ICARStats(
+        coefficients=[Coefficient(name="a", rhat=1.02, ess=800.0)],
+        vrho=Coefficient(name="Vrho", rhat=1.08, ess=300.0),
+    )
+    assert icar_convergence_summary(stats)["vrho"] == {
+        "rhat": "1.08",
+        "ess": "300",
+        "slow": False,
+    }
+
+
+def test_icar_convergence_absent_without_diagnostics():
+    """A recovered or pre-diagnostics model has no rhat/ess — no line, no lie."""
+    stats = ICARStats(coefficients=[Coefficient(name="a", estimate=0.5)])
+    assert icar_convergence_summary(stats) is None
+    # Vrho-only diagnostics still summarise: coef group absent, Vrho present
+    vrho_only = ICARStats(
+        coefficients=[Coefficient(name="a", estimate=0.5)],
+        vrho=Coefficient(name="Vrho", rhat=1.2, ess=40.0),
+    )
+    summary = icar_convergence_summary(vrho_only)
+    assert summary["coef"] is None
+    assert summary["vrho"]["slow"] is True
+
+
+def _icar(deviance=9000.0, **stats_kw):
+    return ICARModel(name="m", deviance=deviance, stats=ICARStats(**stats_kw))
+
+
+def _card(cards, key):
+    return next((c for c in cards if c["key"] == key), None)
+
+
+def test_stat_cards_show_vrho_with_its_credible_interval():
+    """Vrho is a posterior like any other; its card says so, not just a point."""
+    model = _icar(
+        vrho=Coefficient(name="Vrho", estimate=31.78, ci_low=28.0, ci_high=36.0)
+    )
+    assert _card(stat_cards(model), "card_vrho")["value"] == "31.78 (28 — 36)"
+    # a point-only Vrho (recovered model) keeps the old single-value card
+    bare = _icar(vrho=Coefficient(name="Vrho", estimate=31.78))
+    assert _card(stat_cards(bare), "card_vrho")["value"] == "31.78"
+
+
+def test_stat_cards_deviance_shows_the_posterior_spread_for_icar():
+    """With a stored deviance posterior, the card carries its interval too."""
+    model = _icar(
+        deviance_summary=Coefficient(
+            name="Deviance", estimate=9000.0, ci_low=8980.0, ci_high=9020.0
+        )
+    )
+    card = _card(stat_cards(model), "card_deviance")
+    assert card["value"] == "9,000 (8,980 — 9,020)"
+
+
+def test_stat_cards_show_percent_of_null_deviance_explained():
+    """The deforisk model_deviances.csv figure: 100 * (1 - deviance / null)."""
+    model = _icar(deviance=600.0, null_deviance=1000.0)
+    assert _card(stat_cards(model), "card_dev_explained")["value"] == "40%"
+    # without the reference there is no percentage to claim
+    assert _card(stat_cards(_icar(deviance=600.0)), "card_dev_explained") is None
 
 
 def test_importance_entries_capped_and_ordered():

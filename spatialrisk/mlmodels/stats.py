@@ -35,6 +35,9 @@ class Coefficient(_FiniteFloats):
 
     ``odds_ratio`` is deliberately NOT stored — the GUI computes
     exp(estimate) at display time (spec §2.1).
+
+    ``rhat``/``ess`` are per-parameter MCMC convergence diagnostics
+    (see ``mcmc_diagnostics``); only the iCAR family fills them.
     """
 
     name: str
@@ -42,6 +45,8 @@ class Coefficient(_FiniteFloats):
     std: Optional[float] = None
     ci_low: Optional[float] = None
     ci_high: Optional[float] = None
+    rhat: Optional[float] = None
+    ess: Optional[float] = None
 
 
 class Importance(_FiniteFloats):
@@ -92,6 +97,12 @@ class ICARStats(ModelStatsBase):
 
     coefficients: List[Coefficient] = []
     vrho: Optional[Coefficient] = None
+    # Posterior of the deviance trace column (mean/SD/CI as a Coefficient) —
+    # the model's own `deviance` attribute is a point value without spread.
+    deviance_summary: Optional[Coefficient] = None
+    # Intercept-only reference deviance for "% explained" (closed form from
+    # the sample counts — see binomial_null_deviance).
+    null_deviance: Optional[float] = None
     # Summary of the cell-level spatial random effect vector (rho at the
     # native csize cells, not the interpolated raster).
     rho_min: Optional[float] = None
@@ -187,6 +198,69 @@ def collect_rf_stats(clf, design_info, *, n_rows, n_events, sample_design) -> RF
     )
 
 
+def mcmc_diagnostics(col):
+    """``(split_rhat, ess)`` for one trace column, or ``(None, None)``.
+
+    The numeric stand-in for deforisk's mcmc.pdf trace plots: split R-hat
+    (Gelman-Rubin on the chain's two halves — a trending, unconverged chain
+    has halves with different means, pushing R-hat above 1) and effective
+    sample size from the autocorrelation, truncated by Geyer's initial
+    positive-sequence rule (summed pairs of autocorrelations stay positive
+    for a stationary chain; stop at the first non-positive pair).
+
+    A degenerate column — constant, or too short to split — diagnoses
+    nothing and returns ``(None, None)`` rather than dividing by zero.
+    """
+    x = np.asarray(col, dtype=float)
+    half = x.size // 2
+    # np.ptp, not a variance test: a constant chain's variance computes as a
+    # ~1e-31 residue of mean subtraction, not 0.0, and would sail past a
+    # zero-variance guard into nonsense diagnostics. The range is exact.
+    if half < 2 or np.ptp(x) == 0:
+        return (None, None)
+
+    # split R-hat over m=2 half-chains of length `half`
+    a, b = x[:half], x[half : 2 * half]
+    within = (a.var(ddof=1) + b.var(ddof=1)) / 2.0
+    if within == 0:
+        return (None, None)
+    grand = (a.mean() + b.mean()) / 2.0
+    between = half * ((a.mean() - grand) ** 2 + (b.mean() - grand) ** 2)
+    var_plus = (half - 1) / half * within + between / half
+    rhat = float(np.sqrt(var_plus / within))
+
+    # ESS = n / (1 + 2 * sum of autocorrelations kept by Geyer's rule)
+    n = x.size
+    centred = x - x.mean()
+    autocov = np.correlate(centred, centred, "full")[n - 1 :] / n
+    rho = autocov / autocov[0]
+    tail = 0.0
+    t = 1
+    while t + 1 < n:
+        pair = rho[t] + rho[t + 1]
+        if pair <= 0:
+            break
+        tail += pair
+        t += 2
+    ess = float(np.clip(n / (1.0 + 2.0 * tail), 1.0, n))
+    return (rhat, ess)
+
+
+def binomial_null_deviance(n_events, n_rows):
+    """Deviance of the intercept-only binomial model, in closed form.
+
+    The reference for a "% of deviance explained" figure (deforisk's
+    model_deviances.csv fitted a whole sklearn LogisticRegression for it; the
+    intercept-only MLE is just the event rate, so the number is exact here).
+    Undefined when the sample is all-event or event-free — the log of a zero
+    rate — so those return None and the comparison is simply not offered.
+    """
+    if not n_rows or not n_events or n_events >= n_rows:
+        return None
+    p = n_events / n_rows
+    return -2.0 * (n_events * math.log(p) + (n_rows - n_events) * math.log(1.0 - p))
+
+
 def summarize_icar_mcmc(mcmc, column_names) -> dict:
     """Posterior mean/SD/95% CI from forestatrisk's retained trace.
 
@@ -213,16 +287,22 @@ def summarize_icar_mcmc(mcmc, column_names) -> dict:
         )
 
     def _summ(col):
+        rhat, ess = mcmc_diagnostics(col)
         return {
             "mean": float(np.mean(col)),
             "std": float(np.std(col, ddof=1)),
             "ci_low": float(np.percentile(col, 2.5)),
             "ci_high": float(np.percentile(col, 97.5)),
+            "rhat": rhat,
+            "ess": ess,
         }
 
     return {
         "betas": [{"name": n, **_summ(arr[:, i])} for i, n in enumerate(beta_names)],
         "vrho": _summ(arr[:, -2]),
+        # Deviance is a trace column like any other (deforisk's summary printed
+        # it as a table row); its posterior spread rides along here.
+        "deviance": _summ(arr[:, -1]),
     }
 
 

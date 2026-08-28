@@ -100,6 +100,23 @@ def _styles(widget, out=None):
     return out
 
 
+def _markdowns(widget, out=None):
+    """Every rendered-markdown body in the tree (the info popups' content).
+
+    ``solara.Markdown`` renders through a VuetifyTemplate whose ``template``
+    trait embeds the converted HTML, so popup text never appears as a string
+    child — ``_texts`` cannot see it.
+    """
+    out = [] if out is None else out
+    template = getattr(widget, "template", None)
+    if isinstance(template, str) and template:
+        out.append(template)
+    for child in getattr(widget, "children", []) or []:
+        if not isinstance(child, str):
+            _markdowns(child, out)
+    return out
+
+
 def _labels(widget, out=None):
     """Every ``label`` trait in the tree (the read-only fields carry theirs)."""
     out = [] if out is None else out
@@ -128,12 +145,12 @@ def _glm_model():
 
 
 def test_panel_renders_with_stats():
-    """Stored stats render the caveat strip and the stat cards."""
+    """Stored stats render the stat cards and the caveat footnote."""
     texts = _texts(_render(ModelStatsPanel(model=_glm_model())))
     assert t("tiles.train.stats.caveat_training_fit") in texts
     # label + value of the first card, so a card that renders only its
     # chrome fails too
-    assert t("tiles.train.stats.card_rows") in texts
+    assert t("tiles.train.stats.card_samples") in texts
     assert "10" in texts
     assert t("tiles.train.stats.card_trained_at") in texts
     assert "2026-08-04T13:40:05" in texts
@@ -142,7 +159,7 @@ def test_panel_renders_with_stats():
 def test_panel_renders_empty_state_without_stats_or_paths():
     """No stats, no model_path/samples_path -> recovery returns None.
 
-    The empty state must render (and the caveat strip stays), not raise.
+    The empty state must render (and the caveat footnote stays), not raise.
     """
     model = MWModel(name="w")
     box = _render(ModelStatsPanel(model=model))
@@ -168,7 +185,7 @@ def test_panel_renders_recovered_stats_in_the_cards(monkeypatch):
     model = GLMModel(name="legacy", trained_at="2026-08-04T13:40:05")
     box = _render(ModelStatsPanel(model=model))
     texts = _wait_for_text(box, "42")
-    assert t("tiles.train.stats.card_rows") in texts
+    assert t("tiles.train.stats.card_samples") in texts
     assert "42" in texts
     assert t("tiles.train.stats.card_events") in texts
     assert "7" in texts
@@ -256,10 +273,88 @@ def test_rf_panel_renders_importances():
         assert t("tiles.train.stats.importance_header") in texts
         assert t("tiles.train.stats.exploratory_chip") in texts
         assert t("tiles.train.stats.oob_line", value="0.81") in texts
-        assert t("tiles.train.stats.importance_bias_note") in texts
         charts = rc.find(ipecharts.EChartsRawWidget).widgets
         assert len(charts) == 1
         assert charts[0].option["yAxis"]["data"] == ["towns_dist"]
+    finally:
+        rc.close()
+
+
+def _categorical_coefficients():
+    """One continuous term plus a three-level categorical, level 3 strongest."""
+    return [
+        Coefficient(name="scale(altitude)", estimate=0.31),
+        Coefficient(name="C(subj, levels=[1, 2, 3])[T.2]", estimate=0.62),
+        Coefficient(name="C(subj, levels=[1, 2, 3])[T.3]", estimate=-1.45),
+    ]
+
+
+def test_glm_panel_toggles_between_the_strongest_contrast_and_every_level():
+    """The switch swaps the coefficient table between one row per variable...
+
+    ...and one row per design column. The default names the level it kept,
+    because that row is one contrast out of several rather than the variable's
+    whole effect. The explanatory note lives in the info popup (eager, so its
+    text is in the tree in both views even while the dialog is closed).
+    """
+    import ipyvuetify as vw
+
+    model = GLMModel(name="m", stats=GLMStats(coefficients=_categorical_coefficients()))
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        texts = _texts(box)
+        assert t("tiles.train.stats.coef_split_toggle") in _labels(box) + texts
+        assert t("tiles.train.stats.coef_info_title") in texts
+        note = t("tiles.train.stats.coef_strongest_note")
+        assert any(note in md for md in _markdowns(box))
+        assert "subj (= 3)" in texts
+        assert "subj = 2" not in texts
+
+        rc.find(vw.Switch).widgets[0].v_model = True
+        texts = _texts(box)
+        assert {"subj = 2", "subj = 3"} <= set(texts)
+        assert "subj (= 3)" not in texts
+    finally:
+        rc.close()
+
+
+def test_icar_panel_offers_the_same_level_toggle():
+    """The GLM and iCAR tables share the view-model, so they share the switch."""
+    import ipyvuetify as vw
+
+    model = ICARModel(
+        name="m", stats=ICARStats(coefficients=_categorical_coefficients())
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        assert "subj (= 3)" in _texts(box)
+        rc.find(vw.Switch).widgets[0].v_model = True
+        assert "subj = 2" in _texts(box)
+    finally:
+        rc.close()
+
+
+def test_coefficient_panels_hide_the_switch_without_categorical_levels():
+    """Nothing was collapsed, so there is nothing the switch could reveal.
+
+    The single-level categorical is the case a list comparison would get wrong:
+    its row is already per-level, it just reads as ``subj = 2``.
+    """
+    import ipyvuetify as vw
+
+    model = GLMModel(
+        name="m",
+        stats=GLMStats(
+            coefficients=[
+                Coefficient(name="towns_dist", estimate=0.28),
+                Coefficient(name="C(subj, levels=[1, 2])[T.2]", estimate=0.62),
+            ]
+        ),
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        assert len(rc.find(vw.Switch).widgets) == 0
+        assert "subj = 2" in _texts(box)
     finally:
         rc.close()
 
@@ -450,6 +545,285 @@ def test_effect_bar_keeps_a_tiny_coefficient_visible():
     )
     widths = _bar_widths(_render(ModelStatsPanel(model=model)))
     assert widths == [46, 1], widths
+
+
+def test_effect_bar_scale_stays_pinned_across_the_level_toggle():
+    """Flipping the level switch must not resize the bars that stay on screen.
+
+    The scale comes from the per-level rows in BOTH views. It used to hold by
+    coincidence — the magnitude-picked row was always the global max — but the
+    resolution-preferring selection can collapse a categorical to a smaller row
+    than its noisiest level, and a scale computed per-view would then inflate
+    every bar in the collapsed table and shrink them on toggle.
+    """
+    import ipyvuetify as vw
+
+    model = GLMModel(
+        name="m",
+        stats=GLMStats(
+            coefficients=[
+                Coefficient(
+                    name="scale(altitude)", estimate=1.0, ci_low=0.5, ci_high=1.5
+                ),
+                Coefficient(
+                    name="C(subj, levels=[1, 2, 3])[T.2]",
+                    estimate=0.5,
+                    ci_low=0.2,
+                    ci_high=0.8,
+                ),
+                Coefficient(
+                    name="C(subj, levels=[1, 2, 3])[T.3]",
+                    estimate=4.0,
+                    ci_low=-1.0,
+                    ci_high=9.0,
+                ),
+            ]
+        ),
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        # collapsed: altitude and the RESOLVED subj contrast, drawn against the
+        # per-level maximum of 4.0 — not against the collapsed table's own 1.0
+        assert _bar_widths(box) == [12, 6], _bar_widths(box)
+        rc.find(vw.Switch).widgets[0].v_model = True
+        assert _bar_widths(box) == [12, 6, 46], _bar_widths(box)
+    finally:
+        rc.close()
+
+
+def test_coefficient_tables_name_the_reference_level():
+    """Every categorical estimate is a contrast against a level no row names.
+
+    The reference note lives in the info popup, which renders in BOTH views
+    (the per-level rows need it just as much) and even without the switch — a
+    two-level categorical collapses to a single row whose odds ratio is
+    unreadable without its baseline.
+    """
+    import ipyvuetify as vw
+
+    note = t("tiles.train.stats.coef_reference_note", refs="subj = 1")
+    model = GLMModel(name="m", stats=GLMStats(coefficients=_categorical_coefficients()))
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        assert any(note in md for md in _markdowns(box))
+        rc.find(vw.Switch).widgets[0].v_model = True
+        assert any(note in md for md in _markdowns(box))
+    finally:
+        rc.close()
+
+    two_level = GLMModel(
+        name="m",
+        stats=GLMStats(
+            coefficients=[Coefficient(name="C(subj, levels=[1, 2])[T.2]", estimate=0.6)]
+        ),
+    )
+    two_level_box = _render(ModelStatsPanel(model=two_level))
+    assert any(note in md for md in _markdowns(two_level_box))
+
+    continuous_only = ICARModel(
+        name="m",
+        stats=ICARStats(coefficients=[Coefficient(name="scale(a)", estimate=0.5)]),
+    )
+    texts = _texts(_render(ModelStatsPanel(model=continuous_only)))
+    assert not [s for s in texts if "subj" in s or " = " in s], texts
+    # nothing to explain -> no info button, no popup
+    assert t("tiles.train.stats.coef_info_title") not in texts
+
+
+def test_coefficient_info_popup_omits_the_contrast_note_without_a_collapse():
+    """A two-level categorical keeps the popup but drops the contrast note.
+
+    Its single row is already per-level (no switch, nothing collapsed), so the
+    strongest-contrast explanation would describe a view that does not exist —
+    but the reference level still needs naming.
+    """
+    import ipyvuetify as vw
+
+    model = GLMModel(
+        name="m",
+        stats=GLMStats(
+            coefficients=[Coefficient(name="C(subj, levels=[1, 2])[T.2]", estimate=0.6)]
+        ),
+    )
+    box, rc = reacton.render(ModelStatsPanel(model=model))
+    try:
+        assert t("tiles.train.stats.coef_info_title") in _texts(box)
+        mds = _markdowns(box)
+        ref = t("tiles.train.stats.coef_reference_note", refs="subj = 1")
+        assert any(ref in md for md in mds)
+        strongest = t("tiles.train.stats.coef_strongest_note")
+        assert not any(strongest in md for md in mds)
+        assert len(rc.find(vw.Switch).widgets) == 0
+    finally:
+        rc.close()
+
+
+def _diagnosed_icar(rhat=1.08, ess=300.0):
+    return ICARModel(
+        name="m",
+        deviance=600.0,
+        stats=ICARStats(
+            coefficients=[
+                Coefficient(name="scale(a)", estimate=0.5, rhat=1.02, ess=800.0)
+            ],
+            vrho=Coefficient(
+                name="Vrho",
+                estimate=31.78,
+                ci_low=28.0,
+                ci_high=36.0,
+                rhat=rhat,
+                ess=ess,
+            ),
+            null_deviance=1000.0,
+        ),
+    )
+
+
+def test_icar_panel_reports_mcmc_mixing_and_the_deforisk_cards():
+    """The deforisk parity block: per-group mixing lines, Vrho interval, %.
+
+    The mixing lines are the numeric stand-in for deforisk's mcmc.pdf traces;
+    the Vrho interval and the %-of-null-deviance card are its summary table
+    and model_deviances.csv figures.
+    """
+    texts = _texts(_render(ModelStatsPanel(model=_diagnosed_icar())))
+    coef = t("tiles.train.stats.icar_conv_coef_line", rhat="1.02", ess="800")
+    vrho = t("tiles.train.stats.icar_conv_vrho_line", rhat="1.08", ess="300")
+    assert coef in texts
+    assert vrho in texts
+    assert t("tiles.train.stats.icar_conv_coef_warn") not in texts
+    assert t("tiles.train.stats.card_dev_explained") in texts
+    assert "40%" in texts
+    assert "31.78 (28 — 36)" in texts
+
+
+def test_icar_panel_keeps_calm_when_only_vrho_mixed_slowly():
+    """A slow Vrho gets its own neutral note — never the coefficient alarm.
+
+    This is the typical run: Vrho's slow mixing is a property of the sampler
+    at affordable iteration counts, not evidence against the effects table
+    the user is reading.
+    """
+    texts = _texts(_render(ModelStatsPanel(model=_diagnosed_icar(rhat=1.4, ess=3.92))))
+    slow = t("tiles.train.stats.icar_conv_vrho_slow", rhat="1.4", ess="3.92")
+    assert slow in texts
+    assert t("tiles.train.stats.icar_conv_coef_warn") not in texts
+
+
+def test_icar_panel_warns_when_a_coefficient_did_not_mix():
+    """A bad beta R-hat raises the explicit coefficient warning."""
+    model = _diagnosed_icar()
+    model.stats.coefficients[0].rhat = 1.3
+    texts = _texts(_render(ModelStatsPanel(model=model)))
+    assert t("tiles.train.stats.icar_conv_coef_warn") in texts
+
+
+def test_icar_mcmc_info_button_explains_the_diagnostics():
+    """The diagnostics block carries an info popup interpreting R-hat/ESS.
+
+    The numbers are meaningless to a non-statistician; the popup is where
+    'R-hat 1.48' becomes 'the walk had not settled'.
+    """
+    box, rc = reacton.render(ModelStatsPanel(model=_diagnosed_icar()))
+    try:
+        assert t("tiles.train.stats.icar_mcmc_info_title") in _texts(box)
+        mds = _markdowns(box)
+        assert any("R-hat" in md for md in mds)
+    finally:
+        rc.close()
+
+
+def _widget_tree_has(widget, cls):
+    stack = [widget]
+    while stack:
+        w = stack.pop()
+        if isinstance(w, cls):
+            return True
+        stack.extend(
+            c for c in (getattr(w, "children", None) or []) if not isinstance(c, str)
+        )
+    return False
+
+
+def test_icar_mcmc_info_button_sits_in_the_diagnostics_header():
+    """The info button rides next to the 'MCMC diagnostics' title itself.
+
+    In the header — not the body — so the explanation is reachable before
+    the panel is ever expanded. (Its click must not toggle the collapsible;
+    the .stop wrapper is what the widget asserts on here, the toggle
+    behaviour itself is browser-only.)
+    """
+    import ipyvuetify as vw
+
+    box, rc = reacton.render(ModelStatsPanel(model=_diagnosed_icar()))
+    try:
+        headers = rc.find(vw.ExpansionPanelHeader).widgets
+        assert len(headers) == 1
+        assert _widget_tree_has(headers[0], vw.Btn)
+    finally:
+        rc.close()
+
+
+def test_icar_mcmc_diagnostics_render_in_a_collapsible():
+    """The mixing block sits under its own MCMC header, collapsed by default.
+
+    Healthy chains are background information — the panel starts closed
+    (v_model None) and the header is what tells the reader it is there.
+    """
+    import ipyvuetify as vw
+
+    box, rc = reacton.render(ModelStatsPanel(model=_diagnosed_icar()))
+    try:
+        texts = _texts(box)
+        assert t("tiles.train.stats.icar_mcmc_header") in texts
+        line = t("tiles.train.stats.icar_conv_coef_line", rhat="1.02", ess="800")
+        assert line in texts
+        panels = rc.find(vw.ExpansionPanels).widgets
+        assert len(panels) == 1
+        assert panels[0].v_model is None
+    finally:
+        rc.close()
+
+
+def test_icar_mcmc_collapsible_opens_itself_on_a_warning():
+    """Unconverged chains must not hide behind a closed panel.
+
+    The warning invalidates the whole table above it, so the collapsible
+    starts expanded (v_model 0) when a COEFFICIENT trips the threshold. A
+    slow Vrho alone is the normal state of this sampler and stays closed.
+    """
+    import ipyvuetify as vw
+
+    bad_beta = _diagnosed_icar()
+    bad_beta.stats.coefficients[0].rhat = 1.3
+    box, rc = reacton.render(ModelStatsPanel(model=bad_beta))
+    try:
+        assert t("tiles.train.stats.icar_conv_coef_warn") in _texts(box)
+        panels = rc.find(vw.ExpansionPanels).widgets
+        assert panels[0].v_model == 0
+    finally:
+        rc.close()
+
+    slow_vrho = _diagnosed_icar(rhat=1.4, ess=3.92)
+    box, rc = reacton.render(ModelStatsPanel(model=slow_vrho))
+    try:
+        panels = rc.find(vw.ExpansionPanels).widgets
+        assert panels[0].v_model is None
+    finally:
+        rc.close()
+
+
+def test_icar_panel_stays_silent_without_diagnostics():
+    """A recovered / pre-diagnostics model must not claim convergence."""
+    model = ICARModel(
+        name="m",
+        deviance=600.0,
+        stats=ICARStats(coefficients=[Coefficient(name="scale(a)", estimate=0.5)]),
+    )
+    texts = _texts(_render(ModelStatsPanel(model=model)))
+    assert not [s for s in texts if "R-hat" in s], texts
+    # no diagnostics -> no MCMC section at all, not an empty collapsible
+    assert t("tiles.train.stats.icar_mcmc_header") not in texts
 
 
 def test_jnr_panel_renders_without_tab_dist_on_disk(tmp_path):

@@ -37,6 +37,53 @@ def _posteriors(with_summary=True):
     return p
 
 
+def test_build_icar_stats_keeps_diagnostics_and_the_deviance_summary():
+    """rhat/ess ride each coefficient; the deviance posterior gets its row."""
+    p = _posteriors()
+    p["posterior_summary"]["betas"][0].update(rhat=1.01, ess=850.0)
+    p["posterior_summary"]["vrho"].update(rhat=1.08, ess=300.0)
+    p["posterior_summary"]["deviance"] = {
+        "mean": 9000.0,
+        "std": 10.0,
+        "ci_low": 8980.0,
+        "ci_high": 9020.0,
+        "rhat": 1.0,
+        "ess": 400.0,
+    }
+    s = build_icar_stats(
+        p,
+        ["Intercept", "scale(rivers)", "cell"],
+        n_rows=100,
+        n_events=40,
+        sample_design=None,
+    )
+    assert s.coefficients[0].rhat == 1.01 and s.coefficients[0].ess == 850.0
+    assert s.coefficients[1].rhat is None  # an old summary without them is fine
+    assert s.vrho.rhat == 1.08
+    assert s.deviance_summary.estimate == 9000.0
+    assert s.deviance_summary.ci_high == 9020.0
+
+
+def test_build_icar_stats_computes_the_null_deviance():
+    """The intercept-only reference comes from the sample counts alone.
+
+    So both the summary path and the point-estimate fallback (= the recovery
+    path for old models) provide it.
+    """
+    import math
+
+    expected = -2.0 * (40 * math.log(0.4) + 60 * math.log(0.6))
+    for with_summary in (True, False):
+        s = build_icar_stats(
+            _posteriors(with_summary=with_summary),
+            ["Intercept", "scale(rivers)", "cell"],
+            n_rows=100,
+            n_events=40,
+            sample_design=None,
+        )
+        assert s.null_deviance == pytest.approx(expected)
+
+
 def test_build_icar_stats_with_summary():
     """The worker's posterior summary supplies mean/SD/CI per coefficient."""
     s = build_icar_stats(

@@ -1,5 +1,7 @@
 """Schema + pure collectors for per-family training statistics (Spec A §1-2)."""
 
+import math
+
 import numpy as np
 import pytest
 
@@ -7,9 +9,11 @@ from spatialrisk.mlmodels.stats import (
     Coefficient,
     JNRStats,
     MWStats,
+    binomial_null_deviance,
     build_rmj_stats,
     collect_glm_stats,
     collect_rf_stats,
+    mcmc_diagnostics,
     sample_design_label,
     summarize_icar_mcmc,
 )
@@ -142,6 +146,76 @@ def test_summarize_icar_mcmc_slices_and_names():
     assert b["mean"] == pytest.approx(0.43, abs=0.02)
     assert b["ci_low"] < b["mean"] < b["ci_high"]
     assert out["vrho"]["mean"] == pytest.approx(30.0, abs=0.5)
+
+
+def test_mcmc_diagnostics_pass_a_well_mixed_chain():
+    """An iid draw is the best-case chain: R-hat ~ 1, ESS near the draw count."""
+    rng = np.random.default_rng(7)
+    chain = rng.normal(size=2000)
+    rhat, ess = mcmc_diagnostics(chain)
+    assert rhat == pytest.approx(1.0, abs=0.05)
+    assert 1000 < ess <= 2000
+
+
+def test_mcmc_diagnostics_flag_an_unmixed_chain():
+    """A trending chain (the classic unconverged trace) must be flagged.
+
+    Its two halves have different means (split R-hat >> 1.1) and its
+    autocorrelation never dies (tiny effective sample).
+    """
+    rng = np.random.default_rng(7)
+    chain = np.linspace(0.0, 5.0, 2000) + rng.normal(scale=0.05, size=2000)
+    rhat, ess = mcmc_diagnostics(chain)
+    assert rhat > 1.5
+    assert ess < 100
+
+
+def test_mcmc_diagnostics_degenerate_chain_yields_none():
+    """A constant chain has no variance to diagnose — None, never a crash."""
+    assert mcmc_diagnostics(np.full(100, 3.7)) == (None, None)
+    assert mcmc_diagnostics(np.array([1.0])) == (None, None)
+
+
+def test_summarize_icar_mcmc_carries_diagnostics_and_the_deviance_row():
+    """Each summarised column gains rhat/ess, and Deviance gets its own summary.
+
+    Deviance was deforisk's summary-table row this port was missing: the
+    posterior spread of the deviance, not just a point value.
+    """
+    rng = np.random.default_rng(0)
+    trace = np.column_stack(
+        [
+            rng.normal(loc=-3.0, scale=0.1, size=400),
+            rng.normal(loc=0.43, scale=0.05, size=400),
+            rng.normal(loc=30.0, scale=2.0, size=400),
+            rng.normal(loc=9000.0, scale=10.0, size=400),
+        ]
+    )
+    out = summarize_icar_mcmc(trace, ["Intercept", "scale(rivers)", "cell"])
+    for entry in out["betas"] + [out["vrho"], out["deviance"]]:
+        assert entry["rhat"] == pytest.approx(1.0, abs=0.1)
+        assert 100 < entry["ess"] <= 400
+    assert out["deviance"]["mean"] == pytest.approx(9000.0, abs=2.0)
+    assert out["deviance"]["ci_low"] < 9000.0 < out["deviance"]["ci_high"]
+
+
+def test_binomial_null_deviance_closed_form():
+    """Matches -2 * loglik of the intercept-only binomial model exactly.
+
+    deforisk fitted a whole sklearn LogisticRegression to get this number; the
+    closed form is the same quantity without the solver.
+    """
+    n, k = 100, 40
+    expected = -2.0 * (k * math.log(0.4) + (n - k) * math.log(0.6))
+    assert binomial_null_deviance(k, n) == pytest.approx(expected)
+
+
+def test_binomial_null_deviance_degenerate_samples_yield_none():
+    """All-event or no-event samples have an undefined null log-likelihood."""
+    assert binomial_null_deviance(0, 100) is None
+    assert binomial_null_deviance(100, 100) is None
+    assert binomial_null_deviance(None, 100) is None
+    assert binomial_null_deviance(40, None) is None
 
 
 def test_summarize_icar_mcmc_guards_the_cell_column():

@@ -102,4 +102,4 @@ convention = "google"
 # words (e.g. pt "nome" -> "gnome", fr "ans" -> "and", es "termine" ->
 # "determine"). Extend this when adding a locale, after checking each hit is a
 # genuine word and not a real typo.
-ignore-words-list = "absolue,absorve,ajustement,alignement,ans,anual,approche,attendent,bloc,bord,celles,clases,classe,complet,conter,continuos,continus,convient,eles,erro,espaces,existant,explicite,fixe,fonction,formule,formules,garantie,gere,hace,initiales,itens,limite,medias,momento,nome,persistant,posible,projet,projets,relie,requiere,ressource,ser,somme,termine,termo,transforme,valide,vetor"
+ignore-words-list = "absolue,absorve,ajustement,alignement,ans,anual,approche,attendent,bloc,bord,celles,clases,classe,complet,considere,conter,continuos,continus,convient,eles,erro,espaces,existant,explicite,fixe,fonction,formule,formules,garantie,gere,hace,initiales,interprete,itens,limite,medias,momento,nome,pares,persistant,posible,projet,projets,relie,requiere,ressource,ser,somme,termine,termo,transforme,valide,vetor"

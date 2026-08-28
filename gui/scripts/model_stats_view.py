@@ -15,9 +15,17 @@ from typing import List, Optional
 DASH = "—"
 
 # patsy's categorical column label, e.g. 'C(subj, levels=[1, 2, 3])[T.9]':
-# group 1 is the variable, group 2 the treatment-coded level (absent on a
-# bare term name).
-_CATEGORICAL_WRAPPER = re.compile(r"^C\(([^,)]+)[^)]*\)(?:\[T\.([^]]+)\])?$")
+# group 1 is the variable, group 2 the levels list's contents (absent on a
+# bare C(x)), group 3 the treatment-coded level (absent on a bare term name).
+#
+# Only [T.k] treatment columns exist in practice: generate_patsy_formula never
+# drops patsy's implicit intercept, so the no-intercept full-dummy [k] columns
+# cannot be produced. Should a hand-edited formula ever remove the intercept,
+# those names simply fail to match and every column stays its own raw-named
+# row — degraded display, never a wrong number.
+_CATEGORICAL_WRAPPER = re.compile(
+    r"^C\(([^,)]+)(?:,\s*levels=\[([^\]]*)\])?[^)]*\)(?:\[T\.([^]]+)\])?$"
+)
 
 
 def _fmt_float(v, digits):
@@ -87,7 +95,7 @@ def stat_cards(model, stats=None) -> List[dict]:
         add(key, _fmt(raw, digits))
 
     if stats is not None and stats.n_rows is not None:
-        add("card_rows", _fmt(stats.n_rows))
+        add("card_samples", _fmt(stats.n_rows))
     if stats is not None and stats.n_events is not None:
         events = _fmt(stats.n_events)
         if stats.sample_design:
@@ -98,18 +106,48 @@ def stat_cards(model, stats=None) -> List[dict]:
         if isinstance(deviance, float) and not math.isfinite(deviance):
             add("card_deviance", DASH, warn=True)
         else:
-            add("card_deviance", _fmt(float(deviance), digits=6))
+            add(
+                "card_deviance",
+                _with_interval(
+                    _fmt(float(deviance), digits=6),
+                    getattr(stats, "deviance_summary", None),
+                    digits=6,
+                ),
+            )
+            null_dev = getattr(stats, "null_deviance", None)
+            if null_dev:
+                # deforisk's model_deviances.csv figure: how much better than
+                # the intercept-only model, as a share of its deviance.
+                pct = 100.0 * (1.0 - float(deviance) / null_dev)
+                add("card_dev_explained", f"{_fmt(pct, 3)}%")
     if stats is not None:
         add_num("card_dist_thresh", getattr(stats, "dist_thresh", None))
         add_num("card_perc_thresh", getattr(stats, "perc_thresh", None))
         add_num("card_tot_defor", getattr(stats, "tot_defor_ha", None))
         add_num("card_n_classes", getattr(stats, "n_classes", None))
         vrho = getattr(stats, "vrho", None)
-        if vrho is not None:
-            add_num("card_vrho", vrho.estimate)
+        if vrho is not None and vrho.estimate is not None:
+            add("card_vrho", _with_interval(_fmt(vrho.estimate), vrho))
         _add_rho_cards(add_num, stats)
     add("card_trained_at", getattr(model, "trained_at", None))
     return cards
+
+
+def _with_interval(value: str, summary, digits=4) -> str:
+    """``"31.78 (28 — 36)"`` — a point value plus its 95% credible interval.
+
+    ``summary`` is a Coefficient-shaped record (or None); a missing bound
+    keeps the bare point value, so recovered models degrade to the old card.
+    The separator is the em dash for the reason ``_add_rho_cards`` records —
+    the one glyph that reads as a range and survives lint (an en dash trips
+    RUF001, a hyphen collides with a negative bound's minus sign). Between
+    two numbers inside parentheses it cannot be misread as DASH's "missing".
+    """
+    lo = getattr(summary, "ci_low", None)
+    hi = getattr(summary, "ci_high", None)
+    if lo is None or hi is None:
+        return value
+    return f"{value} ({_fmt(lo, digits)} {DASH} {_fmt(hi, digits)})"
 
 
 def _add_rho_cards(add_num, stats):
@@ -141,11 +179,45 @@ def _add_rho_cards(add_num, stats):
     add_num("card_rho_sd", getattr(stats, "rho_std", None))
 
 
-def coefficient_rows(stats) -> List[dict]:
+def _split_term(name: str):
+    """``(variable, level)`` for a stored design-column name.
+
+    ``level`` is None for anything that is not a treatment-coded categorical
+    dummy — a continuous predictor, patsy's ``Intercept``, or a ``C(...)``
+    wrapper with no ``[T.k]`` suffix. One definition, because the coefficient
+    tables and the importance chart have to agree on what a "variable" is.
+    """
+    m = _CATEGORICAL_WRAPPER.match(name)
+    return (name, None) if m is None else (m.group(1), m.group(3))
+
+
+def coefficient_rows(stats, aggregate: bool = True) -> List[dict]:
     """Display rows for GLM/iCAR coefficient tables.
 
     odds_ratio is computed here, at display time (spec §2.1) — it is not a
     stored field.
+
+    Stored stats keep the raw patsy column names, one row per treatment-coded
+    dummy column, so a categorical arrives as several rows named
+    ``C(subj, levels=[...])[T.k]``. Both views rename those; they differ in how
+    many rows survive:
+
+    * ``aggregate`` (the default) keeps ONE row per variable. A categorical is
+      represented by its STRONGEST CONTRAST — the level whose estimate is
+      largest in magnitude — named ``subj (= k)`` and carrying that level's own
+      estimate, SD and interval.
+    * ``aggregate=False`` keeps every level as its own row, named ``subj = k``.
+
+    Deliberately NOT the sum that ``importance_entries`` takes. An importance is
+    a non-negative contribution that decomposes additively over the design
+    columns, so summing a categorical's levels answers a real question. These
+    numbers are log-odds contrasts against a reference level: their sum is not a
+    quantity the model estimates, ``exp()`` of it is not an odds ratio, and the
+    SD/interval of a sum is not the sum of the SDs/intervals. Picking one real
+    row is the aggregation that stays true.
+
+    Variables keep first-appearance order in both views, so the two are read as
+    the same table at two depths rather than as two different tables.
     """
     rows = []
     for c in getattr(stats, "coefficients", None) or []:
@@ -161,9 +233,12 @@ def coefficient_rows(stats) -> List[dict]:
                 # the schema's non-finite check, so it must degrade to a dash
                 # here rather than crash the whole coefficients table.
                 odds_ratio = DASH
+        variable, level = _split_term(c.name)
         rows.append(
             {
-                "name": c.name,
+                "name": variable if level is None else f"{variable} = {level}",
+                "variable": variable,
+                "level": level,
                 "estimate": _fmt(est),
                 "estimate_raw": est,
                 "odds_ratio": odds_ratio,
@@ -175,7 +250,133 @@ def coefficient_rows(stats) -> List[dict]:
                 "ci_high_raw": c.ci_high,
             }
         )
-    return rows
+    return rows if not aggregate else _strongest_per_variable(rows)
+
+
+def _sign_resolved(row: dict) -> bool:
+    """True when the interval takes a side of zero.
+
+    Deliberately the same test the effect bar uses for its grey colour, so the
+    collapsed slot can never lead with a bar the display itself refuses to
+    give a direction.
+    """
+    lo, hi = row["ci_low_raw"], row["ci_high_raw"]
+    return (
+        row["estimate_raw"] is not None
+        and lo is not None
+        and hi is not None
+        and not lo < 0 < hi
+    )
+
+
+def _strongest_per_variable(rows: List[dict]) -> List[dict]:
+    """One row per variable: the largest |estimate| among resolved contrasts.
+
+    "Resolved" means the interval excludes zero (see ``_sign_resolved``).
+    Preferring those keeps the noisiest level — on rare-event data a sparse
+    category gets a huge estimate AND a huge interval — from headlining the
+    collapsed view on magnitude alone. When nothing is resolved (intervals all
+    cross zero, or the model stored none), largest |estimate| decides, so a
+    model without intervals behaves as before.
+
+    A variable that contributes a single row is returned untouched, name and
+    all — there is no contrast to choose between, so labelling it as one would
+    only be noise. A row whose estimate is None loses to any real number and
+    wins only against other Nones, so a variable with nothing estimated still
+    appears (as a dash) rather than vanishing from the table.
+    """
+    groups: dict = {}
+    for row in rows:
+        groups.setdefault(row["variable"], []).append(row)
+    out = []
+    for candidates in groups.values():
+        if len(candidates) == 1:
+            out.append(candidates[0])
+            continue
+        pool = [r for r in candidates if _sign_resolved(r)] or candidates
+        best = max(pool, key=lambda r: abs(r["estimate_raw"] or 0.0))
+        # The level is named, because "subj" alone would claim to describe the
+        # whole variable when it is one contrast out of several.
+        out.append({**best, "name": f"{best['variable']} (= {best['level']})"})
+    return out
+
+
+def _mixing_worst_case(params) -> Optional[dict]:
+    """Largest split R-hat / smallest ESS over ``params``, or None if none.
+
+    ``bad`` flips at R-hat > 1.1 (the classic Gelman-Rubin threshold; the
+    modern 1.01 recommendation would flag nearly every affordable run of this
+    sampler) or ESS < 100 (below ~100 the 95% CI bounds shown in the table
+    are themselves too noisy to trust).
+    """
+    rhats = [c.rhat for c in params if c.rhat is not None]
+    esss = [c.ess for c in params if c.ess is not None]
+    if not rhats or not esss:
+        return None
+    worst_rhat, worst_ess = max(rhats), min(esss)
+    return {
+        "rhat": _fmt(worst_rhat, 3),
+        "ess": _fmt(worst_ess, 3),
+        "bad": worst_rhat > 1.1 or worst_ess < 100,
+    }
+
+
+def icar_convergence_summary(stats) -> Optional[dict]:
+    """Per-group MCMC mixing (betas vs Vrho), display-ready, or None.
+
+    ``{"coef": {"rhat", "ess", "warn"} | None, "vrho": {"rhat", "ess",
+    "slow"} | None}`` — each group's worst case, never an average: one
+    unmixed coefficient invalidates the table.
+
+    The groups are judged SEPARATELY on purpose: Vrho mixes slowly in
+    virtually every affordable iCAR run (deforisk's chains behaved the same,
+    it just never printed a number), so folding it into one worst-case would
+    warn on every fit and train users to ignore the warning. Only the
+    coefficient group carries the alarm the panel acts on; a sluggish Vrho is
+    reported as its own neutral note (``slow``).
+
+    None when nothing carries diagnostics — a recovered model or a summary
+    from before they existed — so the panel stays silent rather than claiming
+    convergence it cannot see.
+    """
+    coef = _mixing_worst_case(getattr(stats, "coefficients", None) or [])
+    vrho_param = getattr(stats, "vrho", None)
+    vrho = _mixing_worst_case([vrho_param] if vrho_param is not None else [])
+    if coef is None and vrho is None:
+        return None
+    return {
+        "coef": {"rhat": coef["rhat"], "ess": coef["ess"], "warn": coef["bad"]}
+        if coef
+        else None,
+        "vrho": {"rhat": vrho["rhat"], "ess": vrho["ess"], "slow": vrho["bad"]}
+        if vrho
+        else None,
+    }
+
+
+def categorical_references(stats) -> List[tuple]:
+    """``(variable, reference_level)`` per categorical, first-appearance order.
+
+    Every categorical estimate in these tables is a contrast AGAINST its
+    reference level, and no row names that level — without this the odds-ratio
+    column is unreadable. Under patsy's default treatment coding the reference
+    is the first entry of the ``levels=[...]`` list the formula stored in the
+    column name; a bare ``C(x)`` term carries no domain, so no reference can
+    be claimed for it and it is skipped rather than guessed at.
+    """
+    refs = []
+    seen = set()
+    for c in getattr(stats, "coefficients", None) or []:
+        m = _CATEGORICAL_WRAPPER.match(c.name)
+        if m is None or m.group(2) is None or m.group(3) is None:
+            continue
+        variable = m.group(1)
+        if variable in seen:
+            continue
+        seen.add(variable)
+        reference = m.group(2).split(",")[0].strip().strip("'\"")
+        refs.append((variable, reference))
+    return refs
 
 
 def glm_convergence_line(stats) -> Optional[str]:
@@ -200,16 +401,18 @@ def importance_entries(stats, top: int = 15, aggregate: bool = True):
     importance is only comparable to a continuous variable's as that sum.
     With ``aggregate=False`` each level keeps its own row (`subj = k`),
     the drill-down that shows WHICH category carries the importance.
+
+    The sum is what makes this different from ``coefficient_rows``' aggregation,
+    which picks one level instead — see there for why a sum is right here and
+    wrong for a coefficient.
     """
     summed: dict = {}
     for i in getattr(stats, "importances", None) or []:
-        m = _CATEGORICAL_WRAPPER.match(i.name)
-        if m is None:
-            name = i.name
-        elif aggregate or m.group(2) is None:
-            name = m.group(1)
+        variable, level = _split_term(i.name)
+        if level is None or aggregate:
+            name = variable
         else:
-            name = f"{m.group(1)} = {m.group(2)}"
+            name = f"{variable} = {level}"
         summed[name] = summed.get(name, 0.0) + i.value
     entries = sorted(summed.items(), key=lambda e: e[1], reverse=True)
     return entries[:top]

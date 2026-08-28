@@ -23,8 +23,10 @@ from gui.i18n import t
 from gui.scripts.model_stats_charts import dist_curve_option, importance_bars_option
 from gui.scripts.model_stats_view import (
     DASH,
+    categorical_references,
     coefficient_rows,
     glm_convergence_line,
+    icar_convergence_summary,
     importance_entries,
     load_tab_dist,
     stat_cards,
@@ -36,6 +38,7 @@ from gui.scripts.model_stats_view import (
 # values that reach the widget raw, so they borrow the same formatter.
 from gui.scripts.model_stats_view import _fmt as fmt_stat
 from gui.widget.echarts import RENDERER_SVG, EChartsChart, theme_accent
+from gui.widget.help import InfoButton
 from gui.widget.product_table import ProductTable
 from gui.widget.text_style import MUTED
 
@@ -81,7 +84,7 @@ def _StatCards(model, stats):
 
 @solara.component
 def ModelStatsPanel(model, visible=True):
-    """Caveat + stat cards + family panel with pending/empty states.
+    """Stat cards + family panel with pending/empty states, over a footnote.
 
     Args:
         model: the registered model to describe.
@@ -117,8 +120,6 @@ def ModelStatsPanel(model, visible=True):
         stats = recovered.value
 
     with solara.Column(gap="12px"):
-        with solara.Row(gap="8px", style="align-items:flex-start;"):
-            solara.Info(t("tiles.train.stats.caveat_training_fit"), dense=True)
         _StatCards(model=model, stats=stats)
         if stats is not None:
             _FamilyPanel(model=model, stats=stats, visible=visible)
@@ -130,6 +131,15 @@ def ModelStatsPanel(model, visible=True):
             solara.Info(t("tiles.train.stats.empty_state"))
             if getattr(model, "model_type", "") == "icar":
                 solara.Text(t("tiles.train.stats.icar_retrain_hint"), style=MUTED)
+        # Footnote, not an alert: the caveat qualifies every number above but
+        # is permanent and non-actionable, so an always-on info strip at the
+        # top spent the panel's most prominent slot on text nobody re-reads.
+        # The asterisk carries the reference; the message string owns it so
+        # every locale keeps the marker.
+        solara.Text(
+            t("tiles.train.stats.caveat_training_fit"),
+            style=MUTED + "font-size:0.72rem;line-height:1.3;",
+        )
 
 
 def _recover(model):
@@ -239,11 +249,109 @@ def _coefficient_table(columns, rows):
     )
 
 
+def _use_coefficient_rows(stats):
+    """``(rows, scale, collapsed, split, set_split)`` for a coefficient panel.
+
+    The GLM and iCAR panels differ only in their columns, so the level/variable
+    toggle lives here rather than twice over. It mirrors the RF importance
+    switch: the default view is one row per variable, the switch drills into a
+    categorical's individual levels.
+
+    ``scale`` is computed from the PER-LEVEL rows in both views, so flipping
+    the switch never resizes the bars that stay on screen. This used to hold
+    for free — the magnitude-picked row was always the global max — but the
+    resolution-preferring selection can collapse a categorical to a smaller row
+    than its noisiest level, and a per-view scale would then inflate every bar
+    in the collapsed table and shrink them on toggle.
+
+    ``collapsed`` is a ROW-COUNT comparison, not a list comparison. The two
+    views rename a collapsed categorical differently (``subj (= 9)`` against
+    ``subj = 9``), so comparing the lists would call every model with any
+    categorical splittable — including one whose categorical contributes a
+    single design column, where the switch would reveal nothing.
+
+    A hook, so the caller must invoke it unconditionally at the top of its own
+    component body (see reacton-first-render-i18n-use-event-keyerror: a hook
+    behind a branch changes the hook count between renders).
+    """
+    split, set_split = solara.use_state(False)
+    aggregated = coefficient_rows(stats)
+    per_level = coefficient_rows(stats, aggregate=False)
+    return (
+        per_level if split else aggregated,
+        _bar_scale(per_level),
+        len(per_level) != len(aggregated),
+        split,
+        set_split,
+    )
+
+
+@solara.component
+def _CoefficientNotes(stats, collapsed, split, set_split):
+    """The level switch plus an info popup holding the explanatory notes.
+
+    The notes used to render as always-on muted text under the table; they now
+    sit behind a small info button (the standard ``InfoButton`` popup) so the
+    table keeps its vertical space. The popup carries:
+
+    - the strongest-contrast note, only when a categorical actually collapsed
+      — otherwise it would describe a view that does not exist;
+    - the reference-level line, whenever any categorical is present: every
+      categorical estimate is a contrast AGAINST that level and no row names
+      it, so without it the odds-ratio column is unreadable. It applies to
+      BOTH views and even when nothing collapsed (a two-level categorical
+      contributes a single row, no switch, whose odds ratio still needs its
+      baseline).
+
+    With nothing to explain and nothing to toggle, the whole row is silent.
+    """
+    refs = categorical_references(stats)
+    parts = []
+    if collapsed:
+        parts.append(t("tiles.train.stats.coef_strongest_note"))
+    if refs:
+        parts.append(
+            t(
+                "tiles.train.stats.coef_reference_note",
+                refs=", ".join(f"{variable} = {ref}" for variable, ref in refs),
+            )
+        )
+    if not collapsed and not parts:
+        return
+    with solara.Row(gap="4px", style="align-items:center;flex-wrap:wrap;"):
+        if collapsed:
+            solara.Switch(
+                label=t("tiles.train.stats.coef_split_toggle"),
+                value=split,
+                on_value=set_split,
+            )
+        if parts:
+            InfoButton(
+                title=t("tiles.train.stats.coef_info_title"),
+                markdown="\n\n".join(parts),
+            )
+
+
+@solara.component
+def _HeaderInfoButton(title, markdown):
+    """``InfoButton`` wrapped so its click never reaches an enclosing toggle.
+
+    Vuetify's ExpansionPanelHeader toggles on ANY click that bubbles to it,
+    so a bare InfoButton in the header would open the popup AND flip the
+    collapsible. The wrapper's ``click.stop`` listener (an ipyvue event
+    modifier, same mechanism as ConfirmDialog's ``keydown.esc``) halts the
+    bubble; the button's own handler has already fired by then.
+    """
+    with rv.Html(tag="div", style_="display:inline-flex;") as wrap:
+        InfoButton(title=title, markdown=markdown)
+    # rv.use_event is a hook — call it unconditionally at top level.
+    rv.use_event(wrap, "click.stop", lambda *_: None)
+
+
 @solara.component
 def _GlmPanel(stats):
     """Coefficients with display-time odds ratios, intercepts, solver line."""
-    vm_rows = coefficient_rows(stats)
-    scale = _bar_scale(vm_rows)
+    vm_rows, scale, collapsed, split, set_split = _use_coefficient_rows(stats)
     rows = [
         {
             "key": r["name"],
@@ -268,6 +376,9 @@ def _GlmPanel(stats):
                 {"label": t("tiles.train.stats.col_effect"), "width": "minmax(0,1fr)"},
             ],
             rows,
+        )
+        _CoefficientNotes(
+            stats=stats, collapsed=collapsed, split=split, set_split=set_split
         )
         # patsy's design 'Intercept' column and sklearn's own intercept_ are
         # two different numbers (spec §2.1); labelling them separately is what
@@ -306,8 +417,16 @@ def _IcarPanel(stats):
     transform. It rides in ``stats.vrho`` and is already a stat card, as is the
     cell-level rho summary beside it.
     """
-    vm_rows = coefficient_rows(stats)
-    scale = _bar_scale(vm_rows)
+    vm_rows, scale, collapsed, split, set_split = _use_coefficient_rows(stats)
+    conv = icar_convergence_summary(stats)
+    coef_warn = conv is not None and conv["coef"] is not None and conv["coef"]["warn"]
+    # The MCMC section's open state (ExpansionPanels index: 0 open, None
+    # closed). Healthy chains start collapsed — background information — but a
+    # coefficient warning invalidates the whole table above, so it must never
+    # hide behind a closed panel. A slow Vrho alone stays closed: it is the
+    # normal state of this sampler, not news. Hook: unconditional, before any
+    # branch.
+    mcmc_open, set_mcmc_open = solara.use_state(0 if coef_warn else None)
     rows = [
         {
             "key": r["name"],
@@ -337,17 +456,78 @@ def _IcarPanel(stats):
             ],
             rows,
         )
+        _CoefficientNotes(
+            stats=stats, collapsed=collapsed, split=split, set_split=set_split
+        )
         solara.Text(t("tiles.train.stats.icar_ci_note"), style=MUTED)
+        if conv is not None:
+            # The numeric stand-in for deforisk's mcmc.pdf trace plots, judged
+            # per group: only a badly mixed COEFFICIENT raises the warning —
+            # Vrho mixes slowly on virtually every affordable run (deforisk's
+            # chains did too, unshown), so it gets a neutral note instead of
+            # condemning the table above. warning-base, not error-base — the
+            # fit is suspect, not absent. The .advanced-params restyle comes
+            # with the details dialog (see _ADVANCED_PANEL_CSS in
+            # model_form_dialog).
+            coef_style = "color:var(--v-warning-base);" if coef_warn else MUTED
+            with rv.ExpansionPanels(
+                flat=True,
+                class_="advanced-params",
+                v_model=mcmc_open,
+                on_v_model=set_mcmc_open,
+            ):
+                with rv.ExpansionPanel():
+                    with rv.ExpansionPanelHeader():
+                        with solara.Row(gap="8px", style="align-items:center;"):
+                            if coef_warn:
+                                rv.Icon(
+                                    children=["mdi-alert"], small=True, color="warning"
+                                )
+                            solara.Text(t("tiles.train.stats.icar_mcmc_header"))
+                            _HeaderInfoButton(
+                                title=t("tiles.train.stats.icar_mcmc_info_title"),
+                                markdown=t("tiles.train.stats.icar_mcmc_info_md"),
+                            )
+                    with rv.ExpansionPanelContent():
+                        with solara.Column(gap="4px"):
+                            if conv["coef"] is not None:
+                                solara.Text(
+                                    t(
+                                        "tiles.train.stats.icar_conv_coef_line",
+                                        rhat=conv["coef"]["rhat"],
+                                        ess=conv["coef"]["ess"],
+                                    ),
+                                    style=coef_style,
+                                )
+                                if coef_warn:
+                                    solara.Text(
+                                        t("tiles.train.stats.icar_conv_coef_warn"),
+                                        style=coef_style,
+                                    )
+                            if conv["vrho"] is not None:
+                                vrho_key = (
+                                    "icar_conv_vrho_slow"
+                                    if conv["vrho"]["slow"]
+                                    else "icar_conv_vrho_line"
+                                )
+                                solara.Text(
+                                    t(
+                                        f"tiles.train.stats.{vrho_key}",
+                                        rhat=conv["vrho"]["rhat"],
+                                        ess=conv["vrho"]["ess"],
+                                    ),
+                                    style=MUTED,
+                                )
 
 
 @solara.component
 def _RfPanel(stats, visible=True):
-    """Impurity importances as bars, plus the OOB number and its caveats.
+    """Impurity importances as bars, plus the OOB number.
 
-    Both caveats are load-bearing rather than decorative: impurity importance
-    is biased toward continuous and high-cardinality predictors and supports no
-    causal reading (hence the note and the 'exploratory' chip), and sklearn's
-    oob_score_ is plain accuracy on the training sample, never validation.
+    The 'exploratory' chip is load-bearing rather than decorative: impurity
+    importance is biased toward continuous and high-cardinality predictors and
+    supports no causal reading, and sklearn's oob_score_ is plain accuracy on
+    the training sample, never validation.
 
     Stored importances are one row per design column, so a categorical's
     levels arrive as separate rows. The default view sums them into one bar
@@ -391,7 +571,6 @@ def _RfPanel(stats, visible=True):
                 t("tiles.train.stats.oob_line", value=fmt_stat(stats.oob_accuracy)),
                 style=MUTED,
             )
-        solara.Text(t("tiles.train.stats.importance_bias_note"), style=MUTED)
 
 
 @solara.component
