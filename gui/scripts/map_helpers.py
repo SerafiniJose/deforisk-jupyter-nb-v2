@@ -105,6 +105,44 @@ def clear_project_overlays(map_) -> None:
     map_.remove_all(base=False)
 
 
+def sync_draw_control_visibility(map_, aoi_active: bool, was_hidden: bool) -> bool:
+    """Keep the AOI draw control on the map only while the AOI tab is active.
+
+    ``rv.TabsItems`` hides inactive tabs client-side without unmounting them,
+    so ``AoiView`` (which owns ``map_.dc`` while the DRAW method is selected)
+    never runs its unmount cleanup on a tab switch — the Geoman toolbar and the
+    editable drawn shape would stay on the shared map on every step. This
+    helper removes the control when the user leaves the AOI tab and re-adds it
+    on return, going through ``add_control``/``remove_control`` directly:
+    ``dc.show()``/``dc.hide()`` also wipe ``dc.data``, which would lose the
+    drawn shape.
+
+    Args:
+        map_: SepalMap instance (or None).
+        aoi_active: whether the AOI tab is the active workflow step.
+        was_hidden: the value returned by the previous call — True when this
+            helper removed the control on leaving the AOI tab.
+
+    Returns:
+        The new ``was_hidden`` state for the caller to carry to the next call.
+        Recomputed from the map on every leave, so a control unmounted while
+        away (e.g. a project load restoring a non-DRAW AOI) drops the flag.
+    """
+    dc = getattr(map_, "dc", None)
+    if map_ is None or dc is None:
+        return was_hidden
+
+    if aoi_active:
+        if was_hidden and dc not in map_.controls:
+            map_.add_control(dc)
+        return False
+
+    present = dc in map_.controls
+    if present:
+        map_.remove_control(dc)
+    return present
+
+
 def zoom_map_to_aoi(map_, aoi) -> bool:
     """Zoom ``map_`` to ``aoi`` using pysepal's built-in SepalMap zoom methods.
 

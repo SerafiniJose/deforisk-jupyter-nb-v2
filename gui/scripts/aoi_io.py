@@ -200,6 +200,63 @@ def persist_aoi(
     return write_aoi(project_dir, aoi)
 
 
+def attach_aoi(project: Any, aoi: Any, data_dir: Path) -> bool:
+    """Persist ``aoi`` into ``project`` the moment it is selected.
+
+    The manual Save flow is not the only writer of the project manifest: every
+    job completion (variable download, processing, training, inference, …)
+    calls ``project.save()`` directly, serializing whatever ``project.aoi``
+    holds right then. When the AOI was only attached inside the Save button's
+    flow, a project driven through the workflow without a manual save wrote
+    manifest after manifest with ``aoi: null`` — and reloaded with all its
+    artifacts but no AOI, silently. Attaching (and writing the geometry
+    sidecar) at selection time makes every later save carry it.
+
+    The manifest itself is rewritten only when one already exists on disk:
+    a freshly created project must not materialize just because an AOI was
+    picked — it appears, as before, on its first save or job completion
+    (which now includes the AOI).
+
+    Idempotent and cheap to re-run: when ``project.aoi`` already matches and
+    the sidecar is in place (e.g. right after a project load hands the
+    restored AOI back through the same code path), nothing is touched — so
+    loading a project does not bump its manifest mtime.
+
+    Args:
+        project: The open ``spatialrisk`` Project (or None).
+        aoi: The freshly selected ``AoiResult`` (or None). None is a no-op:
+            dropping a stored AOI is reserved for explicit user flows, per
+            :func:`persist_aoi`.
+        data_dir: The projects root (``DATA_DIR``).
+
+    Returns:
+        True when something was written, False on a no-op.
+    """
+    if project is None or aoi is None:
+        return False
+
+    project_dir = Path(data_dir) / project.project_name
+
+    has_geometry = getattr(aoi, "gdf", None) is not None
+    expected = _aoi_metadata(
+        aoi, geometry_file=AOI_GEOMETRY_FILENAME if has_geometry else None
+    )
+    asset = getattr(aoi, "asset", None)
+    if asset and getattr(aoi, "method", None) == "ASSET":
+        expected["asset"] = asset
+
+    sidecar_ok = (not has_geometry) or (project_dir / AOI_GEOMETRY_FILENAME).exists()
+    if project.aoi == expected and sidecar_ok:
+        return False
+
+    project.aoi = write_aoi(project_dir, aoi)
+
+    manifest = project_dir / f"{project.project_name}_project.json"
+    if manifest.exists():
+        project.save()
+    return True
+
+
 def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[Any]:
     """Reconstruct an ``AoiResult`` from persisted metadata + sidecar geometry.
 

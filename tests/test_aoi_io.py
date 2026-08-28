@@ -9,6 +9,7 @@ from shapely.geometry import box
 import spatialrisk.project as proj
 from gui.scripts.aoi_io import (
     AOI_GEOMETRY_FILENAME,
+    attach_aoi,
     load_aoi,
     persist_aoi,
     write_aoi,
@@ -428,3 +429,93 @@ def test_forgiving_builder_still_degrades_to_none():
     }
 
     assert _rebuild_asset_feature_collection(asset) is None
+
+
+# --- attach_aoi: selection-time persistence ---------------------------------
+#
+# Job-completion saves call ``project.save()`` directly, which serializes
+# whatever ``project.aoi`` holds at that moment. Before attach_aoi existed the
+# AOI was only attached inside the manual Save flow, so a project driven
+# through the workflow but never manually saved reloaded with every artifact
+# EXCEPT its AOI (silently: the manifest simply lacked the key).
+
+
+def test_attach_writes_sidecar_and_sets_project_aoi(tmp_path, monkeypatch):
+    """Selecting an AOI immediately persists geometry + attaches metadata."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_fresh")
+
+    assert attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path) is True
+
+    assert p.aoi["method"] == "DRAW"
+    assert (tmp_path / "attach_fresh" / AOI_GEOMETRY_FILENAME).exists()
+
+
+def test_attach_does_not_materialize_unsaved_project(tmp_path, monkeypatch):
+    """A never-saved project must not gain a manifest from AOI selection."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_unsaved")
+
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+
+    assert not (tmp_path / "attach_unsaved" / "attach_unsaved_project.json").exists()
+
+
+def test_attach_updates_existing_manifest_in_place(tmp_path, monkeypatch):
+    """A previously saved project's manifest gains the AOI on selection."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_saved")
+    p.save()
+
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+
+    loaded = proj.Project.load("attach_saved")
+    assert loaded.aoi["method"] == "DRAW"
+    assert load_aoi(tmp_path / "attach_saved", loaded.aoi).gdf is not None
+
+
+def test_attach_survives_job_style_bare_save(tmp_path, monkeypatch):
+    """A background job's bare save carries the AOI (the testag regression).
+
+    Once an AOI is selected, project.save() must serialize it with no manual
+    Save in between.
+    """
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_job")
+
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+    p.save()  # what every job-completion site does
+
+    loaded = proj.Project.load("attach_job")
+    restored = load_aoi(tmp_path / "attach_job", loaded.aoi)
+    assert restored is not None and restored.method == "DRAW"
+    assert restored.gdf is not None
+
+
+def test_attach_skips_rewrite_when_metadata_unchanged(tmp_path, monkeypatch):
+    """Re-running with the same AOI (e.g. right after a load) writes nothing.
+
+    Otherwise every project load would bump the manifest mtime.
+    """
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_idem")
+    p.save()
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+
+    manifest = tmp_path / "attach_idem" / "attach_idem_project.json"
+    sidecar = tmp_path / "attach_idem" / AOI_GEOMETRY_FILENAME
+    before = (manifest.stat().st_mtime_ns, sidecar.stat().st_mtime_ns)
+
+    assert attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path) is False
+
+    assert (manifest.stat().st_mtime_ns, sidecar.stat().st_mtime_ns) == before
+
+
+def test_attach_noop_without_project_or_aoi(tmp_path):
+    """No project or no AOI: nothing to attach, nothing written."""
+    assert attach_aoi(None, _aoi(gdf=_gdf()), data_dir=tmp_path) is False
+    assert (
+        attach_aoi(proj.Project(project_name="attach_none"), None, data_dir=tmp_path)
+        is False
+    )
+    assert not (tmp_path / "attach_none").exists()

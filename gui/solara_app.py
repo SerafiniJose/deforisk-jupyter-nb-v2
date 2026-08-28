@@ -27,11 +27,12 @@ from pysepal.solara.locale import resolve_locale_state
 from solara.lab.components.theming import theme
 
 from gui.i18n import get_translator, reset_translator, set_app_locale, t
-from gui.scripts.aoi_io import load_aoi, persist_aoi
+from gui.scripts.aoi_io import attach_aoi, load_aoi, persist_aoi
 from gui.scripts.map_helpers import (
     add_satellite_basemap,
     clear_project_overlays,
     show_aoi_on_map,
+    sync_draw_control_visibility,
 )
 from gui.scripts.notify_bridge import ERROR_TOAST_TIMEOUT, install_task_log_handler
 from gui.scripts.project_io import (
@@ -583,6 +584,33 @@ def WorkflowTabs(map_, gee_interface, sepal_client=None):
     """
     active_tab, set_active_tab = solara.use_state(0)
 
+    # TabsItems hides inactive tabs client-side without unmounting them, so
+    # AoiView never gets to remove its draw control (toolbar + editable drawn
+    # shape) from the shared map when the user moves to another step. Mirror
+    # the tab state onto the map here. Also keyed on project_loaded_signal
+    # (a load remounts AoiView, whose restore may seed the control back onto
+    # the map while another tab is active) and on the AOI loading flag: the
+    # restore auto-select re-seeds the control from its async task — after
+    # the load-time effect run — and flips loading False right afterwards,
+    # so that flip is what re-hides a task-time re-add on a non-AOI tab.
+    dc_hidden = solara.use_ref(False)
+
+    def _sync_draw_control():
+        dc_hidden.current = sync_draw_control_visibility(
+            map_,
+            aoi_active=active_tab == 0,
+            was_hidden=dc_hidden.current,
+        )
+
+    solara.use_effect(
+        _sync_draw_control,
+        [
+            active_tab,
+            app_state.project_loaded_signal.value,
+            app_state.loading.value,
+        ],
+    )
+
     PipelineHeader(
         active_step=active_tab,
         on_navigate=set_active_tab,
@@ -755,6 +783,23 @@ def Page():
         app_state.project.set(Project(project_name=name))
 
     solara.use_effect(sync_project_from_aoi, [app_state.aoi_result.value])
+
+    # Persist the AOI into the open project the moment it is selected — not
+    # only on manual Save. Job completions save the manifest directly
+    # (project.save()), and before this a workflow-driven project that was
+    # never manually saved wrote every one of those manifests with aoi: null,
+    # reloading with all its artifacts but no AOI. Identity deps: Project's
+    # reactive compares by identity, and attach_aoi is idempotent (a load
+    # re-running it with the just-restored AOI is a no-op).
+    def persist_aoi_on_select():
+        attach_aoi(
+            app_state.project.value, app_state.aoi_result.value, data_dir=DATA_DIR
+        )
+
+    solara.use_effect(
+        persist_aoi_on_select,
+        [id(app_state.aoi_result.value), id(app_state.project.value)],
+    )
 
     # On every project switch (load OR new), the signal below bumps so these
     # effects re-run. Read it here so Page re-renders (and the effects re-run).
