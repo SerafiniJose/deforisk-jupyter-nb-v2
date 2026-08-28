@@ -1,5 +1,6 @@
 """AOI persistence helpers."""
 
+import json
 from types import SimpleNamespace
 
 import geopandas as gpd
@@ -33,6 +34,7 @@ def test_vector_aoi_writes_sidecar_and_metadata(tmp_path):
     """Vector AOI with geometry writes both sidecar and metadata."""
     meta = write_aoi(tmp_path, _aoi(gdf=_gdf()))
 
+    digest = meta.pop("geometry_digest", None)
     assert meta == {
         "method": "DRAW",
         "name": "san_marino",
@@ -40,6 +42,7 @@ def test_vector_aoi_writes_sidecar_and_metadata(tmp_path):
         "admin": None,
         "geometry_file": AOI_GEOMETRY_FILENAME,
     }
+    assert isinstance(digest, str) and digest
     assert (tmp_path / AOI_GEOMETRY_FILENAME).exists()
 
 
@@ -519,3 +522,348 @@ def test_attach_noop_without_project_or_aoi(tmp_path):
         is False
     )
     assert not (tmp_path / "attach_none").exists()
+
+
+# --- restore guard: no attach while a project load is mid-flight ------------
+#
+# do_load sets aoi_result and project as two separate reactive writes, and
+# Solara can run a render (and effects) BETWEEN them — the attach effect then
+# saw (new project's AOI, old project) and wrote one project's AOI into the
+# other's folder (testag got test_Taka's ADMIN AOI, its drawn sidecar
+# unlinked, 2026-08-28). The load flow must mark the window and the attach
+# path must refuse to run inside it.
+
+
+def _app_state():
+    from gui.store.state_manager import AppState
+
+    return AppState()
+
+
+def test_attach_current_aoi_refuses_during_restore(tmp_path, monkeypatch):
+    """Inside the restoring window, nothing is written — ever."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    state = _app_state()
+    old = proj.Project(project_name="old_proj")
+    old.save()
+    state.project.set(old)
+
+    with state.restoring_project():
+        # the mid-load transient: the NEW project's AOI paired with the OLD one
+        state.aoi_result.set(_aoi(name="other_projects_aoi", gdf=_gdf()))
+        assert state.attach_current_aoi(data_dir=tmp_path) is False
+
+    loaded = proj.Project.load("old_proj")
+    assert loaded.aoi is None, "restore-window attach wrote another project's AOI"
+    assert not (tmp_path / "old_proj" / AOI_GEOMETRY_FILENAME).exists()
+
+
+def test_attach_current_aoi_runs_after_restore_window(tmp_path, monkeypatch):
+    """Once the window closes, a genuine selection persists as usual."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    state = _app_state()
+    p = proj.Project(project_name="cur_proj")
+    p.save()
+    state.project.set(p)
+
+    with state.restoring_project():
+        state.aoi_result.set(_aoi(gdf=_gdf()))
+
+    assert state.attach_current_aoi(data_dir=tmp_path) is True
+    assert proj.Project.load("cur_proj").aoi["method"] == "DRAW"
+
+
+def test_restoring_project_nests_until_outermost_exit():
+    """Two nested windows: the guard stays True until the OUTER one exits.
+
+    ``_restoring_depth`` is a solara.reactive counter (session-scoped: reactive
+    values are stored per-kernel, so two browser sessions never share one
+    guard — no second kernel context is needed here to prove that, it's a
+    property of how Solara stores reactive state). Nesting matters because an
+    inner window closing must not prematurely re-enable attaches while an
+    outer window covering it is still open.
+    """
+    state = _app_state()
+    assert state.restoring is False
+
+    with state.restoring_project():
+        assert state.restoring is True
+        with state.restoring_project():
+            assert state.restoring is True
+        # Inner window closed; outer is still open.
+        assert state.restoring is True
+
+    assert state.restoring is False
+
+
+def test_restoring_project_nesting_clears_fully_on_inner_exception():
+    """An exception inside a nested window still fully unwinds the counter."""
+    state = _app_state()
+
+    with pytest.raises(RuntimeError):
+        with state.restoring_project():
+            with state.restoring_project():
+                raise RuntimeError("load failed")
+
+    assert state.restoring is False
+
+
+def test_new_project_state_mid_swap_does_not_attach_outgoing_aoi(tmp_path, monkeypatch):
+    """A render between new_project_state's sets must not attach the old AOI.
+
+    Subscribing directly to ``project`` simulates Solara's render-between-sets:
+    the listener fires synchronously from inside ``project.set(...)``, the same
+    point at which an interleaved render's attach-on-select effect would run.
+    """
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    state = _app_state()
+    old = proj.Project(project_name="outgoing")
+    old.save()
+    state.project.set(old)
+    state.aoi_result.set(_aoi(name="outgoing_aoi", gdf=_gdf()))
+
+    captured = []
+    unsubscribe = state.project.subscribe(
+        lambda _new: captured.append(state.attach_current_aoi(data_dir=tmp_path))
+    )
+    try:
+        new = proj.Project(project_name="incoming")
+        new.save()
+        state.new_project_state(new)
+    finally:
+        unsubscribe()
+
+    assert captured == [False], "mid-swap attach must be refused"
+    assert proj.Project.load("incoming").aoi is None
+    assert not (tmp_path / "incoming" / AOI_GEOMETRY_FILENAME).exists()
+    assert proj.Project.load("outgoing").aoi is None
+
+
+def test_close_project_state_mid_teardown_does_not_attach(tmp_path, monkeypatch):
+    """A render between close_project_state's sets must not attach either.
+
+    Same simulated-render technique as the new_project_state test above,
+    applied to teardown (project -> None).
+    """
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    state = _app_state()
+    old = proj.Project(project_name="closing")
+    old.save()
+    state.project.set(old)
+    state.aoi_result.set(_aoi(name="closing_aoi", gdf=_gdf()))
+
+    captured = []
+    unsubscribe = state.project.subscribe(
+        lambda _new: captured.append(state.attach_current_aoi(data_dir=tmp_path))
+    )
+    try:
+        state.close_project_state()
+    finally:
+        unsubscribe()
+
+    assert captured == [False], "mid-teardown attach must be refused"
+    assert proj.Project.load("closing").aoi is None
+
+
+# --- attach_aoi: geometry digest + crash-safety consistency contract --------
+#
+# Two review-confirmed bugs: (1) attach_aoi compared only metadata, so a
+# same-method/same-name geometry edit (e.g. reshaping a drawn rectangle) was
+# treated as idempotent and silently dropped; (2) idempotency was judged from
+# in-memory ``project.aoi``, so a failed ``project.save()`` could never be
+# retried, and the write ordering could leave a manifest referencing a
+# missing sidecar (or vice versa) across a crash.
+
+
+def test_attach_rewrites_when_geometry_changes_under_same_metadata(
+    tmp_path, monkeypatch
+):
+    """A geometry edit with unchanged method/name is NOT a no-op (Bug 1)."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_geom_edit")
+    p.save()
+
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+    first_digest = p.aoi["geometry_digest"]
+
+    shifted = _gdf(bounds=(20.0, 10.0, 20.2, 10.2))
+    assert attach_aoi(p, _aoi(gdf=shifted), data_dir=tmp_path) is True
+    assert p.aoi["geometry_digest"] != first_digest
+
+    sidecar = tmp_path / "attach_geom_edit" / AOI_GEOMETRY_FILENAME
+    written = gpd.read_file(sidecar)
+    assert written.total_bounds == pytest.approx([20.0, 10.0, 20.2, 10.2], abs=1e-6)
+
+    loaded = proj.Project.load("attach_geom_edit")
+    assert loaded.aoi["geometry_digest"] == p.aoi["geometry_digest"]
+
+
+def test_attach_write_load_attach_roundtrip_is_a_noop(tmp_path, monkeypatch):
+    """write_aoi -> load_aoi -> attach_aoi must not look like a geometry edit.
+
+    The digest is computed on a precision-snapped copy of the geometry so it
+    survives a GeoJSON write/read round-trip: loading a project and handing
+    the restored AOI back through attach_aoi (as the app does) must be a
+    true no-op, or every load would bump the manifest mtime.
+    """
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_roundtrip")
+    p.save()
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+
+    manifest = tmp_path / "attach_roundtrip" / "attach_roundtrip_project.json"
+    sidecar = tmp_path / "attach_roundtrip" / AOI_GEOMETRY_FILENAME
+    manifest_mtime = manifest.stat().st_mtime_ns
+    sidecar_mtime = sidecar.stat().st_mtime_ns
+
+    restored = load_aoi(tmp_path / "attach_roundtrip", p.aoi)
+    assert attach_aoi(p, restored, data_dir=tmp_path) is False
+
+    assert manifest.stat().st_mtime_ns == manifest_mtime
+    assert sidecar.stat().st_mtime_ns == sidecar_mtime
+
+
+def test_attach_heals_legacy_manifest_without_digest_then_settles(
+    tmp_path, monkeypatch
+):
+    """A pre-digest manifest triggers one healing rewrite, then is idempotent."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_legacy")
+    aoi = _aoi(gdf=_gdf())
+    legacy_meta = write_aoi(tmp_path / "attach_legacy", aoi)
+    del legacy_meta["geometry_digest"]
+    p.aoi = legacy_meta
+    p.save()
+
+    assert attach_aoi(p, aoi, data_dir=tmp_path) is True  # heals
+    assert "geometry_digest" in p.aoi
+
+    assert attach_aoi(p, aoi, data_dir=tmp_path) is False  # now idempotent
+
+
+def test_attach_retries_manifest_save_after_a_previous_failure(tmp_path, monkeypatch):
+    """A raised project.save() must be retried, not silently skipped (Bug 2a)."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_retry")
+    p.save()
+
+    real_save = proj.Project.save
+    calls = {"n": 0}
+
+    def flaky_save(self, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("disk full")
+        return real_save(self, *a, **kw)
+
+    monkeypatch.setattr(proj.Project, "save", flaky_save)
+
+    aoi = _aoi(gdf=_gdf())
+    with pytest.raises(RuntimeError, match="disk full"):
+        attach_aoi(p, aoi, data_dir=tmp_path)
+
+    manifest = tmp_path / "attach_retry" / "attach_retry_project.json"
+    assert json.loads(manifest.read_text(encoding="utf-8")).get("aoi") is None
+
+    # Same AOI again: disk still disagrees with `expected`, so this must
+    # retry the save rather than treat project.aoi as already matching.
+    assert attach_aoi(p, aoi, data_dir=tmp_path) is True
+    assert calls["n"] == 2
+    assert json.loads(manifest.read_text(encoding="utf-8")).get("aoi") is not None
+
+
+def test_attach_metadata_only_replace_unlinks_sidecar_only_after_save(
+    tmp_path, monkeypatch
+):
+    """Metadata-only AOI replacing a geometry one: sidecar outlives the save call."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_replace")
+    p.save()
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+
+    sidecar = tmp_path / "attach_replace" / AOI_GEOMETRY_FILENAME
+    assert sidecar.exists()
+
+    real_save = proj.Project.save
+    seen = {}
+
+    def spy_save(self, *a, **kw):
+        seen["sidecar_existed_during_save"] = sidecar.exists()
+        return real_save(self, *a, **kw)
+
+    monkeypatch.setattr(proj.Project, "save", spy_save)
+
+    admin_aoi = _aoi(method="ADMIN1", name="COL_x", admin="21758", gdf=None)
+    assert attach_aoi(p, admin_aoi, data_dir=tmp_path) is True
+
+    assert seen["sidecar_existed_during_save"] is True
+    assert not sidecar.exists()
+
+
+def test_attach_metadata_only_replace_keeps_sidecar_when_save_raises(
+    tmp_path, monkeypatch
+):
+    """If the manifest save fails, the still-referenced sidecar must survive."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_replace_fail")
+    p.save()
+    attach_aoi(p, _aoi(gdf=_gdf()), data_dir=tmp_path)
+
+    sidecar = tmp_path / "attach_replace_fail" / AOI_GEOMETRY_FILENAME
+    assert sidecar.exists()
+
+    def boom_save(self, *a, **kw):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(proj.Project, "save", boom_save)
+
+    admin_aoi = _aoi(method="ADMIN1", name="COL_x", admin="21758", gdf=None)
+    with pytest.raises(RuntimeError, match="disk full"):
+        attach_aoi(p, admin_aoi, data_dir=tmp_path)
+
+    assert sidecar.exists(), "sidecar must survive a failed manifest save"
+
+
+def test_attach_trusts_disk_over_memory_when_they_disagree(tmp_path, monkeypatch):
+    """A manifest that fell out of sync with project.aoi is healed, not trusted."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="attach_disk_truth")
+    p.save()
+
+    aoi = _aoi(gdf=_gdf())
+    attach_aoi(p, aoi, data_dir=tmp_path)
+
+    manifest = tmp_path / "attach_disk_truth" / "attach_disk_truth_project.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["aoi"] = None
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+
+    # project.aoi (in memory) still matches `expected`; disk does not.
+    assert attach_aoi(p, aoi, data_dir=tmp_path) is True
+    assert json.loads(manifest.read_text(encoding="utf-8"))["aoi"] is not None
+
+
+def test_project_save_is_atomic_and_leaves_no_temp_file(tmp_path, monkeypatch):
+    """Project.save() writes via temp file + os.replace; nothing lingers."""
+    monkeypatch.setattr(proj, "downloads_folder", tmp_path)
+    p = proj.Project(project_name="save_atomic")
+    saved_path = p.save()
+
+    assert saved_path.exists()
+    leftovers = [
+        f
+        for f in saved_path.parent.iterdir()
+        if f.name.startswith(".") and f.name.endswith(".tmp")
+    ]
+    assert leftovers == []
+
+
+def test_restoring_flag_clears_even_when_load_raises(tmp_path):
+    """A failed load must not leave the guard stuck (attach disabled forever)."""
+    state = _app_state()
+    try:
+        with state.restoring_project():
+            raise RuntimeError("load failed")
+    except RuntimeError:
+        pass
+    assert state.restoring is False

@@ -28,7 +28,7 @@ from pysepal.solara.locale import resolve_locale_state
 from solara.lab.components.theming import theme
 
 from gui.i18n import get_translator, reset_translator, set_app_locale, t
-from gui.scripts.aoi_io import attach_aoi, load_aoi, persist_aoi
+from gui.scripts.aoi_io import load_aoi, persist_aoi
 from gui.scripts.map_helpers import (
     add_satellite_basemap,
     clear_project_overlays,
@@ -198,10 +198,14 @@ def ProjectPanel(on_close=None):
             # Restore the saved AOI (sidecar geometry + metadata) so the map can
             # frame it and the downstream tabs unlock. Set before installing the
             # project so the load-zoom effect sees it on the same render.
-            app_state.aoi_result.set(
-                load_aoi(DATA_DIR / loaded.project_name, loaded.aoi)
-            )
-            app_state.load_project_state(loaded, when)
+            # restoring_project(): Solara can render BETWEEN these two sets, and
+            # the attach-on-select effect must not persist the incoming AOI
+            # into the outgoing project (see AppState.attach_current_aoi).
+            with app_state.restoring_project():
+                app_state.aoi_result.set(
+                    load_aoi(DATA_DIR / loaded.project_name, loaded.aoi)
+                )
+                app_state.load_project_state(loaded, when)
             notifications.success(t("project.status_loaded", name=name))
             set_load_open(False)
             if on_close is not None:
@@ -800,11 +804,12 @@ def Page():
     # never manually saved wrote every one of those manifests with aoi: null,
     # reloading with all its artifacts but no AOI. Identity deps: Project's
     # reactive compares by identity, and attach_aoi is idempotent (a load
-    # re-running it with the just-restored AOI is a no-op).
+    # re-running it with the just-restored AOI is a no-op). Routed through
+    # attach_current_aoi, which refuses to write while a load is mid-swap —
+    # a render CAN slip between do_load's two reactive sets, and the stale
+    # (new AOI, old project) pair wrote one project's AOI into another.
     def persist_aoi_on_select():
-        attach_aoi(
-            app_state.project.value, app_state.aoi_result.value, data_dir=DATA_DIR
-        )
+        app_state.attach_current_aoi(data_dir=DATA_DIR)
 
     solara.use_effect(
         persist_aoi_on_select,
