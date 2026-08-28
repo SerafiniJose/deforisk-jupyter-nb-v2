@@ -382,6 +382,7 @@ def _render_capturing_on_toggle_map(monkeypatch, project, map_, legend_port=None
         on_dismiss=None,
         on_delete=None,
         on_edit=None,
+        on_open=None,
     ):
         captured["on_toggle_map"] = on_toggle_map
         solara.Text("")

@@ -11,7 +11,9 @@ def test_action_icons_standardized():
     assert action_icon("delete") == "mdi-delete-outline"
     assert action_icon("download") == "mdi-cloud-download-outline"
     assert action_icon("cancel") == "mdi-stop-circle"
-    assert action_icon("open") == "mdi-table-eye"
+    # The details action reads as "what is this / how was it made", not
+    # "peek at a table" — several of the dialogs it opens show no table.
+    assert action_icon("open") == "mdi-information-outline"
     assert action_icon("dismiss") == "mdi-close"
 
 

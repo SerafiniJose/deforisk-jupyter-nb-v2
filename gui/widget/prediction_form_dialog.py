@@ -27,9 +27,14 @@ from gui.scripts.inference_runner import (
     mw_window_options,
     suggested_mask_layer,
 )
+from gui.scripts.model_registry import MODEL_REGISTRY
 from gui.scripts.prediction_import import resolve_import_key, sanitize_import_name
+from gui.scripts.product_rows import prediction_row_key
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
-from gui.widget.creation_dialog import CreationDialog
+from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
+from gui.widget.details_fields import ro_field
+from gui.widget.model_form_dialog import model_label
+from spatialrisk.far_helpers import strip_categorical_levels
 
 # Raster file types accepted for a local prediction import.
 _IMPORT_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
@@ -398,3 +403,167 @@ def PredictionFormDialog(
             exists=exists if source == "model" else False,
             label=t("tiles.inference.pred_name_label"),
         )
+
+
+def _group_predictions(project, row_key):
+    """Every registered prediction belonging to one outputs-list row.
+
+    A row groups a whole run: an MW run registers one Prediction per window
+    under the same name, and they share all provenance but the raster path.
+    Sorted by window so a multi-output run lists its files in a stable order.
+    """
+    predictions = (getattr(project, "predictions", None) or {}) if project else {}
+    group = [
+        pred for pred in predictions.values() if prediction_row_key(pred) == row_key
+    ]
+    return sorted(group, key=lambda p: (p.window is None, p.window or 0))
+
+
+def _is_import(pred) -> bool:
+    """Whether this prediction came from the raster-import flow.
+
+    An import registers no model, so it has no model snapshot to explain. That
+    absence *is* the signal — no separate "kind" flag is stored on disk, and
+    adding one would leave every already-registered import unclassified.
+    """
+    return not getattr(pred, "model_snapshot", None)
+
+
+@solara.component
+def PredictionDetailsDialog(project, row_key, on_close: Callable[[], None]):
+    """Read-only provenance for one prediction row: how it was produced.
+
+    Everything shown was frozen onto the Prediction when its raster was written
+    (see ``BaseRiskModel._register_prediction``), so a run stays explainable
+    after the model that made it is retrained, renamed or deleted — reading the
+    live model instead would quietly report today's config for yesterday's map.
+
+    Args:
+        project: solara.Reactive[Project].
+        row_key: outputs-list row key to explain, or None (dialog closed).
+        on_close: () -> None; clears the tile's selected key.
+    """
+    p = project.value
+    group = _group_predictions(p, row_key) if row_key else []
+    pred = group[0] if group else None
+
+    with rv.Dialog(
+        v_model=pred is not None,
+        on_v_model=lambda v: None if v else on_close(),
+        max_width="720px",
+    ):
+        with rv.Card():
+            with rv.CardTitle():
+                solara.Text(t("tiles.inference.details_title", key=row_key or ""))
+            with rv.CardText():
+                solara.Style(_ADVANCED_PANEL_CSS)
+                if pred is not None:
+                    _details_body(pred, group)
+            with rv.CardActions(style_="justify-content: flex-end;"):
+                solara.Button(
+                    t("common.close"),
+                    on_click=lambda: on_close(),
+                    text=True,
+                    small=True,
+                )
+
+
+def _details_body(pred, group):
+    """The dialog's field stack for one prediction group."""
+    imported = _is_import(pred)
+
+    with solara.Column(style="gap:4px;"):
+        ro_field(
+            t("tiles.inference.source_label"),
+            t("tiles.inference.source_import")
+            if imported
+            else t("tiles.inference.source_model"),
+        )
+        ro_field(t("tiles.inference.details_created"), pred.created_at)
+
+        if imported:
+            solara.Text(t("tiles.inference.details_imported_note"))
+            ro_field(
+                t("tiles.inference.details_palette_label"),
+                pred.display_palette,
+            )
+        else:
+            _model_section(pred)
+            _dataset_section(pred)
+
+        _output_section(group)
+
+
+def _model_section(pred):
+    """Model identity, run-time choices, then config behind the advanced panel."""
+    snapshot = pred.model_snapshot or {}
+    model_type = snapshot.get("model_type")
+    registry = MODEL_REGISTRY.get(model_type)
+
+    solara.Markdown(t("tiles.inference.details_model_header"))
+    ro_field(
+        t("tiles.inference.model_select_label"),
+        model_label(model_type) if registry else (model_type or pred.model_key),
+    )
+    ro_field(t("tiles.train.model_name_label"), snapshot.get("name"))
+
+    # Run-time choices are arguments to apply(), absent from the snapshot above.
+    # Only rendered when the family actually took one: a blank Mask row on an
+    # MW run would imply a choice the algorithm never offered.
+    run_params = pred.run_params or {}
+    if "mask_layer" in run_params:
+        ro_field(
+            t("tiles.inference.mask_layer_label"),
+            run_params["mask_layer"] or t("tiles.inference.mask_layer_none"),
+        )
+    if run_params.get("windows"):
+        ro_field(t("tiles.inference.windows_label"), run_params["windows"])
+
+    formula = snapshot.get("formula")
+    param_defs = [
+        pd
+        for pd in (registry["params"] if registry else [])
+        if pd.get("group", "params") == "params"
+    ]
+    if not (formula or param_defs):
+        return
+    with rv.ExpansionPanels(flat=True, class_="advanced-params"):
+        with rv.ExpansionPanel():
+            with rv.ExpansionPanelHeader():
+                solara.Text(t("tiles.train.advanced_parameters_header"))
+            with rv.ExpansionPanelContent():
+                if formula:
+                    # levels=[...] is a fit-time safety net, noise to the reader.
+                    ro_field(
+                        t("tiles.train.formula_label"),
+                        strip_categorical_levels(formula),
+                    )
+                for pd in param_defs:
+                    # No registry default fallback: a param absent from the
+                    # snapshot was not recorded, and printing today's default
+                    # would invent provenance. format_value renders None as —.
+                    ro_field(t(pd["label_key"]), snapshot.get(pd["key"]))
+
+
+def _dataset_section(pred):
+    """The dataset the model was applied over, as frozen at prediction time."""
+    snapshot = pred.dataset_snapshot or {}
+    solara.Markdown(t("tiles.inference.details_dataset_header"))
+    ro_field(
+        t("tiles.inference.dataset_select_label"),
+        snapshot.get("name") or pred.dataset_name,
+    )
+    ro_field(t("tiles.inference.details_target"), snapshot.get("target_name"))
+    ro_field(t("tiles.inference.details_features"), snapshot.get("feature_names"))
+
+
+def _output_section(group):
+    """One row per raster the run wrote (MW writes one per window)."""
+    solara.Markdown(t("tiles.inference.details_output_header"))
+    for pred in group:
+        label = (
+            t("tiles.inference.details_output_window", n=pred.window)
+            if pred.window is not None
+            else t("tiles.inference.details_output_label")
+        )
+        ro_field(label, str(pred.path))

@@ -207,7 +207,18 @@
       "error_map_toggle": "Não foi possível exibir a predição no mapa: {exc}",
       "source_label": "Origem",
       "source_model": "Executar um modelo",
-      "source_import": "Importar um raster"
+      "source_import": "Importar um raster",
+      "details_title": "Como esta previsão foi produzida — {key}",
+      "details_created": "Criada em",
+      "details_target": "Alvo",
+      "details_features": "Variáveis explicativas",
+      "details_model_header": "**Modelo**",
+      "details_dataset_header": "**Conjunto de dados**",
+      "details_output_header": "**Saída**",
+      "details_output_window": "Janela {n}",
+      "details_palette_label": "Paleta de exibição",
+      "details_imported_note": "Este raster foi importado; não foi produzido por um modelo deste projeto.",
+      "details_output_label": "Raster de saída"
     },
     "evaluation": {
       "header": "### Avaliação",

@@ -103,3 +103,56 @@ def test_pending_name_keeps_window_suffix_distinct():
     # filter by name groups both windows of the run together (drives the tile's
     # per-job map toggle).
     assert set(project.filter_predictions(name="run_b")) == {"run_b_w5", "run_b_w11"}
+
+
+def test_register_prediction_records_pending_run_params():
+    """Run-time choices (the ML mask layer) are frozen onto the Prediction.
+
+    The mask is an argument to ``apply()``, not model config, so without this
+    it would be absent from the prediction's provenance and the details dialog
+    could never say what the run was masked with.
+    """
+    project = Project(project_name="run_params")
+    model = GLMModel(name="m1", model_type="glm", year=2020)
+    project.add_model(model, auto_save=False)
+    model._pending_run_params = {"mask_layer": "forest_2020"}
+
+    pred = model._register_prediction(
+        Path("/tmp/glm.tif"), dataset=_FakeDataset(), auto_save=False
+    )
+
+    assert pred.run_params == {"mask_layer": "forest_2020"}
+
+
+def test_register_prediction_run_params_default_empty():
+    """A run that recorded nothing yields an empty dict, never None."""
+    project = Project(project_name="run_params_empty")
+    model = GLMModel(name="m1", model_type="glm", year=2020)
+    project.add_model(model, auto_save=False)
+
+    pred = model._register_prediction(
+        Path("/tmp/glm.tif"), dataset=_FakeDataset(), auto_save=False
+    )
+
+    assert pred.run_params == {}
+
+
+def test_run_params_survive_the_project_json_round_trip():
+    """Provenance is only useful if it outlives the session that produced it.
+
+    Mirrors exactly what Project.save()/load() do with a prediction:
+    ``model_dump(mode="json")`` out, ``Prediction(**data)`` back in.
+    """
+    from spatialrisk.predictions.prediction import Prediction
+
+    project = Project(project_name="run_params_rt")
+    model = GLMModel(name="m1", model_type="glm", year=2020)
+    project.add_model(model, auto_save=False)
+    model._pending_run_params = {"mask_layer": "forest_2020"}
+    pred = model._register_prediction(
+        Path("/tmp/glm.tif"), dataset=_FakeDataset(), auto_save=False
+    )
+
+    restored = Prediction(**pred.model_dump(mode="json"))
+
+    assert restored.run_params == {"mask_layer": "forest_2020"}

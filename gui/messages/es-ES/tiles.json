@@ -207,7 +207,18 @@
       "error_map_toggle": "No se pudo alternar la predicción en el mapa: {exc}",
       "source_label": "Fuente",
       "source_model": "Ejecutar un modelo",
-      "source_import": "Importar un ráster"
+      "source_import": "Importar un ráster",
+      "details_title": "Cómo se produjo esta predicción — {key}",
+      "details_created": "Creada",
+      "details_target": "Objetivo",
+      "details_features": "Variables explicativas",
+      "details_model_header": "**Modelo**",
+      "details_dataset_header": "**Conjunto de datos**",
+      "details_output_header": "**Salida**",
+      "details_output_window": "Ventana {n}",
+      "details_palette_label": "Paleta de visualización",
+      "details_imported_note": "Este ráster se importó; no lo produjo un modelo de este proyecto.",
+      "details_output_label": "Ráster de salida"
     },
     "evaluation": {
       "header": "### Evaluación",

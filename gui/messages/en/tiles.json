@@ -207,7 +207,18 @@
       "error_map_toggle": "Could not toggle prediction on map: {exc}",
       "source_label": "Source",
       "source_model": "Run a model",
-      "source_import": "Import a raster"
+      "source_import": "Import a raster",
+      "details_title": "How this prediction was produced — {key}",
+      "details_created": "Created",
+      "details_target": "Target",
+      "details_features": "Features",
+      "details_model_header": "**Model**",
+      "details_dataset_header": "**Dataset**",
+      "details_output_header": "**Output**",
+      "details_output_window": "Window {n}",
+      "details_palette_label": "Display palette",
+      "details_imported_note": "This raster was imported, not produced by a model in this project.",
+      "details_output_label": "Output raster"
     },
     "evaluation": {
       "header": "### Evaluation",

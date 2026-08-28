@@ -16,7 +16,10 @@ from gui.scripts.solara_threads import publish_if_current, spawn_in_context, upd
 from gui.store.project_writers import writing
 from gui.widget.confirm_dialog import ConfirmDialog
 from gui.widget.inference_output_list import InferenceOutputList
-from gui.widget.prediction_form_dialog import PredictionFormDialog
+from gui.widget.prediction_form_dialog import (
+    PredictionDetailsDialog,
+    PredictionFormDialog,
+)
 
 # The naming helpers live in gui/scripts/artifact_names.py; they are re-exported
 # under this tile's historical private names because other modules (and
@@ -417,6 +420,9 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
         _apply_pred_toggle()
 
     pending_delete, set_pending_delete = solara.use_state(None)  # row dict or None
+    # Row key whose provenance dialog is open, or None. The tile owns it
+    # so the list stays a pure renderer (same shape as Train/Sampling).
+    details_key, set_details_key = solara.use_state(None)
 
     def on_dismiss(job_id):
         # Failed job rows only — never touches the prediction registry.
@@ -480,6 +486,7 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
             on_dismiss=on_dismiss,
             on_delete=set_pending_delete,
             on_edit=on_edit,
+            on_open=lambda row: set_details_key(row["key"]),
         )
 
         _pending_count = (
@@ -504,4 +511,10 @@ def InferenceTile(project, map_=None, sepal_client=None, legend_port=None):
         on_submit=on_submit,
         sepal_client=sepal_client,
         prefill=prefill,
+    )
+
+    PredictionDetailsDialog(
+        project=project,
+        row_key=details_key,
+        on_close=lambda: set_details_key(None),
     )

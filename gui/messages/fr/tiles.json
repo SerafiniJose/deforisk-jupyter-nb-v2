@@ -207,7 +207,18 @@
       "error_map_toggle": "Impossible d'afficher la prédiction sur la carte : {exc}",
       "source_label": "Source",
       "source_model": "Lancer un modèle",
-      "source_import": "Importer un raster"
+      "source_import": "Importer un raster",
+      "details_title": "Comment cette prédiction a été produite — {key}",
+      "details_created": "Créée le",
+      "details_target": "Cible",
+      "details_features": "Variables explicatives",
+      "details_model_header": "**Modèle**",
+      "details_dataset_header": "**Jeu de données**",
+      "details_output_header": "**Sortie**",
+      "details_output_window": "Fenêtre {n}",
+      "details_palette_label": "Palette d'affichage",
+      "details_imported_note": "Ce raster a été importé ; il n'a pas été produit par un modèle de ce projet.",
+      "details_output_label": "Raster de sortie"
     },
     "evaluation": {
       "header": "### Évaluation",

@@ -26,7 +26,7 @@ def TrainModelList(
         on_delete: callback(model_key) — delete a registered model (confirmed
             by the tile).
         on_open: callback(model_key) — open the read-only details dialog for a
-            registered model (eye action button).
+            registered model (info action button).
     """
     p = project.value
     data = train_rows(p, train_jobs.value, model_labels)

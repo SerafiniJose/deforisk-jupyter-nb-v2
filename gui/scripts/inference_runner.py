@@ -114,6 +114,21 @@ def _resolve_mask(project, mask_layer):
     return variable.path
 
 
+def _run_params_for(family, mask_layer, windows):
+    """Run-time choices worth freezing onto the prediction, by family.
+
+    Only the arguments a family actually honours are recorded — MW resolves its
+    own layers, so storing a mask for it would be a lie the details dialog
+    would then repeat. ``None`` is kept for the ML mask because "no mask" is an
+    explicit user choice, not missing information.
+    """
+    if family in _ML_FOLDER:
+        return {"mask_layer": mask_layer or None}
+    if family == "mw" and windows:
+        return {"windows": list(windows)}
+    return {}
+
+
 def run_inference(
     project, model_key, dataset_name, name=None, mask_layer=None, windows=None
 ):
@@ -156,6 +171,11 @@ def run_inference(
     # provided) so a stale name from a prior named run on the same model instance
     # can't leak into a later unnamed run; None keeps the provenance-derived key.
     model._pending_pred_name = name or None
+    # Run-time choices that shape the output but live outside the model config,
+    # so the prediction's provenance can report them. Set unconditionally for
+    # the same reason as the name above: a stale mask from a prior run on this
+    # model instance must not leak into a later unmasked one.
+    model._pending_run_params = _run_params_for(family, mask_layer, windows)
 
     if family in _ML_FOLDER:
         mask = _resolve_mask(project, mask_layer)
