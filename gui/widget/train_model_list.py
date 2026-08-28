@@ -12,7 +12,9 @@ logger = logging.getLogger("spatial_risk")
 
 
 @solara.component
-def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_delete, on_open):
+def TrainModelList(
+    project, train_jobs, model_labels, on_cancel, on_dismiss, on_delete, on_open
+):
     """Models table: one row per registered model plus in-flight/failed jobs.
 
     Args:
@@ -37,9 +39,13 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
                 {"kind": "delete", "on_click": lambda *_, k=r["key"]: on_delete(k)},
             ]
         elif r["status"] == "running":
-            actions = [{"kind": "cancel", "on_click": lambda *_, i=r["job_id"]: on_cancel(i)}]
+            actions = [
+                {"kind": "cancel", "on_click": lambda *_, i=r["job_id"]: on_cancel(i)}
+            ]
         else:
-            actions = [{"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}]
+            actions = [
+                {"kind": "dismiss", "on_click": lambda *_, i=r["job_id"]: on_dismiss(i)}
+            ]
 
         error = r.get("error")
         if r["status"] == "failed" and not error:
@@ -50,8 +56,18 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
                 "cells": [
                     {"type": "text", "value": r["name"]},
                     {"type": "chip", "value": r["model_label"], "color": "primary"},
-                    {"type": "text", "value": r["dataset_name"], "size": "0.8rem", "muted": True},
-                    {"type": "text", "value": r["sample_name"], "size": "0.8rem", "muted": True},
+                    {
+                        "type": "text",
+                        "value": r["dataset_name"],
+                        "size": "0.8rem",
+                        "muted": True,
+                    },
+                    {
+                        "type": "text",
+                        "value": r["sample_name"],
+                        "size": "0.8rem",
+                        "muted": True,
+                    },
                     {"type": "status", "status": r["status"]},
                 ],
                 "actions": actions,
@@ -67,8 +83,14 @@ def TrainModelList(project, train_jobs, model_labels, on_cancel, on_dismiss, on_
         columns=[
             {"label": t("widgets.train_model_list.col_name"), "width": "minmax(0,2fr)"},
             {"label": t("widgets.train_model_list.col_type"), "width": "56px"},
-            {"label": t("widgets.train_model_list.col_dataset"), "width": "minmax(0,1fr)"},
-            {"label": t("widgets.train_model_list.col_sample"), "width": "minmax(0,1fr)"},
+            {
+                "label": t("widgets.train_model_list.col_dataset"),
+                "width": "minmax(0,1fr)",
+            },
+            {
+                "label": t("widgets.train_model_list.col_sample"),
+                "width": "minmax(0,1fr)",
+            },
             {"label": t("widgets.train_model_list.col_status"), "width": "82px"},
         ],
         rows=rows,
