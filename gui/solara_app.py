@@ -6,6 +6,7 @@ Run locally:
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 
 import reacton.ipyvuetify as rv
@@ -68,6 +69,15 @@ from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProject
 from gui.widget.pipeline_header import PipelineHeader
 from gui.widget.text_style import MUTED
 from spatialrisk.project import DATA_DIR, Project
+
+# Pin the localtileserver client host before any tile client is created (the
+# env var is read at TileClient construction, not import): with a host set,
+# localtileserver skips jupyter-loopback prefix autodetection, so raster tile
+# URLs stay port-registered loopback URLs the comm bridge tunnels in every
+# frontend (voila/SEPAL included). The prefix path needs the widget.js probe
+# fixes still pending upstream (banesullivan/jupyter-loopback PR #2); avoiding
+# it lets the app run on the stock jupyter-loopback release instead of the fork.
+os.environ.setdefault("LOCALTILESERVER_CLIENT_HOST", "127.0.0.1")
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)

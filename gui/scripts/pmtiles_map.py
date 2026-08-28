@@ -14,8 +14,9 @@ logger = logging.getLogger("spatial_risk")
 _SOURCE_LAYER = "points"
 
 
-def build_sample_circle_style(url, *, strata_field="strata",
-                              event_color="#d62728", forest_color="#2ca02c"):
+def build_sample_circle_style(
+    url, *, strata_field="strata", event_color="#d62728", forest_color="#2ca02c"
+):
     """Style dict: one filtered circle layer per class.
 
     event (strata == 1) -> red, forest (everything else) -> green.
@@ -27,6 +28,7 @@ def build_sample_circle_style(url, *, strata_field="strata",
     filters (==, !=, in, all, ...) ARE supported, so data-driven coloring
     must be expressed as one layer per class with scalar paint values.
     """
+
     def circle(id_, filter_, color):
         return {
             "id": id_,
@@ -52,39 +54,40 @@ def build_sample_circle_style(url, *, strata_field="strata",
     }
 
 
-def _enable_loopback(port):
-    """Route the tile server's localhost port through the jupyter-loopback bridge.
+def _enable_loopback(client):
+    """Route the tile server through the jupyter-loopback comm bridge.
 
-    Best-effort: on non-SEPAL frontends (or if the bridge is missing) this is a
-    harmless no-op and the layer still works where the origin is shared.
+    vectortileserver 0.2.2+ owns the bridge wiring (correct port + proxy-prefix
+    probe; the server host is 127.0.0.1 now, which a hand-rolled
+    ``intercept_localhost`` would miss). Best-effort: on non-SEPAL frontends
+    (or if the bridge is missing) this is a harmless no-op and the layer still
+    works where the origin is shared.
     """
-    if port is None:
-        return
     try:
-        import jupyter_loopback
-        if not jupyter_loopback.is_comm_bridge_enabled():
-            jupyter_loopback.enable_comm_bridge()
-        jupyter_loopback.intercept_localhost(int(port))
+        client.enable_jupyter_loopback()
     except Exception:
-        logger.warning("jupyter-loopback unavailable for port %s; PMTiles tiles "
-                       "may not reach the browser on SEPAL", port, exc_info=True)
+        logger.warning(
+            "jupyter-loopback bridge unavailable; PMTiles tiles "
+            "may not reach the browser on SEPAL",
+            exc_info=True,
+        )
 
 
 def add_sample_pmtiles_on_map(map_, pmtiles_path, name, key):
     """Add a sample's PMTiles as one circle layer styled by strata.
 
     Replaces any layer already registered under ``key``. We construct the
-    ipyleaflet ``PMTilesLayer`` directly (rather than
-    ``client.create_leaflet_layer``) — Phase 0 confirmed the latter imports the
-    undeclared ``mapbox_vector_tile`` package, while direct construction works
-    with only ``pyvectortiles`` + ``pmtiles`` installed. ``TileClient`` is used
-    purely for its range-capable tile server + ``pmtiles_url``.
+    ipyleaflet ``PMTilesLayer`` directly and use ``TileClient`` purely for its
+    range-capable tile server + ``pmtiles_url`` — the package's own layer
+    factory pulls in ``mapbox_vector_tile``/``geopandas`` extras this path
+    doesn't need. (``vectortileserver`` is the PyPI rename of the git-era
+    ``pyvectortiles``; the API surface used here is unchanged.)
     """
     from ipyleaflet import PMTilesLayer
-    from pyvectortiles.client import TileClient
+    from vectortileserver.client import TileClient
 
     client = TileClient(str(pmtiles_path))
-    _enable_loopback(getattr(client, "port", None))   # Phase 0: attr is .port
+    _enable_loopback(client)
     style = build_sample_circle_style(client.pmtiles_url)
     layer = PMTilesLayer(url=client.pmtiles_url, style=style)
     try:
