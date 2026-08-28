@@ -51,7 +51,9 @@ def prediction_name_exists(project, name: str) -> bool:
     return bool(project.filter_predictions(name=name))
 
 
-def name_field_messages(clean_key: str, exists: bool, attempted: bool) -> Tuple[str, bool]:
+def name_field_messages(
+    clean_key: str, exists: bool, attempted: bool
+) -> Tuple[str, bool]:
     """(i18n message key, is_error) for an ArtifactNameField helper line.
 
     Empty name is only *flagged* red after a submit attempt; an existing key
