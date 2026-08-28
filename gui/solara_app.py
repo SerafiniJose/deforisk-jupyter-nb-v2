@@ -1081,7 +1081,10 @@ def Page():
         is_pinned=False,
         # roomier Project dialog (scroll fix is the .dialog-content style above)
         dialog_width=560,
-        repo_url="https://github.com/openforis/spatial-risk",
+        repo_url="https://github.com/sepal-contrib/spatial-risk-module",
+        # no hosted docs yet — GitHub's rendered Sphinx index stands in (the
+        # MapApp fallback of <repo>/blob/main/doc/en.rst does not exist here)
+        docs_url="https://github.com/sepal-contrib/spatial-risk-module/blob/main/docs/source/index.rst",
     )
 
     # Grab the realized MapApp widget so close_project_dialog() can drive its
