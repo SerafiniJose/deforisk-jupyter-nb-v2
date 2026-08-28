@@ -17,6 +17,7 @@ from pysepal.solara.components.inputs import FileInputComponent
 from gui.i18n import t
 from gui.scripts.artifact_names import (
     default_pred_name,
+    mask_name_token,
     prediction_name_exists,
     sanitize_key,
 )
@@ -154,7 +155,17 @@ def PredictionFormDialog(
     # Name tracks the mode's suggestion until the user edits it: model mode
     # suggests "model__dataset", import mode the sanitized file stem.
     if source == "model":
-        suggestion = default_pred_name(selected_model, selected_dataset)
+        # The mask is part of the run's identity, so it discriminates the
+        # suggested name too: without it, two ML runs over one (model,
+        # dataset) that differ only by mask both landed on the same name and
+        # the second read as an overwrite of the first. Only once a mask has
+        # actually been chosen — an unset field has nothing to say yet.
+        mask_token = (
+            mask_name_token(None if mask_layer == NO_MASK else mask_layer)
+            if ml_family and mask_layer
+            else None
+        )
+        suggestion = default_pred_name(selected_model, selected_dataset, mask_token)
     else:
         suggestion = (
             sanitize_import_name(Path(str(file_path)).stem) if file_path else ""

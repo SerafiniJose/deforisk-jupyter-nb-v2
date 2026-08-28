@@ -3,6 +3,7 @@ from pathlib import Path
 
 from gui.scripts.artifact_names import (
     default_pred_name,
+    mask_name_token,
     name_field_messages,
     prediction_name_exists,
     sanitize_key,
@@ -44,6 +45,34 @@ def test_default_pred_name():
     assert default_pred_name("glm_v1", "calibration") == "glm_v1__calibration"
     assert default_pred_name("", "calibration") == ""
     assert default_pred_name("glm_v1", "") == ""
+
+
+def test_default_pred_name_appends_a_mask_token():
+    """A mask changes the output, so it belongs in the suggested name."""
+    assert (
+        default_pred_name("glm_v1", "calibration", "forest_gfc_tc30")
+        == "glm_v1__calibration__forest_gfc_tc30"
+    )
+
+
+def test_default_pred_name_without_a_mask_is_unchanged():
+    """Families that take no mask keep the two-part name."""
+    assert default_pred_name("mw_calib", "calibration", None) == "mw_calib__calibration"
+
+
+def test_mask_name_token_uses_the_layer_key():
+    """The layer key identifies the mask, sanitized for use in a path."""
+    assert mask_name_token("forest gfc/tc30") == "forest_gfc_tc30"
+
+
+def test_mask_name_token_marks_the_explicit_no_mask_choice():
+    """Predicting everywhere is a choice, so it gets a token of its own.
+
+    Without one, a masked and an unmasked run of the same model over the same
+    dataset would both suggest '<model>__<dataset>' and collide.
+    """
+    assert mask_name_token(None) == "nomask"
+    assert mask_name_token("") == "nomask"
 
 
 def test_prediction_name_exists_detects_key_and_name():

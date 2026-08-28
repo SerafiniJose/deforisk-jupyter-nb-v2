@@ -206,3 +206,80 @@ def test_dialog_and_runner_share_one_candidate_source(tmp_path):
     assert "suggested_mask_layer" in src
     # the resolve_predefined(...) == "forest_gfc" test must not be duplicated here
     assert "resolve_predefined" not in src
+
+
+# --- the mask belongs in the suggested name ----------------------------------
+#
+# The mask changes the output raster, so two runs of one model over one dataset
+# that differ only by mask are different products. Without the mask in the
+# suggested name they both defaulted to "<model>__<dataset>", and the second
+# read as an overwrite of the first rather than a new map.
+
+
+def _name_field(box):
+    label = t("tiles.inference.pred_name_label")
+    return next(f for f in _find(box, vw.TextField) if f.label == label)
+
+
+def _suggested_name(box, mask_value):
+    _pick(box, "glm_glm_v1")
+    _mask_select(box).v_model = mask_value
+    return _name_field(box).v_model
+
+
+def test_two_masks_suggest_two_different_names(tmp_path):
+    """The reported bug: same model, same dataset, different mask, one name."""
+    box_a, _ = _render(tmp_path, ["forest_gfc_tc30", "forest_2015"])
+    box_b, _ = _render(tmp_path, ["forest_gfc_tc30", "forest_2015"])
+
+    name_a = _suggested_name(box_a, "forest_gfc_tc30")
+    name_b = _suggested_name(box_b, "forest_2015")
+
+    assert name_a != name_b
+
+
+def test_the_suggested_name_carries_the_mask_layer(tmp_path):
+    """The mask layer key is the discriminator, appended after the dataset."""
+    box, _ = _render(tmp_path, ["forest_gfc_tc30"])
+    assert (
+        _suggested_name(box, "forest_gfc_tc30")
+        == "glm_glm_v1__calibration__forest_gfc_tc30"
+    )
+
+
+def test_predicting_everywhere_gets_its_own_token(tmp_path):
+    """An unmasked run must not collide with a masked one either."""
+    box, _ = _render(tmp_path, ["forest_gfc_tc30"])
+    assert _suggested_name(box, NO_MASK) == "glm_glm_v1__calibration__nomask"
+
+
+def test_the_same_mask_still_suggests_the_same_name(tmp_path):
+    """Re-running one configuration still lands on its existing name.
+
+    Refreshing a stale map stays an overwrite rather than a pile-up.
+    """
+    box_a, _ = _render(tmp_path, ["forest_gfc_tc30"])
+    box_b, _ = _render(tmp_path, ["forest_gfc_tc30"])
+    assert _suggested_name(box_a, "forest_gfc_tc30") == _suggested_name(
+        box_b, "forest_gfc_tc30"
+    )
+
+
+def test_a_family_without_a_mask_keeps_the_two_part_name(tmp_path):
+    """MW resolves its own layers, so its name gains no mask token."""
+    box, _ = _render(tmp_path, ["forest_gfc_tc30"])
+    _pick(box, "mw_calibration_mw")
+    assert _name_field(box).v_model == "mw_calibration_mw__calibration"
+
+
+def test_an_edited_name_is_not_overwritten_when_the_mask_changes(tmp_path):
+    """A typed name survives a later mask change.
+
+    The suggestion only tracks a field the user has not touched.
+    """
+    box, _ = _render(tmp_path, ["forest_gfc_tc30", "forest_2015"])
+    _pick(box, "glm_glm_v1")
+    _mask_select(box).v_model = "forest_gfc_tc30"
+    _name_field(box).v_model = "my_run"
+    _mask_select(box).v_model = "forest_2015"
+    assert _name_field(box).v_model == "my_run"
