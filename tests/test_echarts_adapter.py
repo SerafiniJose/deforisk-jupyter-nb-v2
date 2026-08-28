@@ -2,17 +2,20 @@
 
 Two modules under test, split along the app's layering rule:
 
-* ``gui.scripts.echarts_options`` — pure, solara-free: the categorical palette
-  that replaces Plotly's sampled ``Blues`` scale, the theme ink/grid colours,
-  option shaping, and renderer validation. Every later chart task builds its
-  option dicts here, so this half must import without solara.
-* ``gui.widget.echarts`` — the solara/ipecharts half: builds the widget and
-  renders it. Nothing outside the widget layer may import it.
+* ``gui.scripts.echarts_options`` — pure, solara-free: the accent-derived
+  palette, the theme ink/grid colours, option shaping, and renderer validation.
+  Every later chart task builds its option dicts here, so this half must import
+  without solara.
+* ``gui.widget.echarts`` — the solara/ipecharts half: builds the widget, reads
+  the live theme accent, and renders it. Nothing outside the widget layer may
+  import it.
 
-The palette assertions pin the *exact* hex values the Plotly ramp produced
-today (``sample_colorscale("Blues", [0.35 + 0.55*i/(n-1) ...])``), converted to
-hex. That is the point of the migration: the colours become application-owned
-constants that cannot drift when plotly is upgraded or removed.
+The palette assertions pin *relationships*, not hex values: the ramp's length,
+determinism, direction and hue, and the fact that a single series is the accent
+itself. Series colour is now derived from the app's Vuetify ``primary``, so
+pinning literals would only re-freeze the drift this palette exists to remove —
+the earlier ColorBrewer ``Blues`` ramp matched no theme and never followed one.
+What must not drift is that a chart is painted in the app's own accent.
 """
 
 import subprocess
@@ -26,89 +29,150 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # --------------------------------------------------------------------------
-# Palette — replaces plotly.colors.sample_colorscale("Blues", ...)
+# Palette — every series colour derives from the app's "primary" accent
 # --------------------------------------------------------------------------
 
-def test_single_series_uses_the_fixed_blue():
-    """One cell size = one bar colour; shading would encode nothing."""
-    from gui.scripts.echarts_options import csize_colors
+# The two live values pysepal's setup_theme_colors writes, used as realistic
+# inputs. The palette must work for ANY accent, so nothing below assumes these.
+LIGHT_PRIMARY = "#5BB624"
+DARK_PRIMARY = "#76591e"
 
-    assert csize_colors(1) == ["#2a78d6"]
+
+def _hue_of(hex_color):
+    """HSL hue of a '#rrggbb' string, in turns."""
+    import colorsys
+
+    rgb = tuple(int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    return colorsys.rgb_to_hls(*rgb)[0]
+
+
+def _luminance_of(hex_color):
+    return sum(int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+
+
+def _same_hue(a, b):
+    """Hues equal within 8-bit rounding.
+
+    A shade is computed in float HSL and rounded back to one byte per channel,
+    which can nudge the recovered hue by a fraction of a percent — the ramp
+    keeps the accent's hue, it just cannot store it exactly.
+    """
+    return abs(_hue_of(a) - _hue_of(b)) < 0.01
+
+
+def test_single_series_is_the_accent_itself():
+    """One cell size = one bar colour; shading would encode nothing."""
+    from gui.scripts.echarts_options import accent_color, accent_ramp
+
+    assert accent_ramp(1, LIGHT_PRIMARY) == [accent_color(LIGHT_PRIMARY)]
+    assert accent_ramp(1, LIGHT_PRIMARY) == [LIGHT_PRIMARY.lower()]
 
 
 def test_palette_length_matches_the_series_count():
-    from gui.scripts.echarts_options import csize_colors
+    """One colour per series, for every count the charts can ask for."""
+    from gui.scripts.echarts_options import accent_ramp
 
     for n in range(1, 9):
-        assert len(csize_colors(n)) == n, f"n={n}"
+        assert len(accent_ramp(n, LIGHT_PRIMARY)) == n, f"n={n}"
 
 
 def test_palette_is_deterministic():
-    """Same count in, byte-identical list out — no sampling, no randomness."""
-    from gui.scripts.echarts_options import csize_colors
+    """Same inputs in, byte-identical list out — no sampling, no randomness."""
+    from gui.scripts.echarts_options import accent_ramp
 
     for n in range(1, 9):
-        assert csize_colors(n) == csize_colors(n)
+        assert accent_ramp(n, LIGHT_PRIMARY) == accent_ramp(n, LIGHT_PRIMARY)
 
 
-def test_palette_reproduces_the_plotly_blues_ramp_it_replaces():
-    """Frozen hex equivalents of the ramp the Plotly charts drew today."""
-    from gui.scripts.echarts_options import csize_colors
+def test_palette_follows_the_accent_it_is_given():
+    """The whole point: change the app's primary, the bars move with it.
 
-    assert csize_colors(2) == ["#a6cde4", "#084a92"]
-    assert csize_colors(3) == ["#a6cde4", "#4292c6", "#084a92"]
-    assert csize_colors(4) == ["#a6cde4", "#60a7d2", "#2a7aba", "#084a92"]
-    assert csize_colors(5) == [
-        "#a6cde4", "#70b1d7", "#4292c6", "#1f6eb3", "#084a92",
-    ]
+    Hue is what carries the accent's identity through the ramp — lightness is
+    the dimension the ramp itself spends — so it is hue that must match.
+    """
+    from gui.scripts.echarts_options import accent_ramp
+
+    for n in range(1, 6):
+        for accent in (LIGHT_PRIMARY, DARK_PRIMARY, "#c0392b"):
+            for shade in accent_ramp(n, accent):
+                assert _same_hue(shade, accent), f"n={n} accent={accent} {shade}"
 
 
 def test_palette_endpoints_are_stable_across_counts():
     """The ramp always spans the same light->dark ends, whatever n is."""
-    from gui.scripts.echarts_options import csize_colors
+    from gui.scripts.echarts_options import accent_ramp
 
-    for n in range(2, 9):
-        colors = csize_colors(n)
-        assert colors[0] == "#a6cde4", f"n={n}"
-        assert colors[-1] == "#084a92", f"n={n}"
+    ends = {(c[0], c[-1]) for c in (accent_ramp(n, LIGHT_PRIMARY) for n in range(2, 9))}
+    assert len(ends) == 1
 
 
 def test_palette_darkens_monotonically():
     """Darker = larger cell size. Guards the ramp's direction, not its values."""
-    from gui.scripts.echarts_options import csize_colors
+    from gui.scripts.echarts_options import accent_ramp
 
     for n in range(2, 9):
-        lums = [
-            int(c[1:3], 16) + int(c[3:5], 16) + int(c[5:7], 16)
-            for c in csize_colors(n)
-        ]
+        lums = [_luminance_of(c) for c in accent_ramp(n, LIGHT_PRIMARY)]
         assert lums == sorted(lums, reverse=True), f"n={n}: {lums}"
 
 
 def test_palette_colors_are_all_hex_triplets():
-    from gui.scripts.echarts_options import csize_colors
+    """Every entry is a '#rrggbb' string ECharts can take verbatim."""
+    from gui.scripts.echarts_options import accent_ramp
 
     for n in range(1, 9):
-        for c in csize_colors(n):
+        for c in accent_ramp(n, LIGHT_PRIMARY):
             assert len(c) == 7 and c[0] == "#"
             int(c[1:], 16)
 
 
 def test_palette_rejects_a_non_positive_series_count():
+    """Zero or fewer series is a caller bug, not an empty palette."""
     import pytest
 
-    from gui.scripts.echarts_options import csize_colors
+    from gui.scripts.echarts_options import accent_ramp
 
     for bad in (0, -1):
         with pytest.raises(ValueError):
-            csize_colors(bad)
+            accent_ramp(bad, LIGHT_PRIMARY)
+
+
+def test_palette_falls_back_when_the_theme_slot_is_unusable():
+    """An empty or non-hex theme slot must not take a render down."""
+    from gui.scripts.echarts_options import DEFAULT_ACCENT, accent_color, accent_ramp
+
+    for bad in (None, "", "primary", "#12345", 0):
+        assert accent_color(bad) == DEFAULT_ACCENT.lower()
+        assert len(accent_ramp(3, bad)) == 3
+
+
+def test_accent_is_lifted_clear_of_the_dark_surface():
+    """The dark theme's primary is a deep gold that sinks into its own surface.
+
+    Hue is preserved — it is the same colour, only light enough to see.
+    """
+    from gui.scripts.echarts_options import accent_color
+
+    on_dark = accent_color(DARK_PRIMARY, dark=True)
+    assert _luminance_of(on_dark) > _luminance_of(DARK_PRIMARY)
+    assert _same_hue(on_dark, DARK_PRIMARY)
+    # The light theme's accent already reads on white and is left alone.
+    assert accent_color(LIGHT_PRIMARY) == LIGHT_PRIMARY.lower()
+
+
+def test_accent_fill_is_the_accent_at_the_given_opacity():
+    """Translucent marks (the scatter cloud) are the accent, not a fixed blue."""
+    from gui.scripts.echarts_options import accent_fill
+
+    assert accent_fill(LIGHT_PRIMARY, 0.55) == "rgba(91, 182, 36, 0.55)"
 
 
 # --------------------------------------------------------------------------
 # Theme colours — the exact values the Plotly charts used
 # --------------------------------------------------------------------------
 
+
 def test_theme_colors_reuse_the_existing_app_values():
+    """Ink and grid are the exact values the Plotly charts drew."""
     from gui.scripts.echarts_options import theme_colors
 
     assert theme_colors(dark=True) == {"ink": "#c3c2b7", "grid": "#33322f"}
@@ -116,6 +180,7 @@ def test_theme_colors_reuse_the_existing_app_values():
 
 
 def test_theme_colors_defaults_to_light():
+    """No ``dark`` argument means the light theme."""
     from gui.scripts.echarts_options import theme_colors
 
     assert theme_colors() == theme_colors(dark=False)
@@ -125,6 +190,7 @@ def test_theme_colors_defaults_to_light():
 # Option shaping
 # --------------------------------------------------------------------------
 
+
 def test_themed_option_makes_the_background_transparent():
     """The chart sits on the dialog's own surface in both themes."""
     from gui.scripts.echarts_options import themed_option
@@ -133,6 +199,7 @@ def test_themed_option_makes_the_background_transparent():
 
 
 def test_themed_option_applies_the_theme_ink_to_text():
+    """Top-level text takes the theme's ink colour."""
     from gui.scripts.echarts_options import themed_option
 
     assert themed_option({}, dark=True)["textStyle"]["color"] == "#c3c2b7"
@@ -149,6 +216,7 @@ def test_themed_option_keeps_caller_text_style_keys():
 
 
 def test_themed_option_preserves_every_other_key():
+    """The adapter adds two keys and touches nothing else the caller set."""
     from gui.scripts.echarts_options import themed_option
 
     option = {"series": [{"type": "bar", "data": [1, 2]}], "grid": {"left": 40}}
@@ -170,7 +238,9 @@ def test_themed_option_does_not_mutate_the_callers_dict():
 # Renderer policy — SVG for small bar charts, canvas for dense scatter
 # --------------------------------------------------------------------------
 
+
 def test_renderer_constants_are_the_echarts_spellings():
+    """The constants are what ECharts itself expects, not app aliases."""
     from gui.scripts.echarts_options import RENDERER_CANVAS, RENDERER_SVG
 
     assert RENDERER_SVG == "svg"
@@ -178,8 +248,12 @@ def test_renderer_constants_are_the_echarts_spellings():
 
 
 def test_resolve_renderer_accepts_both_supported_renderers():
+    """Both supported names pass through unchanged."""
     from gui.scripts.echarts_options import (
-        RENDERER_CANVAS, RENDERER_SVG, resolve_renderer)
+        RENDERER_CANVAS,
+        RENDERER_SVG,
+        resolve_renderer,
+    )
 
     assert resolve_renderer(RENDERER_SVG) == "svg"
     assert resolve_renderer(RENDERER_CANVAS) == "canvas"
@@ -200,6 +274,7 @@ def test_resolve_renderer_rejects_anything_else():
 # Layering — the pure half must not need solara
 # --------------------------------------------------------------------------
 
+
 def test_option_module_imports_without_solara():
     """gui/scripts/* is solara-free by the app's layering rule.
 
@@ -215,13 +290,14 @@ def test_option_module_imports_without_solara():
         "            raise ImportError('blocked: ' + name)\n"
         "        return None\n"
         "sys.meta_path.insert(0, Block())\n"
-        "from gui.scripts.echarts_options import csize_colors, themed_option\n"
-        "assert csize_colors(1) == ['#2a78d6']\n"
+        "from gui.scripts.echarts_options import accent_ramp, themed_option\n"
+        "assert accent_ramp(1, '#5BB624') == ['#5bb624']\n"
         "assert themed_option({})['backgroundColor'] == 'transparent'\n"
         "print('OK')\n"
     )
     proc = subprocess.run(
-        [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+        [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
     assert "OK" in proc.stdout
 
@@ -229,6 +305,7 @@ def test_option_module_imports_without_solara():
 # --------------------------------------------------------------------------
 # Widget construction — raw-dict path, headless
 # --------------------------------------------------------------------------
+
 
 def test_build_chart_widget_uses_the_raw_dict_widget_class():
     """EChartsRawWidget takes a plain dict; EChartsWidget needs typed Options."""
@@ -240,6 +317,7 @@ def test_build_chart_widget_uses_the_raw_dict_widget_class():
 
 
 def test_build_chart_widget_themes_the_option_it_hands_to_echarts():
+    """The widget gets an already-themed option, not the caller's raw dict."""
     from gui.widget.echarts import build_chart_widget
 
     widget = build_chart_widget({"series": []}, dark=True)
@@ -248,12 +326,52 @@ def test_build_chart_widget_themes_the_option_it_hands_to_echarts():
 
 
 def test_build_chart_widget_defaults_to_the_svg_renderer():
+    """SVG is the default: most charts here are small bar charts."""
     from gui.widget.echarts import build_chart_widget
 
     assert build_chart_widget({}).renderer == "svg"
 
 
+# --------------------------------------------------------------------------
+# Accent — the charts' one link to the app's live theme
+# --------------------------------------------------------------------------
+
+
+def test_theme_accent_reads_the_live_vuetify_primary():
+    """Not a captured constant: setup_theme_colors writes these at startup."""
+    import solara.lab
+
+    from gui.widget.echarts import theme_accent
+
+    themes = solara.lab.theme.themes
+    before = (themes.light.primary, themes.dark.primary)
+    try:
+        themes.light.primary = "#111111"
+        themes.dark.primary = "#222222"
+        assert theme_accent(dark=False) == "#111111"
+        assert theme_accent(dark=True) == "#222222"
+    finally:
+        themes.light.primary, themes.dark.primary = before
+
+
+def test_theme_accent_falls_back_when_the_slot_is_empty():
+    """A bare harness (or a theme that never got set up) still draws."""
+    import solara.lab
+
+    from gui.scripts.echarts_options import DEFAULT_ACCENT
+    from gui.widget.echarts import theme_accent
+
+    themes = solara.lab.theme.themes
+    before = themes.light.primary
+    try:
+        themes.light.primary = ""
+        assert theme_accent() == DEFAULT_ACCENT
+    finally:
+        themes.light.primary = before
+
+
 def test_build_chart_widget_takes_an_explicit_renderer():
+    """The caller chooses, because only it knows the point count."""
     from gui.scripts.echarts_options import RENDERER_CANVAS
     from gui.widget.echarts import build_chart_widget
 
@@ -262,17 +380,17 @@ def test_build_chart_widget_takes_an_explicit_renderer():
 
 
 def test_build_chart_widget_enables_dirty_rect_only_for_canvas():
-    """Dirty-rectangle repaints only help (and only exist) on canvas; pinning
-    False for SVG keeps the flag from silently riding along if the default
-    renderer ever changes."""
+    """Dirty-rectangle repaints are canvas-only, and pinned False for SVG.
+
+    They only help (and only exist) on canvas; pinning the SVG case keeps the
+    flag from silently riding along if the default renderer ever changes.
+    """
     from gui.scripts.echarts_options import RENDERER_CANVAS, RENDERER_SVG
     from gui.widget.echarts import build_chart_widget
 
     option = {"series": [{"type": "bar", "data": [1, 2]}]}
-    assert build_chart_widget(option,
-                              renderer=RENDERER_CANVAS).use_dirty_rect is True
-    assert build_chart_widget(option,
-                              renderer=RENDERER_SVG).use_dirty_rect is False
+    assert build_chart_widget(option, renderer=RENDERER_CANVAS).use_dirty_rect is True
+    assert build_chart_widget(option, renderer=RENDERER_SVG).use_dirty_rect is False
 
 
 def test_build_chart_widget_is_full_width_with_an_explicit_height():
@@ -289,6 +407,7 @@ def test_build_chart_widget_is_full_width_with_an_explicit_height():
 
 
 def test_build_chart_widget_has_a_default_pixel_height():
+    """A container with no height draws nothing, so height is always concrete."""
     from gui.widget.echarts import build_chart_widget
 
     assert build_chart_widget({}).height.endswith("px")
@@ -297,6 +416,7 @@ def test_build_chart_widget_has_a_default_pixel_height():
 # --------------------------------------------------------------------------
 # Component — recreation, not mutation
 # --------------------------------------------------------------------------
+
 
 def _render_chart(**kwargs):
     from gui.widget.echarts import EChartsChart
@@ -311,6 +431,7 @@ def _chart_widget(rc):
 
 
 def test_chart_component_renders_headlessly():
+    """The component mounts under reacton with no browser present."""
     _, rc = _render_chart()
     assert _chart_widget(rc) is not None
 
@@ -361,8 +482,9 @@ def test_chart_component_reuses_its_widget_across_a_key_order_change():
 
     _, rc = _render_chart(option={"series": (), "grid": {"left": 8}})
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"grid": {"left": 8}, "series": []},
-                           identity="run-a"))
+    rc.render(
+        EChartsChart(option={"grid": {"left": 8}, "series": []}, identity="run-a")
+    )
     assert _chart_widget(rc) is first
 
 
@@ -382,15 +504,19 @@ def test_chart_component_survives_an_option_json_cannot_serialize():
     assert _chart_widget(rc) is not None
     # and it still discriminates: a different unserializable value rebuilds
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"series": [{"data": [np.int64(4)]}],
-                                   "grid": {"top": np.int64(52)}},
-                           identity="run-a"))
+    rc.render(
+        EChartsChart(
+            option={"series": [{"data": [np.int64(4)]}], "grid": {"top": np.int64(52)}},
+            identity="run-a",
+        )
+    )
     assert _chart_widget(rc) is not first
 
 
 # --------------------------------------------------------------------------
 # option_digest — the caller-supplied identity escape hatch
 # --------------------------------------------------------------------------
+
 
 def test_chart_component_hashes_the_option_itself_by_default():
     """No digest supplied = the adapter's own hash decides. Unchanged behaviour.
@@ -416,24 +542,33 @@ def test_a_caller_supplied_digest_replaces_the_option_hash():
     """
     from gui.widget.echarts import EChartsChart
 
-    _, rc = _render_chart(option={"series": [{"data": [1]}]},
-                          option_digest="points@1")
+    _, rc = _render_chart(option={"series": [{"data": [1]}]}, option_digest="points@1")
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a",
-                           option_digest="points@1"))
+    rc.render(
+        EChartsChart(
+            option={"series": [{"data": [2]}]},
+            identity="run-a",
+            option_digest="points@1",
+        )
+    )
     assert _chart_widget(rc) is first
     # ...and the stale option was genuinely never applied
     assert _chart_widget(rc).option["series"] == [{"data": [1]}]
 
 
 def test_a_changed_caller_digest_rebuilds_the_widget():
+    """``option_digest`` stands in for the content hash, so moving it rebuilds."""
     from gui.widget.echarts import EChartsChart
 
-    _, rc = _render_chart(option={"series": [{"data": [1]}]},
-                          option_digest="points@1")
+    _, rc = _render_chart(option={"series": [{"data": [1]}]}, option_digest="points@1")
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"series": [{"data": [2]}]}, identity="run-a",
-                           option_digest="points@2"))
+    rc.render(
+        EChartsChart(
+            option={"series": [{"data": [2]}]},
+            identity="run-a",
+            option_digest="points@2",
+        )
+    )
     second = _chart_widget(rc)
     assert second is not first
     assert second.option["series"] == [{"data": [2]}]
@@ -443,17 +578,20 @@ def test_the_caller_digest_does_not_override_the_presentation_inputs():
     """Theme and renderer stay the adapter's business, digest or not."""
     from gui.widget.echarts import EChartsChart
 
-    _, rc = _render_chart(option={"series": []}, option_digest="points@1",
-                          dark=False)
+    _, rc = _render_chart(option={"series": []}, option_digest="points@1", dark=False)
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"series": []}, identity="run-a",
-                           option_digest="points@1", dark=True))
+    rc.render(
+        EChartsChart(
+            option={"series": []}, identity="run-a", option_digest="points@1", dark=True
+        )
+    )
     second = _chart_widget(rc)
     assert second is not first
     assert second.option["textStyle"]["color"] == "#c3c2b7"
 
 
 def test_chart_component_recreates_its_widget_when_the_identity_changes():
+    """A new subject gets a fresh widget, so live chart state never carries over."""
     from gui.widget.echarts import EChartsChart
 
     _, rc = _render_chart()
@@ -487,6 +625,7 @@ def test_chart_component_recreates_its_widget_when_the_theme_flips():
 # `visible` prop and, whenever it is/becomes True, toggles a marker DOM class
 # after a short delay (past Vuetify's ~300 ms tab transition), forcing exactly
 # one client-side re-measure once layout has settled.
+
 
 def _wait_until(cond, timeout=2.0):
     import time
@@ -533,20 +672,16 @@ def test_regaining_visibility_nudges_again(monkeypatch):
     between present and absent — asserting it flips proves a second nudge was
     sent rather than a no-op re-add of the same class.
     """
-    from gui.widget.echarts import EChartsChart
-
     import gui.widget.echarts as echarts_mod
+    from gui.widget.echarts import EChartsChart
 
     monkeypatch.setattr(echarts_mod, "_RESIZE_NUDGE_DELAY", 0.01)
     _, rc = _render_chart(visible=True)
     widget = _chart_widget(rc)
-    assert _wait_until(
-        lambda: echarts_mod._RESIZE_NUDGE_CLASS in widget._dom_classes)
+    assert _wait_until(lambda: echarts_mod._RESIZE_NUDGE_CLASS in widget._dom_classes)
 
-    rc.render(EChartsChart(option={"series": []}, identity="run-a",
-                           visible=False))
-    rc.render(EChartsChart(option={"series": []}, identity="run-a",
-                           visible=True))
+    rc.render(EChartsChart(option={"series": []}, identity="run-a", visible=False))
+    rc.render(EChartsChart(option={"series": []}, identity="run-a", visible=True))
     assert _wait_until(
         lambda: echarts_mod._RESIZE_NUDGE_CLASS not in widget._dom_classes
     ), widget._dom_classes
@@ -554,16 +689,16 @@ def test_regaining_visibility_nudges_again(monkeypatch):
 
 
 def test_the_widget_survives_visibility_flips():
-    """`visible` is presentation timing, not identity: no teardown on a tab
-    switch — that teardown-while-hidden is exactly what squished the charts."""
+    """``visible`` is presentation timing, not identity: no teardown on a switch.
+
+    Tearing a chart down while it is hidden is exactly what squished them.
+    """
     from gui.widget.echarts import EChartsChart
 
     _, rc = _render_chart(visible=True)
     first = _chart_widget(rc)
-    rc.render(EChartsChart(option={"series": []}, identity="run-a",
-                           visible=False))
-    rc.render(EChartsChart(option={"series": []}, identity="run-a",
-                           visible=True))
+    rc.render(EChartsChart(option={"series": []}, identity="run-a", visible=False))
+    rc.render(EChartsChart(option={"series": []}, identity="run-a", visible=True))
     assert _chart_widget(rc) is first
     rc.close()
 
@@ -586,6 +721,7 @@ def test_unmounting_cancels_a_pending_nudge(monkeypatch):
 # Disposal — a replaced widget must not survive in the kernel's registry
 # --------------------------------------------------------------------------
 
+
 def _live_chart_widgets():
     """Every EChartsRawWidget ipywidgets still holds a strong reference to.
 
@@ -596,8 +732,11 @@ def _live_chart_widgets():
     """
     from ipywidgets.widgets.widget import _instances
 
-    return [w for w in list(_instances.values())
-            if isinstance(w, ipecharts.EChartsRawWidget)]
+    return [
+        w
+        for w in list(_instances.values())
+        if isinstance(w, ipecharts.EChartsRawWidget)
+    ]
 
 
 def test_replaced_chart_widgets_are_closed_rather_than_orphaned():
@@ -631,6 +770,7 @@ def test_replaced_chart_widgets_are_closed_rather_than_orphaned():
 # No CDN — the frontend must ship with the package
 # --------------------------------------------------------------------------
 
+
 def test_ipecharts_frontend_assets_resolve_from_the_local_install():
     """The labextension (incl. echarts itself) is on disk, not fetched at runtime.
 
@@ -650,6 +790,8 @@ def test_ipecharts_frontend_assets_resolve_from_the_local_install():
     entry = pkg["jupyterlab"]["_build"]["load"]
     assert (asset_dir / entry).is_file(), entry
 
-    licenses = json.loads((asset_dir / "static" / "third-party-licenses.json").read_text())
+    licenses = json.loads(
+        (asset_dir / "static" / "third-party-licenses.json").read_text()
+    )
     bundled = {p["name"] for p in licenses["packages"]}
     assert "echarts" in bundled, sorted(bundled)

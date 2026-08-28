@@ -25,6 +25,19 @@ class AppState:
         # inputs on ``AoiResult.asset``; see gui/scripts/aoi_io.py.
         self.aoi_result = solara.reactive(None)
 
+        # Nesting depth for the project-swap guard — see restoring_project().
+        # A solara.reactive, not a plain attribute: reactive VALUES are stored
+        # per-kernel, so each browser session gets its own guard (a plain
+        # attribute on this process-global singleton would let one session's
+        # in-flight restore suppress every other session's legitimate AOI
+        # attach on a shared SEPAL server). It is a counter, not a bool, so
+        # nested/overlapping restore windows cannot clear the guard while an
+        # outer window is still active. No component reads this reactive
+        # during render, so setting it never triggers a re-render — reading
+        # ``.value`` here (from an effect body or a callback) does not create
+        # a render subscription.
+        self._restoring_depth = solara.reactive(0)
+
         # Bumped each time a project is loaded from disk. The map view subscribes
         # to this so it can zoom to the AOI on load (a plain project-reference
         # watch would also fire on every in-place mutation).
@@ -64,6 +77,55 @@ class AppState:
         self.project_dirty.set(False)
         self.last_saved.set(when)
 
+    def restoring_project(self):
+        """Mark a project-restore window: aoi/project reactives are mid-swap.
+
+        ``do_load``, ``new_project_state`` and ``close_project_state`` each
+        write ``aoi_result`` and ``project`` as separate reactive sets, and
+        Solara can run a render (and its effects) BETWEEN them. The
+        attach-on-select effect would then pair one project with the other's
+        AOI and persist it into the wrong folder — silently overwriting that
+        project's stored AOI and unlinking its geometry sidecar. Every such
+        swap must wrap itself in this context manager;
+        :meth:`attach_current_aoi` refuses to write inside it.
+
+        Nesting-safe: the guard is a depth counter, not a boolean, so an
+        inner window closing (e.g. a helper called from within a larger
+        swap) does not prematurely clear the guard for the outer window
+        still in flight. Uses an exception-safe ``finally`` so a raise
+        anywhere inside always unwinds the counter.
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _window():
+            self._restoring_depth.value += 1
+            try:
+                yield
+            finally:
+                self._restoring_depth.value -= 1
+
+        return _window()
+
+    @property
+    def restoring(self) -> bool:
+        """Whether a project-restore window is currently open (any depth)."""
+        return self._restoring_depth.value > 0
+
+    def attach_current_aoi(self, data_dir) -> bool:
+        """Persist the session AOI into the open project — unless mid-restore.
+
+        The effect body reads both reactives fresh at run time, so a run that
+        executes after the restore window closes always sees the settled
+        (aoi, project) pair; the guard only rejects runs inside the window,
+        where the pair can be cross-project.
+        """
+        if self.restoring:
+            return False
+        from gui.scripts.aoi_io import attach_aoi
+
+        return attach_aoi(self.project.value, self.aoi_result.value, data_dir=data_dir)
+
     def load_project_state(self, project, when: Optional[datetime]) -> None:
         """Install a loaded project without marking it dirty."""
         self._suppress_dirty = True
@@ -79,15 +141,24 @@ class AppState:
         """Install a freshly created project (dirty, never saved).
 
         Resets the workflow context so the user starts clean at the AOI step.
+
+        aoi_result is cleared BEFORE the new project is installed, and the
+        whole sequence runs inside restoring_project(): a render between
+        these sets could otherwise let the attach-on-select effect pair the
+        NEW project with the OUTGOING session AOI and persist it into the
+        new project's folder (see restoring_project()). Clearing first means
+        even an unguarded reader never observes (new project, old AOI); the
+        guard is defence in depth on top of that ordering.
         """
-        self.project.set(project)  # subscription marks dirty=True
-        self.last_saved.set(None)
-        self.aoi_result.set(None)
-        # Bump the same signal a load does so the shell's on-switch effects run
-        # (clear the previous project's map overlays + tracking, rebuild the
-        # empty Train/Inference job lists). The signal means "a project was
-        # installed" — loaded from disk OR newly created.
-        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+        with self.restoring_project():
+            self.aoi_result.set(None)
+            self.project.set(project)  # subscription marks dirty=True
+            self.last_saved.set(None)
+            # Bump the same signal a load does so the shell's on-switch effects
+            # run (clear the previous project's map overlays + tracking,
+            # rebuild the empty Train/Inference job lists). The signal means
+            # "a project was installed" — loaded from disk OR newly created.
+            self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
     def close_project_state(self) -> None:
         """Return to the no-project state — the open project was deleted.
@@ -99,11 +170,16 @@ class AppState:
 
         Message state is not reset here: load/save/delete outcomes are pysepal
         toasts, which expire on their own.
+
+        aoi_result is cleared before project (and the whole sequence is
+        wrapped in restoring_project()) for the same cross-project-attach
+        reason as new_project_state — see there.
         """
-        self.project.set(None)  # subscription sets dirty=False
-        self.last_saved.set(None)
-        self.aoi_result.set(None)
-        self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
+        with self.restoring_project():
+            self.aoi_result.set(None)
+            self.project.set(None)  # subscription sets dirty=False
+            self.last_saved.set(None)
+            self.project_loaded_signal.set(self.project_loaded_signal.value + 1)
 
     def register_legends(self, *legends) -> None:
         """Publish (or replace) legends and select the newest one."""

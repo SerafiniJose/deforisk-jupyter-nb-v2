@@ -95,19 +95,19 @@ def _render(project, jobs=None, **kwargs):
 
 
 def test_open_action_absent_when_no_callback_is_given():
-    """Without on_open, no eye icon is rendered at all."""
+    """Without on_open, no details icon is rendered at all."""
     box = _render(_project_with_one_sample())
-    assert "mdi-table-eye" not in _icon_names(box)
+    assert "mdi-information-outline" not in _icon_names(box)
 
 
-def test_eye_icon_reaches_the_rendered_tree():
-    """With on_open given, the eye icon shows up in the real widget tree."""
+def test_details_icon_reaches_the_rendered_tree():
+    """With on_open given, the info icon shows up in the real widget tree."""
     box = _render(_project_with_one_sample(), on_open=lambda k: None)
-    assert "mdi-table-eye" in _icon_names(box)
+    assert "mdi-information-outline" in _icon_names(box)
 
 
 def test_open_action_is_the_first_action_on_a_sample_row():
-    """The eye action leads, ahead of the map-toggle and delete actions."""
+    """The details action leads, ahead of the map-toggle and delete actions."""
     rows = _captured_rows(_project_with_one_sample(), on_open=lambda k: None)
     kinds = [a["kind"] for a in rows[0]["actions"]]
     assert kinds == ["open", "map_toggle", "delete"]

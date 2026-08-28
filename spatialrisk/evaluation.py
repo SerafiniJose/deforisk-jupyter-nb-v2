@@ -50,6 +50,37 @@ def label_for(pred):
     return f"{fam}_w{pred.window}" if pred.window is not None else fam
 
 
+def run_label_for(pred):
+    """Display label that stays unique across models and named runs.
+
+    ``label_for`` alone collides once two models of one family predict the
+    same dataset (two MW models both render 'MW_w5'), so pickers append the
+    run that produced the map: the user-chosen prediction name when the run
+    was named, else the model key. Filenames use ``artifact_label_for`` —
+    this label is display-only.
+    """
+    run = getattr(pred, "name", None) or pred.model_key
+    return f"{label_for(pred)} · {run}"
+
+
+def artifact_label_for(pred):
+    """Run-qualified, filename-safe label for evaluation rows AND artifacts.
+
+    The charts layer derives plot/CSV paths from a row's ``model`` value, so
+    the display label and the artifact stem must be the same string. It also
+    keys the shared defrate cache — qualifying it by run keeps two models of
+    one family (e.g. two MW models at window 5) from sharing cache entries
+    and overwriting each other's plots.
+    """
+    run = getattr(pred, "name", None) or pred.model_key
+    safe_run = re.sub(r"[^A-Za-z0-9_-]+", "_", str(run)).strip("_")
+    if not safe_run:
+        # A fully non-ASCII run name sanitizes to nothing; fall back to the
+        # model key so two such runs cannot share a stem like "GLM_".
+        safe_run = re.sub(r"[^A-Za-z0-9_-]+", "_", str(pred.model_key)).strip("_")
+    return f"{label_for(pred)}_{safe_run}"
+
+
 def make_square(raster_file, square_size):
     """Coarse-grid partition (replicates forestatrisk.make_square, no far dep)."""
     ds = gdal.Open(str(raster_file))
@@ -645,7 +676,7 @@ def _evaluate_one_against_truth(
     """
     from spatialrisk.evaluations import EvaluationPlotArtifact
 
-    label, period = label_for(pred), pred.dataset_name
+    label, period = artifact_label_for(pred), pred.dataset_name
     riskmap_file = pred.path
     truth_dir = run_output_dir(project, truth_tag)
     truth_dir.mkdir(parents=True, exist_ok=True)

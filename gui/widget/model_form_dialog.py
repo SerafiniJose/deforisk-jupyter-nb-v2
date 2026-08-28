@@ -14,6 +14,7 @@ from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
 from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
 from gui.widget.details_fields import ro_field
 from gui.widget.help import InfoPopup
+from gui.widget.model_stats_panel import ModelStatsPanel
 from spatialrisk.far_helpers import generate_patsy_formula, strip_categorical_levels
 
 
@@ -439,10 +440,12 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
     mk = getattr(model, "model_type", None)
     registry = MODEL_REGISTRY.get(mk)
 
+    active_tab, set_active_tab = solara.use_state(0)
+
     with rv.Dialog(
         v_model=model is not None,
         on_v_model=lambda v: None if v else on_close(),
-        max_width="560px",
+        max_width="720px",
     ):
         with rv.Card():
             with rv.CardTitle():
@@ -450,71 +453,96 @@ def ModelDetailsDialog(project, model_key, on_close: Callable[[], None]):
             with rv.CardText():
                 solara.Style(_ADVANCED_PANEL_CSS)
                 if model is not None:
-                    with solara.Column(style="gap:4px;"):
-                        ro_field(
-                            t("tiles.train.model_select_label"),
-                            model_label(mk) if registry else mk,
-                        )
-                        ro_field(
-                            t("tiles.train.dataset_select_label"),
-                            getattr(model, "dataset_name", None),
-                        )
-                        if registry and registry.get("has_sampling"):
-                            ro_field(
-                                t("tiles.train.sample_select_label"),
-                                getattr(model, "sample_name", None),
-                            )
-
-                        var_defs = [
-                            pd
-                            for pd in (registry["params"] if registry else [])
-                            if pd.get("group") == "variables"
-                        ]
-                        if var_defs:
-                            solara.Markdown(t("tiles.train.variables_header"))
-                            for pd in var_defs:
+                    with rv.Tabs(
+                        v_model=active_tab, on_v_model=set_active_tab, grow=False
+                    ):
+                        rv.Tab(children=[t("tiles.train.stats.tab_config")])
+                        rv.Tab(children=[t("tiles.train.stats.tab_statistics")])
+                    # pt-3: an outlined field's floating label and its
+                    # fieldset legend sit ~6px *above* the box, and v-tabs-items
+                    # starts flush against the tab strip — without this the
+                    # first field's label ("Model") lands on the tab slider.
+                    with rv.TabsItems(v_model=active_tab, class_="pt-3"):
+                        with rv.TabItem():
+                            with solara.Column(style="gap:4px;"):
                                 ro_field(
-                                    t(pd["label_key"]),
-                                    getattr(model, pd["key"], None),
+                                    t("tiles.train.model_select_label"),
+                                    model_label(mk) if registry else mk,
+                                )
+                                ro_field(
+                                    t("tiles.train.dataset_select_label"),
+                                    getattr(model, "dataset_name", None),
+                                )
+                                if registry and registry.get("has_sampling"):
+                                    ro_field(
+                                        t("tiles.train.sample_select_label"),
+                                        getattr(model, "sample_name", None),
+                                    )
+
+                                var_defs = [
+                                    pd
+                                    for pd in (registry["params"] if registry else [])
+                                    if pd.get("group") == "variables"
+                                ]
+                                if var_defs:
+                                    solara.Markdown(t("tiles.train.variables_header"))
+                                    for pd in var_defs:
+                                        ro_field(
+                                            t(pd["label_key"]),
+                                            getattr(model, pd["key"], None),
+                                        )
+
+                                ro_field(
+                                    t("tiles.train.model_name_label"),
+                                    getattr(model, "name", None),
                                 )
 
-                        ro_field(
-                            t("tiles.train.model_name_label"),
-                            getattr(model, "name", None),
-                        )
-
-                        param_defs = [
-                            pd
-                            for pd in (registry["params"] if registry else [])
-                            if pd.get("group", "params") == "params"
-                        ]
-                        stored_formula = getattr(model, "formula", None)
-                        if param_defs or stored_formula:
-                            with rv.ExpansionPanels(
-                                flat=True, class_="advanced-params"
-                            ):
-                                with rv.ExpansionPanel():
-                                    with rv.ExpansionPanelHeader():
-                                        solara.Text(
-                                            t("tiles.train.advanced_parameters_header")
-                                        )
-                                    with rv.ExpansionPanelContent():
-                                        if stored_formula:
-                                            # levels=[...] is a fit-time safety
-                                            # net, noise to the reader.
-                                            ro_field(
-                                                t("tiles.train.formula_label"),
-                                                strip_categorical_levels(
-                                                    stored_formula
-                                                ),
-                                            )
-                                        for pd in param_defs:
-                                            ro_field(
-                                                t(pd["label_key"]),
-                                                getattr(
-                                                    model, pd["key"], pd["default"]
-                                                ),
-                                            )
+                                param_defs = [
+                                    pd
+                                    for pd in (registry["params"] if registry else [])
+                                    if pd.get("group", "params") == "params"
+                                ]
+                                stored_formula = getattr(model, "formula", None)
+                                if param_defs or stored_formula:
+                                    with rv.ExpansionPanels(
+                                        flat=True, class_="advanced-params"
+                                    ):
+                                        with rv.ExpansionPanel():
+                                            with rv.ExpansionPanelHeader():
+                                                solara.Text(
+                                                    t(
+                                                        "tiles.train.advanced_parameters_header"
+                                                    )
+                                                )
+                                            with rv.ExpansionPanelContent():
+                                                if stored_formula:
+                                                    # levels=[...] is a fit-time safety
+                                                    # net, noise to the reader.
+                                                    ro_field(
+                                                        t("tiles.train.formula_label"),
+                                                        strip_categorical_levels(
+                                                            stored_formula
+                                                        ),
+                                                    )
+                                                for pd in param_defs:
+                                                    ro_field(
+                                                        t(pd["label_key"]),
+                                                        getattr(
+                                                            model,
+                                                            pd["key"],
+                                                            pd["default"],
+                                                        ),
+                                                    )
+                        with rv.TabItem():
+                            # This file owns the tab order, so it also owns the
+                            # index — the panel is told whether it is on screen,
+                            # never asked to recognise itself. Its charts need
+                            # that: ipecharts measures its container only at DOM
+                            # attach, and one attached in a hidden/transitioning
+                            # tab stays width 0 forever (see gui/widget/echarts.py,
+                            # and _ChartsTab in evaluation_results for the same
+                            # wiring). Statistics is the second rv.Tab above.
+                            ModelStatsPanel(model=model, visible=active_tab == 1)
             with rv.CardActions(style_="justify-content: flex-end;"):
                 solara.Button(
                     t("common.close"),

@@ -1,3 +1,16 @@
+"""Unit tests for the evaluation step: metrics, artifacts, charts and dialog.
+
+Covers ``spatialrisk.evaluation`` (validation maths, the indices/point CSVs and
+the archived predicted-vs-observed PNG) together with the GUI layers built on
+it — ``gui.scripts.evaluation_charts`` / ``evaluation_echarts`` for the option
+builders and ``gui.widget.evaluation_results`` for the dialog itself.
+
+Every import below the ``importorskip`` is deliberately not at the top of the
+file: without rasterio there is nothing here to test, and the skip has to be
+decided before the modules that need it are imported. Hence the ``E402``
+suppressions.
+"""
+
 import contextlib
 import types
 from pathlib import Path as _Path
@@ -7,14 +20,16 @@ import pandas as pd
 import pytest
 
 rasterio = pytest.importorskip("rasterio")
-from rasterio.transform import from_origin
+from rasterio.transform import from_origin  # noqa: E402
 
-from spatialrisk.evaluation import (
+import spatialrisk.evaluation as ev  # noqa: E402
+from spatialrisk.evaluation import (  # noqa: E402
     PLOT_COLUMNS,
     PRED_OBS_X_LABEL,
     PRED_OBS_Y_LABEL,
     PredObsPlotData,
     ValidationResult,
+    artifact_label_for,
     compute_validation,
     interval_from_target,
     label_for,
@@ -25,23 +40,25 @@ from spatialrisk.evaluation import (
     write_indices_csv,
     write_pred_obs_csv,
 )
-import spatialrisk.evaluation as ev
 
 
 def test_interval_from_target_parses_two_years():
+    """A 'forest_loss_YYYY_YYYY' target yields the span in years."""
     assert interval_from_target("forest_loss_2015_2020") == 5
     assert interval_from_target("forest_loss_2020_2024") == 4
 
 
 def test_interval_from_target_handles_missing_years():
+    """A target with no year pair yields no interval rather than raising."""
     assert interval_from_target("no_years_here") is None
 
 
-def _pred(model_key, window=None):
-    return types.SimpleNamespace(model_key=model_key, window=window)
+def _pred(model_key, window=None, name=None):
+    return types.SimpleNamespace(model_key=model_key, window=window, name=name)
 
 
 def test_label_for_maps_family_and_window():
+    """A prediction's display label names its model family and time window."""
     assert label_for(_pred("glm_glm_v1")) == "GLM"
     assert label_for(_pred("rf_rf_v1")) == "RF"
     assert label_for(_pred("icar_icar_v1")) == "ICAR"
@@ -49,19 +66,40 @@ def test_label_for_maps_family_and_window():
     assert label_for(_pred("mw_calibration_mw", window=11)) == "MW_w11"
 
 
+def test_artifact_label_for_is_filename_safe_and_unique():
+    """The artifact stem qualifies the family label with a sanitized run."""
+    a = _pred("mw_calib_a", window=5)
+    b = _pred("mw_calib_b", window=5)
+    assert artifact_label_for(a) == "MW_w5_mw_calib_a"
+    assert artifact_label_for(a) != artifact_label_for(b)
+    named = _pred("mw_calib_a", window=5, name="val 2020!")
+    assert artifact_label_for(named) == "MW_w5_val_2020"  # sanitized run name
+    fully_sanitized = _pred("mw_calib_a", window=5, name="!!!")
+    assert artifact_label_for(fully_sanitized) == "MW_w5_mw_calib_a"
+
+
 def _write_raster(path, array, pixel=30.0):
     """Write a single-band GeoTIFF (EPSG:3857, square pixels)."""
     array = np.asarray(array)
     transform = from_origin(0, array.shape[0] * pixel, pixel, pixel)
     with rasterio.open(
-        path, "w", driver="GTiff", height=array.shape[0], width=array.shape[1],
-        count=1, dtype="int32", crs="EPSG:3857", transform=transform, nodata=0,
+        path,
+        "w",
+        driver="GTiff",
+        height=array.shape[0],
+        width=array.shape[1],
+        count=1,
+        dtype="int32",
+        crs="EPSG:3857",
+        transform=transform,
+        nodata=0,
     ) as dst:
         dst.write(array.astype("int32"), 1)
     return str(path)
 
 
 def test_make_square_partitions_600x300_into_two_cells(tmp_path):
+    """A 600x300 raster at 300px splits into exactly two coarse cells."""
     r = _write_raster(tmp_path / "r.tif", np.ones((300, 600)))
     nsquare, nsquare_x, nsquare_y, x, y, nx, ny = make_square(r, 300)
     assert nsquare == 2 and nsquare_x == 2 and nsquare_y == 1
@@ -70,24 +108,26 @@ def test_make_square_partitions_600x300_into_two_cells(tmp_path):
 
 
 def test_make_square_handles_remainder(tmp_path):
+    """A trailing partial column still becomes a cell, narrower than the rest."""
     r = _write_raster(tmp_path / "r2.tif", np.ones((100, 250)))
     nsquare, nsquare_x, nsquare_y, x, y, nx, ny = make_square(r, 100)
-    assert nsquare_x == 3 and nx == [100, 100, 50]   # 250 = 100+100+50
+    assert nsquare_x == 3 and nx == [100, 100, 50]  # 250 = 100+100+50
     assert nsquare_y == 1 and ny == [100]
 
 
 def test_validate_two_layer_perfect_prediction(tmp_path):
+    """A prediction equal to the truth scores zero error and R2 = 1."""
     # 700 px wide -> make_square gives 3 cells [300,300,100]; the smaller cell makes
     # predicted/observed vary across cells so corrcoef (R2) is well-defined (=1.0).
     nrow, ncol, pixel = 300, 700, 30.0
-    pix_area_ha = (pixel * pixel) / 10000.0          # 0.09 ha
-    forest = np.ones((nrow, ncol), dtype="int32")     # all forest
+    pix_area_ha = (pixel * pixel) / 10000.0  # 0.09 ha
+    forest = np.ones((nrow, ncol), dtype="int32")  # all forest
 
     # 30% deforested per coarse cell (top 90 rows of each 300x300 block).
     defor = np.zeros((nrow, ncol), dtype="int32")
-    defor[:90, :] = 1     # top 30% of rows deforested across all 700 cols
+    defor[:90, :] = 1  # top 30% of rows deforested across all 700 cols
 
-    risk = np.ones((nrow, ncol), dtype="int32")       # all category 1
+    risk = np.ones((nrow, ncol), dtype="int32")  # all category 1
 
     f = _write_raster(tmp_path / "forest.tif", forest, pixel)
     d = _write_raster(tmp_path / "defor.tif", defor, pixel)
@@ -102,12 +142,17 @@ def test_validate_two_layer_perfect_prediction(tmp_path):
     pd.DataFrame({"cat": [1], "defor_dens": [defor_dens]}).to_csv(tab, index=False)
 
     idx = validate_two_layer(
-        defor_file=d, forest_file=f, riskmap_file=rk, tab_file_defor=str(tab),
-        time_interval=time_interval, csize_coarse_grid=300,
+        defor_file=d,
+        forest_file=f,
+        riskmap_file=rk,
+        tab_file_defor=str(tab),
+        time_interval=time_interval,
+        csize_coarse_grid=300,
         indices_file_pred=tmp_path / "indices.csv",
         tab_file_pred=tmp_path / "pred_obs.csv",
         fig_file_pred=tmp_path / "pred_obs.png",
-        model_name="TEST", period="calibration",
+        model_name="TEST",
+        period="calibration",
     )
     assert idx["ncell"] == 3
     assert idx["RMSE"] == 0.0
@@ -119,9 +164,11 @@ def test_validate_two_layer_perfect_prediction(tmp_path):
 
 
 def _varied_validation_fixture(tmp_path):
-    """Three coarse cells with DIFFERENT observed/predicted values and two risk
-    categories, so metrics, axis bounds and the scatter are all non-degenerate,
-    PLUS a zero-forest bottom half (cells 3, 4, 5) that must be dropped by the
+    """Three varied coarse cells plus a zero-forest half that must be dropped.
+
+    The three carry DIFFERENT observed/predicted values and two risk categories,
+    so metrics, axis bounds and the scatter are all non-degenerate; the bottom
+    half (cells 3, 4, 5) has no forest and exists to be cut by the
     ``nfor_obs > 0`` filter.
 
     Cell 2 is the 100px-wide remainder column, which makes nfor_obs vary too.
@@ -132,19 +179,21 @@ def _varied_validation_fixture(tmp_path):
     """
     nrow, ncol, pixel = 600, 700, 30.0
     forest = np.ones((nrow, ncol), dtype="int32")
-    forest[300:600, :] = 0     # bottom half: no forest recorded at all
+    forest[300:600, :] = 0  # bottom half: no forest recorded at all
 
     defor = np.zeros((nrow, ncol), dtype="int32")
-    defor[:90, 0:300] = 1      # cell 0
-    defor[:150, 300:600] = 1   # cell 1
-    defor[:40, 600:700] = 1    # cell 2
+    defor[:90, 0:300] = 1  # cell 0
+    defor[:150, 300:600] = 1  # cell 1
+    defor[:40, 600:700] = 1  # cell 2
     # bottom half (cells 3, 4, 5) stays all-zero deforestation too.
 
     risk = np.ones((nrow, ncol), dtype="int32")
-    risk[:, 350:] = 2          # two categories with different densities
+    risk[:, 350:] = 2  # two categories with different densities
 
     tab = tmp_path / "defrate.csv"
-    pd.DataFrame({"cat": [1, 2], "defor_dens": [0.0004, 0.00025]}).to_csv(tab, index=False)
+    pd.DataFrame({"cat": [1, 2], "defor_dens": [0.0004, 0.00025]}).to_csv(
+        tab, index=False
+    )
 
     return dict(
         defor_file=_write_raster(tmp_path / "defor.tif", defor, pixel),
@@ -163,8 +212,13 @@ def _varied_validation_fixture(tmp_path):
 # legacy implementation drops them too, so the surviving-cell values below are
 # byte-identical to what was pinned before the fixture change.
 _GOLDEN_INDICES = {
-    "RMSE": 2619.28, "wRMSE": 2964.98, "MedAE": 2250.0, "R2": 0.43,
-    "ncell": 3, "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0,
+    "RMSE": 2619.28,
+    "wRMSE": 2964.98,
+    "MedAE": 2250.0,
+    "R2": 0.43,
+    "ncell": 3,
+    "csize_coarse_grid": 300,
+    "csize_coarse_grid_ha": 8100.0,
 }
 _GOLDEN_POINT_CSV = (
     "cell,nfor_obs,ndefor_obs,nfor_obs_ha,ndefor_obs_ha,ndefor_pred_ha\n"
@@ -182,11 +236,13 @@ def test_validate_two_layer_matches_golden_metrics_and_csvs(tmp_path):
     """Characterization test: numbers and CSV bytes must never move."""
     lay = _varied_validation_fixture(tmp_path)
     idx = validate_two_layer(
-        **lay, csize_coarse_grid=300,
+        **lay,
+        csize_coarse_grid=300,
         indices_file_pred=tmp_path / "indices.csv",
         tab_file_pred=tmp_path / "pred_obs.csv",
         fig_file_pred=tmp_path / "pred_obs.png",
-        model_name="TEST", period="calibration",
+        model_name="TEST",
+        period="calibration",
     )
     assert idx == _GOLDEN_INDICES
     assert (tmp_path / "pred_obs.csv").read_text() == _GOLDEN_POINT_CSV
@@ -195,32 +251,41 @@ def test_validate_two_layer_matches_golden_metrics_and_csvs(tmp_path):
 
 
 def test_compute_validation_drops_cells_with_zero_forest(tmp_path):
-    """Cells with nfor_obs == 0 (no forest recorded at the start of the period)
-    must be excluded from the result entirely. The fixture's bottom half (cells
-    3, 4, 5) has zero forest and zero deforestation everywhere; only the top
-    row's cells 0/1/2 may survive the filter."""
+    """A cell with no forest at the start of the period is dropped entirely.
+
+    The fixture's bottom half (cells 3, 4, 5) has zero forest and zero
+    deforestation everywhere; only the top row's cells 0/1/2 may survive the
+    ``nfor_obs > 0`` filter.
+    """
     lay = _varied_validation_fixture(tmp_path)
-    result = compute_validation(**lay, csize_coarse_grid=300,
-                                model_name="TEST", period="calibration")
+    result = compute_validation(
+        **lay, csize_coarse_grid=300, model_name="TEST", period="calibration"
+    )
     assert set(result.plot_data.points["cell"]) == {0, 1, 2}
     assert result.indices["ncell"] == 3
 
 
 def test_validate_two_layer_forwards_figsize_and_dpi_to_png(tmp_path):
-    """figsize/dpi forwarding is essentially the wrapper's remaining job: a
-    non-default value must actually reach the rendered PNG's pixel dimensions,
-    not just be accepted and silently dropped."""
+    """figsize/dpi reach the rendered PNG's pixel dimensions.
+
+    Forwarding them is essentially the wrapper's remaining job, so a non-default
+    value must actually land on the image rather than be accepted and silently
+    dropped.
+    """
     import matplotlib.image as mpimg
 
     lay = _varied_validation_fixture(tmp_path)
     fig_path = tmp_path / "pred_obs.png"
     validate_two_layer(
-        **lay, csize_coarse_grid=300,
+        **lay,
+        csize_coarse_grid=300,
         indices_file_pred=tmp_path / "indices.csv",
         tab_file_pred=tmp_path / "pred_obs.csv",
         fig_file_pred=fig_path,
-        model_name="TEST", period="calibration",
-        figsize=(3.0, 3.0), dpi=50,
+        model_name="TEST",
+        period="calibration",
+        figsize=(3.0, 3.0),
+        dpi=50,
     )
     img = mpimg.imread(fig_path)
     height, width = img.shape[0], img.shape[1]
@@ -235,60 +300,88 @@ def _points(obs, pred):
     narrowest frame the dataclass accepts.
     """
     n = len(list(obs))
-    return pd.DataFrame({
-        "cell": list(range(n)),
-        "nfor_obs_ha": [100.0] * n,
-        "ndefor_obs_ha": obs,
-        "ndefor_pred_ha": pred,
-    })
+    return pd.DataFrame(
+        {
+            "cell": list(range(n)),
+            "nfor_obs_ha": [100.0] * n,
+            "ndefor_obs_ha": obs,
+            "ndefor_pred_ha": pred,
+        }
+    )
 
 
 def test_pred_obs_axis_bounds_spans_both_series(tmp_path):
-    lo, hi = pred_obs_axis_bounds(_points([2430.0, 4050.0, 360.0], [180.0, 123.75, 37.5]))
+    """The shared axis domain covers observed and predicted alike."""
+    lo, hi = pred_obs_axis_bounds(
+        _points([2430.0, 4050.0, 360.0], [180.0, 123.75, 37.5])
+    )
     assert (lo, hi) == (37.5, 4050.0)
 
 
 def test_pred_obs_axis_bounds_empty_falls_back_to_unit_range():
+    """No points leaves a drawable 0..1 domain rather than an empty one."""
     assert pred_obs_axis_bounds(_points([], [])) == (0.0, 1.0)
 
 
 def test_pred_obs_axis_bounds_all_nan_falls_back_to_unit_range():
-    assert pred_obs_axis_bounds(_points([np.nan, np.nan], [np.nan, np.nan])) == (0.0, 1.0)
+    """All-NaN input is treated as no points at all."""
+    assert pred_obs_axis_bounds(_points([np.nan, np.nan], [np.nan, np.nan])) == (
+        0.0,
+        1.0,
+    )
 
 
 def test_pred_obs_axis_bounds_ignores_infinities():
+    """An infinite value must not stretch the domain to infinity."""
     lo, hi = pred_obs_axis_bounds(_points([1.0, np.inf], [-np.inf, 4.0]))
     assert (lo, hi) == (1.0, 4.0)
 
 
 def test_pred_obs_axis_bounds_all_infinite_falls_back_to_unit_range():
-    assert pred_obs_axis_bounds(_points([np.inf, -np.inf], [np.inf, np.inf])) == (0.0, 1.0)
+    """All-infinite input is treated as no points at all."""
+    assert pred_obs_axis_bounds(_points([np.inf, -np.inf], [np.inf, np.inf])) == (
+        0.0,
+        1.0,
+    )
 
 
 def test_pred_obs_axis_bounds_constant_series_is_padded():
+    """A single repeated value still gets a domain with width."""
     # A zero-width domain would collapse an ECharts axis; pad it symmetrically.
     assert pred_obs_axis_bounds(_points([5.0, 5.0], [5.0, 5.0])) == (0.0, 10.0)
 
 
 def test_pred_obs_axis_bounds_all_zero_falls_back_to_unit_range():
+    """All zeros would give a zero-width domain, so the unit range stands in."""
     assert pred_obs_axis_bounds(_points([0.0, 0.0], [0.0, 0.0])) == (0.0, 1.0)
 
 
 def test_finite_points_drops_non_finite_rows_without_touching_points():
+    """The renderer-safe view is a filter, never a mutation of ``points``."""
     points = _points([1.0, np.nan, 3.0, np.inf], [1.0, 2.0, np.inf, 4.0])
     data = PredObsPlotData(
-        model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
-        axis_min=1.0, axis_max=3.0, medae=0.0, r2=1.0, ncell=4,
+        model="M",
+        period="p",
+        csize_px=300,
+        csize_ha=8100.0,
+        points=points,
+        axis_min=1.0,
+        axis_max=3.0,
+        medae=0.0,
+        r2=1.0,
+        ncell=4,
     )
-    assert len(data.points) == 4                      # CSV payload untouched
+    assert len(data.points) == 4  # CSV payload untouched
     assert list(data.finite_points["ndefor_obs_ha"]) == [1.0]
     assert list(data.finite_points["ndefor_pred_ha"]) == [1.0]
 
 
 def test_compute_validation_returns_indices_and_plot_data(tmp_path):
+    """One call yields both the metric rows and the scatter's plot data."""
     lay = _varied_validation_fixture(tmp_path)
-    result = compute_validation(**lay, csize_coarse_grid=300,
-                                model_name="TEST", period="calibration")
+    result = compute_validation(
+        **lay, csize_coarse_grid=300, model_name="TEST", period="calibration"
+    )
 
     assert isinstance(result, ValidationResult)
     assert result.indices == _GOLDEN_INDICES
@@ -300,11 +393,17 @@ def test_compute_validation_returns_indices_and_plot_data(tmp_path):
     assert (pd_.axis_min, pd_.axis_max) == (37.5, 4050.0)
     assert (pd_.medae, pd_.r2, pd_.ncell) == (2250.0, 0.43, 3)
     assert list(pd_.points.columns) == [
-        "cell", "nfor_obs", "ndefor_obs", "nfor_obs_ha", "ndefor_obs_ha", "ndefor_pred_ha",
+        "cell",
+        "nfor_obs",
+        "ndefor_obs",
+        "nfor_obs_ha",
+        "ndefor_obs_ha",
+        "ndefor_pred_ha",
     ]
 
 
 def test_compute_validation_writes_nothing(tmp_path):
+    """Computing metrics is pure — every artifact is written by its own call."""
     lay = _varied_validation_fixture(tmp_path)
     before = sorted(p.name for p in tmp_path.iterdir())
     compute_validation(**lay, csize_coarse_grid=300)
@@ -312,10 +411,18 @@ def test_compute_validation_writes_nothing(tmp_path):
 
 
 def test_plot_data_carries_chart_labels():
+    """The plot data carries the axis titles the archived PNG uses."""
     data = PredObsPlotData(
-        model="GLM", period="calibration", csize_px=300, csize_ha=8100.0,
-        points=_points([1.0], [2.0]), axis_min=1.0, axis_max=2.0,
-        medae=1.5, r2=0.42, ncell=1,
+        model="GLM",
+        period="calibration",
+        csize_px=300,
+        csize_ha=8100.0,
+        points=_points([1.0], [2.0]),
+        axis_min=1.0,
+        axis_max=2.0,
+        medae=1.5,
+        r2=0.42,
+        ncell=1,
     )
     assert data.title == (
         "GLM model, calibration period\n"
@@ -326,16 +433,26 @@ def test_plot_data_carries_chart_labels():
 
 
 def _base_plot_data_kwargs():
-    """Valid PredObsPlotData kwargs (2 finite points, sane axis bounds), so
-    each __post_init__ test only overrides the one field under test."""
+    """Valid PredObsPlotData kwargs: 2 finite points and sane axis bounds.
+
+    Each ``__post_init__`` test overrides only the one field it is about.
+    """
     return dict(
-        model="M", period="p", csize_px=300, csize_ha=8100.0,
+        model="M",
+        period="p",
+        csize_px=300,
+        csize_ha=8100.0,
         points=_points([1.0, 3.0], [2.0, 4.0]),
-        axis_min=1.0, axis_max=4.0, medae=0.0, r2=1.0, ncell=2,
+        axis_min=1.0,
+        axis_max=4.0,
+        medae=0.0,
+        r2=1.0,
+        ncell=2,
     )
 
 
 def test_plot_data_rejects_nan_axis_bounds():
+    """A NaN bound would break the axis silently, so it raises at construction."""
     kwargs = _base_plot_data_kwargs()
     kwargs["axis_min"] = float("nan")
     with pytest.raises(ValueError):
@@ -343,6 +460,7 @@ def test_plot_data_rejects_nan_axis_bounds():
 
 
 def test_plot_data_rejects_infinite_axis_bounds():
+    """An infinite bound raises at construction."""
     kwargs = _base_plot_data_kwargs()
     kwargs["axis_max"] = float("inf")
     with pytest.raises(ValueError):
@@ -350,6 +468,7 @@ def test_plot_data_rejects_infinite_axis_bounds():
 
 
 def test_plot_data_rejects_zero_width_axis_domain():
+    """A zero-width domain (min == max) leaves nothing to draw, so it raises."""
     kwargs = _base_plot_data_kwargs()
     kwargs["axis_min"] = kwargs["axis_max"] = 5.0
     with pytest.raises(ValueError):
@@ -357,6 +476,7 @@ def test_plot_data_rejects_zero_width_axis_domain():
 
 
 def test_plot_data_rejects_inverted_axis_domain():
+    """An inverted domain (max < min) raises at construction."""
     kwargs = _base_plot_data_kwargs()
     kwargs["axis_min"], kwargs["axis_max"] = 4.0, 1.0
     with pytest.raises(ValueError):
@@ -364,6 +484,7 @@ def test_plot_data_rejects_inverted_axis_domain():
 
 
 def test_plot_data_rejects_ncell_mismatched_with_points():
+    """``ncell`` must equal the row count it claims to describe."""
     kwargs = _base_plot_data_kwargs()
     kwargs["ncell"] = 3  # points only has 2 rows
     with pytest.raises(ValueError):
@@ -371,6 +492,7 @@ def test_plot_data_rejects_ncell_mismatched_with_points():
 
 
 def test_plot_data_accepts_well_formed_bounds_and_ncell():
+    """The valid fixture constructs cleanly — the negative tests' control."""
     # Sanity: the valid baseline itself must construct without raising.
     PredObsPlotData(**_base_plot_data_kwargs())
 
@@ -398,13 +520,22 @@ def test_plot_data_accepts_the_wider_compute_validation_frame(tmp_path):
 
     assert len(points.columns) == 6
     data = PredObsPlotData(
-        model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
-        axis_min=1.0, axis_max=4.0, medae=0.0, r2=1.0, ncell=len(points),
+        model="M",
+        period="p",
+        csize_px=300,
+        csize_ha=8100.0,
+        points=points,
+        axis_min=1.0,
+        axis_max=4.0,
+        medae=0.0,
+        r2=1.0,
+        ncell=len(points),
     )
     assert list(data.points.columns) == list(points.columns)
 
 
 def test_write_pred_obs_csv_matches_golden_bytes(tmp_path):
+    """The point CSV is byte-frozen: the chart and the PNG read one file."""
     lay = _varied_validation_fixture(tmp_path)
     result = compute_validation(**lay, csize_coarse_grid=300)
     out = write_pred_obs_csv(result.plot_data, tmp_path / "points.csv")
@@ -412,13 +543,23 @@ def test_write_pred_obs_csv_matches_golden_bytes(tmp_path):
 
 
 def test_write_pred_obs_csv_persists_non_finite_rows(tmp_path):
-    """The point CSV is the frozen artifact: ``points`` (not the renderer-safe
-    ``finite_points`` subset) must be what gets written, so non-finite rows
-    survive to disk exactly as computed."""
+    """The point CSV is the frozen artifact, so non-finite rows reach disk.
+
+    ``points`` is what gets written, not the renderer-safe ``finite_points``
+    subset: the table has to hold every row exactly as computed.
+    """
     points = _points([1.0, np.nan, 3.0], [1.0, 2.0, np.inf])
     data = PredObsPlotData(
-        model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
-        axis_min=1.0, axis_max=3.0, medae=0.0, r2=1.0, ncell=3,
+        model="M",
+        period="p",
+        csize_px=300,
+        csize_ha=8100.0,
+        points=points,
+        axis_min=1.0,
+        axis_max=3.0,
+        medae=0.0,
+        r2=1.0,
+        ncell=3,
     )
     assert len(data.finite_points) == 1  # sanity: the renderer subset drops 2 rows
 
@@ -428,16 +569,29 @@ def test_write_pred_obs_csv_persists_non_finite_rows(tmp_path):
 
 
 def test_write_indices_csv_matches_golden_bytes(tmp_path):
+    """The indices CSV is byte-frozen — it is the run's persisted record."""
     lay = _varied_validation_fixture(tmp_path)
     result = compute_validation(**lay, csize_coarse_grid=300)
     out = write_indices_csv(result.indices, tmp_path / "idx.csv")
     assert _Path(out).read_text() == _GOLDEN_INDICES_CSV
 
 
-def _legacy_pred_obs_png(df, *, model_name, period, csize_ha, MedAE, r_square,
-                         ncell, path, figsize=(6.4, 6.4), dpi=100):
+def _legacy_pred_obs_png(
+    df,
+    *,
+    model_name,
+    period,
+    csize_ha,
+    MedAE,
+    r_square,
+    ncell,
+    path,
+    figsize=(6.4, 6.4),
+    dpi=100,
+):
     """The pre-refactor matplotlib block, verbatim, for byte-equivalence proof."""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -445,13 +599,16 @@ def _legacy_pred_obs_png(df, *, model_name, period, csize_ha, MedAE, r_square,
         f"{model_name} model, {period} period\n"
         f"Predicted vs. observed deforestation in {csize_ha} ha grid cells."
     )
-    p = [df[["ndefor_obs_ha", "ndefor_pred_ha"]].min(axis=None),
-         df[["ndefor_obs_ha", "ndefor_pred_ha"]].max(axis=None)]
+    p = [
+        df[["ndefor_obs_ha", "ndefor_pred_ha"]].min(axis=None),
+        df[["ndefor_obs_ha", "ndefor_pred_ha"]].max(axis=None),
+    ]
     fig = plt.figure(figsize=figsize, dpi=dpi)
     ax = plt.subplot(111)
     ax.set_box_aspect(1)
-    plt.scatter(df["ndefor_obs_ha"], df["ndefor_pred_ha"],
-                color=None, marker="o", edgecolor="k")
+    plt.scatter(
+        df["ndefor_obs_ha"], df["ndefor_pred_ha"], color=None, marker="o", edgecolor="k"
+    )
     plt.plot(p, p, "r--")
     plt.title(title)
     plt.xlabel("Observed deforestation (ha)")
@@ -465,13 +622,20 @@ def _legacy_pred_obs_png(df, *, model_name, period, csize_ha, MedAE, r_square,
 
 
 def test_save_pred_obs_png_is_byte_identical_to_legacy_matplotlib(tmp_path):
+    """The archived figure must not drift from the code it replaced."""
     lay = _varied_validation_fixture(tmp_path)
-    result = compute_validation(**lay, csize_coarse_grid=300,
-                                model_name="TEST", period="calibration")
+    result = compute_validation(
+        **lay, csize_coarse_grid=300, model_name="TEST", period="calibration"
+    )
 
     legacy = _legacy_pred_obs_png(
-        result.plot_data.points, model_name="TEST", period="calibration",
-        csize_ha=8100.0, MedAE=2250.0, r_square=0.43, ncell=3,
+        result.plot_data.points,
+        model_name="TEST",
+        period="calibration",
+        csize_ha=8100.0,
+        MedAE=2250.0,
+        r_square=0.43,
+        ncell=3,
         path=tmp_path / "legacy.png",
     )
     new = save_pred_obs_png(result.plot_data, tmp_path / "new.png")
@@ -481,30 +645,51 @@ def test_save_pred_obs_png_is_byte_identical_to_legacy_matplotlib(tmp_path):
 
 def test_save_pred_obs_png_handles_degenerate_plot_data(tmp_path):
     """Empty / NaN / constant input must still render, with a finite axis."""
-    cols = ["cell", "nfor_obs", "ndefor_obs", "nfor_obs_ha",
-            "ndefor_obs_ha", "ndefor_pred_ha"]
+    cols = [
+        "cell",
+        "nfor_obs",
+        "ndefor_obs",
+        "nfor_obs_ha",
+        "ndefor_obs_ha",
+        "ndefor_pred_ha",
+    ]
     cases = {
         "empty": pd.DataFrame(columns=cols),
-        "nan": pd.DataFrame({**{c: [0] for c in cols[:4]},
-                             "ndefor_obs_ha": [np.nan], "ndefor_pred_ha": [np.nan]}),
-        "constant": pd.DataFrame({**{c: [0, 0] for c in cols[:4]},
-                                  "ndefor_obs_ha": [7.0, 7.0],
-                                  "ndefor_pred_ha": [7.0, 7.0]}),
+        "nan": pd.DataFrame(
+            {
+                **{c: [0] for c in cols[:4]},
+                "ndefor_obs_ha": [np.nan],
+                "ndefor_pred_ha": [np.nan],
+            }
+        ),
+        "constant": pd.DataFrame(
+            {
+                **{c: [0, 0] for c in cols[:4]},
+                "ndefor_obs_ha": [7.0, 7.0],
+                "ndefor_pred_ha": [7.0, 7.0],
+            }
+        ),
     }
     for name, points in cases.items():
         lo, hi = pred_obs_axis_bounds(points)
         assert np.isfinite(lo) and np.isfinite(hi) and lo < hi, name
         data = PredObsPlotData(
-            model="M", period="p", csize_px=300, csize_ha=8100.0, points=points,
-            axis_min=lo, axis_max=hi, medae=float("nan"), r2=float("nan"),
+            model="M",
+            period="p",
+            csize_px=300,
+            csize_ha=8100.0,
+            points=points,
+            axis_min=lo,
+            axis_max=hi,
+            medae=float("nan"),
+            r2=float("nan"),
             ncell=len(points),
         )
         out = save_pred_obs_png(data, tmp_path / f"{name}.png")
         assert _Path(out).stat().st_size > 1000, name
 
 
-def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
-                                                               monkeypatch):
+def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path, monkeypatch):
     """One computed source feeds both renderings — asserted by identity.
 
     ``validate_two_layer`` computes a single ``PredObsPlotData`` and hands the
@@ -520,7 +705,9 @@ def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
     compared back against that very frame.
     """
     from gui.scripts.evaluation_echarts import (
-        load_pred_obs_plot_data, pred_obs_scatter_option)
+        load_pred_obs_plot_data,
+        pred_obs_scatter_option,
+    )
 
     seen = {}
     real_csv, real_png = ev.write_pred_obs_csv, ev.save_pred_obs_png
@@ -538,23 +725,35 @@ def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
 
     lay = _varied_validation_fixture(tmp_path)
     validate_two_layer(
-        **lay, csize_coarse_grid=300,
+        **lay,
+        csize_coarse_grid=300,
         indices_file_pred=tmp_path / "indices_TEST_calibration_300.csv",
         tab_file_pred=tmp_path / "pred_obs_TEST_calibration_300.csv",
         fig_file_pred=tmp_path / "pred_obs_TEST_calibration_300.png",
-        model_name="TEST", period="calibration",
+        model_name="TEST",
+        period="calibration",
     )
 
     assert seen["csv"] is seen["png"], "two renderings, one PredObsPlotData"
 
     record = types.SimpleNamespace(
-        indices=[{"model": "TEST", "period": "calibration",
-                  "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0,
-                  "MedAE": 2250.0, "R2": 0.43}],
-        artifacts=[], run_id="run00001",
-        csv_path=str(tmp_path / "indices_all.csv"))
+        indices=[
+            {
+                "model": "TEST",
+                "period": "calibration",
+                "csize_coarse_grid": 300,
+                "csize_coarse_grid_ha": 8100.0,
+                "MedAE": 2250.0,
+                "R2": 0.43,
+            }
+        ],
+        artifacts=[],
+        run_id="run00001",
+        csv_path=str(tmp_path / "indices_all.csv"),
+    )
     option = pred_obs_scatter_option(
-        load_pred_obs_plot_data(record, "TEST", "calibration", 300))
+        load_pred_obs_plot_data(record, "TEST", "calibration", 300)
+    )
 
     shared = seen["png"].finite_points
     assert [v[:2] for v in option["series"][0]["data"]] == [
@@ -563,14 +762,20 @@ def test_the_png_and_the_interactive_chart_share_one_plot_data(tmp_path,
 
 
 def _fake_project_with_prediction(tmp_path):
-    target = types.SimpleNamespace(name="forest_loss_2015_2020",
-                                    path=tmp_path / "defor.tif")
+    target = types.SimpleNamespace(
+        name="forest_loss_2015_2020", path=tmp_path / "defor.tif"
+    )
     forest = types.SimpleNamespace(name="forest_gfc", path=tmp_path / "forest.tif")
-    dataset = types.SimpleNamespace(name="calibration", target=target,
-                                     features=[forest])
-    pred = types.SimpleNamespace(model_key="glm_glm_v1", window=None,
-                                  dataset_name="calibration",
-                                  path=tmp_path / "risk.tif", metrics={})
+    dataset = types.SimpleNamespace(
+        name="calibration", target=target, features=[forest]
+    )
+    pred = types.SimpleNamespace(
+        model_key="glm_glm_v1",
+        window=None,
+        dataset_name="calibration",
+        path=tmp_path / "risk.tif",
+        metrics={},
+    )
     project = types.SimpleNamespace(
         folders=types.SimpleNamespace(project_folder=tmp_path),
         get_dataset=lambda n: dataset if n == "calibration" else None,
@@ -581,6 +786,7 @@ def _fake_project_with_prediction(tmp_path):
 
 
 def test_resolve_layers_recovers_from_dataset(tmp_path):
+    """Missing layer paths are recovered from the dataset rather than failing."""
     project, pred, dataset = _fake_project_with_prediction(tmp_path)
     lay = ev.resolve_layers(project, pred)
     assert lay["defor_file"] == dataset.target.path
@@ -591,6 +797,7 @@ def test_resolve_layers_recovers_from_dataset(tmp_path):
 
 
 def test_evaluate_prediction_runs_defrate_then_validate(tmp_path, monkeypatch):
+    """One prediction: the deforestation rate first, then validation on it."""
     project, pred, dataset = _fake_project_with_prediction(tmp_path)
     calls = {}
 
@@ -600,9 +807,15 @@ def test_evaluate_prediction_runs_defrate_then_validate(tmp_path, monkeypatch):
 
     def fake_validate(**kw):
         calls["validate"] = kw
-        return {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9,
-                "ncell": 26, "csize_coarse_grid": kw["csize_coarse_grid"],
-                "csize_coarse_grid_ha": 8100.0}
+        return {
+            "RMSE": 1.0,
+            "wRMSE": 2.0,
+            "MedAE": 0.5,
+            "R2": 0.9,
+            "ncell": 26,
+            "csize_coarse_grid": kw["csize_coarse_grid"],
+            "csize_coarse_grid_ha": 8100.0,
+        }
 
     monkeypatch.setattr(ev, "_defrate_per_cat", fake_defrate_per_cat)
     monkeypatch.setattr(ev, "validate_two_layer", fake_validate)
@@ -619,39 +832,68 @@ def test_evaluate_prediction_runs_defrate_then_validate(tmp_path, monkeypatch):
     assert rows[0]["fig_path"].endswith("pred_obs_GLM_calibration_300.png")
     # pred.metrics receives the per-(period,csize) index subset
     assert pred.metrics == {
-        "calibration_300": {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26}
+        "calibration_300": {
+            "RMSE": 1.0,
+            "wRMSE": 2.0,
+            "MedAE": 0.5,
+            "R2": 0.9,
+            "ncell": 26,
+        }
     }
 
 
 def test_evaluate_predictions_filters_and_aggregates(tmp_path, monkeypatch):
+    """Several predictions are filtered to the evaluable ones and pooled."""
     project, pred, dataset = _fake_project_with_prediction(tmp_path)
     # second prediction in a different period that we will filter out
-    pred2 = types.SimpleNamespace(model_key="rf_rf_v1", window=None,
-                                   dataset_name="validation",
-                                   path=tmp_path / "risk2.tif", metrics={})
+    pred2 = types.SimpleNamespace(
+        model_key="rf_rf_v1",
+        window=None,
+        dataset_name="validation",
+        path=tmp_path / "risk2.tif",
+        metrics={},
+    )
     project.predictions["rf_rf_v1__validation_y2015"] = pred2
 
-    monkeypatch.setattr(ev, "evaluate_prediction",
-                        lambda proj, p, csizes=(300,), recompute_defrate=True: [
-                            {"prediction": p.model_key, "model": (label_from := ev.label_for(p)),
-                             "period": p.dataset_name, "csize_coarse_grid": 300,
-                             "csize_coarse_grid_ha": 8100.0, "ncell": 26,
-                             "MedAE": 1.0, "R2": 0.5, "RMSE": 2.0, "wRMSE": 3.0,
-                             "fig_path": "x.png"}])
+    monkeypatch.setattr(
+        ev,
+        "evaluate_prediction",
+        lambda proj, p, csizes=(300,), recompute_defrate=True: [
+            {
+                "prediction": p.model_key,
+                "model": ev.label_for(p),
+                "period": p.dataset_name,
+                "csize_coarse_grid": 300,
+                "csize_coarse_grid_ha": 8100.0,
+                "ncell": 26,
+                "MedAE": 1.0,
+                "R2": 0.5,
+                "RMSE": 2.0,
+                "wRMSE": 3.0,
+                "fig_path": "x.png",
+            }
+        ],
+    )
 
     df = ev.evaluate_predictions(project, dataset_filter=["calibration"])
-    assert list(df["period"].unique()) == ["calibration"]   # validation filtered out
+    assert list(df["period"].unique()) == ["calibration"]  # validation filtered out
     assert set(["MedAE", "R2", "RMSE", "wRMSE"]).issubset(df.columns)
     assert (_Path(tmp_path) / "evaluation" / "indices_all.csv").exists()
 
 
 def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
+    """An explicit truth layer wins over anything derivable from the project."""
     pred = types.SimpleNamespace(
-        model_key="glm_glm_v1", window=None, dataset_name="validation",
-        path=tmp_path / "risk.tif", metrics={},
-        storage_key=lambda: "glm_glm_v1__validation")
+        model_key="glm_glm_v1",
+        window=None,
+        dataset_name="validation",
+        path=tmp_path / "risk.tif",
+        metrics={},
+        storage_key=lambda: "glm_glm_v1__validation",
+    )
     project = types.SimpleNamespace(
-        folders=types.SimpleNamespace(project_folder=tmp_path))
+        folders=types.SimpleNamespace(project_folder=tmp_path)
+    )
     calls = {}
 
     def fake_defrate(**kw):
@@ -660,9 +902,15 @@ def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
 
     def fake_validate(**kw):
         calls["validate"] = kw
-        return {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26,
-                "csize_coarse_grid": kw["csize_coarse_grid"],
-                "csize_coarse_grid_ha": 8100.0}
+        return {
+            "RMSE": 1.0,
+            "wRMSE": 2.0,
+            "MedAE": 0.5,
+            "R2": 0.9,
+            "ncell": 26,
+            "csize_coarse_grid": kw["csize_coarse_grid"],
+            "csize_coarse_grid_ha": 8100.0,
+        }
 
     monkeypatch.setattr(ev, "_defrate_per_cat", fake_defrate)
     monkeypatch.setattr(ev, "validate_two_layer", fake_validate)
@@ -670,8 +918,14 @@ def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
     truth_defor = tmp_path / "truth_defor.tif"
     truth_forest = tmp_path / "truth_forest.tif"
     rows = ev._evaluate_one_against_truth(
-        project, pred, defor_file=truth_defor, forest_file=truth_forest,
-        time_interval=7, truth_tag="forest_loss_2015_2020", csizes=(300,))
+        project,
+        pred,
+        defor_file=truth_defor,
+        forest_file=truth_forest,
+        time_interval=7,
+        truth_tag="forest_loss_2015_2020",
+        csizes=(300,),
+    )
 
     # the SHARED truth is used, not the map's own dataset
     assert calls["defrate"]["defor_file"] == truth_defor
@@ -682,60 +936,105 @@ def test_evaluate_one_against_truth_uses_explicit_truth(tmp_path, monkeypatch):
     # row annotations
     assert rows[0]["truth"] == "forest_loss_2015_2020"
     assert rows[0]["period"] == "validation"
-    assert rows[0]["model"] == "GLM"
+    assert rows[0]["model"] == "GLM_glm_glm_v1"
     assert rows[0]["prediction"] == "glm_glm_v1__validation"
     # output namespaced under evaluation/<truth_tag>/
     assert (tmp_path / "evaluation" / "forest_loss_2015_2020").is_dir()
     assert rows[0]["fig_path"].endswith(
-        "evaluation/forest_loss_2015_2020/pred_obs_GLM_validation_300.png")
+        "evaluation/forest_loss_2015_2020/pred_obs_GLM_glm_glm_v1_validation_300.png"
+    )
     # metrics keyed by "<tag>__<period>_<csize>"
     assert pred.metrics == {
-        "forest_loss_2015_2020__validation_300":
-            {"RMSE": 1.0, "wRMSE": 2.0, "MedAE": 0.5, "R2": 0.9, "ncell": 26}}
+        "forest_loss_2015_2020__validation_300": {
+            "RMSE": 1.0,
+            "wRMSE": 2.0,
+            "MedAE": 0.5,
+            "R2": 0.9,
+            "ncell": 26,
+        }
+    }
 
 
 def test_evaluate_against_truth_selects_keys_and_namespaces(tmp_path, monkeypatch):
-    p1 = types.SimpleNamespace(model_key="glm_glm_v1", window=None,
-                                dataset_name="calibration", path=tmp_path / "r1.tif",
-                                metrics={}, storage_key=lambda: "glm_glm_v1__calibration")
-    p2 = types.SimpleNamespace(model_key="rf_rf_v1", window=None,
-                                dataset_name="validation", path=tmp_path / "r2.tif",
-                                metrics={}, storage_key=lambda: "rf_rf_v1__validation")
+    """Only the selected keys are scored, each in its own namespace."""
+    p1 = types.SimpleNamespace(
+        model_key="glm_glm_v1",
+        window=None,
+        dataset_name="calibration",
+        path=tmp_path / "r1.tif",
+        metrics={},
+        storage_key=lambda: "glm_glm_v1__calibration",
+    )
+    p2 = types.SimpleNamespace(
+        model_key="rf_rf_v1",
+        window=None,
+        dataset_name="validation",
+        path=tmp_path / "r2.tif",
+        metrics={},
+        storage_key=lambda: "rf_rf_v1__validation",
+    )
     saved = {"n": 0}
     project = types.SimpleNamespace(
         folders=types.SimpleNamespace(project_folder=tmp_path),
         predictions={"k1": p1, "k2": p2},
-        save=lambda: saved.__setitem__("n", saved["n"] + 1))
+        save=lambda: saved.__setitem__("n", saved["n"] + 1),
+    )
 
     monkeypatch.setattr(
-        ev, "_evaluate_one_against_truth",
-        lambda proj, pred, **kw: [{
-            "prediction": pred.storage_key(), "model": ev.label_for(pred),
-            "period": pred.dataset_name, "truth": kw["truth_tag"],
-            "csize_coarse_grid": 300, "csize_coarse_grid_ha": 8100.0, "ncell": 26,
-            "MedAE": 1.0, "R2": 0.5, "RMSE": 2.0, "wRMSE": 3.0, "fig_path": "x.png"}])
+        ev,
+        "_evaluate_one_against_truth",
+        lambda proj, pred, **kw: [
+            {
+                "prediction": pred.storage_key(),
+                "model": ev.artifact_label_for(pred),
+                "period": pred.dataset_name,
+                "truth": kw["truth_tag"],
+                "csize_coarse_grid": 300,
+                "csize_coarse_grid_ha": 8100.0,
+                "ncell": 26,
+                "MedAE": 1.0,
+                "R2": 0.5,
+                "RMSE": 2.0,
+                "wRMSE": 3.0,
+                "fig_path": "x.png",
+            }
+        ],
+    )
 
     df = ev.evaluate_against_truth(
-        project, prediction_keys=["k1"], defor_file=tmp_path / "d.tif",
-        forest_file=tmp_path / "f.tif", time_interval=5,
-        truth_tag="forest_loss_2015_2020")
+        project,
+        prediction_keys=["k1"],
+        defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif",
+        time_interval=5,
+        truth_tag="forest_loss_2015_2020",
+    )
 
-    assert list(df["period"]) == ["calibration"]          # only k1 was selected
+    assert list(df["period"]) == ["calibration"]  # only k1 was selected
     assert list(df["truth"]) == ["forest_loss_2015_2020"]
     assert "truth" in df.columns
-    assert (tmp_path / "evaluation" / "forest_loss_2015_2020"
-            / "indices_all.csv").exists()
-    assert saved["n"] == 1                                 # auto_save ran
+    assert (
+        tmp_path / "evaluation" / "forest_loss_2015_2020" / "indices_all.csv"
+    ).exists()
+    assert saved["n"] == 1  # auto_save ran
 
 
 def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys):
+    """An unknown key is skipped with a message, never a crash."""
     project = types.SimpleNamespace(
         folders=types.SimpleNamespace(project_folder=tmp_path),
-        predictions={}, save=lambda: None)
+        predictions={},
+        save=lambda: None,
+    )
 
     df = ev.evaluate_against_truth(
-        project, prediction_keys=["nope"], defor_file=tmp_path / "d.tif",
-        forest_file=tmp_path / "f.tif", time_interval=5, truth_tag="t")
+        project,
+        prediction_keys=["nope"],
+        defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif",
+        time_interval=5,
+        truth_tag="t",
+    )
 
     assert len(df) == 0
     assert "skipped nope" in capsys.readouterr().out
@@ -750,12 +1049,18 @@ def test_evaluate_against_truth_skips_unknown_key(tmp_path, monkeypatch, capsys)
 def _truth_project_and_pred(tmp_path):
     """Fake project holding ONE prediction, scored against an explicit truth."""
     pred = types.SimpleNamespace(
-        model_key="glm_glm_v1", window=None, dataset_name="validation",
-        path=tmp_path / "risk.tif", metrics={},
-        storage_key=lambda: "glm_glm_v1__validation")
+        model_key="glm_glm_v1",
+        window=None,
+        dataset_name="validation",
+        path=tmp_path / "risk.tif",
+        metrics={},
+        storage_key=lambda: "glm_glm_v1__validation",
+    )
     project = types.SimpleNamespace(
         folders=types.SimpleNamespace(project_folder=tmp_path),
-        predictions={"k1": pred}, save=lambda: None)
+        predictions={"k1": pred},
+        save=lambda: None,
+    )
     return project, pred
 
 
@@ -770,13 +1075,21 @@ def _fake_validate_writing(value):
     the same truth/model/period/cell size — i.e. exactly the collision the
     run-scoped layout must survive.
     """
+
     def fake_validate(**kw):
         _Path(kw["tab_file_pred"]).write_text(f"cell,ndefor_obs_ha\n0,{value}\n")
         _Path(kw["fig_file_pred"]).write_bytes(f"PNG-{value}".encode())
         _Path(kw["indices_file_pred"]).write_text(f"MedAE\n{value}\n")
-        return {"RMSE": value, "wRMSE": value, "MedAE": value, "R2": 0.9,
-                "ncell": 26, "csize_coarse_grid": kw["csize_coarse_grid"],
-                "csize_coarse_grid_ha": 8100.0}
+        return {
+            "RMSE": value,
+            "wRMSE": value,
+            "MedAE": value,
+            "R2": 0.9,
+            "ncell": 26,
+            "csize_coarse_grid": kw["csize_coarse_grid"],
+            "csize_coarse_grid_ha": 8100.0,
+        }
+
     return fake_validate
 
 
@@ -787,15 +1100,24 @@ def _run_against_truth(project, tmp_path, run_id, value, monkeypatch, csizes=(30
     monkeypatch.setattr(ev, "_defrate_per_cat", _fake_defrate)
     monkeypatch.setattr(ev, "validate_two_layer", _fake_validate_writing(value))
     return ev.evaluate_against_truth(
-        project, prediction_keys=["k1"], defor_file=tmp_path / "d.tif",
-        forest_file=tmp_path / "f.tif", time_interval=5, truth_tag=_TRUTH_TAG,
-        csizes=csizes, run_id=run_id)
+        project,
+        prediction_keys=["k1"],
+        defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif",
+        time_interval=5,
+        truth_tag=_TRUTH_TAG,
+        csizes=csizes,
+        run_id=run_id,
+    )
 
 
 def _spec(tmp_path):
-    return {"defor_file": str(tmp_path / "d.tif"),
-            "forest_file": str(tmp_path / "f.tif"),
-            "time_interval": 5, "truth_tag": _TRUTH_TAG}
+    return {
+        "defor_file": str(tmp_path / "d.tif"),
+        "forest_file": str(tmp_path / "f.tif"),
+        "time_interval": 5,
+        "truth_tag": _TRUTH_TAG,
+    }
 
 
 def test_two_runs_same_truth_retain_distinct_artifacts(tmp_path, monkeypatch):
@@ -813,15 +1135,23 @@ def test_two_runs_same_truth_retain_distinct_artifacts(tmp_path, monkeypatch):
     records = []
     for i, (run_id, value) in enumerate(runs):
         df = _run_against_truth(project, tmp_path, run_id, value, monkeypatch)
-        records.append(build_evaluation_record(
-            project, df, _spec(tmp_path), resolved_keys=["k1"], run_id=run_id,
-            created_at=f"2026-06-22T14:0{i}:00", csizes=(300,)))
+        records.append(
+            build_evaluation_record(
+                project,
+                df,
+                _spec(tmp_path),
+                resolved_keys=["k1"],
+                run_id=run_id,
+                created_at=f"2026-06-22T14:0{i}:00",
+                csizes=(300,),
+            )
+        )
 
     for record, (run_id, value) in zip(records, runs):
         assert len(record.artifacts) == 1, "one artifact per map per cell size"
         art = record.artifacts[0]
         assert art.prediction_key == "glm_glm_v1__validation"
-        assert art.model == "GLM" and art.period == "validation"
+        assert art.model == "GLM_glm_glm_v1" and art.period == "validation"
         assert art.csize_px == 300
         # each record's own files survived the other run untouched
         assert _Path(art.points_csv).read_text() == f"cell,ndefor_obs_ha\n0,{value}\n"
@@ -838,53 +1168,68 @@ def test_two_runs_same_truth_retain_distinct_artifacts(tmp_path, monkeypatch):
 
 
 def test_run_scoped_artifacts_live_under_run_directory(tmp_path, monkeypatch):
+    """A run-scoped evaluation keeps every artifact inside its own folder."""
     project, _pred = _truth_project_and_pred(tmp_path)
     _run_against_truth(project, tmp_path, "run00001", 11.0, monkeypatch)
 
     run_dir = tmp_path / "evaluation" / _TRUTH_TAG / "run00001"
     assert run_dir.is_dir()
-    for name in ("defrate_cat_GLM_validation.csv",
-                 "pred_obs_GLM_validation_300.csv",
-                 "indices_GLM_validation_300.csv",
-                 "pred_obs_GLM_validation_300.png",
-                 "indices_all.csv"):
+    for name in (
+        "defrate_cat_GLM_glm_glm_v1_validation.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.csv",
+        "indices_GLM_glm_glm_v1_validation_300.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.png",
+        "indices_all.csv",
+    ):
         assert (run_dir / name).exists(), name
 
 
-def test_run_scoped_evaluation_also_publishes_legacy_shared_paths(tmp_path, monkeypatch):
+def test_run_scoped_evaluation_also_publishes_legacy_shared_paths(
+    tmp_path, monkeypatch
+):
     """Dual-publish shim: notebooks reading the old shared paths keep working."""
     project, _pred = _truth_project_and_pred(tmp_path)
     _run_against_truth(project, tmp_path, "run00001", 11.0, monkeypatch)
     _run_against_truth(project, tmp_path, "run00002", 22.0, monkeypatch)
 
     shared = tmp_path / "evaluation" / _TRUTH_TAG
-    for name in ("defrate_cat_GLM_validation.csv",
-                 "pred_obs_GLM_validation_300.csv",
-                 "indices_GLM_validation_300.csv",
-                 "pred_obs_GLM_validation_300.png",
-                 "indices_all.csv"):
+    for name in (
+        "defrate_cat_GLM_glm_glm_v1_validation.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.csv",
+        "indices_GLM_glm_glm_v1_validation_300.csv",
+        "pred_obs_GLM_glm_glm_v1_validation_300.png",
+        "indices_all.csv",
+    ):
         assert (shared / name).exists(), name
     # the shared copy tracks the LATEST run
-    assert (shared / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-22.0"
+    latest_png = shared / "pred_obs_GLM_glm_glm_v1_validation_300.png"
+    assert latest_png.read_bytes() == b"PNG-22.0"
     # while the older run's own copy is untouched
-    assert (shared.parent / _TRUTH_TAG / "run00001"
-            / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-11.0"
+    assert (
+        shared.parent / _TRUTH_TAG / "run00001" / latest_png.name
+    ).read_bytes() == b"PNG-11.0"
 
 
-def test_evaluate_against_truth_without_run_id_keeps_legacy_layout(tmp_path, monkeypatch):
+def test_evaluate_against_truth_without_run_id_keeps_legacy_layout(
+    tmp_path, monkeypatch
+):
     """The notebook path (no run_id) writes exactly where it always did."""
     project, _pred = _truth_project_and_pred(tmp_path)
     df = _run_against_truth(project, tmp_path, None, 11.0, monkeypatch)
 
     shared = tmp_path / "evaluation" / _TRUTH_TAG
-    assert (shared / "pred_obs_GLM_validation_300.png").read_bytes() == b"PNG-11.0"
+    png = shared / "pred_obs_GLM_glm_glm_v1_validation_300.png"
+    assert png.read_bytes() == b"PNG-11.0"
     assert (shared / "indices_all.csv").exists()
     # no run sub-directory was created, and no artifacts are claimed
     assert [p for p in shared.iterdir() if p.is_dir()] == []
     assert df.attrs.get("artifacts", []) == []
 
 
-def test_evaluate_against_truth_threads_run_id_into_each_prediction(tmp_path, monkeypatch):
+def test_evaluate_against_truth_threads_run_id_into_each_prediction(
+    tmp_path, monkeypatch
+):
+    """The run id reaches every per-prediction call, so artifacts stay scoped."""
     seen = {}
 
     def fake_one(proj, pred, **kw):
@@ -894,19 +1239,26 @@ def test_evaluate_against_truth_threads_run_id_into_each_prediction(tmp_path, mo
     project, _pred = _truth_project_and_pred(tmp_path)
     monkeypatch.setattr(ev, "_evaluate_one_against_truth", fake_one)
     ev.evaluate_against_truth(
-        project, prediction_keys=["k1"], defor_file=tmp_path / "d.tif",
-        forest_file=tmp_path / "f.tif", time_interval=5, truth_tag=_TRUTH_TAG,
-        run_id="run00001")
+        project,
+        prediction_keys=["k1"],
+        defor_file=tmp_path / "d.tif",
+        forest_file=tmp_path / "f.tif",
+        time_interval=5,
+        truth_tag=_TRUTH_TAG,
+        run_id="run00001",
+    )
     assert seen["run_id"] == "run00001"
 
 
 def test_one_artifact_per_prediction_per_cell_size(tmp_path, monkeypatch):
+    """Each (prediction, cell size) pair records exactly one artifact."""
     project, _pred = _truth_project_and_pred(tmp_path)
-    df = _run_against_truth(project, tmp_path, "run00001", 11.0, monkeypatch,
-                            csizes=(100, 300))
+    df = _run_against_truth(
+        project, tmp_path, "run00001", 11.0, monkeypatch, csizes=(100, 300)
+    )
     arts = df.attrs["artifacts"]
     assert sorted(a.csize_px for a in arts) == [100, 300]
-    assert {a.model for a in arts} == {"GLM"}
+    assert {a.model for a in arts} == {"GLM_glm_glm_v1"}
     assert len({a.points_csv for a in arts}) == 2
 
 
@@ -926,21 +1278,35 @@ def test_legacy_record_without_artifacts_still_shows_its_pngs(tmp_path):
     png.write_bytes(b"PNG-legacy")
 
     record = EvaluationRecord(
-        truth_tag=_TRUTH_TAG, truth_defor="d", truth_forest="f", time_interval=5,
-        prediction_keys=["k1"], csizes=[300], created_at="2026-06-01T10:00:00",
-        indices=[{"model": "GLM", "period": "validation",
-                  "csize_coarse_grid": 300, "MedAE": 1.0}],
-        csv_path=str(shared / "indices_all.csv"), run_id="legacy00")
+        truth_tag=_TRUTH_TAG,
+        truth_defor="d",
+        truth_forest="f",
+        time_interval=5,
+        prediction_keys=["k1"],
+        csizes=[300],
+        created_at="2026-06-01T10:00:00",
+        indices=[
+            {
+                "model": "GLM",
+                "period": "validation",
+                "csize_coarse_grid": 300,
+                "MedAE": 1.0,
+            }
+        ],
+        csv_path=str(shared / "indices_all.csv"),
+        run_id="legacy00",
+    )
 
     assert record.artifacts == []
-    entries = figure_entries(record.indices, 300,
-                             fig_dir=_Path(record.csv_path).parent)
+    entries = figure_entries(record.indices, 300, fig_dir=_Path(record.csv_path).parent)
     assert [p for _, p in entries] == [png]
     assert entries[0][1].read_bytes() == b"PNG-legacy"
 
 
 def test_evaluation_tile_threads_run_id_and_orders_delete():
+    """The tile passes the run id through and deletes in dependency order."""
     import inspect
+
     import gui.tile.evaluation_tile as et
 
     src = inspect.getsource(et)
@@ -953,17 +1319,20 @@ def test_evaluation_tile_threads_run_id_and_orders_delete():
 def test_evaluation_tile_does_not_publish_a_failed_deletion():
     """on_delete must return BEFORE project.set when deletion did not commit."""
     import inspect
+
     import gui.tile.evaluation_tile as et
 
     src = inspect.getsource(et)
-    body = src[src.index("def on_delete"):src.index("def on_dismiss")]
+    body = src[src.index("def on_delete") : src.index("def on_dismiss")]
     assert body.index("if not deleted") < body.index("project.set")
     # the message reports a failed deletion, not a completed removal
     assert "could not be deleted" in body
 
 
 def test_evaluation_results_widget_exports_list_and_dialog():
+    """The widget module exposes both the saved-runs list and the dialog."""
     import inspect
+
     import gui.widget.evaluation_results as er
 
     assert hasattr(er, "EvaluationResults")
@@ -981,7 +1350,9 @@ def test_evaluation_results_widget_exports_list_and_dialog():
 
 
 def test_evaluation_tile_wires_record_and_dialog():
+    """The tile hands the selected record to the dialog."""
     import inspect
+
     import gui.tile.evaluation_tile as et
 
     src = inspect.getsource(et)
@@ -1004,12 +1375,20 @@ def _chart_rows():
     rows = []
     for model, base in [("glm", 1.0), ("rf", 0.7)]:
         for csize in (100, 300):
-            rows.append({
-                "prediction": f"{model}__d1", "model": model, "period": "d1",
-                "csize_coarse_grid": csize, "ncell": 40,
-                "MedAE": base * csize / 100, "R2": 0.5, "RMSE": base, "wRMSE": base,
-                "fig_path": f"/tmp/pred_obs_{model}_d1_{csize}.png",
-            })
+            rows.append(
+                {
+                    "prediction": f"{model}__d1",
+                    "model": model,
+                    "period": "d1",
+                    "csize_coarse_grid": csize,
+                    "ncell": 40,
+                    "MedAE": base * csize / 100,
+                    "R2": 0.5,
+                    "RMSE": base,
+                    "wRMSE": base,
+                    "fig_path": f"/tmp/pred_obs_{model}_d1_{csize}.png",
+                }
+            )
     return rows
 
 
@@ -1022,7 +1401,7 @@ def _chart_rows():
 
 
 def test_metric_bar_option_categories_are_the_map_labels():
-    """x axis = one category per model/period label, sorted (as Plotly did)."""
+    """X axis = one category per model/period label, sorted (as Plotly did)."""
     from gui.scripts.evaluation_charts import metric_bar_option
 
     option = metric_bar_option(_chart_rows(), "MedAE")
@@ -1031,6 +1410,7 @@ def test_metric_bar_option_categories_are_the_map_labels():
 
 
 def test_metric_bar_option_has_one_bar_series_per_cell_size():
+    """One bar series per coarse-grid cell size."""
     from gui.scripts.evaluation_charts import metric_bar_option
 
     option = metric_bar_option(_chart_rows(), "MedAE")
@@ -1052,18 +1432,24 @@ def test_metric_bar_option_leaves_a_missing_label_csize_pair_empty():
     """A map evaluated at only one cell size must not shift the other bars."""
     from gui.scripts.evaluation_charts import metric_bar_option
 
-    rows = [r for r in _chart_rows()
-            if not (r["model"] == "rf" and r["csize_coarse_grid"] == 300)]
+    rows = [
+        r
+        for r in _chart_rows()
+        if not (r["model"] == "rf" and r["csize_coarse_grid"] == 300)
+    ]
     option = metric_bar_option(rows, "MedAE")
     assert option["xAxis"]["data"] == ["glm — d1", "rf — d1"]
     assert option["series"][1]["data"] == [3.0, None]
 
 
 def test_metric_bar_option_title_carries_the_direction_hint():
+    """Each title states the unit and whether lower or higher is better."""
     from gui.scripts.evaluation_charts import metric_bar_option
 
-    titles = {m: metric_bar_option(_chart_rows(), m)["title"]["text"]
-              for m in ("MedAE", "R2", "RMSE", "wRMSE")}
+    titles = {
+        m: metric_bar_option(_chart_rows(), m)["title"]["text"]
+        for m in ("MedAE", "R2", "RMSE", "wRMSE")
+    }
     assert titles == {
         "MedAE": "MedAE (ha) ↓",
         "R2": "R² ↑",
@@ -1081,7 +1467,8 @@ def test_metric_bar_option_shows_the_legend_only_for_several_cell_sizes():
     assert many["legend"]["data"] == ["csize 100 px", "csize 300 px"]
 
     one = metric_bar_option(
-        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE")
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE"
+    )
     assert one["legend"]["show"] is False
 
 
@@ -1098,22 +1485,40 @@ def test_metric_bar_option_reserves_the_legend_row_only_when_it_shows():
     assert with_legend["grid"]["top"] == 52
 
     one_csize = metric_bar_option(
-        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE")
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE"
+    )
     assert one_csize["legend"]["show"] is False
     assert one_csize["grid"]["top"] == with_legend["legend"]["top"] == 24
 
 
-def test_metric_bar_option_colors_bars_from_the_app_palette():
-    """The application-owned Blues ramp, not plotly.colors.sample_colorscale."""
-    from gui.scripts.echarts_options import csize_colors
+def test_metric_bar_option_colors_bars_from_the_app_accent():
+    """Shades of the app's "primary", never a palette of the chart's own."""
+    from gui.scripts.echarts_options import accent_color, accent_ramp
     from gui.scripts.evaluation_charts import metric_bar_option
 
-    option = metric_bar_option(_chart_rows(), "MedAE")
-    assert [s["itemStyle"]["color"] for s in option["series"]] == csize_colors(2)
+    accent = "#5BB624"
+    option = metric_bar_option(_chart_rows(), "MedAE", accent=accent)
+    assert [s["itemStyle"]["color"] for s in option["series"]] == accent_ramp(2, accent)
 
+    # One cell size means shading would encode nothing, so the bar is the
+    # accent itself — the same colour as every color="primary" control.
     single = metric_bar_option(
-        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100], "MedAE")
-    assert single["series"][0]["itemStyle"]["color"] == "#2a78d6"
+        [r for r in _chart_rows() if r["csize_coarse_grid"] == 100],
+        "MedAE",
+        accent=accent,
+    )
+    assert single["series"][0]["itemStyle"]["color"] == accent_color(accent)
+
+
+def test_metric_bar_option_bars_follow_a_changed_accent():
+    """Recolouring the app's primary recolours the charts — no frozen hexes."""
+    from gui.scripts.evaluation_charts import metric_bar_option
+
+    green = metric_bar_option(_chart_rows(), "MedAE", accent="#5BB624")
+    gold = metric_bar_option(_chart_rows(), "MedAE", accent="#76591e")
+    assert [s["itemStyle"]["color"] for s in green["series"]] != [
+        s["itemStyle"]["color"] for s in gold["series"]
+    ]
 
 
 def test_metric_bar_option_tooltip_shows_label_value_and_cell_size():
@@ -1161,6 +1566,7 @@ def test_metric_bar_option_is_json_serializable():
 
 
 def test_metric_bar_option_returns_none_when_nothing_is_chartable():
+    """Nothing to draw yields None, so the caller can drop the chart."""
     from gui.scripts.evaluation_charts import metric_bar_option
 
     assert metric_bar_option([], "RMSE") is None
@@ -1170,8 +1576,10 @@ def test_metric_bar_option_returns_none_when_nothing_is_chartable():
     # an unknown metric key has no title and no data
     assert metric_bar_option(_chart_rows(), "nope") is None
     # rows without a cell size cannot be split into series
-    assert metric_bar_option(
-        [{"model": "glm", "period": "d1", "MedAE": 1.0}], "MedAE") is None
+    assert (
+        metric_bar_option([{"model": "glm", "period": "d1", "MedAE": 1.0}], "MedAE")
+        is None
+    )
 
 
 def test_record_metrics_keeps_the_canonical_order_and_drops_empties():
@@ -1195,6 +1603,7 @@ def test_record_metrics_keeps_the_canonical_order_and_drops_empties():
 
 
 def test_figure_entries_and_csizes():
+    """Figure entries and cell sizes come back sorted and paired."""
     from gui.scripts.evaluation_charts import figure_entries, record_csizes
 
     rows = _chart_rows()
@@ -1205,9 +1614,12 @@ def test_figure_entries_and_csizes():
 
 
 def test_figure_entries_derives_paths_without_fig_path_column():
-    """Real records store indices WITHOUT fig_path (evaluate_against_truth's
-    explicit column list drops it) — entries must be derived from the record's
-    evaluation folder instead of coming up empty."""
+    """A record with no fig_path column still yields figure entries.
+
+    Real records store indices WITHOUT it (evaluate_against_truth's explicit
+    column list drops the field), so the paths must be derived from the record's
+    evaluation folder instead of coming up empty.
+    """
     from pathlib import Path
 
     from gui.scripts.evaluation_charts import figure_entries
@@ -1222,7 +1634,9 @@ def test_figure_entries_derives_paths_without_fig_path_column():
 
 
 def test_evaluation_dialog_has_tabs_and_csize_select():
+    """The dialog carries its three tabs and the cell-size selector."""
     import inspect
+
     import gui.widget.evaluation_results as er
 
     src = inspect.getsource(er)
@@ -1253,11 +1667,15 @@ def test_evaluation_dialog_drops_the_plotly_modebar_workaround():
     project = solara.reactive(p, equals=lambda a, b: a is b)
     _, rc = reacton.render(
         EvaluationTableDialog(
-            project=project, eval_key="run-a", on_close=lambda *_: None),
+            project=project, eval_key="run-a", on_close=lambda *_: None
+        ),
         handle_error=False,
     )
-    css = "\n".join(w.template for w in rc.find(vw.VuetifyTemplate).widgets
-                    if isinstance(getattr(w, "template", None), str))
+    css = "\n".join(
+        w.template
+        for w in rc.find(vw.VuetifyTemplate).widgets
+        if isinstance(getattr(w, "template", None), str)
+    )
     assert "modebar" not in css
     assert ".evaluation-table-dialog" in css and "width: 100%" in css
     rc.close()
@@ -1277,12 +1695,12 @@ def _run_blocked(blocked, body):
         "        if name.split('.')[0] in BLOCKED:\n"
         "            raise ImportError('blocked: ' + name)\n"
         "        return None\n"
-        "sys.meta_path.insert(0, Block())\n"
-        + body
+        "sys.meta_path.insert(0, Block())\n" + body
     )
     root = Path(__file__).resolve().parents[1]
     return subprocess.run(
-        [sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
+        [sys.executable, "-c", code], cwd=root, capture_output=True, text=True
+    )
 
 
 _CHART_SMOKE = (
@@ -1327,8 +1745,9 @@ def test_evaluation_gui_path_imports_no_plotly():
         "import gui.scripts.evaluation_charts as ec\n"
         "import gui.widget.evaluation_results  # noqa: F401\n"
         "import gui.tile.evaluation_tile  # noqa: F401\n"
-        + _CHART_SMOKE + _SCATTER_SMOKE +
-        "assert 'plotly' not in sys.modules\n"
+        + _CHART_SMOKE
+        + _SCATTER_SMOKE
+        + "assert 'plotly' not in sys.modules\n"
         "print('OK')\n",
     )
     assert proc.returncode == 0, proc.stderr
@@ -1346,8 +1765,9 @@ def test_evaluation_charts_builds_options_without_solara():
     proc = _run_blocked(
         ["solara", "reacton", "ipyvuetify", "ipecharts", "plotly"],
         "import gui.scripts.evaluation_charts as ec\n"
-        + _CHART_SMOKE + _SCATTER_SMOKE +
-        "print('OK')\n",
+        + _CHART_SMOKE
+        + _SCATTER_SMOKE
+        + "print('OK')\n",
     )
     assert proc.returncode == 0, proc.stderr
     assert "OK" in proc.stdout
@@ -1357,6 +1777,7 @@ def test_evaluation_charts_builds_options_without_solara():
 # Charts tab — headless render (the evaluation dialog is not covered by any
 # other render test, and EChartsChart's identity contract can only fail here)
 # ---------------------------------------------------------------------------
+
 
 def _chart_record(metrics=("MedAE", "R2"), rows=None):
     return types.SimpleNamespace(
@@ -1405,16 +1826,19 @@ def _render_charts_tab(**kwargs):
 
 
 def test_charts_tab_renders_one_chart_per_selected_metric():
+    """One chart per metric the run selected."""
     rc, cls = _render_charts_tab()
     assert len(rc.find(cls).widgets) == 2
 
 
 def test_charts_tab_renders_all_four_metrics_when_none_were_selected():
+    """No stored selection means every known metric is charted."""
     rc, cls = _render_charts_tab(record=_chart_record(metrics=()))
     assert len(rc.find(cls).widgets) == 4
 
 
 def test_charts_tab_charts_carry_the_per_metric_options():
+    """Each chart gets its own metric's option, not a shared one."""
     rc, cls = _render_charts_tab()
     titles = [w.option["title"]["text"] for w in rc.find(cls).widgets]
     assert titles == ["MedAE (ha) ↓", "R² ↑"]
@@ -1437,13 +1861,17 @@ def test_charts_tab_builds_its_options_from_the_live_theme():
         option = rc.find(cls).widgets[0].option
         assert option["title"]["textStyle"]["color"] == theme_colors(True)["ink"]
         assert option["xAxis"]["axisLabel"]["color"] == theme_colors(True)["ink"]
-        assert (option["yAxis"]["splitLine"]["lineStyle"]["color"]
-                == theme_colors(True)["grid"])
+        assert (
+            option["yAxis"]["splitLine"]["lineStyle"]["color"]
+            == theme_colors(True)["grid"]
+        )
         rc.close()
 
     rc, cls = _render_charts_tab()
-    assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
-            == theme_colors(False)["ink"])
+    assert (
+        rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+        == theme_colors(False)["ink"]
+    )
     rc.close()
 
 
@@ -1466,18 +1894,25 @@ def test_charts_tab_repaints_when_the_theme_is_toggled_in_place():
     from gui.scripts.echarts_options import theme_colors
 
     rc, cls = _render_charts_tab()
-    assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
-            == theme_colors(False)["ink"])
+    assert (
+        rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+        == theme_colors(False)["ink"]
+    )
     with _dark_theme():
-        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
-                == theme_colors(True)["ink"])
+        assert (
+            rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+            == theme_colors(True)["ink"]
+        )
     rc.close()
 
 
 def test_charts_tab_follows_an_auto_mode_theme_resolution():
-    """In auto mode the frontend resolves prefers-color-scheme and pysepal
-    writes the RESOLVED value onto ThemeState.dark — a mounted chart must
-    follow that write, and the dark->light direction too."""
+    """A mounted chart follows an auto-mode theme resolution, both directions.
+
+    In auto mode the frontend resolves prefers-color-scheme and pysepal writes
+    the RESOLVED value onto ``ThemeState.dark``; the chart must follow that
+    write going dark->light as well as light->dark.
+    """
     from pysepal.solara import get_current_theme_state
 
     from gui.scripts.echarts_options import theme_colors
@@ -1488,14 +1923,20 @@ def test_charts_tab_follows_an_auto_mode_theme_resolution():
         state.set_mode("auto")
         state.set_dark(False)
         rc, cls = _render_charts_tab()
-        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
-                == theme_colors(False)["ink"])
-        state.set_dark(True)      # auto-mode resolution flips to dark
-        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
-                == theme_colors(True)["ink"])
-        state.set_dark(False)     # and back — dark -> light
-        assert (rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
-                == theme_colors(False)["ink"])
+        assert (
+            rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+            == theme_colors(False)["ink"]
+        )
+        state.set_dark(True)  # auto-mode resolution flips to dark
+        assert (
+            rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+            == theme_colors(True)["ink"]
+        )
+        state.set_dark(False)  # and back — dark -> light
+        assert (
+            rc.find(cls).widgets[0].option["title"]["textStyle"]["color"]
+            == theme_colors(False)["ink"]
+        )
         rc.close()
     finally:
         state.mode, state.dark = before
@@ -1512,20 +1953,28 @@ def test_charts_tab_draws_the_bar_charts_with_the_svg_renderer():
 
 
 def test_charts_tab_lays_metrics_out_in_two_columns():
+    """Several metrics lay out two per row."""
     import ipyvuetify as vw
 
     rc, _ = _render_charts_tab()
-    grids = [w for w in rc.find(vw.Html).widgets
-             if "grid-template-columns" in (w.style_ or "")]
+    grids = [
+        w
+        for w in rc.find(vw.Html).widgets
+        if "grid-template-columns" in (w.style_ or "")
+    ]
     assert grids and "repeat(2," in grids[0].style_
 
 
 def test_charts_tab_uses_a_single_column_for_a_single_metric():
+    """A lone metric gets the full width instead of half of it."""
     import ipyvuetify as vw
 
     rc, _ = _render_charts_tab(record=_chart_record(metrics=("R2",)))
-    grids = [w for w in rc.find(vw.Html).widgets
-             if "grid-template-columns" in (w.style_ or "")]
+    grids = [
+        w
+        for w in rc.find(vw.Html).widgets
+        if "grid-template-columns" in (w.style_ or "")
+    ]
     assert grids and "repeat(1," in grids[0].style_
 
 
@@ -1536,14 +1985,15 @@ def test_charts_tab_swaps_the_chart_when_the_metric_selection_changes():
     were missing from the identity, use_memo would hand back the stale MedAE
     widget with no error at all.
     """
-    import reacton
-
     from gui.widget.evaluation_results import _ChartsTab
 
     rc, cls = _render_charts_tab()
     assert rc.find(cls).widgets[0].option["title"]["text"] == "MedAE (ha) ↓"
-    rc.render(_ChartsTab(record=_chart_record(metrics=("R2",)),
-                         eval_key="run-a", active_tab=1))
+    rc.render(
+        _ChartsTab(
+            record=_chart_record(metrics=("R2",)), eval_key="run-a", active_tab=1
+        )
+    )
     assert rc.find(cls).widgets[0].option["title"]["text"] == "R² ↑"
 
 
@@ -1554,8 +2004,9 @@ def test_charts_tab_rebuilds_the_chart_when_the_charted_values_change():
     rc, cls = _render_charts_tab()
     first = rc.find(cls).widgets[0]
     bumped = [{**r, "MedAE": r["MedAE"] + 5} for r in _chart_rows()]
-    rc.render(_ChartsTab(record=_chart_record(rows=bumped),
-                         eval_key="run-a", active_tab=1))
+    rc.render(
+        _ChartsTab(record=_chart_record(rows=bumped), eval_key="run-a", active_tab=1)
+    )
     second = rc.find(cls).widgets[0]
     assert second is not first
     assert second.option["series"][0]["data"] == [6.0, 5.7]
@@ -1605,6 +2056,7 @@ def test_charts_tab_tells_the_adapter_whether_its_tab_is_shown(monkeypatch):
 
 
 def test_charts_tab_says_so_when_there_is_nothing_to_chart():
+    """An empty run shows a message rather than a blank grid."""
     import ipecharts
 
     rc, _ = _render_charts_tab(record=_chart_record(rows=[]))
@@ -1632,7 +2084,8 @@ def test_evaluation_table_dialog_mounts_with_its_charts():
     project = solara.reactive(p, equals=lambda a, b: a is b)
     _, rc = reacton.render(
         EvaluationTableDialog(
-            project=project, eval_key="run-a", on_close=lambda *_: None),
+            project=project, eval_key="run-a", on_close=lambda *_: None
+        ),
         handle_error=False,
     )
     assert len(rc.find(ipecharts.EChartsRawWidget).widgets) == 2
@@ -1658,36 +2111,58 @@ def _write_points(path, obs, pred):
 
     _Path(path).parent.mkdir(parents=True, exist_ok=True)
     n = len(obs)
-    pd.DataFrame({
-        "cell": list(range(n)),
-        "nfor_obs": [10] * n,
-        "ndefor_obs": [1] * n,
-        "nfor_obs_ha": [9.0] * n,
-        "ndefor_obs_ha": list(obs),
-        "ndefor_pred_ha": list(pred),
-    }).to_csv(path, index=False)
+    pd.DataFrame(
+        {
+            "cell": list(range(n)),
+            "nfor_obs": [10] * n,
+            "ndefor_obs": [1] * n,
+            "nfor_obs_ha": [9.0] * n,
+            "ndefor_obs_ha": list(obs),
+            "ndefor_pred_ha": list(pred),
+        }
+    ).to_csv(path, index=False)
 
 
-def _fig_index_row(csize=300, ha=90.0, medae=0.5, r2=0.9, model=_FIG_MODEL,
-                   period=None, prediction=None):
-    return {"model": model, "period": period or _FIG_PERIOD,
-            "csize_coarse_grid": csize, "csize_coarse_grid_ha": ha,
-            "MedAE": medae, "R2": r2,
-            "prediction": prediction or f"{model.lower()}__validation"}
+def _fig_index_row(
+    csize=300,
+    ha=90.0,
+    medae=0.5,
+    r2=0.9,
+    model=_FIG_MODEL,
+    period=None,
+    prediction=None,
+):
+    return {
+        "model": model,
+        "period": period or _FIG_PERIOD,
+        "csize_coarse_grid": csize,
+        "csize_coarse_grid_ha": ha,
+        "MedAE": medae,
+        "R2": r2,
+        "prediction": prediction or f"{model.lower()}__validation",
+    }
 
 
 def _figures_record(*, indices, csv_path, artifacts=()):
     return types.SimpleNamespace(
-        indices=list(indices), metrics=[], csv_path=str(csv_path),
-        truth_tag="loss_2010", run_id="run00001", artifacts=list(artifacts),
+        indices=list(indices),
+        metrics=[],
+        csv_path=str(csv_path),
+        truth_tag="loss_2010",
+        run_id="run00001",
+        artifacts=list(artifacts),
     )
 
 
 def _fig_artifact(points_csv, png_path, csize=300, model=_FIG_MODEL):
     return types.SimpleNamespace(
-        prediction_key=f"{model.lower()}__validation", model=model,
-        period=_FIG_PERIOD, csize_px=csize, points_csv=str(points_csv),
-        png_path=str(png_path))
+        prediction_key=f"{model.lower()}__validation",
+        model=model,
+        period=_FIG_PERIOD,
+        csize_px=csize,
+        points_csv=str(points_csv),
+        png_path=str(png_path),
+    )
 
 
 def _render_figures_tab(**kwargs):
@@ -1711,9 +2186,11 @@ def _scatter_data(widget):
 
 
 def test_two_predictions_with_identical_labels_render_distinct_cards(tmp_path):
-    """rows_by_label used to collapse same-label predictions into one card.
-    Each index row must now get its own card wired to its OWN artifact —
-    including the on-chart MedAE annotation, not just the plotted points.
+    """Two same-label predictions get one card each, on their own artifacts.
+
+    ``rows_by_label`` used to collapse them into a single card. Every index row
+    must now get its own, wired to its OWN artifact — including the on-chart
+    MedAE annotation, not just the plotted points.
 
     The two index rows are given DIFFERENT MedAE values so a card that quotes
     the wrong row's stats (``_index_row_for`` matching on (model, period,
@@ -1727,21 +2204,29 @@ def test_two_predictions_with_identical_labels_render_distinct_cards(tmp_path):
     arts = [
         _fig_artifact(points_csv=csv_a, png_path=csv_a.with_suffix(".png")),
         types.SimpleNamespace(
-            prediction_key="glm__validation__2", model=_FIG_MODEL,
-            period=_FIG_PERIOD, csize_px=300, points_csv=str(csv_b),
-            png_path=str(csv_b.with_suffix(".png"))),
+            prediction_key="glm__validation__2",
+            model=_FIG_MODEL,
+            period=_FIG_PERIOD,
+            csize_px=300,
+            points_csv=str(csv_b),
+            png_path=str(csv_b.with_suffix(".png")),
+        ),
     ]
-    rows = [_fig_index_row(medae=1.5),
-            _fig_index_row(prediction="glm__validation__2", medae=9.5)]
-    record = _figures_record(indices=rows, csv_path=tmp_path / "indices_all.csv",
-                             artifacts=arts)
+    rows = [
+        _fig_index_row(medae=1.5),
+        _fig_index_row(prediction="glm__validation__2", medae=9.5),
+    ]
+    record = _figures_record(
+        indices=rows, csv_path=tmp_path / "indices_all.csv", artifacts=arts
+    )
     rc, cls = _render_figures_tab(record=record)
     widgets = rc.find(cls).widgets
     assert len(widgets) == 2
     by_point_count = {
         len(next(s for s in w.option["series"] if s["type"] == "scatter")["data"]): w
-        for w in widgets}
-    assert sorted(by_point_count) == [2, 3]    # each card drew ITS prediction's file
+        for w in widgets
+    }
+    assert sorted(by_point_count) == [2, 3]  # each card drew ITS prediction's file
 
     def annotation_text(widget):
         return widget.option["graphic"][0]["style"]["text"]
@@ -1761,11 +2246,13 @@ def test_the_figures_tab_shows_the_typed_png_even_outside_the_derived_dir(tmp_pa
     png.parent.mkdir(parents=True)
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     art = _fig_artifact(points_csv=tmp_path / "gone.csv", png_path=png)
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv",
-                             artifacts=[art])
+    record = _figures_record(
+        indices=[_fig_index_row()],
+        csv_path=tmp_path / "indices_all.csv",
+        artifacts=[art],
+    )
     rc, cls = _render_figures_tab(record=record)
-    assert rc.find(ipywidgets.Image).widgets   # the typed PNG shows
+    assert rc.find(ipywidgets.Image).widgets  # the typed PNG shows
     rc.close()
 
 
@@ -1774,10 +2261,14 @@ def test_figures_tab_renders_the_interactive_scatter(tmp_path):
     from gui.i18n import t as _t
     from gui.scripts.evaluation_echarts import PRED_OBS_SQUARE_HEIGHT
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0, 3.0], pred=[1.5, 2.5, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv",
+        obs=[1.0, 2.0, 3.0],
+        pred=[1.5, 2.5, 2.0],
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, cls = _render_figures_tab(record=record)
     widgets = rc.find(cls).widgets
     assert len(widgets) == 1
@@ -1787,7 +2278,8 @@ def test_figures_tab_renders_the_interactive_scatter(tmp_path):
     assert widgets[0].height == PRED_OBS_SQUARE_HEIGHT
     # the translated axis label reached the option, not the PNG's English string
     assert widgets[0].option["xAxis"]["name"] == _t(
-        "widgets.evaluation_results.chart_x_axis")
+        "widgets.evaluation_results.chart_x_axis"
+    )
     rc.close()
 
 
@@ -1802,15 +2294,16 @@ def test_figures_tab_titles_the_chart_with_the_cell_size_in_hectares(tmp_path):
     """
     from gui.i18n import t as _t
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row(ha=90.0)],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row(ha=90.0)], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, cls = _render_figures_tab(record=record)
     title = rc.find(cls).widgets[0].option["title"]["text"]
     assert "90.0" in title
-    assert title == _t("widgets.evaluation_results.chart_csize_title",
-                       csize_ha=90.0)
+    assert title == _t("widgets.evaluation_results.chart_csize_title", csize_ha=90.0)
     rc.close()
 
 
@@ -1828,10 +2321,12 @@ def test_figures_tab_moves_the_chart_title_when_the_language_changes(tmp_path):
     from gui import i18n
     from gui.widget.evaluation_results import _FiguresTab
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row(ha=90.0)],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row(ha=90.0)], csv_path=tmp_path / "indices_all.csv"
+    )
     before = i18n._translator.value
     try:
         i18n._translator.value = Translator(i18n.MESSAGES_DIR, target="en")
@@ -1854,13 +2349,12 @@ def test_figures_tab_switches_the_cell_size(tmp_path):
     """The cell-size selector shows for >1 size and reloads that size's points."""
     import ipyvuetify as vw
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_100.csv",
-                  obs=[1.0], pred=[1.1])
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[2.0], pred=[2.9])
+    _write_points(tmp_path / "pred_obs_GLM_validation_100.csv", obs=[1.0], pred=[1.1])
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv", obs=[2.0], pred=[2.9])
     record = _figures_record(
         indices=[_fig_index_row(csize=100), _fig_index_row(csize=300)],
-        csv_path=tmp_path / "indices_all.csv")
+        csv_path=tmp_path / "indices_all.csv",
+    )
     rc, cls = _render_figures_tab(record=record)
     sel = rc.find(vw.Select).widgets
     assert len(sel) == 1
@@ -1871,12 +2365,13 @@ def test_figures_tab_switches_the_cell_size(tmp_path):
 
 
 def test_figures_tab_hides_the_selector_for_a_single_cell_size(tmp_path):
+    """One cell size means the selector offers no choice, so it is hidden."""
     import ipyvuetify as vw
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0], pred=[1.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0], pred=[1.0])
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, _ = _render_figures_tab(record=record)
     assert rc.find(vw.Select).widgets == []
     rc.close()
@@ -1891,13 +2386,15 @@ def test_figures_tab_missing_csv_falls_back_to_png_with_a_warning(tmp_path):
     png.write_bytes(b"PNG-typed")
     missing_csv = tmp_path / "pred_obs_GLM_validation_300.csv"  # never written
     record = _figures_record(
-        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv",
-        artifacts=[_fig_artifact(missing_csv, png)])
+        indices=[_fig_index_row()],
+        csv_path=tmp_path / "indices_all.csv",
+        artifacts=[_fig_artifact(missing_csv, png)],
+    )
     rc, cls = _render_figures_tab(record=record)
-    assert rc.find(cls).widgets == []                     # no interactive chart
-    assert rc.find(ipywidgets.Image).widgets              # the saved PNG shows
+    assert rc.find(cls).widgets == []  # no interactive chart
+    assert rc.find(ipywidgets.Image).widgets  # the saved PNG shows
     warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
-    assert warnings                                       # non-fatal warning
+    assert warnings  # non-fatal warning
     rc.close()
 
 
@@ -1908,13 +2405,14 @@ def test_figures_tab_legacy_png_only_is_not_treated_as_broken(tmp_path):
 
     png = tmp_path / "pred_obs_GLM_validation_300.png"
     png.write_bytes(b"PNG-legacy")
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv", artifacts=[])
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv", artifacts=[]
+    )
     rc, cls = _render_figures_tab(record=record)
     assert rc.find(cls).widgets == []
-    assert rc.find(ipywidgets.Image).widgets              # PNG shows
+    assert rc.find(ipywidgets.Image).widgets  # PNG shows
     warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
-    assert warnings == []                                 # legacy: no warning
+    assert warnings == []  # legacy: no warning
     rc.close()
 
 
@@ -1923,8 +2421,9 @@ def test_figures_tab_missing_both_artifacts_shows_the_resolved_path(tmp_path):
     import ipyvuetify as vw
     import ipywidgets
 
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv", artifacts=[])
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv", artifacts=[]
+    )
     rc, cls = _render_figures_tab(record=record)
     assert rc.find(cls).widgets == []
     assert rc.find(ipywidgets.Image).widgets == []
@@ -1952,18 +2451,19 @@ def test_figures_tab_unreadable_csv_falls_back_to_png_with_a_warning(tmp_path):
     csv = tmp_path / "pred_obs_GLM_validation_300.csv"
     csv.write_text("cell,nfor_obs_ha\n1,9.0\n")  # the plotted columns are gone
     record = _figures_record(
-        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv",
-        artifacts=[_fig_artifact(csv, png)])
+        indices=[_fig_index_row()],
+        csv_path=tmp_path / "indices_all.csv",
+        artifacts=[_fig_artifact(csv, png)],
+    )
     rc, cls = _render_figures_tab(record=record)
-    assert rc.find(cls).widgets == []                     # no interactive chart
-    assert rc.find(ipywidgets.Image).widgets              # the saved PNG shows
+    assert rc.find(cls).widgets == []  # no interactive chart
+    assert rc.find(ipywidgets.Image).widgets  # the saved PNG shows
     warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
-    assert warnings                                       # non-fatal warning
+    assert warnings  # non-fatal warning
     rc.close()
 
 
-def test_figures_tab_unplottable_points_fall_back_without_taking_the_tab_down(
-        tmp_path):
+def test_figures_tab_unplottable_points_fall_back_without_taking_the_tab_down(tmp_path):
     """A loadable table with NO finite rows must degrade like any missing one.
 
     ``finite_points`` drops non-finite rows, so an all-NaN point CSV loads fine
@@ -1976,33 +2476,41 @@ def test_figures_tab_unplottable_points_fall_back_without_taking_the_tab_down(
     import ipywidgets
 
     nan = float("nan")
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[nan, nan, nan], pred=[nan, nan, nan])
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv",
+        obs=[nan, nan, nan],
+        pred=[nan, nan, nan],
+    )
     (tmp_path / "pred_obs_GLM_validation_300.png").write_bytes(b"PNG-poisoned")
-    _write_points(tmp_path / "pred_obs_RF_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.5, 2.5])
+    _write_points(
+        tmp_path / "pred_obs_RF_validation_300.csv", obs=[1.0, 2.0], pred=[1.5, 2.5]
+    )
     (tmp_path / "pred_obs_RF_validation_300.png").write_bytes(b"PNG-good")
     record = _figures_record(
         indices=[_fig_index_row(), _fig_index_row(model="RF")],
-        csv_path=tmp_path / "indices_all.csv")
+        csv_path=tmp_path / "indices_all.csv",
+    )
 
     rc, cls = _render_figures_tab(record=record)
     charts = rc.find(cls).widgets
-    assert len(charts) == 1                       # the sibling still renders
+    assert len(charts) == 1  # the sibling still renders
     assert _scatter_data(charts[0]) == [[1.0, 1.5], [2.0, 2.5]]
     assert len(rc.find(ipywidgets.Image).widgets) == 1  # the poisoned card's PNG
     rc.close()
 
 
 def test_a_failing_option_builder_spares_the_sibling_cards(tmp_path, monkeypatch):
-    """One card's unexpected option-builder failure must not raise out of the
-    render: that card falls back (here: to its missing-figure message) and the
-    healthy sibling keeps its interactive chart."""
+    """One card's option-builder failure must not raise out of the render.
+
+    That card falls back — here to its missing-figure message — and the healthy
+    sibling keeps its interactive chart.
+    """
     import gui.widget.evaluation_results as er
 
     for period in ("validation", "calibration"):
-        _write_points(tmp_path / f"pred_obs_GLM_{period}_300.csv",
-                      obs=[1.0, 2.0], pred=[1.0, 2.0])
+        _write_points(
+            tmp_path / f"pred_obs_GLM_{period}_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+        )
     rows = [_fig_index_row(), _fig_index_row(period="calibration")]
     record = _figures_record(indices=rows, csv_path=tmp_path / "indices_all.csv")
 
@@ -2015,7 +2523,7 @@ def test_a_failing_option_builder_spares_the_sibling_cards(tmp_path, monkeypatch
 
     monkeypatch.setattr(er, "pred_obs_scatter_option", boom)
     rc, cls = _render_figures_tab(record=record)
-    assert len(rc.find(cls).widgets) == 1   # the healthy sibling still renders
+    assert len(rc.find(cls).widgets) == 1  # the healthy sibling still renders
     rc.close()
 
 
@@ -2039,13 +2547,14 @@ def test_figures_tab_does_not_warn_for_a_map_the_run_never_recorded(tmp_path):
     record = _figures_record(
         indices=[_fig_index_row(), _fig_index_row(model="RF")],
         csv_path=tmp_path / "indices_all.csv",
-        artifacts=[_fig_artifact(glm_csv, glm_png)])
+        artifacts=[_fig_artifact(glm_csv, glm_png)],
+    )
 
     rc, cls = _render_figures_tab(record=record)
-    assert len(rc.find(cls).widgets) == 1                  # GLM charts
-    assert len(rc.find(ipywidgets.Image).widgets) == 1     # RF shows its PNG
+    assert len(rc.find(cls).widgets) == 1  # GLM charts
+    assert len(rc.find(ipywidgets.Image).widgets) == 1  # RF shows its PNG
     warnings = [a for a in rc.find(vw.Alert).widgets if a.type == "warning"]
-    assert warnings == []                                  # nothing was promised
+    assert warnings == []  # nothing was promised
     rc.close()
 
 
@@ -2064,10 +2573,12 @@ def test_figures_tab_moves_the_axis_titles_when_the_language_changes(tmp_path):
     from gui import i18n
     from gui.widget.evaluation_results import _FiguresTab
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     before = i18n._translator.value
     try:
         i18n._translator.value = Translator(i18n.MESSAGES_DIR, target="en")
@@ -2083,8 +2594,12 @@ def test_figures_tab_moves_the_axis_titles_when_the_language_changes(tmp_path):
 
     assert english == "Observed deforestation (ha)"
     assert spanish != english
-    assert spanish == Translator(i18n.MESSAGES_DIR, target="es-ES")[
-        "widgets"]["evaluation_results"]["chart_x_axis"]
+    assert (
+        spanish
+        == Translator(i18n.MESSAGES_DIR, target="es-ES")["widgets"][
+            "evaluation_results"
+        ]["chart_x_axis"]
+    )
 
 
 def test_figures_tab_scatter_survives_tab_changes_without_a_rebuild(tmp_path):
@@ -2104,10 +2619,12 @@ def test_figures_tab_scatter_survives_tab_changes_without_a_rebuild(tmp_path):
     """
     from gui.widget.evaluation_results import _FiguresTab
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
 
     rc, cls = _render_figures_tab(record=record, active_tab=None)
     mounted = rc.find(cls).widgets[0]
@@ -2115,16 +2632,17 @@ def test_figures_tab_scatter_survives_tab_changes_without_a_rebuild(tmp_path):
     assert rc.find(cls).widgets[0] is mounted  # no teardown while shown
 
     rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=0))
-    assert rc.find(cls).widgets == []          # the card drops the chart
+    assert rc.find(cls).widgets == []  # the card drops the chart
     rc.render(_FiguresTab(record=record, eval_key="run-a", active_tab=2))
-    assert len(rc.find(cls).widgets) == 1      # and remounts it on re-entry
+    assert len(rc.find(cls).widgets) == 1  # and remounts it on re-entry
     rc.close()
 
 
-def test_figures_tab_marks_its_scatter_visible_only_when_shown(tmp_path,
-                                                               monkeypatch):
-    """The card must hand the adapter ``visible=True`` when its tab is active
-    — that flag is what schedules the post-transition resize nudge."""
+def test_figures_tab_marks_its_scatter_visible_only_when_shown(tmp_path, monkeypatch):
+    """The card hands the adapter ``visible=True`` only when its tab is active.
+
+    That flag is what schedules the post-transition resize nudge.
+    """
     import gui.widget.evaluation_results as er
 
     seen = []
@@ -2135,17 +2653,18 @@ def test_figures_tab_marks_its_scatter_visible_only_when_shown(tmp_path,
         return real(*args, **kwargs)
 
     monkeypatch.setattr(er, "EChartsChart", spy)
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, cls = _render_figures_tab(record=record, active_tab=2)
     assert seen and set(seen) == {True}
     rc.close()
 
 
-def test_figures_tab_hands_the_adapter_its_own_option_digest(tmp_path,
-                                                             monkeypatch):
+def test_figures_tab_hands_the_adapter_its_own_option_digest(tmp_path, monkeypatch):
     """The scatter supplies ``option_digest``, so the adapter never hashes it.
 
     Hashing a scatter option costs ~118 ms at 50k points and ~470 ms at 200k
@@ -2158,15 +2677,18 @@ def test_figures_tab_hands_the_adapter_its_own_option_digest(tmp_path,
     hashed = []
     real = ec._option_digest
     monkeypatch.setattr(
-        ec, "_option_digest", lambda option: (hashed.append(1), real(option))[1])
+        ec, "_option_digest", lambda option: (hashed.append(1), real(option))[1]
+    )
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, cls = _render_figures_tab(record=record)
-    assert len(rc.find(cls).widgets) == 1   # a chart really was built
-    assert hashed == []                     # and the adapter did not hash it
+    assert len(rc.find(cls).widgets) == 1  # a chart really was built
+    assert hashed == []  # and the adapter did not hash it
     rc.close()
 
 
@@ -2174,26 +2696,31 @@ def test_figures_tab_builds_the_option_from_the_live_theme(tmp_path):
     """The dark theme must reach the scatter option's own axis colours."""
     from gui.scripts.echarts_options import theme_colors
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     with _dark_theme():
         rc, cls = _render_figures_tab(record=record)
         opt = rc.find(cls).widgets[0].option
         assert opt["xAxis"]["axisLabel"]["color"] == theme_colors(True)["ink"]
-        assert (opt["xAxis"]["splitLine"]["lineStyle"]["color"]
-                == theme_colors(True)["grid"])
+        assert (
+            opt["xAxis"]["splitLine"]["lineStyle"]["color"]
+            == theme_colors(True)["grid"]
+        )
         rc.close()
 
     rc, cls = _render_figures_tab(record=record)
-    assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
-            == theme_colors(False)["ink"])
+    assert (
+        rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
+        == theme_colors(False)["ink"]
+    )
     rc.close()
 
 
-def test_figures_tab_repaints_the_scatter_when_the_theme_is_toggled_in_place(
-        tmp_path):
+def test_figures_tab_repaints_the_scatter_when_the_theme_is_toggled_in_place(tmp_path):
     """A LIVE theme toggle must reach a scatter that is already on screen.
 
     The sibling test above renders twice from scratch and therefore cannot see
@@ -2212,16 +2739,22 @@ def test_figures_tab_repaints_the_scatter_when_the_theme_is_toggled_in_place(
     """
     from gui.scripts.echarts_options import theme_colors
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.0, 2.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.0, 2.0]
+    )
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, cls = _render_figures_tab(record=record)
-    assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
-            == theme_colors(False)["ink"])
+    assert (
+        rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
+        == theme_colors(False)["ink"]
+    )
     with _dark_theme():
-        assert (rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
-                == theme_colors(True)["ink"])
+        assert (
+            rc.find(cls).widgets[0].option["xAxis"]["axisLabel"]["color"]
+            == theme_colors(True)["ink"]
+        )
     rc.close()
 
 
@@ -2229,10 +2762,10 @@ def test_figures_tab_defers_point_load_until_its_tab_is_active(tmp_path, monkeyp
     """Point data is parsed only when the tab is active, not on dialog open."""
     import gui.widget.evaluation_results as er
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0], pred=[1.0])
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0], pred=[1.0])
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     calls = []
     real = er.load_pred_obs_plot_data
 
@@ -2243,7 +2776,7 @@ def test_figures_tab_defers_point_load_until_its_tab_is_active(tmp_path, monkeyp
     monkeypatch.setattr(er, "load_pred_obs_plot_data", spy)
 
     rc, cls = _render_figures_tab(record=record, active_tab=0)  # some other tab
-    assert calls == []                                          # nothing parsed
+    assert calls == []  # nothing parsed
     assert rc.find(cls).widgets == []
     rc.close()
 
@@ -2258,15 +2791,19 @@ def test_figures_tab_offers_a_png_download(tmp_path):
 
     from gui.i18n import t as _t
 
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0], pred=[1.0])
+    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0], pred=[1.0])
     png = tmp_path / "pred_obs_GLM_validation_300.png"
     png.write_bytes(b"PNG-bytes")
-    record = _figures_record(indices=[_fig_index_row()],
-                             csv_path=tmp_path / "indices_all.csv")
+    record = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     rc, _ = _render_figures_tab(record=record)
-    labels = [c for b in rc.find(vw.Btn).widgets for c in (b.children or [])
-              if isinstance(c, str)]
+    labels = [
+        c
+        for b in rc.find(vw.Btn).widgets
+        for c in (b.children or [])
+        if isinstance(c, str)
+    ]
     assert _t("widgets.evaluation_results.download_png") in labels
     assert png.read_bytes() == b"PNG-bytes"  # PNG still present on disk
     rc.close()
@@ -2306,11 +2843,15 @@ def test_figures_tab_builds_each_option_once_not_once_per_render(tmp_path):
 
     models = ("GLM", "MW", "RF")
     for m in models:
-        _write_points(tmp_path / f"pred_obs_{m}_validation_300.csv",
-                      obs=[1.0, 2.0, 3.0], pred=[1.5, 2.5, 2.0])
+        _write_points(
+            tmp_path / f"pred_obs_{m}_validation_300.csv",
+            obs=[1.0, 2.0, 3.0],
+            pred=[1.5, 2.5, 2.0],
+        )
     record = _figures_record(
         indices=[_fig_index_row(model=m) for m in models],
-        csv_path=tmp_path / "indices_all.csv")
+        csv_path=tmp_path / "indices_all.csv",
+    )
 
     _scatter_rows.cache_clear()
     rc, cls = _render_figures_tab(record=record, eval_key="run-a")
@@ -2322,7 +2863,8 @@ def test_figures_tab_builds_each_option_once_not_once_per_render(tmp_path):
     assert len(rc.find(cls).widgets) == 3
     assert _scatter_rows.cache_info().misses == after_first, (
         "the option must be memoized on the chart identity, not rebuilt in the"
-        " render body — an LRU of 2 cannot cover three cards")
+        " render body — an LRU of 2 cannot cover three cards"
+    )
     rc.close()
 
 
@@ -2340,25 +2882,31 @@ def test_evaluation_table_dialog_shows_the_scatter_on_the_figures_tab(tmp_path):
     from gui.i18n import t as _t
 
     _t("common.close")  # warm the translator before the first render
-    _write_points(tmp_path / "pred_obs_GLM_validation_300.csv",
-                  obs=[1.0, 2.0], pred=[1.5, 2.5])
+    _write_points(
+        tmp_path / "pred_obs_GLM_validation_300.csv", obs=[1.0, 2.0], pred=[1.5, 2.5]
+    )
     from gui.widget.evaluation_results import EvaluationTableDialog
 
-    rec = _figures_record(indices=[_fig_index_row()],
-                          csv_path=tmp_path / "indices_all.csv")
+    rec = _figures_record(
+        indices=[_fig_index_row()], csv_path=tmp_path / "indices_all.csv"
+    )
     p = types.SimpleNamespace(evaluations={"run-a": rec})
     project = solara.reactive(p, equals=lambda a, b: a is b)
     _, rc = reacton.render(
         EvaluationTableDialog(
-            project=project, eval_key="run-a", on_close=lambda *_: None),
-        handle_error=False)
+            project=project, eval_key="run-a", on_close=lambda *_: None
+        ),
+        handle_error=False,
+    )
 
     def scatters():
-        return [w for w in rc.find(ipecharts.EChartsRawWidget).widgets
-                if any(s.get("type") == "scatter"
-                       for s in w.option.get("series", []))]
+        return [
+            w
+            for w in rc.find(ipecharts.EChartsRawWidget).widgets
+            if any(s.get("type") == "scatter" for s in w.option.get("series", []))
+        ]
 
-    assert scatters() == []          # inactive figures tab: no scatter parsed yet
+    assert scatters() == []  # inactive figures tab: no scatter parsed yet
     rc.find(vw.Tabs).widgets[0].v_model = 2  # user opens Pred. vs obs.
     assert len(scatters()) == 1
     assert _scatter_data(scatters()[0]) == [[1.0, 1.5], [2.0, 2.5]]

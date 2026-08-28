@@ -40,7 +40,14 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from gui.scripts.echarts_options import RENDERER_CANVAS, RENDERER_SVG, theme_colors
+from gui.scripts.echarts_options import (
+    DEFAULT_ACCENT,
+    RENDERER_CANVAS,
+    RENDERER_SVG,
+    accent_color,
+    accent_fill,
+    theme_colors,
+)
 from gui.scripts.evaluation_charts import pred_obs_artifact_name
 
 logger = logging.getLogger("spatial_risk")
@@ -129,9 +136,12 @@ SCATTER_ROWS_CACHE_SIZE = 2
 # Reference line: red dashed, exactly as the PNG's `plt.plot(p, p, "r--")`.
 REFERENCE_LINE_COLOR = "#ff0000"
 
-# Colours of the point cloud. Matplotlib drew unfilled markers with a black
-# edge; on a dark surface a black edge disappears, so the edge follows the ink.
-_POINT_FILL = {True: "rgba(66,146,198,0.65)", False: "rgba(42,120,214,0.55)"}
+# Opacity of the point cloud, which is painted in the app's ``primary`` accent
+# (``accent_fill``) rather than a fixed blue. Translucent so overlapping markers
+# read as density; the dark theme gets a little more of it, because its surface
+# takes more away. Matplotlib drew unfilled markers with a black edge; on a dark
+# surface a black edge disappears, so the edge follows the ink.
+_POINT_ALPHA = {True: 0.65, False: 0.55}
 
 # Horizontal breathing room on both sides of the plot box, applied equally so
 # the option itself adds no left/right bias. It does NOT centre the box: with
@@ -521,15 +531,21 @@ def pred_obs_chart_identity(
     title=None,
     prediction_key=None,
     fig_dir=None,
+    accent=DEFAULT_ACCENT,
 ):
     """Cheap, stable identity of the chart this call would draw.
 
     Folds in EVERY input of ``pred_obs_scatter_option``: the record, the
     resolved artifact path, that file's modification identity, the cell size,
-    the theme, and the ``labels``/``title`` text. Everything but the text comes
-    from a single ``stat()`` — no read, no parse, no option hash — and the file
-    half is the SAME key the loader memoizes on, so the two can never disagree
-    about what is current.
+    the theme, the accent, and the ``labels``/``title`` text. Everything but the
+    text comes from a single ``stat()`` — no read, no parse, no option hash —
+    and the file half is the SAME key the loader memoizes on, so the two can
+    never disagree about what is current.
+
+    The accent is carried in its own right rather than left to ``dark``: the two
+    move together in normal use, but a palette edit changes the accent alone,
+    and this digest replaces the adapter's content hash — an input it misses is
+    an input nothing checks.
 
     Two uses, both in the widget layer: memoize the option build, and hand the
     result to ``EChartsChart(option_digest=...)`` so the adapter skips hashing an
@@ -558,6 +574,7 @@ def pred_obs_chart_identity(
             mtime_ns,
             int(csize),
             "dark" if dark else "light",
+            accent_color(accent, dark=dark),
             _text_identity(labels, title),
         )
     )
@@ -638,7 +655,9 @@ def pred_obs_annotation(plot_data, labels=None):
     return "\n".join(parts)
 
 
-def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
+def pred_obs_scatter_option(
+    plot_data, *, dark=False, labels=None, title=None, accent=DEFAULT_ACCENT
+):
     """ECharts option for one map's predicted-vs-observed scatter.
 
     Args:
@@ -646,6 +665,9 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         dark: style for the app's dark theme.
         labels: overrides for ``DEFAULT_LABELS`` — the widget layer passes
             translated strings here.
+        accent: the app's ``primary`` colour, which the point cloud is drawn
+            in. The 1:1 reference line stays red: it is an annotation, and
+            painting it in the accent too would let it read as data.
         title: chart title. ``PredObsPlotData.title`` is deliberately NOT used:
             it is the PNG's English text, and the dialog shows a translated one.
 
@@ -694,7 +716,7 @@ def pred_obs_scatter_option(plot_data, *, dark=False, labels=None, title=None):
         ],
         "symbolSize": 7,
         "itemStyle": {
-            "color": _POINT_FILL[bool(dark)],
+            "color": accent_fill(accent, _POINT_ALPHA[bool(dark)], dark=dark),
             "borderColor": ink,
             "borderWidth": 0.5,
         },

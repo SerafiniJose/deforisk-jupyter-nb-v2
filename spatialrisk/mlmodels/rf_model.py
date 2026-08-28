@@ -7,12 +7,13 @@ import numpy as np
 import pandas as pd
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import RFStats
 
 
 class RFModel(BaseRiskModel):
     """Random Forest risk model with Patsy formula support.
 
-    Attributes
+    Attributes:
     ----------
     n_trees : int
         Number of decision trees (default: 100).
@@ -29,6 +30,24 @@ class RFModel(BaseRiskModel):
     max_depth: int = 15
     min_samples_leaf: int = 2
     random_seed: Optional[int] = None
+    stats: Optional[RFStats] = None
+
+    def _collect_stats_from_design(self, y, x) -> None:
+        """Build self.stats from the fitted forest + patsy design (A §2.3)."""
+        from spatialrisk.mlmodels.stats import collect_rf_stats, sample_design_label
+
+        y_arr = np.asarray(y)[:, 0]
+        try:
+            self.stats = collect_rf_stats(
+                self._ml_model,
+                x.design_info,
+                n_rows=int(x.shape[0]),
+                n_events=int(y_arr.sum()),
+                sample_design=sample_design_label(self.sample),
+            )
+        except Exception as exc:  # stats must never fail a training run
+            print(f"  ⚠ model statistics skipped: {exc}")
+            self.stats = None
 
     def fit(
         self,
@@ -46,7 +65,7 @@ class RFModel(BaseRiskModel):
             Folder for saving the model pickle. Defaults to the project model
             folder; raises when the model has no project either.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -79,6 +98,7 @@ class RFModel(BaseRiskModel):
             min_samples_leaf=self.min_samples_leaf,
             n_jobs=-1,
             random_state=self.random_seed,
+            oob_score=True,
         )
         y_arr = np.asarray(y)[:, 0]
         x_arr = np.asarray(x)
@@ -89,6 +109,8 @@ class RFModel(BaseRiskModel):
         self.n_samples = len(df)
         y_pred = clf.predict_proba(x_arr)[:, 1]
         self.deviance = 2.0 * log_loss(y_arr, y_pred, normalize=False)
+
+        self._collect_stats_from_design(y, x)
 
         self._stamp_now()
         self.trained = True
@@ -162,8 +184,10 @@ class RFModel(BaseRiskModel):
         profile.update(dtype="uint16", count=1, nodata=0)
 
         _mask_values = (
-            mask_value if isinstance(mask_value, (list, tuple)) else [mask_value]
-        ) if mask is not None else None
+            (mask_value if isinstance(mask_value, (list, tuple)) else [mask_value])
+            if mask is not None
+            else None
+        )
 
         with rasterio.open(output_file, "w", **profile) as dst:
             blockinfo = far.misc.makeblock(str(active_dataset.target.path))

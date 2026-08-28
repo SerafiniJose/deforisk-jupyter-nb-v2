@@ -490,7 +490,7 @@ def test_allocation_rows_carry_the_run_source(tmp_path, monkeypatch):
 
     rows = allocation_rows(project)
 
-    assert rows[0]["source"] == "ICAR — forecast"
+    assert rows[0]["source"] == "ICAR · icar — forecast"
 
 
 def test_allocation_rows_source_is_none_for_external_maps(tmp_path, monkeypatch):

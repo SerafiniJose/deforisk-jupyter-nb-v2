@@ -106,6 +106,10 @@ class BaseRiskModel(BaseModel):
     # the inference runner just before apply(); consumed by _register_prediction
     # to key/name the output(s). None → fall back to the provenance-derived key.
     _pending_pred_name: Optional[str] = PrivateAttr(default=None)
+    # Transient: run-time choices for the NEXT apply() that are arguments to it
+    # rather than model config (the ML mask layer). Same lifecycle as
+    # _pending_pred_name; frozen onto the Prediction as ``run_params``.
+    _pending_run_params: Optional[Dict[str, Any]] = PrivateAttr(default=None)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -445,6 +449,7 @@ class BaseRiskModel(BaseModel):
             window=window,
             model_snapshot=self.model_dump(mode="json"),
             dataset_snapshot=build_dataset_snapshot(ds),
+            run_params=dict(self._pending_run_params or {}),
             defrate_path=Path(defrate_path) if defrate_path else None,
         )
         key = None

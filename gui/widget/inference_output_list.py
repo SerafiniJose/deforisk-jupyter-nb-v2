@@ -16,6 +16,7 @@ def InferenceOutputList(
     on_dismiss=None,
     on_delete=None,
     on_edit=None,
+    on_open=None,
 ):
     """Predictions table: one row per registered prediction group plus jobs.
 
@@ -29,6 +30,10 @@ def InferenceOutputList(
             (confirmed by the tile).
         on_edit: callback(row) — reopen the Predict dialog prefilled with a
             failed job's submission entry so the user can fix and rerun.
+        on_open: callback(row) — open the read-only provenance dialog for a
+            registered prediction (the info action button); None omits the
+            button. Job rows never get one: a run with no registered output
+            has nothing to explain yet.
     """
     p = project.value
     data = inference_rows(p, inference_jobs.value)
@@ -38,6 +43,10 @@ def InferenceOutputList(
     for r in data:
         actions = []
         if r["kind"] == "prediction":
+            if on_open is not None:
+                actions.append(
+                    {"kind": "open", "on_click": lambda *_, rr=r: on_open(rr)}
+                )
             if on_toggle_map is not None:
                 actions.append(
                     {
