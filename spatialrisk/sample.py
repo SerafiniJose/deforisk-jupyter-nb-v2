@@ -90,21 +90,9 @@ class Sample(BaseModel):
 
         if self.points_path is not None:
             try:
-                from spatialrisk.pmtiles_convert import (
-                    gpkg_to_pmtiles,
-                    tippecanoe_available,
-                )
-
-                if tippecanoe_available():
-                    pm = Path(self.points_path).with_suffix(".pmtiles")
-                    gpkg_to_pmtiles(self.points_path, pm)
-                    self.pmtiles_path = pm
-                else:
-                    logger.warning(
-                        "tippecanoe unavailable; sample '%s' will render via "
-                        "GeoJSON fallback",
-                        self.name,
-                    )
+                # force: a re-run over the same paths must rebuild the archive,
+                # never keep tiles from the previous point set.
+                self.ensure_pmtiles(force=True)
             except Exception:
                 logger.exception(
                     "PMTiles conversion failed for sample '%s'; GeoJSON " "fallback",
@@ -113,6 +101,39 @@ class Sample(BaseModel):
                 self.pmtiles_path = None
 
         return self
+
+    def ensure_pmtiles(self, *, force: bool = False) -> bool:
+        """Make ``pmtiles_path`` point at an existing archive, converting if needed.
+
+        Backfills samples generated without tippecanoe (old projects, or a
+        deploy environment that lacked the binary) and heals a manifest path
+        whose file is gone. Returns True when a usable archive exists after the
+        call. Without tippecanoe or points it returns False and leaves the
+        sample on the GeoJSON fallback; conversion errors propagate to the
+        caller. ``force`` rebuilds even when the archive already exists.
+        """
+        if (
+            not force
+            and self.pmtiles_path is not None
+            and Path(self.pmtiles_path).exists()
+        ):
+            return True
+        if self.points_path is None or not Path(self.points_path).exists():
+            return False
+
+        from spatialrisk import pmtiles_convert
+
+        if not pmtiles_convert.tippecanoe_available():
+            logger.warning(
+                "tippecanoe unavailable; sample '%s' will render via "
+                "GeoJSON fallback",
+                self.name,
+            )
+            return False
+        pm = Path(self.points_path).with_suffix(".pmtiles")
+        pmtiles_convert.gpkg_to_pmtiles(self.points_path, pm)
+        self.pmtiles_path = pm
+        return True
 
     def load_points(self):
         """Read the generated points back as a GeoDataFrame."""
