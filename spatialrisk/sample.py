@@ -16,6 +16,8 @@ logger = logging.getLogger("spatial_risk")
 
 
 class Sample(BaseModel):
+    """A persisted, location-only set of sample points drawn from a raster variable."""
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str
@@ -39,6 +41,7 @@ class Sample(BaseModel):
     created_at: Optional[str] = None
 
     def model_dump(self, **kwargs):
+        """Serialize the sample, always excluding the back-reference to the project."""
         exclude = kwargs.get("exclude")
         if exclude is None:
             kwargs["exclude"] = {"project"}
@@ -57,15 +60,21 @@ class Sample(BaseModel):
         return var.path
 
     def generate(self) -> "Sample":
+        """Draw the points, write them to ``points_path``, and build the PMTiles."""
         from spatialrisk.sampling import generate_points
 
         raster_path = self._resolve_path(self.raster_var_name)
         mask_path = self._resolve_path(self.mask_var_name)
 
         gdf = generate_points(
-            raster_path, mask_path, strategy=self.strategy,
-            n_samples=self.n_samples, allocation=self.allocation,
-            seed=self.seed, adapt=self.adapt, spacing_m=self.spacing_m,
+            raster_path,
+            mask_path,
+            strategy=self.strategy,
+            n_samples=self.n_samples,
+            allocation=self.allocation,
+            seed=self.seed,
+            adapt=self.adapt,
+            spacing_m=self.spacing_m,
         )
 
         if self.points_path is not None:
@@ -82,7 +91,10 @@ class Sample(BaseModel):
         if self.points_path is not None:
             try:
                 from spatialrisk.pmtiles_convert import (
-                    gpkg_to_pmtiles, tippecanoe_available)
+                    gpkg_to_pmtiles,
+                    tippecanoe_available,
+                )
+
                 if tippecanoe_available():
                     pm = Path(self.points_path).with_suffix(".pmtiles")
                     gpkg_to_pmtiles(self.points_path, pm)
@@ -90,16 +102,20 @@ class Sample(BaseModel):
                 else:
                     logger.warning(
                         "tippecanoe unavailable; sample '%s' will render via "
-                        "GeoJSON fallback", self.name)
+                        "GeoJSON fallback",
+                        self.name,
+                    )
             except Exception:
                 logger.exception(
-                    "PMTiles conversion failed for sample '%s'; GeoJSON "
-                    "fallback", self.name)
+                    "PMTiles conversion failed for sample '%s'; GeoJSON " "fallback",
+                    self.name,
+                )
                 self.pmtiles_path = None
 
         return self
 
     def load_points(self):
+        """Read the generated points back as a GeoDataFrame."""
         import geopandas as gpd
 
         if self.points_path is None or not Path(self.points_path).exists():
@@ -108,5 +124,8 @@ class Sample(BaseModel):
             )
         return gpd.read_file(self.points_path)
 
-    def register(self, project: Any, key: Optional[str] = None, auto_save: bool = True) -> None:
+    def register(
+        self, project: Any, key: Optional[str] = None, auto_save: bool = True
+    ) -> None:
+        """Attach this sample to ``project`` under ``key`` (defaults to its name)."""
         project.add_sample(self, key=key, auto_save=auto_save)
