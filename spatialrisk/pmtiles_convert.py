@@ -7,17 +7,34 @@ temporary GeoJSON first. Kept thin and mockable so the eager-conversion step in
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from spatialrisk.gdal_env import scratch_dir
 
 logger = logging.getLogger("spatial_risk")
 
 
+def resolve_tippecanoe() -> Optional[str]:
+    """Absolute path to the ``tippecanoe`` binary, or None when absent.
+
+    PATH first, then the file next to ``sys.executable`` — SEPAL's jupyter
+    kernels run the env's interpreter without putting its ``bin/`` on PATH,
+    so a perfectly installed conda binary is invisible to ``shutil.which``
+    (same fallback vectortileserver uses).
+    """
+    found = shutil.which("tippecanoe")
+    if found:
+        return found
+    sibling = Path(sys.executable).parent / "tippecanoe"
+    return str(sibling) if sibling.exists() else None
+
+
 def tippecanoe_available() -> bool:
-    """True if the ``tippecanoe`` binary is on PATH."""
-    return shutil.which("tippecanoe") is not None
+    """True if the ``tippecanoe`` binary can be resolved."""
+    return resolve_tippecanoe() is not None
 
 
 def gpkg_to_pmtiles(
@@ -34,8 +51,9 @@ def gpkg_to_pmtiles(
     """
     import geopandas as gpd
 
-    if not tippecanoe_available():
-        raise RuntimeError("tippecanoe not found on PATH")
+    tippecanoe = resolve_tippecanoe()
+    if tippecanoe is None:
+        raise RuntimeError("tippecanoe not found on PATH or next to the interpreter")
 
     gpkg_path, out_path = Path(gpkg_path), Path(out_path)
     gdf = gpd.read_file(gpkg_path)
@@ -49,7 +67,7 @@ def gpkg_to_pmtiles(
         geojson = Path(td) / "points.geojson"
         gdf.to_file(geojson, driver="GeoJSON")
         cmd = [
-            "tippecanoe",
+            tippecanoe,
             "-o",
             str(out_path),
             "-l",

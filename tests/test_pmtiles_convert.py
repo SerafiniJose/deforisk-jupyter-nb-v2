@@ -24,8 +24,60 @@ def test_available_false_raises(tmp_path, monkeypatch):
 
     src = _tiny_gpkg(tmp_path / "a.gpkg")
     monkeypatch.setattr(pmtiles_convert.shutil, "which", lambda _: None)
+    # no sibling binary next to the interpreter either
+    (tmp_path / "bin").mkdir()
+    monkeypatch.setattr(
+        pmtiles_convert.sys, "executable", str(tmp_path / "bin" / "python")
+    )
     with pytest.raises(RuntimeError):
         pmtiles_convert.gpkg_to_pmtiles(src, tmp_path / "a.pmtiles")
+
+
+def test_resolver_falls_back_to_interpreter_sibling(tmp_path, monkeypatch):
+    """A kernel PATH without the env bin still finds tippecanoe next to python.
+
+    SEPAL's jupyter kernels run the env interpreter without putting its bin/
+    on PATH, so shutil.which misses a perfectly installed binary.
+    """
+    from spatialrisk import pmtiles_convert
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake = bindir / "tippecanoe"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(pmtiles_convert.shutil, "which", lambda _: None)
+    monkeypatch.setattr(pmtiles_convert.sys, "executable", str(bindir / "python"))
+
+    assert pmtiles_convert.tippecanoe_available() is True
+    assert pmtiles_convert.resolve_tippecanoe() == str(fake)
+
+
+def test_conversion_runs_the_resolved_binary(tmp_path, monkeypatch):
+    """The subprocess must run the resolved path, not rely on PATH again."""
+    import subprocess as sp
+
+    from spatialrisk import pmtiles_convert
+
+    src = _tiny_gpkg(tmp_path / "s.gpkg")
+    out = tmp_path / "s.pmtiles"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake = bindir / "tippecanoe"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(pmtiles_convert.shutil, "which", lambda _: None)
+    monkeypatch.setattr(pmtiles_convert.sys, "executable", str(bindir / "python"))
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        out.write_bytes(b"PMTILES")
+        return sp.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(pmtiles_convert.subprocess, "run", fake_run)
+    pmtiles_convert.gpkg_to_pmtiles(src, out)
+    assert captured["cmd"][0] == str(fake)
 
 
 def test_builds_expected_command(tmp_path, monkeypatch):
@@ -49,7 +101,7 @@ def test_builds_expected_command(tmp_path, monkeypatch):
 
     assert result == out
     cmd = captured["cmd"]
-    assert cmd[0] == "tippecanoe"
+    assert cmd[0] == "/usr/bin/tippecanoe"
     assert "-o" in cmd and str(out) in cmd
     assert "-l" in cmd and "points" in cmd
     assert "-z" in cmd and "12" in cmd
