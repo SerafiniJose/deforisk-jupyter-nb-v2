@@ -12,6 +12,7 @@ from gui.scripts.map_helpers import (
     add_satellite_basemap,
     clear_project_overlays,
     draw_aoi_on_map,
+    sync_draw_control_visibility,
     zoom_map_to_aoi,
 )
 
@@ -254,3 +255,141 @@ def test_satellite_is_not_added_twice(monkeypatch):
 def test_add_satellite_basemap_noop_without_map():
     """No map, no basemap."""
     assert add_satellite_basemap(None) is False
+
+
+# ---------------------------------------------------------------------------
+# sync_draw_control_visibility — AOI draw control shown only on the AOI tab
+# ---------------------------------------------------------------------------
+
+
+class FakeDrawControl:
+    """Duck-typed GeomanDrawControl that records data-destroying calls."""
+
+    def __init__(self):
+        """Start with drawn data and no destructive calls."""
+        self.data = [{"type": "Feature"}]
+        self.cleared = 0
+
+    def clear(self):
+        """Log a data wipe (the helper must never trigger one)."""
+        self.cleared += 1
+        self.data = []
+
+
+class FakeDcMap:
+    """Duck-typed SepalMap: a dc plus the controls add/remove API."""
+
+    def __init__(self, dc_on_map=True):
+        """Optionally start with the draw control mounted."""
+        self.dc = FakeDrawControl()
+        self.controls = [self.dc] if dc_on_map else []
+
+    def add_control(self, control):
+        """Mount a control."""
+        self.controls.append(control)
+
+    def remove_control(self, control):
+        """Unmount a control."""
+        self.controls.remove(control)
+
+
+def test_leaving_aoi_tab_hides_the_draw_control():
+    """Leaving the AOI tab pulls the mounted dc off the map and remembers it."""
+    m = FakeDcMap(dc_on_map=True)
+
+    hidden = sync_draw_control_visibility(m, aoi_active=False, was_hidden=False)
+
+    assert hidden is True
+    assert m.dc not in m.controls
+
+
+def test_returning_to_aoi_tab_restores_the_draw_control():
+    """Coming back re-mounts a previously hidden dc with its data intact."""
+    m = FakeDcMap(dc_on_map=False)
+
+    hidden = sync_draw_control_visibility(m, aoi_active=True, was_hidden=True)
+
+    assert hidden is False
+    assert m.dc in m.controls
+    assert m.dc.data  # drawn shape survives the round trip
+    assert m.dc.cleared == 0
+
+
+def test_helper_never_wipes_drawn_data():
+    """Neither direction may call dc.clear() (hide()/show() do — helper must not)."""
+    m = FakeDcMap(dc_on_map=True)
+
+    hidden = sync_draw_control_visibility(m, aoi_active=False, was_hidden=False)
+    sync_draw_control_visibility(m, aoi_active=True, was_hidden=hidden)
+
+    assert m.dc.cleared == 0
+    assert m.dc.data
+
+
+def test_leaving_without_a_mounted_dc_reports_not_hidden():
+    """Non-DRAW methods have no dc on the map; nothing to hide or restore."""
+    m = FakeDcMap(dc_on_map=False)
+
+    assert sync_draw_control_visibility(m, aoi_active=False, was_hidden=False) is False
+
+
+def test_project_switch_while_away_drops_the_hidden_flag():
+    """A project load can unmount the dc while away; the flag must not linger.
+
+    Only a project switch may drop it: the load's restore decides the dc's
+    fate itself, so a remembered hide from the previous project is stale.
+    """
+    m = FakeDcMap(dc_on_map=False)
+
+    assert (
+        sync_draw_control_visibility(
+            m, aoi_active=False, was_hidden=True, project_switched=True
+        )
+        is False
+    )
+
+
+def test_rerun_while_away_preserves_the_hidden_flag():
+    """Effect re-runs while away (non-AOI tab moves, loading flips) keep the flag.
+
+    Regression: recomputing the flag from the map on every away-run clobbered
+    it (dc already absent -> False), so the return-side re-add never fired and
+    the toolbar appeared exactly once per project load.
+    """
+    m = FakeDcMap(dc_on_map=True)
+
+    hidden = sync_draw_control_visibility(m, aoi_active=False, was_hidden=False)
+    assert hidden is True  # left the AOI tab: dc removed, remembered
+
+    # moving between two non-AOI tabs / a loading flip: dc absent, no switch
+    hidden = sync_draw_control_visibility(m, aoi_active=False, was_hidden=hidden)
+    assert hidden is True  # memory preserved
+
+    hidden = sync_draw_control_visibility(m, aoi_active=True, was_hidden=hidden)
+    assert hidden is False
+    assert m.dc in m.controls  # toolbar comes back
+    assert m.dc.cleared == 0 and m.dc.data
+
+
+def test_project_switch_on_return_skips_the_readd():
+    """Returning in the same run a switch landed lets the restore decide."""
+    m = FakeDcMap(dc_on_map=False)
+
+    hidden = sync_draw_control_visibility(
+        m, aoi_active=True, was_hidden=True, project_switched=True
+    )
+    assert hidden is False
+    assert m.controls == []  # the new project's restore owns the dc now
+
+
+def test_returning_without_hidden_flag_adds_nothing():
+    """Coming back after leaving a non-DRAW selection leaves the map alone."""
+    m = FakeDcMap(dc_on_map=False)
+
+    assert sync_draw_control_visibility(m, aoi_active=True, was_hidden=False) is False
+    assert m.controls == []
+
+
+def test_sync_draw_control_noop_without_map():
+    """No map (or no dc) passes the flag through untouched."""
+    assert sync_draw_control_visibility(None, aoi_active=False, was_hidden=True) is True

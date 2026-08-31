@@ -7,8 +7,9 @@ selected run's table — the proven ConfirmDialog pattern (nested row->Dialog
 toggles are unreliable).
 """
 
-import pandas as pd
 import logging
+
+import pandas as pd
 import reacton.ipyvuetify as rv
 import solara
 from pysepal.solara import use_theme_dark
@@ -32,7 +33,7 @@ from gui.scripts.evaluation_echarts import (
 )
 from gui.scripts.product_rows import evaluation_tab_rows
 from gui.tile.evaluation_helpers import rows_for_record
-from gui.widget.echarts import EChartsChart
+from gui.widget.echarts import EChartsChart, theme_accent
 from gui.widget.product_table import ProductTable
 
 logger = logging.getLogger("spatial_risk")
@@ -147,9 +148,14 @@ def _ChartsTab(record, eval_key, active_tab=None):
     than the session state the app's toggle writes.
     """
     dark = use_theme_dark()
+    # Bars are shades of the app's live "primary" accent, so the charts share
+    # the UI's colour language and follow a theme or palette change.
+    accent = theme_accent(dark)
     indices = getattr(record, "indices", None) or []
     metrics = record_metrics(indices, getattr(record, "metrics", None))
-    charts = [(m, metric_bar_option(indices, m, dark=dark)) for m in metrics]
+    charts = [
+        (m, metric_bar_option(indices, m, dark=dark, accent=accent)) for m in metrics
+    ]
     charts = [(m, option) for m, option in charts if option is not None]
     if not charts:
         solara.Info(t("widgets.evaluation_results.no_indices_info"))
@@ -244,6 +250,10 @@ def _PredObsCard(
     model = row.get("model") if row else None
     period = row.get("period") if row else None
     dark = use_theme_dark()
+    # The point cloud is the app's live "primary" accent at partial opacity.
+    # It goes into the digest below as well as the option: that digest stands in
+    # for the adapter's content hash, so every option input has to reach it.
+    accent = theme_accent(dark)
     # The archived PNG's title states the grid cell size in HECTARES; the card
     # otherwise shows only the map label and a selector labelled in pixels, so
     # the interactive twin would drop information the static one carries. The
@@ -276,6 +286,7 @@ def _PredObsCard(
         title=title,
         prediction_key=prediction_key,
         fig_dir=fig_dir,
+        accent=accent,
     )
 
     def load_points():
@@ -326,9 +337,9 @@ def _PredObsCard(
             return None
         try:
             return pred_obs_scatter_option(
-                plot_data, dark=dark, labels=labels, title=title
+                plot_data, dark=dark, labels=labels, title=title, accent=accent
             )
-        except Exception:  # noqa: BLE001 - one bad card must not kill the tab
+        except Exception:  # one bad card must not kill the tab
             # Runs inside use_memo, so this logs once per artifact identity,
             # not once per render — no reactive log-console traffic.
             logger.exception("Could not build evaluation scatter")

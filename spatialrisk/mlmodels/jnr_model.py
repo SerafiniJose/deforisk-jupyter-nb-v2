@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import Field
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import JNRStats
 
 
 class JNRBenchmarkModel(BaseRiskModel):
@@ -100,6 +101,7 @@ class JNRBenchmarkModel(BaseRiskModel):
     # State persisted after fit()
     dist_thresh: Optional[float] = None
     dist_bins: List[float] = Field(default_factory=list)
+    stats: Optional[JNRStats] = None
 
     # Configurable feature-variable name mappings
     forest_edge_var: str = "forest_edge"
@@ -113,6 +115,22 @@ class JNRBenchmarkModel(BaseRiskModel):
 
     # Defrate CSV paths produced by apply(), keyed by period name
     defrate_files: Dict[str, Path] = Field(default_factory=dict)
+
+    def output_files(self) -> List[Path]:
+        """JNR's fit()-time artifacts (tab_dist.csv + png).
+
+        Apply()-time defrate tables belong to predictions and are deliberately
+        NOT listed — deleting the model must not remove files a prediction
+        references.
+        """
+        files = super().output_files()
+        if self.stats is not None:
+            files.extend(
+                Path(p)
+                for p in (self.stats.tab_dist_path, self.stats.perc_dist_png)
+                if p
+            )
+        return files
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -301,6 +319,19 @@ class JNRBenchmarkModel(BaseRiskModel):
         )
         self.dist_bins = [float(b) for b in bins]
         print(f"  dist_bins: {len(self.dist_bins)} edges")
+
+        from spatialrisk.mlmodels.stats import build_rmj_stats
+
+        try:
+            self.stats = build_rmj_stats(
+                result,
+                tab_dist_path=period_dir / "tab_dist.csv",
+                perc_dist_png=period_dir / f"perc_dist_{period}.png",
+                n_classes=max(len(self.dist_bins) - 1, 0),
+            )
+        except Exception as exc:  # stats must never fail a training run
+            print(f"  ⚠ model statistics skipped: {exc}")
+            self.stats = None
 
         # Populate serialisable metadata (mirrors _prepare_samples() pattern)
         self.target_name = (

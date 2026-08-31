@@ -35,11 +35,39 @@ def sanitize_key(name: Optional[str]) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "").strip()).strip("_")
 
 
-def default_pred_name(model_key: str, dataset_name: str) -> str:
-    """Prefilled prediction name for a (model, dataset) selection."""
+#: Name token standing in for the explicit "predict everywhere" choice.
+NO_MASK_TOKEN = "nomask"
+
+
+def mask_name_token(mask_layer: Optional[str]) -> str:
+    """Name discriminator for an ML run's mask choice.
+
+    Falsy means the explicit "no mask" choice, which is a decision like any
+    other and so gets a token of its own rather than nothing: an unmasked run
+    must not collide with a masked one either.
+    """
+    return sanitize_key(mask_layer) or NO_MASK_TOKEN
+
+
+def default_pred_name(
+    model_key: str, dataset_name: str, mask_token: Optional[str] = None
+) -> str:
+    """Prefilled prediction name for a (model, dataset[, mask]) selection.
+
+    The mask changes the output raster, so a run that carries one is a
+    different product from a run that does not. Without ``mask_token`` in the
+    name, two runs of one model over one dataset differing only by mask both
+    landed on "<model>__<dataset>", and the second read as an overwrite of the
+    first instead of a new map. ``None`` (families that take no mask, or
+    nothing chosen yet) keeps the historic two-part name, so re-running one
+    configuration still lands on its existing name and still replaces it.
+    """
     if not model_key or not dataset_name:
         return ""
-    return sanitize_key(f"{model_key}__{dataset_name}")
+    parts = [model_key, dataset_name]
+    if mask_token:
+        parts.append(mask_token)
+    return sanitize_key("__".join(parts))
 
 
 def prediction_name_exists(project, name: str) -> bool:
@@ -51,7 +79,9 @@ def prediction_name_exists(project, name: str) -> bool:
     return bool(project.filter_predictions(name=name))
 
 
-def name_field_messages(clean_key: str, exists: bool, attempted: bool) -> Tuple[str, bool]:
+def name_field_messages(
+    clean_key: str, exists: bool, attempted: bool
+) -> Tuple[str, bool]:
     """(i18n message key, is_error) for an ArtifactNameField helper line.
 
     Empty name is only *flagged* red after a submit attempt; an existing key

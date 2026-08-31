@@ -33,7 +33,7 @@ def SampleSetList(
         on_remove: callback(sample_key) — delete a registered sample.
         on_dismiss: callback(job_id) — discard a failed job row.
         on_open: callback(sample_key) — open the read-only details dialog for a
-            registered sample (eye action button).
+            registered sample (info action button).
         pending: set of sample keys with a map layer in flight.
     """
     p = project.value

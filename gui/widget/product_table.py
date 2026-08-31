@@ -83,7 +83,7 @@ _ACTION_ICONS = {
     "delete": "mdi-delete-outline",
     "download": "mdi-cloud-download-outline",
     "cancel": "mdi-stop-circle",
-    "open": "mdi-table-eye",
+    "open": "mdi-information-outline",
     "dismiss": "mdi-close",
 }
 

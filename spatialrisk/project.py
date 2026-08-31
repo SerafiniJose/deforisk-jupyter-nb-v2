@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -818,11 +819,21 @@ class Project(BaseModel):
         if self.aoi:
             data["aoi"] = self.aoi
 
-        # Write to file
-        save_path.write_text(
-            json.dumps(data, indent=4, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
+        # Write to file atomically: serialize to a temp file in the same
+        # folder, then os.replace() onto the final path. os.replace is an
+        # atomic rename on a given filesystem, so a crash or interrupt
+        # mid-write can never leave a truncated/corrupt manifest — readers
+        # always see either the previous complete file or the new one.
+        tmp_path = project_folder / f".{save_path.name}.{uuid.uuid4().hex}.tmp"
+        try:
+            tmp_path.write_text(
+                json.dumps(data, indent=4, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            os.replace(tmp_path, save_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
         print(f"Project saved to: {save_path}")
 

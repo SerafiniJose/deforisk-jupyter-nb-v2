@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import ICARStats
 
 
 def compute_cell_indices(
@@ -95,6 +96,16 @@ def _mcmc_worker(payload: dict) -> dict:
         seed=payload["seed"],
         verbose=payload["verbose"],
     )
+    # The full MCMC trace lives and dies here: summarise it in-process and send
+    # only the plain dicts/floats back (spec §2.2 non-goal — no trace crosses).
+    summary = None
+    try:
+        from spatialrisk.mlmodels.stats import summarize_icar_mcmc
+
+        summary = summarize_icar_mcmc(mod.mcmc, mod._x_design_info.column_names)
+    except Exception as exc:  # summary must never fail the training run
+        print(f"  ⚠ posterior summary skipped: {exc}")
+
     # Only picklable posterior summaries cross the process boundary (the full
     # model object holds patsy design objects that cannot be pickled).
     return {
@@ -102,6 +113,7 @@ def _mcmc_worker(payload: dict) -> dict:
         "rho": np.array(mod.rho),
         "Vrho": float(mod.Vrho) if hasattr(mod, "Vrho") else None,
         "deviance": float(mod.deviance),
+        "posterior_summary": summary,
         "worker_pid": os.getpid(),
     }
 
@@ -147,6 +159,104 @@ def run_icar_mcmc(
     return result
 
 
+def build_icar_stats(
+    posteriors, design_column_names, *, n_rows, n_events, sample_design
+) -> ICARStats:
+    """ICARStats from the worker's posteriors dict (Spec A §2.2).
+
+    Preferred source is posteriors["posterior_summary"] (mean/SD/CI computed
+    from the trace inside the worker). When it is absent — the worker's
+    summary failed, or an old pickle path — fall back to point estimates
+    zipped against design_column_names[:-1], under the same 'cell' guard the
+    summary path enforces: mislabelling raises, it never guesses.
+    """
+    from spatialrisk.mlmodels.stats import Coefficient, binomial_null_deviance
+
+    deviance_summary = None
+    summary = posteriors.get("posterior_summary")
+    if summary:
+        coefficients = [Coefficient(**b) for b in _summary_kwargs(summary["betas"])]
+        # .get, not ["vrho"]: a summary missing that key would raise KeyError,
+        # which fit() catches by dropping the WHOLE stats record — throwing away
+        # the coefficients that were present for the sake of one absent scalar.
+        vrho_summary = summary.get("vrho")
+        vrho = (
+            Coefficient(name="Vrho", **_summary_kwargs_one(vrho_summary))
+            if vrho_summary
+            else None
+        )
+        dev_summary = summary.get("deviance")
+        deviance_summary = (
+            Coefficient(name="Deviance", **_summary_kwargs_one(dev_summary))
+            if dev_summary
+            else None
+        )
+    else:
+        names = list(design_column_names)
+        if not names or names[-1] != "cell":
+            raise ValueError(
+                "expected the design's last column to be 'cell'; got "
+                f"{names[-1] if names else None!r}"
+            )
+        betas = np.asarray(posteriors["betas"], dtype=float)
+        beta_names = names[:-1]
+        if len(beta_names) != len(betas):
+            raise ValueError(
+                f"{len(beta_names)} beta names vs {len(betas)} point estimates"
+            )
+        coefficients = [
+            Coefficient(name=n, estimate=float(b)) for n, b in zip(beta_names, betas)
+        ]
+        v = posteriors.get("Vrho")
+        vrho = Coefficient(name="Vrho", estimate=float(v)) if v is not None else None
+
+    rho = np.asarray(posteriors.get("rho", []), dtype=float)
+    rho = rho[np.isfinite(rho)]
+    rho_kw = (
+        {
+            "rho_min": float(rho.min()),
+            "rho_max": float(rho.max()),
+            "rho_mean": float(rho.mean()),
+            "rho_std": float(rho.std(ddof=1)) if rho.size > 1 else None,
+        }
+        if rho.size
+        else {}
+    )
+    return ICARStats(
+        n_rows=n_rows,
+        n_events=n_events,
+        sample_design=sample_design,
+        coefficients=coefficients,
+        vrho=vrho,
+        deviance_summary=deviance_summary,
+        # Counts-only, so the point-estimate fallback (= recovery of an old
+        # model) provides the "% explained" reference just as well.
+        null_deviance=binomial_null_deviance(n_events, n_rows),
+        **rho_kw,
+    )
+
+
+def _summary_kwargs(betas):
+    """Map summary beta dicts to Coefficient kwargs (mean -> estimate)."""
+    return [{"name": b["name"], **_summary_kwargs_one(b)} for b in betas]
+
+
+def _summary_kwargs_one(d):
+    """One summary dict -> Coefficient kwargs, minus the name.
+
+    rhat/ess via .get: a summary produced before the diagnostics existed
+    (an old worker pickle) simply leaves them None.
+    """
+    return {
+        "estimate": d["mean"],
+        "std": d["std"],
+        "ci_low": d["ci_low"],
+        "ci_high": d["ci_high"],
+        "rhat": d.get("rhat"),
+        "ess": d.get("ess"),
+    }
+
+
 class ICARModel(BaseRiskModel):
     """Bayesian iCAR spatial risk model.
 
@@ -154,7 +264,7 @@ class ICARModel(BaseRiskModel):
     ``dataset.extract_at_points()``, which encodes the raster cell index and
     enables construction of the spatial neighbourhood graph.
 
-    Attributes
+    Attributes:
     ----------
     csize : float
         Cell size (km) for building the spatial neighbourhood (default: 10).
@@ -183,6 +293,7 @@ class ICARModel(BaseRiskModel):
     prior_vrho: float = -1.0
     beta_start: float = -99.0
     random_seed: Optional[int] = None
+    stats: Optional[ICARStats] = None
     rho_path: Optional[Path] = None
     csize_interpolate: float = 0.1
 
@@ -212,7 +323,7 @@ class ICARModel(BaseRiskModel):
             the project icar_model folder; raises when the model has no
             project either.
 
-        Returns
+        Returns:
         -------
         self
         """
@@ -288,6 +399,24 @@ class ICARModel(BaseRiskModel):
         }
         self.n_samples = n_obs
         self.deviance = self._ml_model["deviance"]
+
+        from spatialrisk.mlmodels.stats import sample_design_label
+
+        try:
+            self.stats = build_icar_stats(
+                posteriors,
+                x.design_info.column_names,
+                # ModelStatsBase.n_rows is the post-NA-drop DESIGN row count, and
+                # GLM/RF both take it from x.shape[0]. df is already dropna()'d
+                # above so this equals n_obs today; reading the design keeps the
+                # three families reporting the same quantity by construction.
+                n_rows=int(x.shape[0]),
+                n_events=int(np.asarray(y)[:, 0].sum()),
+                sample_design=sample_design_label(self.sample),
+            )
+        except Exception as exc:  # stats must never fail a training run
+            print(f"  ⚠ model statistics skipped: {exc}")
+            self.stats = None
 
         self._stamp_now()
         self.trained = True
@@ -468,12 +597,16 @@ class ICARModel(BaseRiskModel):
                     rho_win = rasterio.windows.from_bounds(
                         *block_bounds, rho_src.transform
                     )
-                    rho_block = rho_src.read(
-                        1,
-                        window=rho_win,
-                        out_shape=(n_rows, n_cols),
-                        resampling=rasterio.enums.Resampling.bilinear,
-                    ).astype(float).ravel()
+                    rho_block = (
+                        rho_src.read(
+                            1,
+                            window=rho_win,
+                            out_shape=(n_rows, n_cols),
+                            resampling=rasterio.enums.Resampling.bilinear,
+                        )
+                        .astype(float)
+                        .ravel()
+                    )
 
                 block_df_full = pd.DataFrame(block_dict)
                 valid_mask = (

@@ -74,7 +74,7 @@ def AllocationList(
         rows: output of ``allocation_runner.allocation_rows``.
         on_delete: callback(run_key) — delete a saved run (confirmed by the tile).
         on_open: callback(run_key) — open the run's read-only details dialog
-            (the eye action button); None omits the button. Job rows never
+            (the info action button); None omits the button. Job rows never
             get one.
         on_toggle_density: callback(row) — show/hide the density raster; None
             when there is no map to draw on.

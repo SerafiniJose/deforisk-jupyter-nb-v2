@@ -60,6 +60,24 @@ def _toggle_sample_on_map(key, project_reactive, map_, turn_on):
             ss = cur.samples.get(key) if cur else None
             if ss is None:
                 return
+            # Backfill: samples generated without tippecanoe (old project, or a
+            # deploy env that lacked the binary) carry pmtiles_path=None in the
+            # manifest forever — convert on first toggle and persist, so they
+            # heal once the binary is available.
+            prev_pm = getattr(ss, "pmtiles_path", None)
+            ensure = getattr(ss, "ensure_pmtiles", None)
+            if callable(ensure):
+                try:
+                    ensure()
+                except Exception:
+                    logger.exception("PMTiles backfill failed for %s", key)
+                if getattr(ss, "pmtiles_path", None) != prev_pm:
+                    try:
+                        cur.save()
+                    except Exception:
+                        logger.exception(
+                            "Could not persist backfilled pmtiles for %s", key
+                        )
             drew = False
             if getattr(ss, "pmtiles_path", None):
                 try:

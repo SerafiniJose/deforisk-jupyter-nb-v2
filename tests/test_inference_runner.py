@@ -411,3 +411,56 @@ def test_every_gui_registry_key_is_a_dispatchable_family():
     from gui.scripts.model_registry import MODEL_KEYS
 
     assert set(MODEL_KEYS) == set(_ML_FOLDER) | {"jnr", "mw"}
+
+
+# --- run-time provenance -----------------------------------------------------
+#
+# The mask is an argument to apply(), so it is absent from the model config the
+# prediction snapshots. The runner hands it over as a pending run param, which
+# _register_prediction freezes onto the Prediction — that is the only route by
+# which "what was this masked with?" survives the run.
+
+
+def test_ml_run_records_the_mask_layer_as_a_pending_run_param():
+    """The mask the dialog assigned reaches the prediction as provenance."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1", layer_names=["forest_gfc_tc30", "other"])
+    run_inference(proj, "glm_glm_v1", "calibration", mask_layer="other")
+    assert m._pending_run_params == {"mask_layer": "other"}
+
+
+def test_ml_run_without_a_mask_records_the_explicit_no_mask_choice():
+    """Predicting everywhere is a decision the user made, not missing data."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1")
+    run_inference(proj, "glm_glm_v1", "calibration", mask_layer=None)
+    assert m._pending_run_params == {"mask_layer": None}
+
+
+def test_a_later_unmasked_run_does_not_inherit_the_earlier_mask():
+    """Pending state is per-run; a stale mask must not leak into the next run."""
+    m = _RecordingModel()
+    proj = _project(m, "glm_glm_v1", layer_names=["forest_gfc_tc30", "other"])
+    run_inference(proj, "glm_glm_v1", "calibration", mask_layer="other")
+    run_inference(proj, "glm_glm_v1", "calibration", mask_layer=None)
+    assert m._pending_run_params == {"mask_layer": None}
+
+
+def test_mw_run_records_the_selected_windows_not_a_mask():
+    """MW records its window subset rather than a mask.
+
+    It resolves its own layers, so a recorded mask would be a lie; the
+    window subset is the run-time choice that shapes its outputs.
+    """
+    m = _RecordingMW()
+    proj = _project(m, "mw_calibration_mw")
+    run_inference(proj, "mw_calibration_mw", "calibration", windows=[5])
+    assert m._pending_run_params == {"windows": [5]}
+
+
+def test_jnr_run_records_no_run_params():
+    """JNR takes neither a mask nor a window subset."""
+    m = _RecordingModel()
+    proj = _project(m, "jnr_calibration_jnr")
+    run_inference(proj, "jnr_calibration_jnr", "calibration")
+    assert m._pending_run_params == {}

@@ -91,6 +91,10 @@ def test_fit_accepts_untagged_forest_loss_layer(untagged_dataset, stub_rmj, tmp_
     assert model.trained
     assert model.dist_thresh == 120.0
     assert str(stub_rmj["defor_file"]).endswith("my_forest_loss.tif")
+    # fit()-site stats wiring (regression: A6 broke this with a bare KeyError
+    # when the dist_edge_threshold result omitted perc_thresh/tot_def).
+    assert model.stats is not None
+    assert model.stats.dist_thresh == 120.0
 
 
 def test_fit_accepts_untagged_defor_var_feature(untagged_dataset, stub_rmj, tmp_path):
@@ -108,3 +112,50 @@ def test_fit_accepts_untagged_defor_var_feature(untagged_dataset, stub_rmj, tmp_
 
     assert model.trained
     assert str(stub_rmj["defor_file"]).endswith("loss_from_upload.tif")
+    assert model.stats is not None
+    assert model.stats.dist_thresh == 120.0
+
+
+def test_fit_survives_partial_dist_edge_threshold_result(
+    untagged_dataset, stub_rmj, tmp_path
+):
+    """A partial dist_edge_threshold result must not abort fit().
+
+    stub_rmj returns only dist_thresh, no perc_thresh/tot_def — this is the
+    exact shape of the fix-round-1 regression: build_rmj_stats used to do
+    unconditional ``result["perc_thresh"]`` indexing and raised KeyError,
+    aborting training entirely. The recoverable field stays populated and
+    the missing ones read back as None rather than raising.
+    """
+    model = JNRBenchmarkModel(name="calibration")
+
+    model.fit(dataset=untagged_dataset, folder=tmp_path)
+
+    assert model.trained
+    assert model.stats is not None
+    assert model.stats.dist_thresh == 120.0
+    assert model.stats.perc_thresh is None
+    assert model.stats.tot_defor_ha is None
+
+
+def test_fit_survives_stats_collection_raising(
+    untagged_dataset, stub_rmj, tmp_path, monkeypatch
+):
+    """A stats-collection failure must not abort fit().
+
+    If stats collection itself raises for an unanticipated reason, fit()
+    still completes with stats=None — mirroring the try/except guard already
+    used by GLM/RF/iCAR (stats must never fail a training run).
+    """
+    import spatialrisk.mlmodels.stats as stats_module
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(stats_module, "build_rmj_stats", _boom)
+    model = JNRBenchmarkModel(name="calibration")
+
+    model.fit(dataset=untagged_dataset, folder=tmp_path)
+
+    assert model.trained
+    assert model.stats is None

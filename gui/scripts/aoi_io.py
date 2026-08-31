@@ -20,7 +20,11 @@ Kept free of Solara/ipyvuetify so it can be unit-tested without a render
 harness; pysepal/geopandas are imported lazily inside the functions.
 """
 
+import hashlib
+import json
 import logging
+import os
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -28,6 +32,13 @@ logger = logging.getLogger("spatial_risk")
 
 AOI_GEOMETRY_FILENAME = "aoi.geojson"
 _ADMIN_METHODS = ("ADMIN0", "ADMIN1", "ADMIN2")
+
+# Grid size (decimal degrees, WGS84) that geometry digests are snapped to
+# before hashing. ~0.11m at the equator — far finer than any AOI selection
+# workflow (draw tool, admin boundary, uploaded shapefile) is meaningfully
+# precise to, and far coarser than the floating-point noise a GeoJSON
+# write -> read round-trip can introduce. See ``_geometry_digest``.
+_DIGEST_GRID_SIZE = 1e-6
 
 
 def _rebuild_admin_feature_collection(admin_code: str) -> Optional[Any]:
@@ -107,8 +118,49 @@ def _rebuild_asset_feature_collection(asset: Dict[str, Any]) -> Optional[Any]:
     return None
 
 
-def _aoi_metadata(aoi: Any, geometry_file: Optional[str]) -> Dict[str, Any]:
-    """Build the serializable metadata dict for an AoiResult-like object."""
+def _to_wgs84(gdf: Any) -> Any:
+    """Reproject ``gdf`` to EPSG:4326 if it isn't already."""
+    if getattr(gdf, "crs", None) is not None and gdf.crs.to_epsg() != 4326:
+        return gdf.to_crs(epsg=4326)
+    return gdf
+
+
+def _geometry_digest(gdf: Any) -> str:
+    """Stable content digest for a WGS84 GeoDataFrame's geometries.
+
+    Each geometry is snapped to a ``_DIGEST_GRID_SIZE`` (1e-6 deg, ~11cm)
+    precision grid with ``shapely.set_precision`` before hashing the
+    concatenated WKB with sha256.
+
+    This is what makes the digest STABLE across a ``write_aoi`` ->
+    ``load_aoi`` round-trip: the sidecar is a GeoJSON file, and reading it
+    back with geopandas can introduce sub-nanometre floating-point noise
+    relative to the geometry that was written (text serialization and
+    reparsing of doubles). That noise is many orders of magnitude smaller
+    than the 1e-6 degree grid, so snapping produces bit-identical results
+    before and after the round-trip, and a load-then-reattach never looks
+    like a geometry change. A real edit (a shifted vertex, a redrawn
+    rectangle) moves coordinates by amounts humans can see on a map — far
+    larger than the grid — so it always changes the digest.
+    """
+    import shapely
+
+    h = hashlib.sha256()
+    for geom in gdf.geometry:
+        snapped = shapely.set_precision(geom, _DIGEST_GRID_SIZE)
+        h.update(shapely.to_wkb(snapped))
+    return h.hexdigest()
+
+
+def _aoi_metadata(
+    aoi: Any, geometry_file: Optional[str], gdf: Any = None
+) -> Dict[str, Any]:
+    """Build the serializable metadata dict for an AoiResult-like object.
+
+    ``gdf``, when given, must already be normalized to WGS84 (see
+    ``_to_wgs84``) — callers that write and callers that merely compare must
+    use the same normalized geometry so their digests agree.
+    """
     meta: Dict[str, Any] = {
         "method": getattr(aoi, "method", None),
         "name": getattr(aoi, "name", None),
@@ -117,7 +169,27 @@ def _aoi_metadata(aoi: Any, geometry_file: Optional[str]) -> Dict[str, Any]:
     }
     if geometry_file is not None:
         meta["geometry_file"] = geometry_file
+    if gdf is not None:
+        meta["geometry_digest"] = _geometry_digest(gdf)
     return meta
+
+
+def _write_sidecar_geojson(gdf: Any, sidecar: Path) -> None:
+    """Write ``gdf`` to ``sidecar`` atomically.
+
+    Writes to a temp file in the same directory (so ``os.replace`` is an
+    atomic rename on the same filesystem) then replaces the sidecar in one
+    step, so a crash mid-write never leaves a truncated/corrupt
+    ``aoi.geojson``. GDAL's GeoJSON driver accepts any filename as long as
+    ``driver="GeoJSON"`` is passed explicitly, so the ``.tmp`` suffix is fine.
+    """
+    tmp_path = sidecar.parent / f".{sidecar.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        gdf.to_file(tmp_path, driver="GeoJSON")
+        os.replace(tmp_path, sidecar)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def write_aoi(project_dir: Path, aoi: Any) -> Optional[Dict[str, Any]]:
@@ -156,10 +228,9 @@ def write_aoi(project_dir: Path, aoi: Any) -> Optional[Dict[str, Any]]:
         return meta
 
     # Normalize to WGS84 so the sidecar matches what zoom_bounds expects.
-    if getattr(gdf, "crs", None) is not None and gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(epsg=4326)
-    gdf.to_file(sidecar, driver="GeoJSON")
-    return _aoi_metadata(aoi, geometry_file=AOI_GEOMETRY_FILENAME)
+    gdf = _to_wgs84(gdf)
+    _write_sidecar_geojson(gdf, sidecar)
+    return _aoi_metadata(aoi, geometry_file=AOI_GEOMETRY_FILENAME, gdf=gdf)
 
 
 def persist_aoi(
@@ -198,6 +269,121 @@ def persist_aoi(
         return stored
 
     return write_aoi(project_dir, aoi)
+
+
+def _read_manifest_aoi(manifest: Path) -> Any:
+    """Return the ``"aoi"`` value committed in ``manifest``, or None.
+
+    Used by :func:`attach_aoi` to judge idempotency from disk rather than
+    from ``project.aoi``: if a previous ``project.save()`` raised, the
+    in-memory dict was already updated but nothing landed on disk, and the
+    only way to notice that (and retry) is to read the committed state back.
+    """
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data.get("aoi")
+
+
+def attach_aoi(project: Any, aoi: Any, data_dir: Path) -> bool:
+    """Persist ``aoi`` into ``project`` the moment it is selected.
+
+    The manual Save flow is not the only writer of the project manifest: every
+    job completion (variable download, processing, training, inference, …)
+    calls ``project.save()`` directly, serializing whatever ``project.aoi``
+    holds right then. When the AOI was only attached inside the Save button's
+    flow, a project driven through the workflow without a manual save wrote
+    manifest after manifest with ``aoi: null`` — and reloaded with all its
+    artifacts but no AOI, silently. Attaching (and writing the geometry
+    sidecar) at selection time makes every later save carry it.
+
+    The manifest itself is rewritten only when one already exists on disk:
+    a freshly created project must not materialize just because an AOI was
+    picked — it appears, as before, on its first save or job completion
+    (which now includes the AOI).
+
+    Idempotent and cheap to re-run: when the AOI already matches and the
+    sidecar is in place (e.g. right after a project load hands the restored
+    AOI back through the same code path), nothing is touched — so loading a
+    project does not bump its manifest mtime. The "already matches" check is
+    read from the manifest on disk when one exists, not from ``project.aoi``:
+    that makes a failed ``project.save()`` retryable on the next call (the
+    in-memory ``project.aoi`` was already updated, but disk wasn't, so disk
+    disagreeing with ``expected`` is exactly what should trigger a retry) and
+    means a manifest that fell out of sync with memory some other way is
+    healed rather than trusted. Without a manifest yet, the fallback is the
+    same in-memory + sidecar check as before.
+
+    Consistency contract for what gets written and in what order:
+
+    * A geometry AOI (DRAW/SHAPE/POINTS/…): the sidecar is written first,
+      then ``project.aoi`` is updated, then the manifest is saved (if it
+      exists). The manifest can therefore never end up referencing a sidecar
+      that doesn't exist yet.
+    * A metadata-only AOI (GEE admin/asset) that may be replacing a geometry
+      one: ``project.aoi`` is updated and the manifest saved *first*; the
+      stale sidecar is unlinked only after that save succeeds (or
+      immediately, unconditionally, when there is no manifest to save yet).
+      A crash between the save and the unlink leaves an orphaned sidecar,
+      which is harmless (nothing references it) and gets cleaned up
+      opportunistically the next time this AOI is found to already match.
+    * ``project.save()`` is never caught here: raising is what makes the
+      disk-based idempotency check see the old committed state and retry on
+      the next call.
+
+    Args:
+        project: The open ``spatialrisk`` Project (or None).
+        aoi: The freshly selected ``AoiResult`` (or None). None is a no-op:
+            dropping a stored AOI is reserved for explicit user flows, per
+            :func:`persist_aoi`.
+        data_dir: The projects root (``DATA_DIR``).
+
+    Returns:
+        True when something was written, False on a no-op.
+    """
+    if project is None or aoi is None:
+        return False
+
+    project_dir = Path(data_dir) / project.project_name
+    sidecar = project_dir / AOI_GEOMETRY_FILENAME
+    manifest = project_dir / f"{project.project_name}_project.json"
+
+    has_geometry = getattr(aoi, "gdf", None) is not None
+    gdf = _to_wgs84(aoi.gdf) if has_geometry else None
+    expected = _aoi_metadata(
+        aoi, geometry_file=AOI_GEOMETRY_FILENAME if has_geometry else None, gdf=gdf
+    )
+    asset = getattr(aoi, "asset", None)
+    if asset and getattr(aoi, "method", None) == "ASSET":
+        expected["asset"] = asset
+
+    manifest_exists = manifest.exists()
+    committed = _read_manifest_aoi(manifest) if manifest_exists else project.aoi
+
+    sidecar_ok = (not has_geometry) or sidecar.exists()
+    if committed == expected and sidecar_ok:
+        if not has_geometry and sidecar.exists():
+            # Opportunistic cleanup: an orphaned sidecar from a crash between
+            # a metadata-only save and its post-save unlink. The manifest
+            # already agrees with `expected`, so there's nothing to persist —
+            # just tidy the leftover file.
+            sidecar.unlink(missing_ok=True)
+        return False
+
+    if has_geometry:
+        project_dir.mkdir(parents=True, exist_ok=True)
+        _write_sidecar_geojson(gdf, sidecar)
+        project.aoi = expected
+        if manifest_exists:
+            project.save()
+    else:
+        project.aoi = expected
+        if manifest_exists:
+            project.save()
+        sidecar.unlink(missing_ok=True)
+
+    return True
 
 
 def load_aoi(project_dir: Path, metadata: Optional[Dict[str, Any]]) -> Optional[Any]:

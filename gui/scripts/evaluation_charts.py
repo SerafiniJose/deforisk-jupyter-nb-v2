@@ -13,12 +13,13 @@ y-axis scale. The information design is unchanged — same metrics in the same
 order, same titles, one bar series per cell size, one category per map label.
 
 Palette and theme colours come from ``gui.scripts.echarts_options`` (the pure
-half of the ECharts adapter), never from plotly.
+half of the ECharts adapter), never from plotly. The bars are shades of the
+app's ``primary`` accent, handed in by the widget layer.
 """
 
 from pathlib import Path
 
-from gui.scripts.echarts_options import csize_colors, theme_colors
+from gui.scripts.echarts_options import DEFAULT_ACCENT, accent_ramp, theme_colors
 
 # Metric -> (axis title, direction hint). R2 is unitless; the errors are in ha.
 _METRIC_TITLES = {
@@ -31,7 +32,7 @@ _METRIC_ORDER = ["MedAE", "R2", "RMSE", "wRMSE"]
 
 
 def map_label(row):
-    """Display label for a row's map: 'MODEL — period' (matches map_items)."""
+    """Display label for a row's map: '<model stem> — <period>'."""
     model = row.get("model") or row.get("prediction") or "?"
     period = row.get("period")
     return f"{model} — {period}" if period else str(model)
@@ -39,8 +40,9 @@ def map_label(row):
 
 def record_csizes(rows):
     """Sorted unique coarse-grid cell sizes present in the rows."""
-    return sorted({r["csize_coarse_grid"] for r in rows
-                   if r.get("csize_coarse_grid") is not None})
+    return sorted(
+        {r["csize_coarse_grid"] for r in rows if r.get("csize_coarse_grid") is not None}
+    )
 
 
 def record_metrics(rows, selected):
@@ -77,7 +79,8 @@ def figure_entries(rows, csize, fig_dir=None):
             path = Path(r["fig_path"])
         elif fig_dir is not None and r.get("model") and r.get("period"):
             path = Path(fig_dir) / pred_obs_artifact_name(
-                r["model"], r["period"], csize, "png")
+                r["model"], r["period"], csize, "png"
+            )
         else:
             continue
         entries.append((map_label(r), path))
@@ -89,13 +92,15 @@ def csize_series_name(csize):
     return f"csize {csize} px"
 
 
-def metric_bar_option(rows, metric, dark=False):
+def metric_bar_option(rows, metric, dark=False, accent=DEFAULT_ACCENT):
     """Grouped-bar ECharts option for ONE metric: x = map, bars = cell size.
 
     Args:
         rows: EvaluationRecord.indices (list of dicts).
         metric: a single metric key (``MedAE``, ``R2``, ``RMSE``, ``wRMSE``).
         dark: style for the app's dark theme.
+        accent: the app's ``primary`` colour; one shade of it per cell size,
+            light -> dark, so the shading encodes their order.
 
     Returns a plain, JSON-serializable ECharts option dict, or None when this
     metric has nothing chartable in these rows (no rows, no cell sizes, no map
@@ -118,7 +123,7 @@ def metric_bar_option(rows, metric, dark=False):
     if not any(r.get(metric) is not None for r in rows):
         return None
 
-    colors = csize_colors(len(csizes))
+    colors = accent_ramp(len(csizes), accent, dark=dark)
     ink, grid = theme_colors(dark)["ink"], theme_colors(dark)["grid"]
     by_key = {(map_label(r), r.get("csize_coarse_grid")): r for r in rows}
     # One cell size means the legend would restate the title, so it is hidden —
@@ -127,16 +132,19 @@ def metric_bar_option(rows, metric, dark=False):
 
     series = []
     for ci, csize in enumerate(csizes):
-        series.append({
-            "type": "bar",
-            "name": csize_series_name(csize),
-            "data": [(by_key.get((lab, csize)) or {}).get(metric)
-                     for lab in labels],
-            "itemStyle": {"color": colors[ci]},
-            # Plotly's bargroupgap=0.08: the gap between bars inside one group.
-            # ECharts reads barGap from the first bar series of the group.
-            "barGap": "8%",
-        })
+        series.append(
+            {
+                "type": "bar",
+                "name": csize_series_name(csize),
+                "data": [
+                    (by_key.get((lab, csize)) or {}).get(metric) for lab in labels
+                ],
+                "itemStyle": {"color": colors[ci]},
+                # Plotly's bargroupgap=0.08: the gap between bars inside one group.
+                # ECharts reads barGap from the first bar series of the group.
+                "barGap": "8%",
+            }
+        )
 
     return {
         "title": {
@@ -150,8 +158,13 @@ def metric_bar_option(rows, metric, dark=False):
         # top clears the title (at y=0) plus, when it is shown, the legend row
         # placed just under it (top=24). Without a legend the plot starts where
         # the legend would have begun instead of leaving a blank band.
-        "grid": {"left": 8, "right": 12, "top": 52 if show_legend else 24,
-                 "bottom": 4, "containLabel": True},
+        "grid": {
+            "left": 8,
+            "right": 12,
+            "top": 52 if show_legend else 24,
+            "bottom": 4,
+            "containLabel": True,
+        },
         "tooltip": {
             # {b} = category (the map label), {c} = value, {a} = series name
             # (which is "csize N px") — the three fields the Plotly

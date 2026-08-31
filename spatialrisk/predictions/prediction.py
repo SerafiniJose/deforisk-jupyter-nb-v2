@@ -60,6 +60,11 @@ class Prediction(BaseModel):
     model_snapshot: Dict[str, Any] = Field(default_factory=dict)
     dataset_snapshot: Dict[str, Any] = Field(default_factory=dict)
 
+    # Run-time choices that are arguments to apply() rather than model config
+    # (the ML families' mask layer), so the provenance is not silently missing
+    # the one decision the model snapshot cannot carry.
+    run_params: Dict[str, Any] = Field(default_factory=dict)
+
     # Reserved for a later evaluation/comparison feature.
     metrics: Dict[str, Any] = Field(default_factory=dict)
 

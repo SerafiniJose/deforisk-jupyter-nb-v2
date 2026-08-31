@@ -2,6 +2,7 @@
 
 
 def test_action_icons_standardized():
+    """Every action kind resolves to its one canonical icon."""
     from gui.widget.product_table import action_icon
 
     assert action_icon("map_toggle", is_on=False) == "mdi-map-plus"
@@ -10,7 +11,9 @@ def test_action_icons_standardized():
     assert action_icon("delete") == "mdi-delete-outline"
     assert action_icon("download") == "mdi-cloud-download-outline"
     assert action_icon("cancel") == "mdi-stop-circle"
-    assert action_icon("open") == "mdi-table-eye"
+    # The details action reads as "what is this / how was it made", not
+    # "peek at a table" — several of the dialogs it opens show no table.
+    assert action_icon("open") == "mdi-information-outline"
     assert action_icon("dismiss") == "mdi-close"
 
 
@@ -35,6 +38,7 @@ def test_action_colors_are_theme_tokens_never_literal_grey():
 
 
 def test_grid_style_builds_template_columns():
+    """The column list becomes a CSS grid template."""
     from gui.widget.product_table import grid_style
 
     style = grid_style(["minmax(0,1fr)", "90px", "112px"])
@@ -43,6 +47,7 @@ def test_grid_style_builds_template_columns():
 
 
 def test_status_maps_cover_all_states():
+    """No job status falls through to the unknown-status placeholder."""
     from gui.widget.product_table import STATUS_COLORS, STATUS_ICONS
 
     for status in ("running", "ready", "completed", "failed", "cancelled"):
@@ -57,10 +62,13 @@ def test_status_maps_cover_all_states():
 
 
 def test_product_table_renders_duplicate_row_keys():
-    """Rows may share a name (e.g. a temporal variable per year, summary rows
-    keyed by display name) — rendering must not require unique row keys.
-    Regression: reacton raised KeyError "Duplicate key 'forest_gfc'" on project
-    load once rows were mounted with .key(row["key"])."""
+    """Rendering must not require unique row keys.
+
+    Rows may share a name (a temporal variable per year, summary rows keyed
+    by display name). Regression: reacton raised KeyError "Duplicate key
+    'forest_gfc'" on project load once rows were mounted with
+    .key(row["key"]).
+    """
     import solara
 
     from gui.i18n import t
@@ -70,22 +78,30 @@ def test_product_table_renders_duplicate_row_keys():
     # corrupts reacton's widget map (known harness artifact)
 
     rows = [
-        {"key": "forest_gfc", "cells": [{"type": "text", "value": "forest_gfc"}],
-         "actions": [], "error": None}
+        {
+            "key": "forest_gfc",
+            "cells": [{"type": "text", "value": "forest_gfc"}],
+            "actions": [],
+            "error": None,
+        }
         for _ in range(2)
     ]
     box, rc = solara.render(
-        ProductTable(title="Vars", columns=[{"label": "Name"}], rows=rows,
-                     empty_text="none"),
+        ProductTable(
+            title="Vars", columns=[{"label": "Name"}], rows=rows, empty_text="none"
+        ),
         handle_error=False,
     )
     rc.close()
 
 
 def test_actions_width_fits_the_widest_row():
-    """The Actions column used to be a flat 112px — room for four buttons even
-    when a table only ever shows two, stealing ~50px from the ellipsised name
-    column beside it. Size it to the busiest row instead."""
+    """The Actions column is sized to the busiest row, not to the maximum.
+
+    It used to be a flat 112px — room for four buttons even when a table
+    only ever shows two, stealing ~50px from the ellipsised name column
+    beside it.
+    """
     from gui.widget.product_table import actions_width_for
 
     two = actions_width_for([{"actions": [1, 2]}, {"actions": [1]}])

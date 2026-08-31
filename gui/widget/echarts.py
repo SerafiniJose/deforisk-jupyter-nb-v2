@@ -36,8 +36,10 @@ from pathlib import Path
 
 import reacton.ipyvuetify as rv
 import solara
+import solara.lab
 
 from gui.scripts.echarts_options import (
+    DEFAULT_ACCENT,
     RENDERER_CANVAS,
     RENDERER_SVG,
     resolve_renderer,
@@ -51,6 +53,7 @@ __all__ = [
     "RENDERER_SVG",
     "build_chart_widget",
     "frontend_asset_dir",
+    "theme_accent",
 ]
 
 # ECharts measures its canvas from the container, and a container with no
@@ -67,6 +70,32 @@ DEFAULT_HEIGHT = "360px"
 # delay lets Vuetify's ~300 ms tab/dialog transition finish before measuring.
 _RESIZE_NUDGE_CLASS = "sr-echarts-resize-nudge"
 _RESIZE_NUDGE_DELAY = 0.5  # seconds
+
+
+def theme_accent(dark=False):
+    """The live Vuetify ``primary`` colour for one theme, as a colour string.
+
+    The single place the charts read the app accent. Chart builders take it as
+    their ``accent=`` argument and derive every series colour from it (see
+    ``gui.scripts.echarts_options.accent_ramp``), so a chart is painted in the
+    same green/gold as the Next button and every ``color="primary"`` control,
+    and follows a palette change instead of freezing a hex of its own — which is
+    what the charts' old hardcoded blues did.
+
+    ``dark`` is the caller's already-resolved theme, not something read here:
+    the app's source of truth is pysepal's session-scoped ``use_theme_dark()``,
+    and every caller is a component that has hooked it (see the note on
+    ``_ChartsTab`` for why ``solara.lab.theme.dark`` is the wrong one to read).
+
+    Read per render, never captured at import: ``setup_theme_colors()`` writes
+    these slots during app startup, long after this module is imported. An unset
+    slot (a bare test harness, a theme that never got set up) falls back to
+    ``DEFAULT_ACCENT`` rather than painting nothing.
+    """
+    themes = solara.lab.theme.themes
+    return getattr(themes.dark if dark else themes.light, "primary", None) or (
+        DEFAULT_ACCENT
+    )
 
 
 def build_chart_widget(

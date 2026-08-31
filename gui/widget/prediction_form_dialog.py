@@ -17,17 +17,25 @@ from pysepal.solara.components.inputs import FileInputComponent
 from gui.i18n import t
 from gui.scripts.artifact_names import (
     default_pred_name,
+    mask_name_token,
     prediction_name_exists,
     sanitize_key,
 )
 from gui.scripts.inference_runner import (
     is_ml_family,
+    is_mw_family,
     mask_layer_candidates,
+    mw_window_options,
     suggested_mask_layer,
 )
+from gui.scripts.model_registry import MODEL_REGISTRY
 from gui.scripts.prediction_import import resolve_import_key, sanitize_import_name
+from gui.scripts.product_rows import prediction_row_key
 from gui.widget.artifact_name_field import ArtifactNameField, use_artifact_name
-from gui.widget.creation_dialog import CreationDialog
+from gui.widget.creation_dialog import _ADVANCED_PANEL_CSS, CreationDialog
+from gui.widget.details_fields import ro_field
+from gui.widget.model_form_dialog import model_label
+from spatialrisk.far_helpers import strip_categorical_levels
 
 # Raster file types accepted for a local prediction import.
 _IMPORT_RASTER_EXTENSIONS = [".tif", ".tiff", ".vrt", ".nc"]
@@ -117,6 +125,29 @@ def PredictionFormDialog(
     # never in between, so a deliberate pick survives re-renders.
     solara.use_effect(seed_mask_layer, [tuple(mask_candidates)])
 
+    # --- window sizes (MW family only)
+    # MW inference fans out one map per trained window; the user narrows the
+    # run here (e.g. re-run only the window that won evaluation). Seeded with
+    # every trained window so the default equals the historic all-windows run.
+    selected_windows, set_selected_windows = solara.use_state([])
+    mw_family = source == "model" and is_mw_family(selected_model)
+    window_options = mw_window_options(p, selected_model) if mw_family else []
+    pending_windows = solara.use_ref(None)
+
+    def seed_windows():
+        """Select every trained window, unless a prefill narrowed the run."""
+        if pending_windows.current is not None and mw_family:
+            keep = [w for w in pending_windows.current if w in window_options]
+            set_selected_windows(keep or list(window_options))
+            pending_windows.current = None
+            return
+        set_selected_windows(list(window_options))
+
+    # selected_model is a dependency on purpose: two MW models can expose the
+    # SAME option tuple, and switching between them must still reseed to
+    # all-selected — a subset chosen for model A must not leak into model B.
+    solara.use_effect(seed_windows, [selected_model, tuple(window_options)])
+
     # --- import mode state
     file_path, set_file_path = solara.use_state("")
     palette, set_palette = solara.use_state("far")
@@ -124,7 +155,17 @@ def PredictionFormDialog(
     # Name tracks the mode's suggestion until the user edits it: model mode
     # suggests "model__dataset", import mode the sanitized file stem.
     if source == "model":
-        suggestion = default_pred_name(selected_model, selected_dataset)
+        # The mask is part of the run's identity, so it discriminates the
+        # suggested name too: without it, two ML runs over one (model,
+        # dataset) that differ only by mask both landed on the same name and
+        # the second read as an overwrite of the first. Only once a mask has
+        # actually been chosen — an unset field has nothing to say yet.
+        mask_token = (
+            mask_name_token(None if mask_layer == NO_MASK else mask_layer)
+            if ml_family and mask_layer
+            else None
+        )
+        suggestion = default_pred_name(selected_model, selected_dataset, mask_token)
     else:
         suggestion = (
             sanitize_import_name(Path(str(file_path)).stem) if file_path else ""
@@ -152,6 +193,8 @@ def PredictionFormDialog(
             if "mask_layer" in entry:
                 # None was the explicit "no mask" submission — show the sentinel.
                 pending_mask.current = entry["mask_layer"] or NO_MASK
+            if "windows" in entry:
+                pending_windows.current = list(entry["windows"])
         on_name_input(entry.get("name", ""))
 
     solara.use_effect(
@@ -160,7 +203,17 @@ def PredictionFormDialog(
     )
 
     clean = sanitize_key(name_value)
-    exists = prediction_name_exists(p, clean)
+    # An MW run registers one prediction per selected window, suffixed
+    # ``_w<size>`` (see BaseRiskModel._register_prediction), so both the name
+    # preview and the "already taken" check work on the fanned-out keys.
+    if source == "model" and mw_family and clean:
+        mw_keys = [f"{clean}_w{w}" for w in sorted(selected_windows)]
+        exists = any(prediction_name_exists(p, k) for k in mw_keys)
+        preview_key = ", ".join(mw_keys) or clean
+    else:
+        mw_keys = []
+        exists = prediction_name_exists(p, clean)
+        preview_key = clean
     # Import never replaces: preview the key the import would actually get.
     src_suffix = Path(str(file_path)).suffix if file_path else ""
     resolved_import_key = (
@@ -171,6 +224,8 @@ def PredictionFormDialog(
 
     def reset():
         pending_mask.current = None
+        pending_windows.current = None
+        set_selected_windows([])
         set_source("model")
         set_selected_model("")
         set_selected_dataset("")
@@ -199,6 +254,11 @@ def PredictionFormDialog(
             return t("tiles.inference.error_invalid_dataset")
         if ml_family and not mask_layer:
             return t("tiles.inference.error_mask_required")
+        # Gated on window_options: an MW model exposing none (untrained legacy
+        # entry, empty win_size_list) renders no field and keeps today's
+        # behaviour — apply() runs all windows or raises, exactly as before.
+        if mw_family and window_options and not selected_windows:
+            return t("tiles.inference.error_windows_required")
         if not clean:
             return t("tiles.inference.error_name_required")
         return None
@@ -206,6 +266,12 @@ def PredictionFormDialog(
     def will_replace():
         if source == "import":
             return None  # duplicate imports suffix instead of replacing
+        if mw_family and mw_keys:
+            # Report every colliding key, not just the first: one run can
+            # overwrite several _w<size> maps and the confirmation must name
+            # all of them.
+            taken = [k for k in mw_keys if prediction_name_exists(p, k)]
+            return ", ".join(taken) if taken else None
         return clean if prediction_name_exists(p, clean) else None
 
     def launch():
@@ -231,6 +297,10 @@ def PredictionFormDialog(
                 # two). Benchmark families resolve their own layers and never
                 # carry the key.
                 entry["mask_layer"] = None if mask_layer == NO_MASK else mask_layer
+            if mw_family and window_options:
+                # No key at all when the model exposes no options — the runner
+                # then passes windows=None and apply() runs its usual set.
+                entry["windows"] = sorted(selected_windows)
             on_submit(entry)
 
     with CreationDialog(
@@ -278,6 +348,27 @@ def PredictionFormDialog(
                 hint=t("tiles.inference.dataset_select_hint"),
                 persistent_hint=True,
             )
+            if mw_family:
+                rv.Select(
+                    label=t("tiles.inference.windows_label"),
+                    items=[
+                        {"text": f"{w}×{w}", "value": w}  # noqa: RUF001
+                        for w in window_options
+                    ],
+                    item_text="text",
+                    item_value="value",
+                    v_model=selected_windows,
+                    on_v_model=set_selected_windows,
+                    multiple=True,
+                    chips=True,
+                    small_chips=True,
+                    deletable_chips=True,
+                    dense=True,
+                    outlined=True,
+                    class_="multi-chips",
+                    hint=t("tiles.inference.windows_hint"),
+                    persistent_hint=True,
+                )
             if show_mask:
                 rv.Select(
                     label=t("tiles.inference.mask_layer_label"),
@@ -319,7 +410,171 @@ def PredictionFormDialog(
         ArtifactNameField(
             value=name_value,
             on_input=on_name_input,
-            storage_key=clean if source == "model" else resolved_import_key,
+            storage_key=preview_key if source == "model" else resolved_import_key,
             exists=exists if source == "model" else False,
             label=t("tiles.inference.pred_name_label"),
         )
+
+
+def _group_predictions(project, row_key):
+    """Every registered prediction belonging to one outputs-list row.
+
+    A row groups a whole run: an MW run registers one Prediction per window
+    under the same name, and they share all provenance but the raster path.
+    Sorted by window so a multi-output run lists its files in a stable order.
+    """
+    predictions = (getattr(project, "predictions", None) or {}) if project else {}
+    group = [
+        pred for pred in predictions.values() if prediction_row_key(pred) == row_key
+    ]
+    return sorted(group, key=lambda p: (p.window is None, p.window or 0))
+
+
+def _is_import(pred) -> bool:
+    """Whether this prediction came from the raster-import flow.
+
+    An import registers no model, so it has no model snapshot to explain. That
+    absence *is* the signal — no separate "kind" flag is stored on disk, and
+    adding one would leave every already-registered import unclassified.
+    """
+    return not getattr(pred, "model_snapshot", None)
+
+
+@solara.component
+def PredictionDetailsDialog(project, row_key, on_close: Callable[[], None]):
+    """Read-only provenance for one prediction row: how it was produced.
+
+    Everything shown was frozen onto the Prediction when its raster was written
+    (see ``BaseRiskModel._register_prediction``), so a run stays explainable
+    after the model that made it is retrained, renamed or deleted — reading the
+    live model instead would quietly report today's config for yesterday's map.
+
+    Args:
+        project: solara.Reactive[Project].
+        row_key: outputs-list row key to explain, or None (dialog closed).
+        on_close: () -> None; clears the tile's selected key.
+    """
+    p = project.value
+    group = _group_predictions(p, row_key) if row_key else []
+    pred = group[0] if group else None
+
+    with rv.Dialog(
+        v_model=pred is not None,
+        on_v_model=lambda v: None if v else on_close(),
+        max_width="720px",
+    ):
+        with rv.Card():
+            with rv.CardTitle():
+                solara.Text(t("tiles.inference.details_title", key=row_key or ""))
+            with rv.CardText():
+                solara.Style(_ADVANCED_PANEL_CSS)
+                if pred is not None:
+                    _details_body(pred, group)
+            with rv.CardActions(style_="justify-content: flex-end;"):
+                solara.Button(
+                    t("common.close"),
+                    on_click=lambda: on_close(),
+                    text=True,
+                    small=True,
+                )
+
+
+def _details_body(pred, group):
+    """The dialog's field stack for one prediction group."""
+    imported = _is_import(pred)
+
+    with solara.Column(style="gap:4px;"):
+        ro_field(
+            t("tiles.inference.source_label"),
+            t("tiles.inference.source_import")
+            if imported
+            else t("tiles.inference.source_model"),
+        )
+        ro_field(t("tiles.inference.details_created"), pred.created_at)
+
+        if imported:
+            solara.Text(t("tiles.inference.details_imported_note"))
+            ro_field(
+                t("tiles.inference.details_palette_label"),
+                pred.display_palette,
+            )
+        else:
+            _model_section(pred)
+            _dataset_section(pred)
+
+        _output_section(group)
+
+
+def _model_section(pred):
+    """Model identity, run-time choices, then config behind the advanced panel."""
+    snapshot = pred.model_snapshot or {}
+    model_type = snapshot.get("model_type")
+    registry = MODEL_REGISTRY.get(model_type)
+
+    solara.Markdown(t("tiles.inference.details_model_header"))
+    ro_field(
+        t("tiles.inference.model_select_label"),
+        model_label(model_type) if registry else (model_type or pred.model_key),
+    )
+    ro_field(t("tiles.train.model_name_label"), snapshot.get("name"))
+
+    # Run-time choices are arguments to apply(), absent from the snapshot above.
+    # Only rendered when the family actually took one: a blank Mask row on an
+    # MW run would imply a choice the algorithm never offered.
+    run_params = pred.run_params or {}
+    if "mask_layer" in run_params:
+        ro_field(
+            t("tiles.inference.mask_layer_label"),
+            run_params["mask_layer"] or t("tiles.inference.mask_layer_none"),
+        )
+    if run_params.get("windows"):
+        ro_field(t("tiles.inference.windows_label"), run_params["windows"])
+
+    formula = snapshot.get("formula")
+    param_defs = [
+        pd
+        for pd in (registry["params"] if registry else [])
+        if pd.get("group", "params") == "params"
+    ]
+    if not (formula or param_defs):
+        return
+    with rv.ExpansionPanels(flat=True, class_="advanced-params"):
+        with rv.ExpansionPanel():
+            with rv.ExpansionPanelHeader():
+                solara.Text(t("tiles.train.advanced_parameters_header"))
+            with rv.ExpansionPanelContent():
+                if formula:
+                    # levels=[...] is a fit-time safety net, noise to the reader.
+                    ro_field(
+                        t("tiles.train.formula_label"),
+                        strip_categorical_levels(formula),
+                    )
+                for pd in param_defs:
+                    # No registry default fallback: a param absent from the
+                    # snapshot was not recorded, and printing today's default
+                    # would invent provenance. format_value renders None as —.
+                    ro_field(t(pd["label_key"]), snapshot.get(pd["key"]))
+
+
+def _dataset_section(pred):
+    """The dataset the model was applied over, as frozen at prediction time."""
+    snapshot = pred.dataset_snapshot or {}
+    solara.Markdown(t("tiles.inference.details_dataset_header"))
+    ro_field(
+        t("tiles.inference.dataset_select_label"),
+        snapshot.get("name") or pred.dataset_name,
+    )
+    ro_field(t("tiles.inference.details_target"), snapshot.get("target_name"))
+    ro_field(t("tiles.inference.details_features"), snapshot.get("feature_names"))
+
+
+def _output_section(group):
+    """One row per raster the run wrote (MW writes one per window)."""
+    solara.Markdown(t("tiles.inference.details_output_header"))
+    for pred in group:
+        label = (
+            t("tiles.inference.details_output_window", n=pred.window)
+            if pred.window is not None
+            else t("tiles.inference.details_output_label")
+        )
+        ro_field(label, str(pred.path))

@@ -42,6 +42,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import Field
 
 from spatialrisk.mlmodels.base import BaseRiskModel
+from spatialrisk.mlmodels.stats import MWStats
 
 
 class MWModel(BaseRiskModel):
@@ -107,6 +108,7 @@ class MWModel(BaseRiskModel):
 
     # State persisted after fit() — no pickle, paths to raster files
     dist_thresh: Optional[float] = None
+    stats: Optional[MWStats] = None
     ldefrate_files: Dict[str, Path] = Field(default_factory=dict)
 
     # Configurable feature-variable name mappings
@@ -119,9 +121,19 @@ class MWModel(BaseRiskModel):
     defor_var: str = ""
 
     def output_files(self) -> List[Path]:
-        """MW persists one deforestation-rate raster per window size."""
+        """MW persists one deforestation-rate raster per window size.
+
+        Also includes distance-threshold artifacts fit() writes
+        (tab_dist.csv + png).
+        """
         files = super().output_files()
         files.extend(Path(p) for p in self.ldefrate_files.values() if p)
+        if self.stats is not None:
+            files.extend(
+                Path(p)
+                for p in (self.stats.tab_dist_path, self.stats.perc_dist_png)
+                if p
+            )
         return files
 
     # ------------------------------------------------------------------
@@ -303,6 +315,18 @@ class MWModel(BaseRiskModel):
         self.dist_thresh = float(result["dist_thresh"])
         print(f"  dist_thresh={self.dist_thresh:.1f} m")
 
+        from spatialrisk.mlmodels.stats import build_rmj_stats
+
+        try:
+            self.stats = build_rmj_stats(
+                result,
+                tab_dist_path=period_dir / "tab_dist.csv",
+                perc_dist_png=period_dir / f"perc_dist_{period}.png",
+            )
+        except Exception as exc:  # stats must never fail a training run
+            print(f"  ⚠ model statistics skipped: {exc}")
+            self.stats = None
+
         # Step 2: Local deforestation rate per window size
         ldefrate_files: Dict[str, Path] = {}
         for win_size in self.win_size_list:
@@ -353,6 +377,7 @@ class MWModel(BaseRiskModel):
         output_file: Optional[Union[str, Path]] = None,
         mask: Optional[Union[str, Path]] = None,
         mask_value: Union[int, float, list] = 0,
+        windows: Optional[List[int]] = None,
     ) -> Dict[str, Path]:
         """Generate probability maps for a given period.
 
@@ -381,6 +406,9 @@ class MWModel(BaseRiskModel):
             Unused; kept for API consistency with supervised models.
         mask_value : optional
             Unused; kept for API consistency.
+        windows : list of int, optional
+            Trained window sizes to run; default None = all. Unknown or
+            empty selections raise ValueError.
 
         Returns:
         -------
@@ -393,6 +421,25 @@ class MWModel(BaseRiskModel):
             raise RuntimeError("Model has not been fitted. Call fit() first.")
         if self.dist_thresh is None:
             raise RuntimeError("dist_thresh not set. Call fit() first.")
+
+        # Resolve which trained windows this run covers. None = all (the
+        # historic behavior); an explicit subset lets the user re-run only
+        # the window that won evaluation.
+        selected_files = self.ldefrate_files
+        if windows is not None:
+            requested = [str(w) for w in windows]
+            if not requested:
+                raise ValueError(
+                    "windows= must name at least one trained window "
+                    f"(trained: {sorted(self.ldefrate_files)})."
+                )
+            missing = [w for w in requested if w not in self.ldefrate_files]
+            if missing:
+                raise ValueError(
+                    f"Window size(s) {missing} not trained on this model "
+                    f"(trained: {sorted(self.ldefrate_files)})."
+                )
+            selected_files = {w: self.ldefrate_files[w] for w in requested}
 
         # Resolve dataset
         active = dataset if dataset is not None else self.dataset
@@ -420,10 +467,10 @@ class MWModel(BaseRiskModel):
         period_dir = out_root / period
         period_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n🗺  MW apply — period='{period}', windows={self.win_size_list}")
+        print(f"\n🗺  MW apply — period='{period}', windows={sorted(selected_files)}")
 
         output_files: Dict[str, Path] = {}
-        for win_size_str, ldefrate_file in self.ldefrate_files.items():
+        for win_size_str, ldefrate_file in selected_files.items():
             ldefrate_file = Path(ldefrate_file)
             if not ldefrate_file.exists():
                 raise FileNotFoundError(

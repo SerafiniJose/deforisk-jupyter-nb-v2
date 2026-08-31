@@ -30,6 +30,7 @@ def _tiny_mcmc_inputs():
 
 
 def test_run_icar_mcmc_executes_in_child_process():
+    """Sampler runs off-process and hands back the posteriors fit() stores."""
     from spatialrisk.mlmodels.icar_model import run_icar_mcmc
 
     df, n_neighbors, neighbors = _tiny_mcmc_inputs()
@@ -51,6 +52,19 @@ def test_run_icar_mcmc_executes_in_child_process():
 
     # Posterior summaries have the shapes fit() stores in _ml_model.
     assert result["betas"].shape == (2,)  # Intercept + x (cell column dropped)
-    assert result["rho"].shape == (4,)    # one random effect per spatial cell
+    assert result["rho"].shape == (4,)  # one random effect per spatial cell
     assert np.isfinite(result["deviance"])
     assert np.isfinite(result["Vrho"])
+
+    # The posterior summary reads two forestatrisk internals (mod.mcmc and
+    # mod._x_design_info) inside a bare `except Exception` that prints and moves
+    # on, so an upstream rename would take the credible intervals out silently:
+    # summary=None -> fit() falls back to point estimates -> the panel looks
+    # exactly like a legacy model, with nothing raising and no test failing.
+    # These lines are what makes that upgrade break loudly instead.
+    summary = result["posterior_summary"]
+    assert summary is not None
+    # Column names come from the design, whose LAST column forestatrisk consumes
+    # as the 'cell' term — an off-by-one would mislabel every coefficient.
+    assert summary["betas"][0]["name"] == "Intercept"
+    assert summary["vrho"]["ci_low"] < summary["vrho"]["ci_high"]

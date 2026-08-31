@@ -98,3 +98,72 @@ def test_sampling_tile_opens_the_details_dialog():
     # Hooks must precede the tile's early returns (p is None / no raster keys),
     # or the hook count changes between renders.
     assert src.index("set_details_key = solara.use_state") < src.index("if p is None:")
+
+
+def _toggle_stubs(pmtiles_path):
+    """Stub sample/project/map trio for driving _toggle_sample_on_map directly."""
+    calls = {"ensure": 0, "save": 0, "pmtiles": [], "geojson": []}
+
+    class _Sample:
+        def __init__(self):
+            self.pmtiles_path = pmtiles_path
+            self.points_path = "pts.gpkg"
+
+        def ensure_pmtiles(self):
+            calls["ensure"] += 1
+            if self.pmtiles_path is None:
+                self.pmtiles_path = "pts.pmtiles"
+                return True
+            return True
+
+    class _Project:
+        def __init__(self):
+            self.samples = {"s1": _Sample()}
+
+        def save(self):
+            calls["save"] += 1
+
+    class _Reactive:
+        def __init__(self, value):
+            self.value = value
+
+    return calls, _Reactive(_Project())
+
+
+def test_toggle_backfills_pmtiles_and_persists(monkeypatch):
+    """An old sample without .pmtiles is converted on toggle and the manifest saved."""
+    from gui.scripts import pmtiles_map
+    from gui.tile import sampling_tile as st
+
+    calls, project = _toggle_stubs(pmtiles_path=None)
+    monkeypatch.setattr(
+        pmtiles_map,
+        "add_sample_pmtiles_on_map",
+        lambda m, p, n, k: calls["pmtiles"].append(str(p)),
+    )
+
+    st._toggle_sample_on_map("s1", project, object(), turn_on=True)
+
+    assert calls["ensure"] == 1
+    assert calls["save"] == 1  # backfilled path must reach the manifest
+    assert calls["pmtiles"] == ["pts.pmtiles"]
+    st.samples_on_map.set(set())
+
+
+def test_toggle_does_not_save_when_pmtiles_already_present(monkeypatch):
+    """No redundant manifest write when the sample already has its archive."""
+    from gui.scripts import pmtiles_map
+    from gui.tile import sampling_tile as st
+
+    calls, project = _toggle_stubs(pmtiles_path="have.pmtiles")
+    monkeypatch.setattr(
+        pmtiles_map,
+        "add_sample_pmtiles_on_map",
+        lambda m, p, n, k: calls["pmtiles"].append(str(p)),
+    )
+
+    st._toggle_sample_on_map("s1", project, object(), turn_on=True)
+
+    assert calls["save"] == 0
+    assert calls["pmtiles"] == ["have.pmtiles"]
+    st.samples_on_map.set(set())
