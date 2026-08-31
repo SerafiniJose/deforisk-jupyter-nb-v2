@@ -50,6 +50,7 @@ from gui.scripts.project_ui_helpers import (
     overwrite_needed,
     validate_project_name,
 )
+from gui.scripts.tile_proxy import borrow_localtileserver_prefix
 from gui.store.project_writers import is_writing
 from gui.store.state_manager import app_state
 from gui.tile.aoi_tile import AoiTile
@@ -68,6 +69,12 @@ from gui.widget.manage_projects import ConfirmDeleteProjectDialog, ManageProject
 from gui.widget.pipeline_header import PipelineHeader
 from gui.widget.text_style import MUTED
 from spatialrisk.project import DATA_DIR, Project
+
+# On SEPAL, reuse the raster tiles' jupyter-server-proxy route for the PMTiles
+# vector-tile server (vectortileserver never autodetects one). Must run before
+# any vectortileserver TileClient is built — they are only constructed lazily
+# when a sample layer is added, so after imports is early enough.
+borrow_localtileserver_prefix()
 
 logger = setup_logging(logger_name="spatial_risk")
 logger.setLevel(logging.DEBUG)
